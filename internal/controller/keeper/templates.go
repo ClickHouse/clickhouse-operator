@@ -181,16 +181,16 @@ func GetConfigurationRevision(cr *v1.KeeperCluster) (string, error) {
 
 func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	sts := TemplateStatefulSet(cr, "template")
-	hash, err := util.DeepHashObject(sts.Spec)
+	hash, err := util.DeepHashObject(sts)
 	if err != nil {
-		return "", fmt.Errorf("hash template StatefulSet spec: %w", err)
+		return "", fmt.Errorf("hash template StatefulSet: %w", err)
 	}
 
 	return hash, nil
 }
 
-func TemplateConfigMap(ctx reconcileContext, replicaID string) (*corev1.ConfigMap, error) {
-	config := generateConfigForSingleReplica(ctx.KeeperCluster, replicaID)
+func TemplateConfigMap(cr *v1.KeeperCluster, replicaID string) (*corev1.ConfigMap, error) {
+	config := generateConfigForSingleReplica(cr, replicaID)
 	configData, err := yaml.Marshal(config)
 	if err != nil {
 		return nil, fmt.Errorf("marshal config for replica %q: %w", replicaID, err)
@@ -202,10 +202,10 @@ func TemplateConfigMap(ctx reconcileContext, replicaID string) (*corev1.ConfigMa
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctx.KeeperCluster.ConfigMapNameByReplicaID(replicaID),
-			Namespace: ctx.KeeperCluster.Namespace,
-			Labels: util.MergeMaps(ctx.KeeperCluster.Spec.Labels, map[string]string{
-				util.LabelAppKey:          ctx.KeeperCluster.SpecificName(),
+			Name:      cr.ConfigMapNameByReplicaID(replicaID),
+			Namespace: cr.Namespace,
+			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
+				util.LabelAppKey:          cr.SpecificName(),
 				util.LabelKeeperReplicaID: replicaID,
 			}),
 		},

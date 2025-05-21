@@ -171,12 +171,11 @@ type KeeperReplica struct {
 	Ready bool `json:"ready"`
 	// Error indicates that replica has a persistent error causing Pod startup failure.
 	Error bool `json:"error"`
+	// Updated indicates that replica Pod is updated to the latest StatefulSet revision.
+	Updated bool `json:"updated"`
 	// Mode indicates replica role, during latest reconcile.
 	// +optional
 	Mode string `json:"mode"`
-	// LastUpdate indicates latest status update time.
-	// +optional
-	LastUpdate metav1.Time `json:"lastUpdate,omitempty"`
 }
 
 // KeeperClusterStatus defines the observed state of KeeperCluster.
@@ -202,6 +201,8 @@ type KeeperClusterStatus struct {
 	CurrentRevision string `json:"currentRevision,omitempty"`
 	// CurrentRevision indicates latest requested KeeperCluster spec revision.
 	UpdateRevision string `json:"updateRevision,omitempty"`
+	// ObservedGeneration indicates lastest generation observed by controller.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // +genclient

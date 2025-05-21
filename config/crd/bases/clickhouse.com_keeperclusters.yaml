@@ -1653,6 +1653,11 @@ spec:
                 description: CurrentRevision indicates latest applied KeeperCluster
                   spec revision.
                 type: string
+              observedGeneration:
+                description: ObservedGeneration indicates lastest generation observed
+                  by controller.
+                format: int64
+                type: integer
               readyReplicas:
                 description: ReadyReplicas Total number of replicas ready to server
                   requests.
@@ -1665,10 +1670,6 @@ spec:
                       description: Error indicates that replica has a persistent error
                         causing Pod startup failure.
                       type: boolean
-                    lastUpdate:
-                      description: LastUpdate indicates latest status update time.
-                      format: date-time
-                      type: string
                     mode:
                       description: Mode indicates replica role, during latest reconcile.
                       type: string
@@ -1676,9 +1677,14 @@ spec:
                       description: Ready indicates that replica is ready to accept
                         incoming connections.
                       type: boolean
+                    updated:
+                      description: Updated indicates that replica Pod is updated to
+                        the latest StatefulSet revision.
+                      type: boolean
                   required:
                   - error
                   - ready
+                  - updated
                   type: object
                 description: Replicas Current replica state by Keeper ID.
                 type: object

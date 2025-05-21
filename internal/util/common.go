@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
-	appsv1 "k8s.io/api/apps/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // DeepHashObject writes specified object to hash using the spew library
@@ -40,29 +40,6 @@ func MergeMaps(mapsToMerge ...map[string]string) map[string]string {
 	}
 
 	return result
-}
-
-func ReverseMap[M ~map[K]V, K comparable, V comparable](m M) map[V]K {
-	r := make(map[V]K, len(m))
-	for k, v := range m {
-		r[v] = k
-	}
-	return r
-}
-
-func IsStatefulSetInSync(found *appsv1.StatefulSet, expectedReplicas *int32) bool {
-	if found.Status.ObservedGeneration == 0 || found.Generation != found.Status.ObservedGeneration {
-		return false
-	}
-	if found.Spec.Replicas == nil || expectedReplicas == nil {
-		return false
-	}
-	return *expectedReplicas == *found.Spec.Replicas &&
-		*expectedReplicas == found.Status.Replicas &&
-		*expectedReplicas == found.Status.ReadyReplicas &&
-		*expectedReplicas == found.Status.CurrentReplicas &&
-		*expectedReplicas == found.Status.UpdatedReplicas &&
-		*expectedReplicas == found.Status.AvailableReplicas
 }
 
 func GetFunctionName(temp interface{}) string {
@@ -113,4 +90,21 @@ func applyDefaultRecursive(sourceValue reflect.Value, defaults reflect.Value) er
 	}
 
 	return nil
+}
+
+func UpdateResult(result *ctrl.Result, update *ctrl.Result) {
+	if update.IsZero() {
+		return
+	}
+
+	if result.IsZero() {
+		result.Requeue = true
+		result.RequeueAfter = update.RequeueAfter
+		return
+	}
+
+	result.Requeue = true
+	if update.RequeueAfter < result.RequeueAfter {
+		result.RequeueAfter = update.RequeueAfter
+	}
 }

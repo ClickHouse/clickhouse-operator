@@ -41,8 +41,10 @@ func TestUpdateReplica(t *testing.T) {
 	require.Equal(t, ctx.KeeperCluster.Status.StatefulSetRevision, util.GetSpecHashFromObject(sts))
 
 	// Nothing to update
+	sts.Status.ObservedGeneration = sts.Generation
 	ctx.stsByReplicaID[replicaID] = sts
 	replicaState.Ready = true
+	replicaState.Updated = true
 	ctx.KeeperCluster.Status.Replicas[replicaID] = replicaState
 	result, err = r.reconcileReplicaResources(ctx)
 	require.NoError(t, err)
@@ -102,7 +104,7 @@ func setupReconciler(t *testing.T) (*ClusterReconciler, reconcileContext) {
 				ConfigurationRevision: "config-v1",
 				StatefulSetRevision:   "sts-v1",
 				Replicas: map[string]v1.KeeperReplica{
-					"1": {LastUpdate: metav1.Now()},
+					"1": {},
 				},
 			},
 		},

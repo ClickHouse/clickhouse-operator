@@ -6,7 +6,12 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: test-keeper-cluster
 spec:
-  replicas: 5
+  replicas: 3
+  image:
+    repository: "docker.io/clickhouse/clickhouse-keeper"
+    tag: latest
+  loggerConfig:
+    loggerLevel: warning
   storage:
     accessModes:
       - ReadWriteOncePod
