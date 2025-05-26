@@ -21,67 +21,129 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
+	runtime_client "sigs.k8s.io/controller-runtime/pkg/client"
 
 	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
 )
 
 var _ = Describe("KeeperCluster Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
-
+	Context("When reconciling standalone KeeperCluster resource", Ordered, func() {
 		ctx := context.Background()
-
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default",
+		cr := &clickhousecomv1alpha1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "standalone",
+				Namespace: "default",
+			},
+			Spec: clickhousecomv1alpha1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](1),
+				Labels: map[string]string{
+					"test-label": "test-val",
+				},
+				Annotations: map[string]string{
+					"test-annotation": "test-val",
+				},
+			},
 		}
-		keepercluster := &clickhousecomv1alpha1.KeeperCluster{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind KeeperCluster")
-			err := k8sClient.Get(ctx, typeNamespacedName, keepercluster)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &clickhousecomv1alpha1.KeeperCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+		var services corev1.ServiceList
+		var configs corev1.ConfigMapList
+		var statefulsets appsv1.StatefulSetList
+
+		It("should create standalone cluster", func() {
+			By("by creating standalone resource CR")
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
 		})
 
-		AfterEach(func() {
-			var keepers clickhousecomv1alpha1.KeeperClusterList
-			Expect(k8sClient.List(ctx, &keepers)).To(Succeed())
-
-			for _, keeper := range keepers.Items {
-				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
-			}
-
-			By("Cleanup all keeper clusters")
-		})
-
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ClusterReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-
-				Reader: k8sClient,
-				Logger: util.NewZapLogger(logger.Named("keeper")),
-			}
-
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
+		It("should successfully create all resources of the new cluster", func() {
+			By("reconciling the created resource once")
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
+
+			appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{cr.SpecificName()})
+			Expect(err).ToNot(HaveOccurred())
+			listOpts := &runtime_client.ListOptions{
+				Namespace:     cr.Namespace,
+				LabelSelector: labels.NewSelector().Add(*appReq),
+			}
+
+			Expect(k8sClient.List(ctx, &services, listOpts)).To(Succeed())
+			Expect(services.Items).To(HaveLen(1))
+
+			Expect(k8sClient.List(ctx, &configs, listOpts)).To(Succeed())
+			Expect(configs.Items).To(HaveLen(2))
+
+			Expect(k8sClient.List(ctx, &statefulsets, listOpts)).To(Succeed())
+			Expect(statefulsets.Items).To(HaveLen(1))
+		})
+
+		It("should propagate meta attributes for every resource", func() {
+			expectedOwnerRef := metav1.OwnerReference{
+				Kind:               "KeeperCluster",
+				APIVersion:         "clickhouse.com/v1alpha1",
+				UID:                cr.UID,
+				Name:               cr.Name,
+				Controller:         ptr.To(true),
+				BlockOwnerDeletion: ptr.To(true),
+			}
+
+			By("setting meta attributes for service")
+			for _, service := range services.Items {
+				Expect(service.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+				for k, v := range cr.Spec.Labels {
+					Expect(service.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				}
+				for k, v := range cr.Spec.Annotations {
+					Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+
+			By("setting meta attributes for configs")
+			for _, config := range configs.Items {
+				Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+				for k, v := range cr.Spec.Labels {
+					Expect(config.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				}
+				for k, v := range cr.Spec.Annotations {
+					Expect(config.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+
+			By("setting meta attributes for statefulsets")
+			for _, sts := range statefulsets.Items {
+				Expect(sts.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+				for k, v := range cr.Spec.Labels {
+					Expect(sts.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+					Expect(sts.Spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				}
+				for k, v := range cr.Spec.Annotations {
+					Expect(sts.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+					Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+		})
+
+		It("should reflect configuration changes in revisions", func() {
+			updatedCR := cr.DeepCopy()
+			updatedCR.Spec.LoggerConfig.LoggerLevel = "warning"
+			Expect(k8sClient.Update(ctx, updatedCR)).To(Succeed())
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+
+			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
+			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
+			Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
+			Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
 		})
 	})
 })

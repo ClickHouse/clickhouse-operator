@@ -223,8 +223,8 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 				recCtx.NewCondition(v1.KeeperConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.KeeperConditionReasonStepFailed, errMsg),
 				// Operator did not finish reconciliation, some conditions may not be valid already.
 				recCtx.NewCondition(v1.KeeperConditionTypeReady, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.KeeperConditionTypeDegraded, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.KeeperConditionTypeReplicaStartupFailure, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
+				recCtx.NewCondition(v1.KeeperConditionTypeHealthy, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
+				recCtx.NewCondition(v1.KeeperConditionTypeReplicaStartupSucceeded, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
 				recCtx.NewCondition(v1.KeeperConditionTypeConfigurationInSync, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
 				recCtx.NewCondition(v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionUnknown, v1.KeeperConditionReasonStepFailed, errMsg),
 			})
@@ -619,17 +619,17 @@ func (r *ClusterReconciler) reconcileConditions(ctx reconcileContext) (*ctrl.Res
 	if len(errorReplicas) > 0 {
 		slices.Sort(errorReplicas)
 		message := fmt.Sprintf("Replicas has startup errors: %v", errorReplicas)
-		setCondition(ctx, v1.KeeperConditionTypeReplicaStartupFailure, metav1.ConditionTrue, v1.KeeperConditionReasonReplicaError, message)
+		setCondition(ctx, v1.KeeperConditionTypeReplicaStartupSucceeded, metav1.ConditionFalse, v1.KeeperConditionReasonReplicaError, message)
 	} else {
-		setCondition(ctx, v1.KeeperConditionTypeReplicaStartupFailure, metav1.ConditionFalse, v1.KeeperConditionReasonReplicasRunning, "")
+		setCondition(ctx, v1.KeeperConditionTypeReplicaStartupSucceeded, metav1.ConditionTrue, v1.KeeperConditionReasonReplicasRunning, "")
 	}
 
 	if len(notReadyReplicas) > 0 {
 		slices.Sort(notReadyReplicas)
 		message := fmt.Sprintf("Not ready replicas: %v", notReadyReplicas)
-		setCondition(ctx, v1.KeeperConditionTypeDegraded, metav1.ConditionTrue, v1.KeeperConditionReasonReplicasNotReady, message)
+		setCondition(ctx, v1.KeeperConditionTypeHealthy, metav1.ConditionFalse, v1.KeeperConditionReasonReplicasNotReady, message)
 	} else {
-		setCondition(ctx, v1.KeeperConditionTypeDegraded, metav1.ConditionFalse, v1.KeeperConditionReasonReplicasReady, "")
+		setCondition(ctx, v1.KeeperConditionTypeHealthy, metav1.ConditionTrue, v1.KeeperConditionReasonReplicasReady, "")
 	}
 
 	if len(notUpdatedReplicas) > 0 {

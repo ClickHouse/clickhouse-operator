@@ -23,10 +23,12 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/clickhouse-operator/internal/util"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	uzap "go.uber.org/zap"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -48,6 +50,7 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
+var reconciler reconcile.Reconciler
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -90,6 +93,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	reconciler = &ClusterReconciler{
+		Client: k8sClient,
+		Scheme: k8sClient.Scheme(),
+		// TODO init recorder
+		Reader: k8sClient,
+		Logger: util.NewZapLogger(logger.Named("keeper")),
+	}
 })
 
 var _ = AfterSuite(func() {

@@ -17,12 +17,32 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 
+	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/exp/rand"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const (
+	namespace     = "clickhouse-operator-system"
+	testNamespace = "clickhouse-operator-test"
+)
+
+var ctx context.Context
+var cancel context.CancelFunc
+var k8sClient client.Client
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
@@ -30,3 +50,120 @@ func TestE2E(t *testing.T) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting clickhouse-operator suite\n")
 	RunSpecs(t, "e2e suite")
 }
+
+var _ = BeforeSuite(func() {
+	rand.Seed(uint64(GinkgoRandomSeed()))
+
+	ctx, cancel = context.WithCancel(context.Background())
+
+	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = clickhousecomv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	// +kubebuilder:scaffold:scheme
+
+	k8sClient, err = client.New(cfg, client.Options{
+		Scheme: scheme.Scheme,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	By("installing the cert-manager")
+	Expect(utils.InstallCertManager()).To(Succeed())
+
+	By("installing prometheus operator")
+	Expect(utils.InstallPrometheusOperator()).To(Succeed())
+
+	By("creating manager namespace")
+	cmd := exec.Command("kubectl", "create", "ns", namespace)
+	_, _ = utils.Run(cmd)
+
+	By("creating test namespace")
+	cmd = exec.Command("kubectl", "create", "ns", testNamespace)
+	_, _ = utils.Run(cmd)
+
+	var controllerPodName string
+
+	// projectimage stores the name of the image used in the example
+	var projectimage = "clickhouse.com/clickhouse-operator:v0.0.1"
+
+	By("building the manager(Operator) image")
+	cmd = exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("loading the the manager(Operator) image on Kind")
+	err = utils.LoadImageToKindClusterWithName(projectimage)
+	Expect(err).NotTo(HaveOccurred())
+
+	// In minukube cert-manager root CA may not be injected at this moment.
+	By("deploying the controller-manager")
+	Eventually(func() error {
+		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
+		_, err = utils.Run(cmd)
+		return err
+	}, 2*time.Minute, time.Second).Should(Succeed())
+
+	cmd = exec.Command("kubectl", "wait", "deployment.apps/clickhouse-operator-controller-manager",
+		"--for", "condition=Available",
+		"--namespace", namespace,
+		"--timeout", "5m",
+	)
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred())
+
+	By("validating that the controller-manager pod is running as expected")
+	verifyControllerUp := func() error {
+		// Get pod name
+		cmd = exec.Command("kubectl", "get",
+			"pods", "-l", "control-plane=controller-manager",
+			"-o", "go-template={{ range .items }}"+
+				"{{ if not .metadata.deletionTimestamp }}"+
+				"{{ .metadata.name }}"+
+				"{{ \"\\n\" }}{{ end }}{{ end }}",
+			"-n", namespace,
+		)
+
+		podOutput, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		podNames := utils.GetNonEmptyLines(string(podOutput))
+		if len(podNames) != 1 {
+			return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
+		}
+		controllerPodName = podNames[0]
+		Expect(controllerPodName).Should(ContainSubstring("controller-manager"))
+
+		// Validate pod status
+		cmd = exec.Command("kubectl", "get",
+			"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
+			"-n", namespace,
+		)
+		status, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+		if string(status) != "Running" {
+			return fmt.Errorf("controller pod in %s status", status)
+		}
+		return nil
+	}
+	Eventually(verifyControllerUp, time.Minute*2, time.Second).Should(Succeed())
+})
+
+var _ = AfterSuite(func() {
+	cancel()
+
+	By("uninstalling the Prometheus manager bundle")
+	utils.UninstallPrometheusOperator()
+
+	By("uninstalling the cert-manager bundle")
+	utils.UninstallCertManager()
+
+	By("removing manager namespace")
+	cmd := exec.Command("kubectl", "delete", "ns", namespace)
+	_, _ = utils.Run(cmd)
+
+	By("removing test namespace")
+	cmd = exec.Command("kubectl", "delete", "ns", testNamespace)
+	_, _ = utils.Run(cmd)
+})

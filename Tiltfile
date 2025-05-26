@@ -5,6 +5,7 @@ local_resource(
     ignore=[
         'api/*/*generated*',
         '*/*/*test*',
+        '*/*/*/*test*',
     ],
     auto_init=False,
     labels=["makefile"],
@@ -17,6 +18,7 @@ docker_build('controller', '.',
         'test',
         'bin',
         '*/*/*test*',
+        '*/*/*/*test*',
     ],
 )
 

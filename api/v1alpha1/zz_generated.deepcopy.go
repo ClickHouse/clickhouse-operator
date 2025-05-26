@@ -122,6 +122,13 @@ func (in *KeeperClusterSpec) DeepCopyInto(out *KeeperClusterSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.Annotations != nil {
+		in, out := &in.Annotations, &out.Annotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.PodPolicy.DeepCopyInto(&out.PodPolicy)
 	if in.Tolerations != nil {
 		in, out := &in.Tolerations, &out.Tolerations

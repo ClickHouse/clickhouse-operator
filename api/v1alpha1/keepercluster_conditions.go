@@ -5,10 +5,10 @@ type KeeperConditionType string
 const (
 	// KeeperConditionTypeReconcileSucceeded indicates that latest reconciliation was successful.
 	KeeperConditionTypeReconcileSucceeded KeeperConditionType = "TypeReconcileSucceeded"
-	// KeeperConditionTypeReplicaStartupFailure indicates that certain replicas of the KeeperCluster can not be started.
-	KeeperConditionTypeReplicaStartupFailure KeeperConditionType = "ReplicaStartupFailure"
-	// KeeperConditionTypeDegraded indicates that certain replicas of the KeeperCluster are not ready to accept connections.
-	KeeperConditionTypeDegraded KeeperConditionType = "Degraded"
+	// KeeperConditionTypeReplicaStartupSucceeded indicates that all replicas of the KeeperCluster are able to start.
+	KeeperConditionTypeReplicaStartupSucceeded KeeperConditionType = "ReplicaStartupSucceeded"
+	// KeeperConditionTypeHealthy indicates that all replicas of the KeeperCluster are ready to accept connections.
+	KeeperConditionTypeHealthy = "Healthy"
 	// KeeperConditionTypeClusterSizeAligned indicates that KeeperCluster replica amount matches the requested value.
 	KeeperConditionTypeClusterSizeAligned KeeperConditionType = "ClusterSizeAligned"
 	// KeeperConditionTypeConfigurationInSync indicates that KeeperCluster configuration is in desired state.

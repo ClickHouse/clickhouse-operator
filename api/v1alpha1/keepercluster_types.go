@@ -66,6 +66,10 @@ type KeeperClusterSpec struct {
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`
 
+	// Additional annotations that are added to resources
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
 	// PodPolicy used to control resources allocated to pods.
 	// +optional
 	PodPolicy PodPolicy `json:"podPolicy,omitempty"`
@@ -110,6 +114,14 @@ func (s *KeeperClusterSpec) WithDefaults() {
 			Repository: DefaultKeeperContainerRepository,
 			Tag:        DefaultKeeperContainerTag,
 			PullPolicy: DefaultKeeperContainerPolicy,
+		},
+		Storage: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("1Gi"),
+				},
+			},
 		},
 		PodPolicy: PodPolicy{
 			Resources: corev1.ResourceRequirements{

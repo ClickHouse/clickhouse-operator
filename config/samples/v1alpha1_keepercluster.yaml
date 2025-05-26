@@ -7,12 +7,3 @@ metadata:
   name: test-keeper-cluster
 spec:
   replicas: 3
-  image:
-    repository: "docker.io/clickhouse/clickhouse-keeper"
-    tag: latest
-  storage:
-    accessModes:
-      - ReadWriteOncePod
-    resources:
-      requests:
-        storage: 2Gi
