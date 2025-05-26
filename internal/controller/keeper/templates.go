@@ -46,9 +46,10 @@ func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.HeadlessServiceName(),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Labels, map[string]string{
+			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
 				util.LabelAppKey: cr.SpecificName(),
 			}),
+			Annotations: util.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
@@ -102,6 +103,7 @@ func TemplateQuorumConfig(cr *v1.KeeperCluster) (*corev1.ConfigMap, error) {
 				util.LabelAppKey:          cr.SpecificName(),
 				util.LabelKeeperReplicaID: util.LabelKeeperAllReplicas,
 			}),
+			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
 			QuorumConfigFileName: string(rawConfig),
@@ -208,6 +210,7 @@ func TemplateConfigMap(cr *v1.KeeperCluster, replicaID string) (*corev1.ConfigMa
 				util.LabelAppKey:          cr.SpecificName(),
 				util.LabelKeeperReplicaID: replicaID,
 			}),
+			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
 			ConfigFileName: string(configData),
@@ -325,10 +328,10 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 					util.LabelInstanceK8sKey:  cr.SpecificName(),
 					util.LabelKeeperReplicaID: replicaID,
 				}),
-				Annotations: map[string]string{
+				Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
 					"cluster-autoscaler.kubernetes.io/safe-to-evict": strconv.FormatBool(cr.Spec.SafeToEvict),
 					"kubectl.kubernetes.io/default-container":        ContainerName,
-				},
+				}),
 			},
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: &cr.Spec.KeeperTerminationGracePeriod,
@@ -372,9 +375,9 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 				util.LabelInstanceK8sKey:  cr.SpecificName(),
 				util.LabelKeeperReplicaID: replicaID,
 			}),
-			Annotations: map[string]string{
+			Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
 				util.AnnotationStatefulSetVersion: BreakingStatefulSetVersion.String(),
-			},
+			}),
 		},
 		Spec: spec,
 	}

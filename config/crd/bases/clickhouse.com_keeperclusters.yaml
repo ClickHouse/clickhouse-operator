@@ -975,6 +975,11 @@ spec:
                         x-kubernetes-list-type: atomic
                     type: object
                 type: object
+              annotations:
+                additionalProperties:
+                  type: string
+                description: Additional annotations that are added to resources
+                type: object
               image:
                 description: Container image information
                 properties:
