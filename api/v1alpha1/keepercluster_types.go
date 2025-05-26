@@ -166,18 +166,6 @@ func (s KeeperReplicaState) Active() bool {
 	return activeReplicaStates[s]
 }
 
-type KeeperReplica struct {
-	// Ready indicates that replica is ready to accept incoming connections.
-	Ready bool `json:"ready"`
-	// Error indicates that replica has a persistent error causing Pod startup failure.
-	Error bool `json:"error"`
-	// Updated indicates that replica Pod is updated to the latest StatefulSet revision.
-	Updated bool `json:"updated"`
-	// Mode indicates replica role, during latest reconcile.
-	// +optional
-	Mode string `json:"mode"`
-}
-
 // KeeperClusterStatus defines the observed state of KeeperCluster.
 type KeeperClusterStatus struct {
 	// +listType=map
@@ -186,9 +174,10 @@ type KeeperClusterStatus struct {
 	// +patchMergeKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Replicas Current replica state by Keeper ID.
+	// Replicas that should be present in config
+	// TODO probably can be tracked by rereading quorum config.
 	// +optional
-	Replicas map[string]KeeperReplica `json:"replicas"`
+	Replicas []string `json:"replicas"`
 	// ReadyReplicas Total number of replicas ready to server requests.
 	// +optional
 	ReadyReplicas int32 `json:"readyReplicas"`
@@ -272,7 +261,7 @@ func (v *KeeperCluster) HostnameById(replicaID string) string {
 
 func (v *KeeperCluster) Hostnames() []string {
 	hostnames := make([]string, 0, len(v.Status.Replicas))
-	for id := range v.Status.Replicas {
+	for _, id := range v.Status.Replicas {
 		hostnames = append(hostnames, v.HostnameById(id))
 	}
 
@@ -281,7 +270,7 @@ func (v *KeeperCluster) Hostnames() []string {
 
 func (v *KeeperCluster) HostnamesByID() map[string]string {
 	hostnameByID := map[string]string{}
-	for id := range v.Status.Replicas {
+	for _, id := range v.Status.Replicas {
 		hostnameByID[id] = v.HostnameById(id)
 	}
 

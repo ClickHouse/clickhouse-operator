@@ -24,7 +24,6 @@ func TestUpdateReplica(t *testing.T) {
 	r, ctx := setupReconciler(t)
 
 	replicaID := "1"
-	replicaState := ctx.KeeperCluster.Status.Replicas[replicaID]
 	configMapName := ctx.KeeperCluster.ConfigMapNameByReplicaID(replicaID)
 	stsName := ctx.KeeperCluster.StatefulSetNameByReplicaID(replicaID)
 
@@ -42,10 +41,14 @@ func TestUpdateReplica(t *testing.T) {
 
 	// Nothing to update
 	sts.Status.ObservedGeneration = sts.Generation
-	ctx.stsByReplicaID[replicaID] = sts
-	replicaState.Ready = true
-	replicaState.Updated = true
-	ctx.KeeperCluster.Status.Replicas[replicaID] = replicaState
+	sts.Status.ReadyReplicas = 1
+	ctx.stateByID[replicaID] = replicaState{
+		Error:       false,
+		StatefulSet: sts,
+		Status: ServerStatus{
+			ServerState: ModeStandalone,
+		},
+	}
 	result, err = r.reconcileReplicaResources(ctx)
 	require.NoError(t, err)
 	require.True(t, result.IsZero())
@@ -103,13 +106,11 @@ func setupReconciler(t *testing.T) (*ClusterReconciler, reconcileContext) {
 			Status: v1.KeeperClusterStatus{
 				ConfigurationRevision: "config-v1",
 				StatefulSetRevision:   "sts-v1",
-				Replicas: map[string]v1.KeeperReplica{
-					"1": {},
-				},
+				Replicas:              []string{"1"},
 			},
 		},
-		Context:        t.Context(),
-		Log:            reconciler.Logger,
-		stsByReplicaID: map[string]*appsv1.StatefulSet{},
+		Context:   t.Context(),
+		Log:       reconciler.Logger,
+		stateByID: map[string]replicaState{},
 	}
 }

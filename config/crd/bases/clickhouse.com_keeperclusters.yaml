@@ -1664,30 +1664,10 @@ spec:
                 format: int32
                 type: integer
               replicas:
-                additionalProperties:
-                  properties:
-                    error:
-                      description: Error indicates that replica has a persistent error
-                        causing Pod startup failure.
-                      type: boolean
-                    mode:
-                      description: Mode indicates replica role, during latest reconcile.
-                      type: string
-                    ready:
-                      description: Ready indicates that replica is ready to accept
-                        incoming connections.
-                      type: boolean
-                    updated:
-                      description: Updated indicates that replica Pod is updated to
-                        the latest StatefulSet revision.
-                      type: boolean
-                  required:
-                  - error
-                  - ready
-                  - updated
-                  type: object
-                description: Replicas Current replica state by Keeper ID.
-                type: object
+                description: Replicas that should be present in config
+                items:
+                  type: string
+                type: array
               updateRevision:
                 description: CurrentRevision indicates latest requested KeeperCluster
                   spec revision.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	FLWCommand = "srvr"
+	FLWCommand = "mntr"
 
 	ModeLeader     = "leader"
 	ModeFollower   = "follower"
@@ -22,13 +23,13 @@ const (
 )
 
 var (
-	ClusterModes    = []string{ModeLeader, ModeFollower}
-	StandaloneModes = []string{ModeStandalone}
+	ClusterModes = []string{ModeLeader, ModeFollower}
 )
 
-// ServerState holds parsed fields of the "srvr" command response.
-type ServerState struct {
-	Mode string
+// ServerStatus holds parsed fields of the "mntr" command response.
+type ServerStatus struct {
+	ServerState string
+	Followers   int
 }
 
 type Connections map[string]net.Conn
@@ -59,26 +60,26 @@ func getConnections(ctx context.Context, log util.Logger, hostnamesByID map[stri
 	return result, connErrs
 }
 
-func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerState, error) {
+func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus, error) {
 	log.Debug(fmt.Sprintf("querying keeper pod: %s", conn.RemoteAddr().String()))
 	if dl, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(dl); err != nil {
-			return ServerState{}, fmt.Errorf("set deadline: %w", err)
+			return ServerStatus{}, fmt.Errorf("set deadline: %w", err)
 		}
 	}
 
 	n, err := io.WriteString(conn, FLWCommand)
 	if err != nil {
-		return ServerState{}, fmt.Errorf("write command: %w", err)
+		return ServerStatus{}, fmt.Errorf("write command: %w", err)
 	}
 	if n != len(FLWCommand) {
-		return ServerState{}, fmt.Errorf("can't write the whole string to socket expected: %d; actual: %d", len(FLWCommand), n)
+		return ServerStatus{}, fmt.Errorf("can't write the whole string to socket expected: %d; actual: %d", len(FLWCommand), n)
 	}
 
 	reader := bufio.NewReader(conn)
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return ServerState{}, fmt.Errorf("got error while reading from socket: %w", err)
+		return ServerStatus{}, fmt.Errorf("got error while reading from socket: %w", err)
 	}
 
 	statMap := map[string]string{}
@@ -86,27 +87,41 @@ func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerState,
 		if len(stat) == 0 {
 			continue
 		}
-		parts := strings.Split(stat, ": ")
+		parts := strings.Split(stat, "\t")
 		if len(parts) != 2 {
-			return ServerState{}, fmt.Errorf("failed to parse response line %d: %q", i, stat)
+			return ServerStatus{}, fmt.Errorf("failed to parse response line %d: %q", i, stat)
 		}
 
 		statMap[parts[0]] = parts[1]
 	}
 
-	result := ServerState{Mode: statMap["Mode"]}
-	if result.Mode == "" {
-		return ServerState{}, fmt.Errorf("response missing required field 'Mode': %q", string(data))
+	result := ServerStatus{
+		ServerState: statMap["zk_server_state"],
+	}
+	if result.ServerState == "" {
+		return ServerStatus{}, fmt.Errorf("response missing required field 'Mode': %q", string(data))
+	}
+
+	if result.ServerState == ModeLeader {
+		if followers, ok := statMap["zk_followers"]; ok {
+			result.Followers, err = strconv.Atoi(followers)
+			if err != nil {
+				return ServerStatus{}, fmt.Errorf("failed to parse field 'zk_followers': %w", err)
+			}
+		} else {
+			log.Warn("'zk_followers' is missing in keeper response")
+			return ServerStatus{}, fmt.Errorf("response missing required field 'Followers': %q", string(data))
+		}
 	}
 
 	return result, nil
 }
 
-func queryAllPods(ctx context.Context, log util.Logger, connections Connections) map[string]ServerState {
+func queryAllPods(ctx context.Context, log util.Logger, connections Connections) map[string]ServerStatus {
 	// Contains the hostName along with parsed response from it
 	type NamedFourLetterCommandResponse struct {
 		id    string
-		state ServerState
+		state ServerStatus
 	}
 
 	// Buffered channels will block only if buffer is full
@@ -119,7 +134,7 @@ func queryAllPods(ctx context.Context, log util.Logger, connections Connections)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := queryPod(ctx, log, conn)
+			resp, err := queryPod(ctx, log.With("replica_id", id), conn)
 			if err != nil {
 				fails <- err
 			} else {
@@ -128,7 +143,7 @@ func queryAllPods(ctx context.Context, log util.Logger, connections Connections)
 		}()
 	}
 
-	result := map[string]ServerState{}
+	result := map[string]ServerStatus{}
 	errs := []error{}
 
 	// Wait for all goroutines to return error or result
@@ -152,7 +167,7 @@ func queryAllPods(ctx context.Context, log util.Logger, connections Connections)
 	return result
 }
 
-func getServersStates(ctx context.Context, log util.Logger, hostnamesByID map[string]string) map[string]ServerState {
+func getServersStates(ctx context.Context, log util.Logger, hostnamesByID map[string]string) map[string]ServerStatus {
 	connections, errs := getConnections(ctx, log, hostnamesByID)
 	for _, err := range errs {
 		log.Info("error getting keeper connection", "error", err)
