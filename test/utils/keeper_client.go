@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
@@ -104,6 +105,7 @@ func forwardNodes(ctx context.Context, cr *v1.KeeperCluster) ([]string, []*exec.
 		keeperAddrs = append(keeperAddrs, fmt.Sprintf("127.0.0.1:%d", port))
 		cmd := exec.CommandContext(ctx, "kubectl", "port-forward", pod, fmt.Sprintf("%d:2181", port),
 			"--namespace", cr.Namespace)
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		keeperCmds = append(keeperCmds, cmd)
 		_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", strings.Join(cmd.Args, " "))
 
