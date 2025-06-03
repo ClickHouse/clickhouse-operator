@@ -11,7 +11,7 @@ local_resource(
     labels=["makefile"],
 )
 
-docker_build('controller', '.',
+docker_build('clickhouse.com/clickhouse-operator', '.',
     dockerfile='Dockerfile',
     ignore=[
         'config',

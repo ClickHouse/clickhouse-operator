@@ -353,7 +353,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 			{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "ch-storage-volume",
+					Name: PersistentVolumeName,
 				},
 				Spec: cr.Spec.Storage,
 			},
@@ -386,7 +386,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, replicaID string) Config {
 	config := Config{
 		ListenHost: "0.0.0.0",
-		Path:       BasePath,
+		Path:       BaseDataPath,
 		Prometheus: PrometheusConfig{
 			Endpoint:            "/metrics",
 			Port:                PortPrometheusScrape,
@@ -401,7 +401,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, replicaID string) Conf
 		KeeperServer: KeeperServer{
 			TcpPort:             PortNative,
 			ServerID:            replicaID,
-			StoragePath:         StoragePath,
+			StoragePath:         BaseDataPath,
 			DigestEnabled:       true,
 			LogStoragePath:      StorageLogPath,
 			SnapshotStoragePath: StorageSnapshotPath,
@@ -441,12 +441,12 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 			MountPath: ConfigPath,
 		},
 		{
-			Name:      "ch-storage-volume",
-			MountPath: StoragePath,
+			Name:      PersistentVolumeName,
+			MountPath: BaseDataPath,
 			SubPath:   "var-lib-clickhouse",
 		},
 		{
-			Name:      "ch-storage-volume",
+			Name:      PersistentVolumeName,
 			MountPath: "/var/log/clickhouse-keeper",
 			SubPath:   "var-log-clickhouse",
 		},

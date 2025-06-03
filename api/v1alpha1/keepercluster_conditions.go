@@ -17,6 +17,17 @@ const (
 	KeeperConditionTypeReady KeeperConditionType = "Ready"
 )
 
+var (
+	AllConditionTypes = []KeeperConditionType{
+		KeeperConditionTypeReconcileSucceeded,
+		KeeperConditionTypeReplicaStartupSucceeded,
+		KeeperConditionTypeHealthy,
+		KeeperConditionTypeClusterSizeAligned,
+		KeeperConditionTypeConfigurationInSync,
+		KeeperConditionTypeReady,
+	}
+)
+
 type KeeperConditionReason string
 
 const (

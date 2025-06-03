@@ -142,42 +142,6 @@ func (s *KeeperClusterSpec) WithDefaults() {
 	}
 }
 
-// KeeperReplicaState
-// +kubebuilder:validation:Enum=Pending;Provisioning;Ready;Degraded;OutOfSync;Error
-type KeeperReplicaState string
-
-const (
-	// ReplicaStatePending - Waiting for workload creation to be initiated.
-	ReplicaStatePending KeeperReplicaState = "Pending"
-	// ReplicaStateProvisioning - Starting StatefulSet, replica may not be able to accept connections.
-	ReplicaStateProvisioning KeeperReplicaState = "Provisioning"
-	// ReplicaStateDegraded - Pod is running, but replica is not healthy.
-	ReplicaStateDegraded KeeperReplicaState = "Degraded"
-	// ReplicaStateOutOfSync - Some changes were not applied yet.
-	ReplicaStateOutOfSync KeeperReplicaState = "OutOfSync"
-	// ReplicaStateReady - Pods are running and replica should be able to take connections.
-	ReplicaStateReady KeeperReplicaState = "Ready"
-	// ReplicaStateDeprovisioning - Replica is being deleted from cluster.
-	ReplicaStateDeprovisioning KeeperReplicaState = "Deprovisioning"
-	// ReplicaStateError - A persistent error is causing pods to fail.
-	ReplicaStateError KeeperReplicaState = "Error"
-)
-
-var activeReplicaStates = map[KeeperReplicaState]bool{
-	ReplicaStatePending:        false,
-	ReplicaStateDeprovisioning: false,
-	ReplicaStateProvisioning:   true,
-	ReplicaStateDegraded:       true,
-	ReplicaStateOutOfSync:      true,
-	ReplicaStateReady:          true,
-	ReplicaStateError:          true,
-}
-
-// Active replica state means that pod is expected to exist and other replicas aware of this replica.
-func (s KeeperReplicaState) Active() bool {
-	return activeReplicaStates[s]
-}
-
 // KeeperClusterStatus defines the observed state of KeeperCluster.
 type KeeperClusterStatus struct {
 	// +listType=map

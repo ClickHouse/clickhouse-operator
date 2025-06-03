@@ -80,7 +80,7 @@ func (r replicaState) Ready(ctx reconcileContext) bool {
 	}
 
 	stsReady := r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
-	if ctx.KeeperCluster.Replicas() == 1 {
+	if len(ctx.KeeperCluster.Status.Replicas) == 1 {
 		return stsReady && r.Status.ServerState == ModeStandalone
 	}
 
@@ -704,6 +704,13 @@ func (r *ClusterReconciler) reconcileConditions(ctx reconcileContext) (*ctrl.Res
 	}
 
 	setCondition(ctx, v1.KeeperConditionTypeReady, status, reason, message)
+
+	for _, condition := range ctx.KeeperCluster.Status.Conditions {
+		if condition.Status != metav1.ConditionTrue {
+			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		}
+	}
+
 	return &ctrl.Result{}, nil
 }
 

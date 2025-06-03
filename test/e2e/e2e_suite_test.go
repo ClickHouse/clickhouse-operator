@@ -73,8 +73,8 @@ var _ = BeforeSuite(func() {
 	By("installing the cert-manager")
 	Expect(utils.InstallCertManager()).To(Succeed())
 
-	By("installing prometheus operator")
-	Expect(utils.InstallPrometheusOperator()).To(Succeed())
+	// By("installing prometheus operator")
+	// Expect(utils.InstallPrometheusOperator()).To(Succeed())
 
 	By("creating manager namespace")
 	cmd := exec.Command("kubectl", "create", "ns", namespace)
@@ -98,7 +98,7 @@ var _ = BeforeSuite(func() {
 	err = utils.LoadImageToKindClusterWithName(projectimage)
 	Expect(err).NotTo(HaveOccurred())
 
-	// In minukube cert-manager root CA may not be injected at this moment.
+	// In kind cert-manager root CA may not be injected at this moment.
 	By("deploying the controller-manager")
 	Eventually(func() error {
 		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
@@ -153,11 +153,8 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	cancel()
 
-	By("uninstalling the Prometheus manager bundle")
-	utils.UninstallPrometheusOperator()
-
-	By("uninstalling the cert-manager bundle")
-	utils.UninstallCertManager()
+	// By("uninstalling the Prometheus manager bundle")
+	// utils.UninstallPrometheusOperator()
 
 	By("removing manager namespace")
 	cmd := exec.Command("kubectl", "delete", "ns", namespace)
