@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/clickhouse-operator/api/v1alpha1"
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
@@ -28,32 +30,112 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+const (
+	KeeperBaseVersion   = "25.3"
+	KeeperUpdateVersion = "25.5"
+)
+
 var _ = Describe("Keeper controller", func() {
-	When("operate standalone cluster", Ordered, func() {
-		cr := v1alpha1.KeeperCluster{
+	DescribeTable("standalone keeper updates", func(specUpdate v1.KeeperClusterSpec) {
+		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("standalone-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
 			},
-			Spec: v1alpha1.KeeperClusterSpec{
+			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
+				Image: v1.ContainerImage{
+					Tag: KeeperBaseVersion,
+				},
 			},
 		}
+		checks := 0
 
-		AfterAll(func() {
-			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
-		})
+		By("creating cluster CR")
+		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		WaitUpdatedAndReady(&cr, time.Minute)
+		RWChecks(&cr, &checks)
 
-		It("should successfully create standalone cluster", func() {
-			By("creating cluster CR")
-			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		By("updating cluster CR")
+		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cr)).To(Succeed())
+		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
+		cr.Spec = specUpdate
+		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-			By("waiting for cluster to be ready")
-			Eventually(func() bool {
-				var cluster v1alpha1.KeeperCluster
-				Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cluster)).To(Succeed())
-				return cluster.Status.ReadyReplicas == 1
-			}, time.Minute).Should(BeTrue())
-		})
-	})
+		WaitUpdatedAndReady(&cr, 3*time.Minute)
+		RWChecks(&cr, &checks)
+
+		Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+	},
+		Entry("update log level", v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
+		Entry("upgrade version", v1.KeeperClusterSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}),
+		Entry("scale up to 3 replicas", v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
+	)
+
+	DescribeTable("keeper cluster updates", func(baseReplicas int, specUpdate v1.KeeperClusterSpec) {
+		cr := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To(int32(baseReplicas)),
+				Image: v1.ContainerImage{
+					Tag: KeeperBaseVersion,
+				},
+			},
+		}
+		checks := 0
+
+		By("creating cluster CR")
+		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		WaitUpdatedAndReady(&cr, time.Minute)
+		RWChecks(&cr, &checks)
+
+		// TODO ensure updates one-by-one
+		By("updating cluster CR")
+		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cr)).To(Succeed())
+		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
+		cr.Spec = specUpdate
+		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+
+		WaitUpdatedAndReady(&cr, 3*time.Minute)
+		RWChecks(&cr, &checks)
+
+		Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+	},
+		Entry("update log level", 3, v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
+		Entry("upgrade version", 3, v1.KeeperClusterSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}),
+		Entry("scale up to 5 replicas", 3, v1.KeeperClusterSpec{Replicas: ptr.To[int32](5)}),
+		Entry("scale down to 3 replicas", 5, v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
+	)
 })
+
+func WaitUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
+	By("waiting for cluster to be ready")
+	Eventually(func() bool {
+		var cluster v1.KeeperCluster
+		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cluster)).To(Succeed())
+		return cluster.Generation == cluster.Status.ObservedGeneration &&
+			cluster.Status.CurrentRevision == cluster.Status.UpdateRevision &&
+			cluster.Status.ReadyReplicas == cluster.Replicas()
+	}, timeout).Should(BeTrue())
+}
+
+func RWChecks(cr *v1.KeeperCluster, checksDone *int) {
+	Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
+
+	By("connecting to cluster")
+	client, err := utils.NewKeeperClient(ctx, cr)
+	Expect(err).NotTo(HaveOccurred())
+	defer client.Close()
+
+	By("writing new test data")
+	Expect(client.CheckWrite(*checksDone)).To(Succeed())
+	*checksDone++
+
+	By("reading all test data")
+	for i := range *checksDone {
+		Expect(client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
+	}
+}

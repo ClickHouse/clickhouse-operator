@@ -56,6 +56,9 @@ func ApplyDefault[T any](source *T, defaults T) error {
 func applyDefaultRecursive(sourceValue reflect.Value, defaults reflect.Value) error {
 	if sourceValue.Kind() == reflect.Struct {
 		for i := range sourceValue.NumField() {
+			if !sourceValue.Field(i).CanSet() {
+				continue
+			}
 			if err := applyDefaultRecursive(sourceValue.Field(i), defaults.Field(i)); err != nil {
 				return fmt.Errorf("apply default value for field %s: %w", sourceValue.Type().Field(i).Name, err)
 			}

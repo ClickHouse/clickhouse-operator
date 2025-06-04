@@ -20,14 +20,15 @@ const (
 	QuorumConfigFileName   = "config.yaml"
 	QuorumConfigVolumeName = "clickhouse-keeper-quorum-config-volume"
 
+	PersistentVolumeName = "keeper-storage-volume"
+
 	ConfigPath       = QuorumConfigPath + "config.d/"
 	ConfigFileName   = "00-config.yaml"
 	ConfigVolumeName = "clickhouse-keeper-config-volume"
 
-	BasePath            = "/var/lib/clickhouse-keeper/"
-	StoragePath         = BasePath + "storage/"
-	StorageLogPath      = BasePath + "coordination/log/"
-	StorageSnapshotPath = BasePath + "coordination/snapshots/"
+	BaseDataPath        = "/var/lib/clickhouse/"
+	StorageLogPath      = BaseDataPath + "coordination/log/"
+	StorageSnapshotPath = BaseDataPath + "coordination/snapshots/"
 
 	ContainerName          = "clickhouse-keeper"
 	DefaultRevisionHistory = 10
