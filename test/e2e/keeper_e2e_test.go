@@ -44,8 +44,10 @@ var _ = Describe("Keeper controller", func() {
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
-				Image: v1.ContainerImage{
-					Tag: KeeperBaseVersion,
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
 				},
 			},
 		}
@@ -53,6 +55,10 @@ var _ = Describe("Keeper controller", func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		DeferCleanup(func() {
+			By("deleting cluster CR")
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+		})
 		WaitUpdatedAndReady(&cr, time.Minute)
 		RWChecks(&cr, &checks)
 
@@ -64,11 +70,9 @@ var _ = Describe("Keeper controller", func() {
 
 		WaitUpdatedAndReady(&cr, 3*time.Minute)
 		RWChecks(&cr, &checks)
-
-		Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 	},
 		Entry("update log level", v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
-		Entry("upgrade version", v1.KeeperClusterSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}),
+		Entry("upgrade version", v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}}),
 		Entry("scale up to 3 replicas", v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
 	)
 
@@ -80,8 +84,10 @@ var _ = Describe("Keeper controller", func() {
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To(int32(baseReplicas)),
-				Image: v1.ContainerImage{
-					Tag: KeeperBaseVersion,
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
 				},
 			},
 		}
@@ -105,7 +111,7 @@ var _ = Describe("Keeper controller", func() {
 		Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 	},
 		Entry("update log level", 3, v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
-		Entry("upgrade version", 3, v1.KeeperClusterSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}),
+		Entry("upgrade version", 3, v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: KeeperUpdateVersion}}}),
 		Entry("scale up to 5 replicas", 3, v1.KeeperClusterSpec{Replicas: ptr.To[int32](5)}),
 		Entry("scale down to 3 replicas", 5, v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
 	)

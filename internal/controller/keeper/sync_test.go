@@ -54,8 +54,8 @@ func TestUpdateReplica(t *testing.T) {
 	require.True(t, result.IsZero())
 
 	// Apply changes
-	ctx.KeeperCluster.Spec.Image.Repository = "custom-keeper"
-	ctx.KeeperCluster.Spec.Image.Tag = "latest"
+	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
+	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Tag = "latest"
 	ctx.KeeperCluster.Status.StatefulSetRevision = "sts-v2"
 	result, err = r.reconcileReplicaResources(ctx)
 	require.NoError(t, err)

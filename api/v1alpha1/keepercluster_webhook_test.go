@@ -40,8 +40,8 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			Expect(k8sClient.Create(ctx, keeperCluster)).Should(Succeed())
 			Expect(k8sClient.Get(ctx, keeperCluster.GetNamespacedName(), keeperCluster)).Should(Succeed())
 
-			Expect(keeperCluster.Spec.Image.Repository).Should(Equal(DefaultKeeperContainerRepository))
-			Expect(keeperCluster.Spec.PodPolicy.Resources.Limits).Should(Equal(corev1.ResourceList{
+			Expect(keeperCluster.Spec.ContainerTemplate.Image.Repository).Should(Equal(DefaultKeeperContainerRepository))
+			Expect(keeperCluster.Spec.ContainerTemplate.Resources.Limits).Should(Equal(corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPULimit),
 				corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryLimit),
 			}))

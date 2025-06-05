@@ -3,7 +3,6 @@ package keeper
 import (
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
@@ -228,9 +227,9 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 
 	keeperContainer := corev1.Container{
 		Name:            ContainerName,
-		Image:           cr.Spec.Image.String(),
-		ImagePullPolicy: cr.Spec.Image.PullPolicy,
-		Resources:       cr.Spec.PodPolicy.Resources,
+		Image:           cr.Spec.ContainerTemplate.Image.String(),
+		ImagePullPolicy: cr.Spec.ContainerTemplate.ImagePullPolicy,
+		Resources:       cr.Spec.ContainerTemplate.Resources,
 		Env: []corev1.EnvVar{
 			{
 				Name:  "KEEPER_CONFIG",
@@ -329,21 +328,20 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 					util.LabelKeeperReplicaID: replicaID,
 				}),
 				Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
-					"cluster-autoscaler.kubernetes.io/safe-to-evict": strconv.FormatBool(cr.Spec.SafeToEvict),
-					"kubectl.kubernetes.io/default-container":        ContainerName,
+					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: &cr.Spec.KeeperTerminationGracePeriod,
-				TopologySpreadConstraints:     cr.Spec.TopologySpreadConstraints,
-				ImagePullSecrets:              cr.Spec.ImagePullSecrets,
-				NodeSelector:                  cr.Spec.PodPolicy.NodeSelector,
-				Affinity:                      cr.Spec.Affinity,
+				TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
+				TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
+				ImagePullSecrets:              cr.Spec.PodTemplate.ImagePullSecrets,
+				NodeSelector:                  cr.Spec.PodTemplate.NodeSelector,
+				Affinity:                      cr.Spec.PodTemplate.Affinity,
+				Tolerations:                   cr.Spec.PodTemplate.Tolerations,
+				SchedulerName:                 cr.Spec.PodTemplate.SchedulerName,
+				ServiceAccountName:            cr.Spec.PodTemplate.ServiceAccountName,
 				RestartPolicy:                 corev1.RestartPolicyAlways,
 				DNSPolicy:                     corev1.DNSClusterFirst,
-				Tolerations:                   cr.Spec.Tolerations,
-				SchedulerName:                 cr.Spec.SchedulerName,
-				ServiceAccountName:            cr.Spec.ServiceAccountName,
 				Volumes:                       volumes,
 				Containers: []corev1.Container{
 					keeperContainer,
@@ -355,7 +353,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 				ObjectMeta: metav1.ObjectMeta{
 					Name: PersistentVolumeName,
 				},
-				Spec: cr.Spec.Storage,
+				Spec: cr.Spec.PersistentVolumeClaimSpec,
 			},
 		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),

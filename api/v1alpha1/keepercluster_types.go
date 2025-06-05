@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	"github.com/clickhouse-operator/internal/util"
 )
@@ -36,94 +37,42 @@ type KeeperClusterSpec struct {
 	// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15
 	Replicas *int32 `json:"replicas"`
 
-	// Container image information
+	// Parameters passed to the Keeper pod spec.
 	// +optional
-	Image ContainerImage `json:"image,omitempty"`
+	PodTemplate PodTemplateSpec `json:"podTemplate,omitempty"`
 
-	// Scheduler to be used for scheduling keeper pods in the StatefulSet
-	// +kubebuilder:default:=default-scheduler
-	SchedulerName string `json:"schedulerName,omitempty"`
-
-	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.
-	// If specified, these secrets will be passed to individual puller implementations for them to use. For example,
-	// in the case of docker, only DockerConfig type secrets are honored.
-	// More info: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod
+	// Parameters passed to the Keeper container spec.
 	// +optional
-	// +patchMergeKey=name
-	// +patchStrategy=merge
-	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
-	// Where cluster data should be kept
+	// Settings for the replicas storage.m
 	// +required
-	Storage corev1.PersistentVolumeClaimSpec `json:"storage,omitempty"`
+	PersistentVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"storage,omitempty"`
 
-	// The name of predefined ServiceAccount with a configured roles.
-	// +optional
-	// +kubebuilder:default:=default
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
-	// Additional labels that are added to resources
+	// Additional labels that are added to resources.
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`
 
-	// Additional annotations that are added to resources
+	// Additional annotations that are added to resources.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
-
-	// PodPolicy used to control resources allocated to pods.
-	// +optional
-	PodPolicy PodPolicy `json:"podPolicy,omitempty"`
-
-	// Tolerations used for the ClickHouse Keeper pods.
-	// +optional
-	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
-
-	// TopologySpreadConstraints specifies how to spread matching pods among the given topology.
-	// +optional
-	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
-
-	// Affinity is a group of affinity scheduling rules.
-	Affinity *corev1.Affinity `json:"affinity,omitempty"`
-
-	// UnsatisfiableConstraintAction used to decide what to do in case there is Unsatisfiable Constraint.
-	// DoNotSchedule instructs the scheduler not to schedule the pod, ScheduleAnyway instructs the scheduler to schedule the pod
-	// even if constraints are not satisfied.
-	// +optional
-	// +kubebuilder:default:=DoNotSchedule
-	UnsatisfiableConstraintAction corev1.UnsatisfiableConstraintAction `json:"unsatisfiableConstraintAction,omitempty"`
-
-	// Whether it is safe to evict the keeper pod for cluster auto scaling.
-	// +optional
-	SafeToEvict bool `json:"safeToEvict,omitempty"`
 
 	// Optionally you can lower the logger level or disable logging to file at all.
 	// +optional
 	LoggerConfig LoggerConfig `json:"loggerConfig,omitempty"`
-
-	// Keeper container terminationGracePeriod
-	// +optional
-	// +kubebuilder:default:=30
-	KeeperTerminationGracePeriod int64 `json:"keeperTerminationGracePeriod,omitempty"`
 
 	// TODO custom configs
 }
 
 func (s *KeeperClusterSpec) WithDefaults() {
 	defaultSpec := KeeperClusterSpec{
-		Image: ContainerImage{
-			Repository: DefaultKeeperContainerRepository,
-			Tag:        DefaultKeeperContainerTag,
-			PullPolicy: DefaultKeeperContainerPolicy,
-		},
-		Storage: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
-				},
+		Replicas: ptr.To[int32](3),
+		ContainerTemplate: ContainerTemplateSpec{
+			Image: ContainerImage{
+				Repository: DefaultKeeperContainerRepository,
+				Tag:        DefaultKeeperContainerTag,
 			},
-		},
-		PodPolicy: PodPolicy{
+			ImagePullPolicy: DefaultKeeperContainerPolicy,
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPURequest),
@@ -132,6 +81,15 @@ func (s *KeeperClusterSpec) WithDefaults() {
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPULimit),
 					corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryLimit),
+				},
+			},
+		},
+
+		PersistentVolumeClaimSpec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("1Gi"),
 				},
 			},
 		},
