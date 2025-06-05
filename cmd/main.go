@@ -121,7 +121,7 @@ func main() {
 		os.Exit(1)
 	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = (&clickhousecomv1alpha1.KeeperCluster{}).SetupWebhookWithManager(mgr); err != nil {
+		if err = (&clickhousecomv1alpha1.KeeperClusterWebhook{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "KeeperCluster")
 			os.Exit(1)
 		}

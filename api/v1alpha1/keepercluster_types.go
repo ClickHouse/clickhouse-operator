@@ -45,7 +45,7 @@ type KeeperClusterSpec struct {
 	// +optional
 	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
-	// Settings for the replicas storage.m
+	// Settings for the replicas storage.
 	// +required
 	PersistentVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"storage,omitempty"`
 
