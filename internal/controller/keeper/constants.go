@@ -26,6 +26,8 @@ const (
 	ConfigFileName   = "00-config.yaml"
 	ConfigVolumeName = "clickhouse-keeper-config-volume"
 
+	LogPath = "/var/log/clickhouse-keeper/"
+
 	BaseDataPath        = "/var/lib/clickhouse/"
 	StorageLogPath      = BaseDataPath + "coordination/log/"
 	StorageSnapshotPath = BaseDataPath + "coordination/snapshots/"

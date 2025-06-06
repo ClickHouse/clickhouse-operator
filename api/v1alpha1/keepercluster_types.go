@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
@@ -47,7 +48,7 @@ type KeeperClusterSpec struct {
 
 	// Settings for the replicas storage.
 	// +required
-	PersistentVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"storage,omitempty"`
+	DataVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional labels that are added to resources.
 	// +optional
@@ -57,11 +58,9 @@ type KeeperClusterSpec struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
-	// Optionally you can lower the logger level or disable logging to file at all.
+	// Configuration parameters for ClickHouse Keeper server.
 	// +optional
-	LoggerConfig LoggerConfig `json:"loggerConfig,omitempty"`
-
-	// TODO custom configs
+	Settings KeeperConfig `json:"settings,omitempty"`
 }
 
 func (s *KeeperClusterSpec) WithDefaults() {
@@ -85,7 +84,7 @@ func (s *KeeperClusterSpec) WithDefaults() {
 			},
 		},
 
-		PersistentVolumeClaimSpec: corev1.PersistentVolumeClaimSpec{
+		DataVolumeClaimSpec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -98,6 +97,18 @@ func (s *KeeperClusterSpec) WithDefaults() {
 	if err := util.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
 	}
+}
+
+type KeeperConfig struct {
+	// Optionally you can lower the logger level or disable logging to file at all.
+	// +optional
+	Logger LoggerConfig `json:"logger,omitempty"`
+
+	// Additional ClickHouse Keeper configuration that will be merged with the default one.
+	// +nullable
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraConfig runtime.RawExtension `json:"extraConfig,omitempty"`
 }
 
 // KeeperClusterStatus defines the observed state of KeeperCluster.

@@ -7,6 +7,7 @@ import (
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
+	"github.com/imdario/mergo"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -161,17 +162,21 @@ type PrometheusConfig struct {
 }
 
 type KeeperServer struct {
-	TcpPort              uint16        `yaml:"tcp_port"`
-	ServerID             string        `yaml:"server_id"`
-	StoragePath          string        `yaml:"storage_path"`
-	DigestEnabled        bool          `yaml:"digest_enabled"`
-	LogStoragePath       string        `yaml:"log_storage_path"`
-	SnapshotStoragePath  string        `yaml:"snapshot_storage_path"`
-	CoordinationSettings yaml.MapSlice `yaml:"coordination_settings"`
+	TcpPort              uint16         `yaml:"tcp_port"`
+	ServerID             string         `yaml:"server_id"`
+	StoragePath          string         `yaml:"storage_path"`
+	DigestEnabled        bool           `yaml:"digest_enabled"`
+	LogStoragePath       string         `yaml:"log_storage_path"`
+	SnapshotStoragePath  string         `yaml:"snapshot_storage_path"`
+	CoordinationSettings map[string]any `yaml:"coordination_settings"`
 }
 
-func GetConfigurationRevision(cr *v1.KeeperCluster) (string, error) {
-	config := generateConfigForSingleReplica(cr, "template")
+func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
+	config, err := generateConfigForSingleReplica(cr, extraConfig, "template")
+	if err != nil {
+		return "", fmt.Errorf("generate template configuration: %w", err)
+	}
+
 	hash, err := util.DeepHashObject(config)
 	if err != nil {
 		return "", fmt.Errorf("hash template configuration: %w", err)
@@ -190,11 +195,10 @@ func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(cr *v1.KeeperCluster, replicaID string) (*corev1.ConfigMap, error) {
-	config := generateConfigForSingleReplica(cr, replicaID)
-	configData, err := yaml.Marshal(config)
+func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID string) (*corev1.ConfigMap, error) {
+	config, err := generateConfigForSingleReplica(cr, extraConfig, replicaID)
 	if err != nil {
-		return nil, fmt.Errorf("marshal config for replica %q: %w", replicaID, err)
+		return nil, fmt.Errorf("generate configmap for replica %q: %w", replicaID, err)
 	}
 
 	return &corev1.ConfigMap{
@@ -212,7 +216,7 @@ func TemplateConfigMap(cr *v1.KeeperCluster, replicaID string) (*corev1.ConfigMa
 			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
-			ConfigFileName: string(configData),
+			ConfigFileName: config,
 		},
 	}, nil
 }
@@ -353,7 +357,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 				ObjectMeta: metav1.ObjectMeta{
 					Name: PersistentVolumeName,
 				},
-				Spec: cr.Spec.PersistentVolumeClaimSpec,
+				Spec: cr.Spec.DataVolumeClaimSpec,
 			},
 		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
@@ -381,7 +385,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 	}
 }
 
-func generateConfigForSingleReplica(cr *v1.KeeperCluster, replicaID string) Config {
+func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID string) (string, error) {
 	config := Config{
 		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
@@ -403,29 +407,50 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, replicaID string) Conf
 			DigestEnabled:       true,
 			LogStoragePath:      StorageLogPath,
 			SnapshotStoragePath: StorageSnapshotPath,
-			CoordinationSettings: yaml.MapSlice{
-				yaml.MapItem{Key: "raft_logs_level", Value: "trace"},
-				yaml.MapItem{Key: "compress_logs", Value: false},
+			CoordinationSettings: map[string]any{
+				"raft_logs_level": "trace",
+				"compress_logs":   false,
 			},
 		},
 	}
 
-	if cr.Spec.LoggerConfig.JSONLogs {
+	if cr.Spec.Settings.Logger.JSONLogs {
 		config.Logger.Formatting.Type = "json"
 	}
 
-	if cr.Spec.LoggerConfig.LoggerLevel != "" {
-		config.Logger.Level = cr.Spec.LoggerConfig.LoggerLevel
+	if cr.Spec.Settings.Logger.Level != "" {
+		config.Logger.Level = cr.Spec.Settings.Logger.Level
 	}
 
-	if cr.Spec.LoggerConfig.LogToFile {
-		config.Logger.Log = "/var/log/clickhouse-keeper/clickhouse-keeper.log"
-		config.Logger.ErrorLog = "/var/log/clickhouse-keeper/clickhouse-keeper.err.log"
+	if cr.Spec.Settings.Logger.LogToFile {
+		config.Logger.Log = LogPath + "clickhouse-keeper.log"
+		config.Logger.ErrorLog = LogPath + "clickhouse-keeper.err.log"
 		config.Logger.Size = "1000M"
 		config.Logger.Count = 50
 	}
 
-	return config
+	yamlConfig, err := yaml.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("error marshalling config to yaml: %w", err)
+	}
+
+	if len(extraConfig) > 0 {
+		configMap := map[string]any{}
+		if err := yaml.Unmarshal(yamlConfig, &configMap); err != nil {
+			return "", fmt.Errorf("error unmarshalling config from yaml: %w", err)
+		}
+
+		if err := mergo.Merge(&configMap, extraConfig, mergo.WithOverride); err != nil {
+			return "", fmt.Errorf("error merging config with extraConfig: %w", err)
+		}
+
+		yamlConfig, err = yaml.Marshal(configMap)
+		if err != nil {
+			return "", fmt.Errorf("error marshalling merged config to yaml: %w", err)
+		}
+	}
+
+	return string(yamlConfig), nil
 }
 
 func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []corev1.VolumeMount) {

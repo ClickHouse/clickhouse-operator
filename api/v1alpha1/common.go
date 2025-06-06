@@ -47,7 +47,7 @@ type LoggerConfig struct {
 	// +optional
 	// +kubebuilder:validation:Enum:=test;trace;debug;information;error;warning
 	// +kubebuilder:default:=trace
-	LoggerLevel string `json:"loggerLevel,omitempty"`
+	Level string `json:"level,omitempty"`
 }
 
 type PodTemplateSpec struct {

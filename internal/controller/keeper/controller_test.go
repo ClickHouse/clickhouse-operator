@@ -21,28 +21,31 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	runtime_client "sigs.k8s.io/controller-runtime/pkg/client"
+	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
 )
 
 var _ = Describe("KeeperCluster Controller", func() {
 	Context("When reconciling standalone KeeperCluster resource", Ordered, func() {
 		ctx := context.Background()
-		cr := &clickhousecomv1alpha1.KeeperCluster{
+		cr := &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "standalone",
 				Namespace: "default",
 			},
-			Spec: clickhousecomv1alpha1.KeeperClusterSpec{
+			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
 				Labels: map[string]string{
 					"test-label": "test-val",
@@ -71,7 +74,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 
 			appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{cr.SpecificName()})
 			Expect(err).ToNot(HaveOccurred())
-			listOpts := &runtime_client.ListOptions{
+			listOpts := &runtimeclient.ListOptions{
 				Namespace:     cr.Namespace,
 				LabelSelector: labels.NewSelector().Add(*appReq),
 			}
@@ -134,7 +137,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 
 		It("should reflect configuration changes in revisions", func() {
 			updatedCR := cr.DeepCopy()
-			updatedCR.Spec.LoggerConfig.LoggerLevel = "warning"
+			updatedCR.Spec.Settings.Logger.Level = "warning"
 			Expect(k8sClient.Update(ctx, updatedCR)).To(Succeed())
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
@@ -145,5 +148,47 @@ var _ = Describe("KeeperCluster Controller", func() {
 			Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
 			Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
 		})
+
+		It("should merge extra config in configmap", func() {
+			updatedCR := cr.DeepCopy()
+			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+			reconcileStatefulSets(updatedCR)
+			updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
+				"coordination_settings":{"quorum_reads": true}}}`)}
+			Expect(k8sClient.Update(ctx, updatedCR)).To(Succeed())
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+
+			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
+			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
+			Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
+			Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+
+			var configmap corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: cr.Namespace,
+				Name:      cr.ConfigMapNameByReplicaID("1")}, &configmap)).To(Succeed())
+
+			Expect(configmap.Data).To(HaveKey(ConfigFileName))
+			var config confMap
+			Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
+			Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
+		})
 	})
 })
+
+func reconcileStatefulSets(cr *v1.KeeperCluster) {
+	for _, replicaID := range cr.Status.Replicas {
+		var sts appsv1.StatefulSet
+		ExpectWithOffset(1, k8sClient.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace,
+			Name:      cr.StatefulSetNameByReplicaID(replicaID),
+		}, &sts)).To(Succeed())
+
+		sts.Status.ObservedGeneration = cr.Generation
+		sts.Status.UpdateRevision = cr.Status.CurrentRevision
+
+		ExpectWithOffset(1, k8sClient.Status().Update(ctx, &sts)).To(Succeed())
+	}
+}

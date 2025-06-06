@@ -28,7 +28,7 @@ func TestUpdateReplica(t *testing.T) {
 	stsName := ctx.KeeperCluster.StatefulSetNameByReplicaID(replicaID)
 
 	// Create resources
-	result, err := r.reconcileReplicaResources(ctx)
+	result, err := r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
 
@@ -49,7 +49,7 @@ func TestUpdateReplica(t *testing.T) {
 			ServerState: ModeStandalone,
 		},
 	}
-	result, err = r.reconcileReplicaResources(ctx)
+	result, err = r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.True(t, result.IsZero())
 
@@ -57,16 +57,16 @@ func TestUpdateReplica(t *testing.T) {
 	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
 	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Tag = "latest"
 	ctx.KeeperCluster.Status.StatefulSetRevision = "sts-v2"
-	result, err = r.reconcileReplicaResources(ctx)
+	result, err = r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
 	require.Equal(t, "custom-keeper:latest", sts.Spec.Template.Spec.Containers[0].Image)
 
 	// Config changes trigger restart
 	require.Empty(t, sts.Spec.Template.Annotations[util.AnnotationRestartedAt])
-	ctx.KeeperCluster.Spec.LoggerConfig.LoggerLevel = "info"
+	ctx.KeeperCluster.Spec.Settings.Logger.Level = "info"
 	ctx.KeeperCluster.Status.ConfigurationRevision = "cfg-v2"
-	result, err = r.reconcileReplicaResources(ctx)
+	result, err = r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
 	require.NotEmpty(t, sts.Spec.Template.Annotations[util.AnnotationRestartedAt])
@@ -110,7 +110,6 @@ func setupReconciler(t *testing.T) (*ClusterReconciler, reconcileContext) {
 			},
 		},
 		Context:   t.Context(),
-		Log:       reconciler.Logger,
 		stateByID: map[string]replicaState{},
 	}
 }

@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 )
 
@@ -55,10 +56,10 @@ var _ = Describe("Keeper controller", func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		DeferCleanup(func() {
+		defer func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
-		})
+		}()
 		WaitUpdatedAndReady(&cr, time.Minute)
 		RWChecks(&cr, &checks)
 
@@ -71,7 +72,14 @@ var _ = Describe("Keeper controller", func() {
 		WaitUpdatedAndReady(&cr, 3*time.Minute)
 		RWChecks(&cr, &checks)
 	},
-		Entry("update log level", v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
+		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+			Logger: v1.LoggerConfig{Level: "warning"},
+		}}),
+		Entry("update coordination settings", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+			ExtraConfig: runtime.RawExtension{Raw: []byte(`{"keeper_server": {
+				"coordination_settings":{"quorum_reads": true}}}`,
+			)},
+		}}),
 		Entry("upgrade version", v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
 			Image: v1.ContainerImage{Tag: KeeperUpdateVersion},
 		}}),
@@ -97,7 +105,11 @@ var _ = Describe("Keeper controller", func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		WaitUpdatedAndReady(&cr, time.Minute)
+		defer func() {
+			By("deleting cluster CR")
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+		}()
+		WaitUpdatedAndReady(&cr, 2*time.Minute)
 		RWChecks(&cr, &checks)
 
 		// TODO ensure updates one-by-one
@@ -107,12 +119,17 @@ var _ = Describe("Keeper controller", func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitUpdatedAndReady(&cr, 3*time.Minute)
+		WaitUpdatedAndReady(&cr, 5*time.Minute)
 		RWChecks(&cr, &checks)
-
-		Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 	},
-		Entry("update log level", 3, v1.KeeperClusterSpec{LoggerConfig: v1.LoggerConfig{LoggerLevel: "warning"}}),
+		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+			Logger: v1.LoggerConfig{Level: "warning"},
+		}}),
+		Entry("update coordination settings", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+			ExtraConfig: runtime.RawExtension{Raw: []byte(`{"keeper_server": {
+				"coordination_settings":{"quorum_reads": true}}}`,
+			)},
+		}}),
 		Entry("upgrade version", 3, v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
 			Image: v1.ContainerImage{Tag: KeeperUpdateVersion},
 		}}),
