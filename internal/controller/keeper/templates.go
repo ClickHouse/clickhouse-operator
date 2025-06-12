@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -58,6 +59,33 @@ func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 			PublishNotReadyAddresses: true,
 			Selector: map[string]string{
 				util.LabelAppKey: cr.SpecificName(),
+			},
+		},
+	}
+}
+
+func TemplatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBudget {
+	maxUnavailable := intstr.FromInt32(cr.Replicas() / 2)
+
+	return &policyv1.PodDisruptionBudget{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodDisruptionBudget",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cr.SpecificName(),
+			Namespace: cr.Namespace,
+			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
+				util.LabelAppKey: cr.SpecificName(),
+			}),
+			Annotations: util.MergeMaps(cr.Spec.Annotations),
+		},
+		Spec: policyv1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &maxUnavailable,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey: cr.SpecificName(),
+				},
 			},
 		},
 	}

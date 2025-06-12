@@ -24,6 +24,7 @@ import (
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,6 +58,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 		}
 
 		var services corev1.ServiceList
+		var pdbs policyv1.PodDisruptionBudgetList
 		var configs corev1.ConfigMapList
 		var statefulsets appsv1.StatefulSetList
 
@@ -81,6 +83,9 @@ var _ = Describe("KeeperCluster Controller", func() {
 
 			Expect(k8sClient.List(ctx, &services, listOpts)).To(Succeed())
 			Expect(services.Items).To(HaveLen(1))
+
+			Expect(k8sClient.List(ctx, &pdbs, listOpts)).To(Succeed())
+			Expect(pdbs.Items).To(HaveLen(1))
 
 			Expect(k8sClient.List(ctx, &configs, listOpts)).To(Succeed())
 			Expect(configs.Items).To(HaveLen(2))
@@ -107,6 +112,17 @@ var _ = Describe("KeeperCluster Controller", func() {
 				}
 				for k, v := range cr.Spec.Annotations {
 					Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+
+			By("setting meta attributes for pod disruption budget")
+			for _, pdb := range pdbs.Items {
+				Expect(pdb.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+				for k, v := range cr.Spec.Labels {
+					Expect(pdb.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				}
+				for k, v := range cr.Spec.Annotations {
+					Expect(pdb.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 				}
 			}
 

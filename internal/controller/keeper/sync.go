@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -181,8 +182,9 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 	}
 
 	reconcileSteps := []ReconcileFunc{
-		r.reconcileHeadlessService,
 		r.reconcileClusterRevisions,
+		r.reconcileHeadlessService,
+		r.reconcilePodDisruptionBudget,
 		r.reconcileActiveReplicaStatus,
 		r.reconcileQuorumMembership,
 		r.reconcileQuorumConfig,
@@ -282,13 +284,64 @@ func (r *ClusterReconciler) reconcileHeadlessService(log util.Logger, ctx *recon
 	log.Debug("Headless Service changed", "service_diff", cmp.Diff(foundService, service))
 
 	foundService.Spec = service.Spec
-	if err := util.AddSpecHashToAnnotations(service, service.Spec); err != nil {
+	if err := util.AddSpecHashToAnnotations(foundService, foundService.Spec); err != nil {
 		return nil, fmt.Errorf("add Headless Service spec hash to annotations: %w", err)
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		return r.Update(ctx.Context, foundService)
 	}); err != nil {
 		return nil, fmt.Errorf("update Headless Service: %w", err)
+	}
+
+	return nil, nil
+}
+
+func (r *ClusterReconciler) reconcilePodDisruptionBudget(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	pdb := TemplatePodDisruptionBudget(ctx.KeeperCluster)
+	log = log.With("pob", pdb.Name)
+
+	if err := ctrl.SetControllerReference(ctx.KeeperCluster, pdb, r.Scheme); err != nil {
+		return nil, err
+	}
+
+	foundPDB := &policyv1.PodDisruptionBudget{}
+	err := r.Get(ctx.Context, types.NamespacedName{
+		Namespace: ctx.KeeperCluster.GetNamespace(),
+		Name:      ctx.KeeperCluster.PodDisruptionBudgetName(),
+	}, foundPDB)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get PodDisruptionBudget: %w", err)
+		}
+
+		if err := util.AddSpecHashToAnnotations(pdb, pdb.Spec); err != nil {
+			return nil, fmt.Errorf("add Headless Service spec hash to annotations: %w", err)
+		}
+
+		log.Info("PodDisruptionBudget not found, creating")
+		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			return r.Create(ctx.Context, pdb)
+		}); err != nil {
+			return nil, fmt.Errorf("create PodDisruptionBudget: %w", err)
+		}
+		return nil, nil
+	}
+
+	if util.IsEqualSpecHash(foundPDB, pdb.Spec) {
+		log.Debug("PodDisruptionBudget is up to date")
+		return nil, nil
+	}
+
+	log.Debug("PodDisruptionBudget changed", "service_diff", cmp.Diff(foundPDB, pdb))
+
+	foundPDB.Spec = pdb.Spec
+	if err := util.AddSpecHashToAnnotations(foundPDB, foundPDB.Spec); err != nil {
+		return nil, fmt.Errorf("add PodDisruptionBudget spec hash to annotations: %w", err)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		return r.Update(ctx.Context, foundPDB)
+	}); err != nil {
+		return nil, fmt.Errorf("update PodDisruptionBudget: %w", err)
 	}
 
 	return nil, nil

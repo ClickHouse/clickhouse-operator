@@ -187,6 +187,10 @@ func (v *KeeperCluster) HeadlessServiceName() string {
 	return fmt.Sprintf("%s-headless", v.SpecificName())
 }
 
+func (v *KeeperCluster) PodDisruptionBudgetName() string {
+	return v.SpecificName()
+}
+
 func (v *KeeperCluster) QuorumConfigMapName() string {
 	return fmt.Sprintf("%s-quorum-%s-%d", v.SpecificName(), KeeperConfigMapNameSuffix, latestKeeperQuorumConfigMapVersion)
 }
