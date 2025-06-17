@@ -17,7 +17,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -183,11 +182,9 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 
 	reconcileSteps := []ReconcileFunc{
 		r.reconcileClusterRevisions,
-		r.reconcileHeadlessService,
-		r.reconcilePodDisruptionBudget,
 		r.reconcileActiveReplicaStatus,
 		r.reconcileQuorumMembership,
-		r.reconcileQuorumConfig,
+		r.reconcileCommonResources,
 		r.reconcileReplicaResources,
 		r.reconcileCleanUp,
 		r.reconcileConditions,
@@ -243,108 +240,6 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 	}
 
 	return result, nil
-}
-
-func (r *ClusterReconciler) reconcileHeadlessService(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	service := TemplateHeadlessService(ctx.KeeperCluster)
-	log = log.With("service", service.Name)
-
-	if err := ctrl.SetControllerReference(ctx.KeeperCluster, service, r.Scheme); err != nil {
-		return nil, err
-	}
-
-	foundService := &corev1.Service{}
-	err := r.Get(ctx.Context, types.NamespacedName{
-		Namespace: ctx.KeeperCluster.GetNamespace(),
-		Name:      ctx.KeeperCluster.HeadlessServiceName(),
-	}, foundService)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return nil, fmt.Errorf("get Headless Service: %w", err)
-		}
-
-		if err := util.AddSpecHashToAnnotations(service, service.Spec); err != nil {
-			return nil, fmt.Errorf("add Headless Service spec hash to annotations: %w", err)
-		}
-
-		log.Info("Headless Service not found, creating")
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			return r.Create(ctx.Context, service)
-		}); err != nil {
-			return nil, fmt.Errorf("create Headless Service: %w", err)
-		}
-		return nil, nil
-	}
-
-	if util.IsEqualSpecHash(foundService, service.Spec) {
-		log.Debug("Headless Service is up to date")
-		return nil, nil
-	}
-
-	log.Debug("Headless Service changed", "service_diff", cmp.Diff(foundService, service))
-
-	foundService.Spec = service.Spec
-	if err := util.AddSpecHashToAnnotations(foundService, foundService.Spec); err != nil {
-		return nil, fmt.Errorf("add Headless Service spec hash to annotations: %w", err)
-	}
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return r.Update(ctx.Context, foundService)
-	}); err != nil {
-		return nil, fmt.Errorf("update Headless Service: %w", err)
-	}
-
-	return nil, nil
-}
-
-func (r *ClusterReconciler) reconcilePodDisruptionBudget(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	pdb := TemplatePodDisruptionBudget(ctx.KeeperCluster)
-	log = log.With("pob", pdb.Name)
-
-	if err := ctrl.SetControllerReference(ctx.KeeperCluster, pdb, r.Scheme); err != nil {
-		return nil, err
-	}
-
-	foundPDB := &policyv1.PodDisruptionBudget{}
-	err := r.Get(ctx.Context, types.NamespacedName{
-		Namespace: ctx.KeeperCluster.GetNamespace(),
-		Name:      ctx.KeeperCluster.PodDisruptionBudgetName(),
-	}, foundPDB)
-	if err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return nil, fmt.Errorf("get PodDisruptionBudget: %w", err)
-		}
-
-		if err := util.AddSpecHashToAnnotations(pdb, pdb.Spec); err != nil {
-			return nil, fmt.Errorf("add Headless Service spec hash to annotations: %w", err)
-		}
-
-		log.Info("PodDisruptionBudget not found, creating")
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			return r.Create(ctx.Context, pdb)
-		}); err != nil {
-			return nil, fmt.Errorf("create PodDisruptionBudget: %w", err)
-		}
-		return nil, nil
-	}
-
-	if util.IsEqualSpecHash(foundPDB, pdb.Spec) {
-		log.Debug("PodDisruptionBudget is up to date")
-		return nil, nil
-	}
-
-	log.Debug("PodDisruptionBudget changed", "service_diff", cmp.Diff(foundPDB, pdb))
-
-	foundPDB.Spec = pdb.Spec
-	if err := util.AddSpecHashToAnnotations(foundPDB, foundPDB.Spec); err != nil {
-		return nil, fmt.Errorf("add PodDisruptionBudget spec hash to annotations: %w", err)
-	}
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return r.Update(ctx.Context, foundPDB)
-	}); err != nil {
-		return nil, fmt.Errorf("update PodDisruptionBudget: %w", err)
-	}
-
-	return nil, nil
 }
 
 func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
@@ -540,14 +435,27 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 	return nil, nil
 }
 
-func (r *ClusterReconciler) reconcileQuorumConfig(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	service := TemplateHeadlessService(ctx.KeeperCluster)
+	if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.KeeperCluster, service); err != nil {
+		return &ctrl.Result{}, fmt.Errorf("reconcile service resource: %w", err)
+	}
+
+	pdb := TemplatePodDisruptionBudget(ctx.KeeperCluster)
+	if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.KeeperCluster, pdb); err != nil {
+		return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
+	}
+
 	configMap, err := TemplateQuorumConfig(ctx.KeeperCluster)
 	if err != nil {
 		return nil, fmt.Errorf("template quorum config: %w", err)
 	}
 
-	_, err = r.updateConfigMap(log, ctx, configMap)
-	return nil, err
+	if _, err = util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.KeeperCluster, configMap, "Data", "BinaryData"); err != nil {
+		return nil, fmt.Errorf("reconcile quorum config: %w", err)
+	}
+
+	return nil, nil
 }
 
 // reconcileReplicaResources performs update on replicas ConfigMap and StatefulSet.
@@ -782,53 +690,6 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	return &ctrl.Result{}, nil
 }
 
-func (r *ClusterReconciler) updateConfigMap(log util.Logger, ctx *reconcileContext, configMap *corev1.ConfigMap) (bool, error) {
-	log = log.With("configmap", configMap.Name)
-
-	if err := ctrl.SetControllerReference(ctx.KeeperCluster, configMap, r.Scheme); err != nil {
-		return false, fmt.Errorf("set ConfigMap %q controller reference: %w", configMap.Name, err)
-	}
-
-	foundConfigMap := corev1.ConfigMap{}
-	if err := r.Get(ctx.Context, types.NamespacedName{
-		Namespace: configMap.Namespace,
-		Name:      configMap.Name,
-	}, &foundConfigMap); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return false, fmt.Errorf("get ConfigMap %q: %w", configMap.Name, err)
-		}
-
-		log.Info("ConfigMap not found, creating", "configmap", configMap.Name)
-		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			return r.Create(ctx.Context, configMap)
-		})
-
-		if err != nil {
-			return false, fmt.Errorf("create ConfigMap %q: %w", configMap.Name, err)
-		}
-
-		return true, nil
-	}
-
-	if reflect.DeepEqual(foundConfigMap.Data, configMap.Data) &&
-		reflect.DeepEqual(foundConfigMap.BinaryData, configMap.BinaryData) {
-		log.Debug("ConfigMap is up to date")
-		return false, nil
-	}
-	log.Debug(fmt.Sprintf("ConfigMap changed:\nData diff:\n%s\nBinary Data diff:\n%s",
-		cmp.Diff(foundConfigMap.Data, configMap.Data),
-		cmp.Diff(foundConfigMap.BinaryData, configMap.BinaryData)),
-	)
-
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return r.Update(ctx.Context, configMap)
-	}); err != nil {
-		return false, fmt.Errorf("update ConfigMap %q: %w", configMap.Name, err)
-	}
-
-	return true, nil
-}
-
 func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, replicaID string) (*ctrl.Result, error) {
 	log = log.With("replica_id", replicaID)
 	log.Info("updating replica")
@@ -838,7 +699,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", replicaID, err)
 	}
 
-	configChanged, err := r.updateConfigMap(log, ctx, configMap)
+	configChanged, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.KeeperCluster, configMap, "Data", "BinaryData")
 	if err != nil {
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", replicaID, err)
 	}
