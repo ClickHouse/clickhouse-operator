@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -39,6 +40,15 @@ const (
 	KeeperBaseVersion   = "25.3"
 	KeeperUpdateVersion = "25.5"
 )
+
+var defaultStorage = corev1.PersistentVolumeClaimSpec{
+	AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	Resources: corev1.VolumeResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("1Gi"),
+		},
+	},
+}
 
 var _ = Describe("Keeper controller", func() {
 	DescribeTable("standalone keeper updates", func(specUpdate v1.KeeperClusterSpec) {
@@ -54,6 +64,7 @@ var _ = Describe("Keeper controller", func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
+				DataVolumeClaimSpec: defaultStorage,
 			},
 		}
 		checks := 0
@@ -68,7 +79,7 @@ var _ = Describe("Keeper controller", func() {
 		RWChecks(&cr, &checks)
 
 		By("updating cluster CR")
-		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
@@ -103,6 +114,7 @@ var _ = Describe("Keeper controller", func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
+				DataVolumeClaimSpec: defaultStorage,
 			},
 		}
 		checks := 0
@@ -118,7 +130,7 @@ var _ = Describe("Keeper controller", func() {
 
 		// TODO ensure updates one-by-one
 		By("updating cluster CR")
-		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
@@ -157,6 +169,7 @@ var _ = Describe("Keeper controller", func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
+				DataVolumeClaimSpec: defaultStorage,
 				Settings: v1.KeeperConfig{
 					TLS: v1.ClusterTLSSpec{
 						Enabled:  true,
@@ -224,7 +237,7 @@ func WaitUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
 	By("waiting for cluster to be ready")
 	Eventually(func() bool {
 		var cluster v1.KeeperCluster
-		Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), &cluster)).To(Succeed())
+		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
 		return cluster.Generation == cluster.Status.ObservedGeneration &&
 			cluster.Status.CurrentRevision == cluster.Status.UpdateRevision &&
 			cluster.Status.ReadyReplicas == cluster.Replicas()
@@ -232,7 +245,7 @@ func WaitUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
 }
 
 func RWChecks(cr *v1.KeeperCluster, checksDone *int) {
-	Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
+	Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 	By("connecting to cluster")
 	client, err := utils.NewKeeperClient(ctx, cr)

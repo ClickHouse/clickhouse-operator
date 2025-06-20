@@ -37,6 +37,7 @@ rules:
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhouseclusters
   - keeperclusters
   verbs:
   - create
@@ -49,12 +50,14 @@ rules:
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhouseclusters/finalizers
   - keeperclusters/finalizers
   verbs:
   - update
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhouseclusters/status
   - keeperclusters/status
   verbs:
   - get

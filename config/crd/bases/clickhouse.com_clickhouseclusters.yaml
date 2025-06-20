@@ -4,36 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: keeperclusters.clickhouse.com
+  name: clickhouseclusters.clickhouse.com
 spec:
   group: clickhouse.com
   names:
-    kind: KeeperCluster
-    listKind: KeeperClusterList
-    plural: keeperclusters
-    singular: keepercluster
+    kind: ClickHouseCluster
+    listKind: ClickHouseClusterList
+    plural: clickhouseclusters
+    singular: clickhousecluster
   scope: Namespaced
   versions:
-  - additionalPrinterColumns:
-    - jsonPath: .status.conditions[?(@.type=="Ready")].status
-      name: Ready
-      type: string
-    - jsonPath: .status.conditions[?(@.type=="Ready")].message
-      name: Status
-      type: string
-    - jsonPath: .status.readyReplicas
-      name: ReadyReplicas
-      type: number
-    - jsonPath: .spec.replicas
-      name: Replicas
-      type: number
-    - jsonPath: .metadata.creationTimestamp
-      name: Age
-      type: date
-    name: v1alpha1
+  - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: KeeperCluster is the Schema for the keeperclusters API
+        description: ClickHouseCluster is the Schema for the clickhouseclusters API.
         properties:
           apiVersion:
             description: |-
@@ -53,7 +37,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeeperClusterSpec defines the desired state of KeeperCluster.
+            description: ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
             properties:
               annotations:
                 additionalProperties:
@@ -61,7 +45,7 @@ spec:
                 description: Additional annotations that are added to resources.
                 type: object
               containerTemplate:
-                description: Parameters passed to the Keeper container spec.
+                description: Parameters passed to the ClickHouse container spec.
                 properties:
                   image:
                     description: Image is the container image to be deployed.
@@ -348,6 +332,21 @@ spec:
                       backing this claim.
                     type: string
                 type: object
+              keeperClusterRef:
+                description: Reference to the KeeperCluster that is used for ClickHouse
+                  coordination.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               labels:
                 additionalProperties:
                   type: string
@@ -1581,11 +1580,11 @@ spec:
                 format: int32
                 type: integer
               settings:
-                description: Configuration parameters for ClickHouse Keeper server.
+                description: Configuration parameters for ClickHouse server.
                 properties:
                   extraConfig:
-                    description: Additional ClickHouse Keeper configuration that will
-                      be merged with the default one.
+                    description: Additional ClickHouse configuration that will be
+                      merged with the default one.
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
@@ -1613,7 +1612,7 @@ spec:
                         type: boolean
                     type: object
                   tls:
-                    description: TLS settings, allows to enable TLS settings for Keeper.
+                    description: TLS settings, allows to enable TLS settings for ClickHouse.
                     properties:
                       enabled:
                         default: false
@@ -1644,9 +1643,10 @@ spec:
                 type: object
             required:
             - dataVolumeClaimSpec
+            - keeperClusterRef
             type: object
           status:
-            description: KeeperClusterStatus defines the observed state of KeeperCluster.
+            description: ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
             properties:
               conditions:
                 items:
@@ -1712,7 +1712,7 @@ spec:
                   revision for every replica.
                 type: string
               currentRevision:
-                description: CurrentRevision indicates latest applied KeeperCluster
+                description: CurrentRevision indicates latest applied ClickHouseCluster
                   spec revision.
                 type: string
               observedGeneration:
@@ -1725,17 +1725,12 @@ spec:
                   requests.
                 format: int32
                 type: integer
-              replicas:
-                description: Replicas that should be present in config
-                items:
-                  type: string
-                type: array
               statefulSetRevision:
                 description: StatefulSetRevision indicates target StatefulSet revision
                   for every replica.
                 type: string
               updateRevision:
-                description: CurrentRevision indicates latest requested KeeperCluster
+                description: UpdateRevision indicates latest requested ClickHouseCluster
                   spec revision.
                 type: string
             type: object

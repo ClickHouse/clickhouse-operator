@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	chv1 "github.com/clickhouse-operator/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -38,18 +39,19 @@ type KeeperClusterWebhook struct{}
 var _ webhook.CustomDefaulter = &KeeperClusterWebhook{}
 var _ webhook.CustomValidator = &KeeperClusterWebhook{}
 
-// SetupWebhookWithManager will setup the manager to manage the webhooks.
-func (w *KeeperClusterWebhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
+// SetupKeeperWebhookWithManager registers the webhook for KeeperCluster in the manager.
+func SetupKeeperWebhookWithManager(mgr ctrl.Manager) error {
+	webhook := &KeeperClusterWebhook{}
 	return ctrl.NewWebhookManagedBy(mgr).
-		For(&KeeperCluster{}).
-		WithDefaulter(w).
-		WithValidator(w).
+		For(&chv1.KeeperCluster{}).
+		WithDefaulter(webhook).
+		WithValidator(webhook).
 		Complete()
 }
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the type.
 func (w *KeeperClusterWebhook) Default(ctx context.Context, obj runtime.Object) error {
-	keeperCluster, ok := obj.(*KeeperCluster)
+	keeperCluster, ok := obj.(*chv1.KeeperCluster)
 	if !ok {
 		return fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
 	}
@@ -60,17 +62,17 @@ func (w *KeeperClusterWebhook) Default(ctx context.Context, obj runtime.Object) 
 }
 
 func (w *KeeperClusterWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	return nil, w.validateImpl(obj.(*KeeperCluster))
+	return nil, w.validateImpl(obj.(*chv1.KeeperCluster))
 }
 
 func (w *KeeperClusterWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
-	return nil, w.validateImpl(newObj.(*KeeperCluster))
+	return nil, w.validateImpl(newObj.(*chv1.KeeperCluster))
 }
 
 func (w *KeeperClusterWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
 	return nil, nil
 }
 
-func (w *KeeperClusterWebhook) validateImpl(obj *KeeperCluster) error {
+func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) error {
 	return obj.Spec.Settings.TLS.Validate()
 }

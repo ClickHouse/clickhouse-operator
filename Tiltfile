@@ -32,10 +32,14 @@ k8s_resource(
     objects=[
         "clickhouse-operator-system:Namespace:default",
         "keeperclusters.clickhouse.com:CustomResourceDefinition:default",
+        "clickhouseclusters.clickhouse.com:CustomResourceDefinition:default",
         "clickhouse-operator-controller-manager:ServiceAccount:clickhouse-operator-system",
         "clickhouse-operator-leader-election-role:Role:clickhouse-operator-system",
         "clickhouse-operator-keepercluster-editor-role:ClusterRole:default",
         "clickhouse-operator-keepercluster-viewer-role:ClusterRole:default",
+        "clickhouse-operator-clickhousecluster-admin-role:ClusterRole",
+        "clickhouse-operator-clickhousecluster-editor-role:ClusterRole",
+        "clickhouse-operator-clickhousecluster-viewer-role:ClusterRole",
         "clickhouse-operator-manager-role:ClusterRole:default",
         "clickhouse-operator-metrics-auth-role:ClusterRole:default",
         "clickhouse-operator-metrics-reader:ClusterRole:default",
@@ -43,8 +47,10 @@ k8s_resource(
         "clickhouse-operator-manager-rolebinding:ClusterRoleBinding:default",
         "clickhouse-operator-metrics-auth-rolebinding:ClusterRoleBinding:default",
         "clickhouse-operator-serving-cert:Certificate:clickhouse-operator-system",
+        "clickhouse-operator-metrics-certs:Certificate:clickhouse-operator-system",
         "clickhouse-operator-selfsigned-issuer:Issuer:clickhouse-operator-system",
         "clickhouse-operator-mutating-webhook-configuration:MutatingWebhookConfiguration:default",
+        "clickhouse-operator-validating-webhook-configuration:ValidatingWebhookConfiguration",
     ],
 )
 

@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-logr/zapr"
 
+	"github.com/clickhouse-operator/internal/controller/clickhouse"
+
 	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/clickhouse-operator/internal/util"
 
@@ -41,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
+	whchv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -121,8 +124,24 @@ func main() {
 		os.Exit(1)
 	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = (&clickhousecomv1alpha1.KeeperClusterWebhook{}).SetupWebhookWithManager(mgr); err != nil {
+		if err = whchv1.SetupKeeperWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "KeeperCluster")
+			os.Exit(1)
+		}
+	}
+	if err = (&clickhouse.ClusterReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("clickhouse.ClickHouseCluster"),
+		Logger:   util.NewZapLogger(logger).Named("clickhouse"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClickHouseCluster")
+		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = whchv1.SetupClickHouseWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "ClickHouseCluster")
 			os.Exit(1)
 		}
 	}

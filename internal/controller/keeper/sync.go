@@ -806,7 +806,7 @@ func (r *ClusterReconciler) checkReplicaPodError(log util.Logger, ctx *reconcile
 func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		crdInstance := &v1.KeeperCluster{}
-		if err := r.Reader.Get(ctx.Context, ctx.KeeperCluster.GetNamespacedName(), crdInstance); err != nil {
+		if err := r.Reader.Get(ctx.Context, ctx.KeeperCluster.NamespacedName(), crdInstance); err != nil {
 			return err
 		}
 		preStatus := crdInstance.Status.DeepCopy()

@@ -65,14 +65,14 @@ var _ = Describe("KeeperCluster Controller", func() {
 		It("should create standalone cluster", func() {
 			By("by creating standalone resource CR")
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
-			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 		})
 
 		It("should successfully create all resources of the new cluster", func() {
 			By("reconciling the created resource once")
-			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 			appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{cr.SpecificName()})
 			Expect(err).ToNot(HaveOccurred())
@@ -155,9 +155,9 @@ var _ = Describe("KeeperCluster Controller", func() {
 			updatedCR := cr.DeepCopy()
 			updatedCR.Spec.Settings.Logger.Level = "warning"
 			Expect(k8sClient.Update(ctx, updatedCR)).To(Succeed())
-			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
 			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
@@ -167,14 +167,14 @@ var _ = Describe("KeeperCluster Controller", func() {
 
 		It("should merge extra config in configmap", func() {
 			updatedCR := cr.DeepCopy()
-			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 			reconcileStatefulSets(updatedCR)
 			updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
 			Expect(k8sClient.Update(ctx, updatedCR)).To(Succeed())
-			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.GetNamespacedName()})
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(k8sClient.Get(ctx, cr.GetNamespacedName(), updatedCR)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
 			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))

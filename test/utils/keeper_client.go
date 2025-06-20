@@ -57,7 +57,7 @@ func NewKeeperClient(ctx context.Context, cr *v1.KeeperCluster) (*KeeperClient, 
 	conn, _, err := zk.Connect(addrs, 5*time.Second, zk.WithLogger(zkLogger{}), zk.WithDialer(dialer))
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("connecting to zk %v failed: %w", cr.GetNamespacedName(), err)
+		return nil, fmt.Errorf("connecting to zk %v failed: %w", cr.NamespacedName(), err)
 	}
 
 	return &KeeperClient{

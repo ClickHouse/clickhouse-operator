@@ -1,0 +1,10 @@
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: clickhouse-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: clickhousecluster-sample
+spec:
+  keeperClusterRef:
+    name: test-keeper-cluster

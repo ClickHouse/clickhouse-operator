@@ -25,3 +25,10 @@ resources:
 - keepercluster_editor_role.yaml
 - keepercluster_viewer_role.yaml
 
+# For each CRD, "Admin", "Editor" and "Viewer" roles are scaffolded by
+# default, aiding admins in cluster management. Those roles are
+# not used by the {{ .ProjectName }} itself. You can comment the following lines
+# if you do not want those helpers be installed with your Project.
+- clickhousecluster_admin_role.yaml
+- clickhousecluster_editor_role.yaml
+- clickhousecluster_viewer_role.yaml

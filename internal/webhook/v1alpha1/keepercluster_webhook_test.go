@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	chv1 "github.com/clickhouse-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -30,26 +31,26 @@ var _ = Describe("KeeperCluster Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func() {
 			By("Setting the default value")
 
-			keeperCluster := &KeeperCluster{
+			keeperCluster := &chv1.KeeperCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-keeper-default",
 				},
-				Spec: KeeperClusterSpec{},
+				Spec: chv1.KeeperClusterSpec{},
 			}
 			Expect(k8sClient.Create(ctx, keeperCluster)).Should(Succeed())
-			Expect(k8sClient.Get(ctx, keeperCluster.GetNamespacedName(), keeperCluster)).Should(Succeed())
+			Expect(k8sClient.Get(ctx, keeperCluster.NamespacedName(), keeperCluster)).Should(Succeed())
 
-			Expect(keeperCluster.Spec.ContainerTemplate.Image.Repository).Should(Equal(DefaultKeeperContainerRepository))
+			Expect(keeperCluster.Spec.ContainerTemplate.Image.Repository).Should(Equal(chv1.DefaultKeeperContainerRepository))
 			Expect(keeperCluster.Spec.ContainerTemplate.Resources.Limits).Should(Equal(corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPULimit),
-				corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryLimit),
+				corev1.ResourceCPU:    resource.MustParse(chv1.DefaultKeeperCPULimit),
+				corev1.ResourceMemory: resource.MustParse(chv1.DefaultKeeperMemoryLimit),
 			}))
 		})
 	})
 
 	Context("When creating KeeperCluster under Validating Webhook", func() {
-		keeperCluster := &KeeperCluster{
+		keeperCluster := &chv1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",
 				Name:      "test-keeper-validate",
@@ -58,7 +59,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 
 		It("Should check TLS enabled if required", func() {
 			By("Rejecting wrong settings")
-			keeperCluster.Spec.Settings.TLS = ClusterTLSSpec{
+			keeperCluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled:  false,
 				Required: true,
 			}
@@ -70,7 +71,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 
 		It("Should check certificate passed if TLS enabled", func() {
 			By("Rejecting wrong settings")
-			keeperCluster.Spec.Settings.TLS = ClusterTLSSpec{
+			keeperCluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled: true,
 			}
 

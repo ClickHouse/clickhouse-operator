@@ -83,15 +83,6 @@ func (s *KeeperClusterSpec) WithDefaults() {
 				},
 			},
 		},
-
-		DataVolumeClaimSpec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
-				},
-			},
-		},
 	}
 
 	if err := util.ApplyDefault(s, defaultSpec); err != nil {
@@ -133,7 +124,7 @@ type KeeperClusterStatus struct {
 	// ConfigurationRevision indicates target configuration revision for every replica.
 	ConfigurationRevision string `json:"configurationRevision,omitempty"`
 	// StatefulSetRevision indicates target StatefulSet revision for every replica.
-	StatefulSetRevision string `json:"StatefulSetRevision,omitempty"`
+	StatefulSetRevision string `json:"statefulSetRevision,omitempty"`
 
 	// CurrentRevision indicates latest applied KeeperCluster spec revision.
 	CurrentRevision string `json:"currentRevision,omitempty"`
@@ -161,7 +152,7 @@ type KeeperCluster struct {
 	Status KeeperClusterStatus `json:"status,omitempty"`
 }
 
-func (v *KeeperCluster) GetNamespacedName() types.NamespacedName {
+func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: v.Namespace,
 		Name:      v.Name,
