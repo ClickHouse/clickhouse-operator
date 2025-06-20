@@ -3,13 +3,16 @@ package utils
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"syscall"
 	"time"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/go-zookeeper/zk"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
 )
@@ -39,7 +42,19 @@ func NewKeeperClient(ctx context.Context, cr *v1.KeeperCluster) (*KeeperClient, 
 		return nil, fmt.Errorf("forwarding zk nodes failed: %w", err)
 	}
 
-	conn, _, err := zk.Connect(addrs, 5*time.Second, zk.WithLogger(zkLogger{}))
+	var dialer zk.Dialer = func(network, address string, timeout time.Duration) (net.Conn, error) {
+		if !cr.Spec.Settings.TLS.Required {
+			return net.DialTimeout(network, address, timeout)
+		}
+
+		timeCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		//nolint:gosec // Test certs are self signed, so we skip verification.
+		dial := tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true}}
+		return dial.DialContext(timeCtx, network, address)
+	}
+
+	conn, _, err := zk.Connect(addrs, 5*time.Second, zk.WithLogger(zkLogger{}), zk.WithDialer(dialer))
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("connecting to zk %v failed: %w", cr.GetNamespacedName(), err)
@@ -95,6 +110,11 @@ func forwardNodes(ctx context.Context, cr *v1.KeeperCluster) ([]string, []*exec.
 	keeperAddrs := make([]string, 0, cr.Replicas())
 	keeperCmds := make([]*exec.Cmd, 0, len(keeperAddrs))
 
+	keeperPort := keeper.PortNative
+	if cr.Spec.Settings.TLS.Required {
+		keeperPort = keeper.PortNativeSecure
+	}
+
 	for _, id := range cr.Status.Replicas {
 		pod := fmt.Sprintf("%s-0", cr.StatefulSetNameByReplicaID(id))
 		port, err := GetFreePort()
@@ -103,7 +123,7 @@ func forwardNodes(ctx context.Context, cr *v1.KeeperCluster) ([]string, []*exec.
 		}
 
 		keeperAddrs = append(keeperAddrs, fmt.Sprintf("127.0.0.1:%d", port))
-		cmd := exec.CommandContext(ctx, "kubectl", "port-forward", pod, fmt.Sprintf("%d:2181", port),
+		cmd := exec.CommandContext(ctx, "kubectl", "port-forward", pod, fmt.Sprintf("%d:%d", port, keeperPort),
 			"--namespace", cr.Namespace)
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		keeperCmds = append(keeperCmds, cmd)
