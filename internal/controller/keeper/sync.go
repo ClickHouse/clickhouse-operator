@@ -428,7 +428,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 	checkCtx, cancel := context.WithTimeout(ctx.Context, StatusRequestTimeout)
 	defer cancel()
 
-	for id, state := range getServersStates(checkCtx, log, hostnamesByID) {
+	for id, state := range getServersStates(checkCtx, log, hostnamesByID, ctx.KeeperCluster.Spec.Settings.TLS.Required) {
 		replica := ctx.stateByID[id]
 		replica.Status = state
 		ctx.stateByID[id] = replica

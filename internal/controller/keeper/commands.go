@@ -3,13 +3,13 @@ package keeper
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/clickhouse-operator/internal/util"
 )
@@ -40,12 +40,28 @@ func (c Connections) Close() {
 	}
 }
 
-func getConnections(ctx context.Context, log util.Logger, hostnamesByID map[string]string) (Connections, []error) {
+type dialer interface {
+	DialContext(ctx context.Context, network, address string) (net.Conn, error)
+}
+
+func getConnections(ctx context.Context, log util.Logger, hostnamesByID map[string]string, tlsRequired bool) (Connections, []error) {
+	var d dialer = &net.Dialer{}
+	port := PortNative
+	if tlsRequired {
+		d = &tls.Dialer{
+			NetDialer: &net.Dialer{},
+			Config: &tls.Config{
+				//nolint:gosec // User manged certificate may be outdated or issued for other hostnames.
+				InsecureSkipVerify: true,
+			},
+		}
+		port = PortNativeSecure
+	}
+
 	result := Connections{}
 	var connErrs []error
 	for id, host := range hostnamesByID {
-		d := net.Dialer{Timeout: time.Second * 10}
-		conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, PortNative))
+		conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, port))
 		if err != nil {
 			connErrs = append(connErrs, fmt.Errorf("connect to %s: %w", host, err))
 			continue
@@ -167,8 +183,8 @@ func queryAllPods(ctx context.Context, log util.Logger, connections Connections)
 	return result
 }
 
-func getServersStates(ctx context.Context, log util.Logger, hostnamesByID map[string]string) map[string]ServerStatus {
-	connections, errs := getConnections(ctx, log, hostnamesByID)
+func getServersStates(ctx context.Context, log util.Logger, hostnamesByID map[string]string, tlsRequired bool) map[string]ServerStatus {
+	connections, errs := getConnections(ctx, log, hostnamesByID, tlsRequired)
 	for _, err := range errs {
 		log.Info("error getting keeper connection", "error", err)
 	}

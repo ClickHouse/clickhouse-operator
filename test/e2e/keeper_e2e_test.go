@@ -18,14 +18,18 @@ package e2e
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
+	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	mcertv1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -136,6 +140,80 @@ var _ = Describe("Keeper controller", func() {
 		Entry("scale up to 5 replicas", 3, v1.KeeperClusterSpec{Replicas: ptr.To[int32](5)}),
 		Entry("scale down to 3 replicas", 5, v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
 	)
+
+	Describe("secure keeper cluster", func() {
+		suffix := rand.Uint32()
+		certName := fmt.Sprintf("keeper-cert-%d", suffix)
+
+		cr := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](3),
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+				},
+				Settings: v1.KeeperConfig{
+					TLS: v1.ClusterTLSSpec{
+						Enabled:  true,
+						Required: true,
+						ServerCertSecret: &corev1.LocalObjectReference{
+							Name: certName,
+						},
+					},
+				},
+			},
+		}
+
+		issuer := &certv1.Issuer{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-test-issuer-%d", suffix),
+			},
+			Spec: certv1.IssuerSpec{
+				IssuerConfig: certv1.IssuerConfig{
+					SelfSigned: &certv1.SelfSignedIssuer{},
+				},
+			},
+		}
+
+		var hostnames []string
+		for i := 0; i < int(cr.Replicas()); i++ {
+			hostnames = append(hostnames, cr.HostnameById(strconv.Itoa(i)))
+		}
+
+		cert := &certv1.Certificate{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
+			},
+			Spec: certv1.CertificateSpec{
+				IssuerRef: mcertv1.ObjectReference{
+					Kind: "Issuer",
+					Name: issuer.Name,
+				},
+				DNSNames:   hostnames,
+				SecretName: certName,
+			},
+		}
+
+		It("should create secure cluster", func() {
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, cert)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, issuer)).To(Succeed())
+			})
+
+			Expect(k8sClient.Create(ctx, issuer)).To(Succeed())
+			Expect(k8sClient.Create(ctx, cert)).To(Succeed())
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			WaitUpdatedAndReady(&cr, 2*time.Minute)
+		})
+	})
 })
 
 func WaitUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {

@@ -1612,6 +1612,35 @@ spec:
                         description: If false then disable all logging to file.
                         type: boolean
                     type: object
+                  tls:
+                    description: TLS settings, allows to enable TLS settings for Keeper.
+                    properties:
+                      enabled:
+                        default: false
+                        description: Enabled indicates whether TLS is enabled, determining
+                          if secure ports should be opened.
+                        type: boolean
+                      required:
+                        default: false
+                        description: Required specifies whether TLS must be enforced
+                          for all connections. Disables not secure ports.
+                        type: boolean
+                      serverCertSecret:
+                        description: ServerCertSecretRef is a reference to a TLS Secret
+                          containing the server certificate.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
                 type: object
             required:
             - dataVolumeClaimSpec

@@ -104,6 +104,10 @@ type KeeperConfig struct {
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
 
+	// TLS settings, allows to enable TLS settings for Keeper.
+	// +optional
+	TLS ClusterTLSSpec `json:"tls,omitempty"`
+
 	// Additional ClickHouse Keeper configuration that will be merged with the default one.
 	// +nullable
 	// +optional

@@ -127,3 +127,34 @@ type ContainerTemplateSpec struct {
 
 type StatefulSetTemplateSpec struct {
 }
+
+// ClusterTLSSpec defines cluster TLS configuration.
+type ClusterTLSSpec struct {
+	// Enabled indicates whether TLS is enabled, determining if secure ports should be opened.
+	// +kubebuilder:default:=false
+	// +optional
+	Enabled bool `json:"enabled"`
+	// Required specifies whether TLS must be enforced for all connections. Disables not secure ports.
+	// +kubebuilder:default:=false
+	// +optional
+	Required bool `json:"required,omitempty"`
+	// ServerCertSecretRef is a reference to a TLS Secret containing the server certificate.
+	// +optional
+	ServerCertSecret *corev1.LocalObjectReference `json:"serverCertSecret,omitempty"`
+}
+
+func (s *ClusterTLSSpec) Validate() error {
+	if !s.Enabled {
+		if s.Required {
+			return fmt.Errorf("TLS cannot be required if it is not enabled")
+		}
+
+		return nil
+	}
+
+	if s.ServerCertSecret == nil || s.ServerCertSecret.Name == "" {
+		return fmt.Errorf("serverCertSecret must be specified when TLS is enabled")
+	}
+
+	return nil
+}

@@ -33,7 +33,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			keeperCluster := &KeeperCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
-					Name:      "test-keeper",
+					Name:      "test-keeper-default",
 				},
 				Spec: KeeperClusterSpec{},
 			}
@@ -48,4 +48,35 @@ var _ = Describe("KeeperCluster Webhook", func() {
 		})
 	})
 
+	Context("When creating KeeperCluster under Validating Webhook", func() {
+		keeperCluster := &KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "test-keeper-validate",
+			},
+		}
+
+		It("Should check TLS enabled if required", func() {
+			By("Rejecting wrong settings")
+			keeperCluster.Spec.Settings.TLS = ClusterTLSSpec{
+				Enabled:  false,
+				Required: true,
+			}
+
+			err := k8sClient.Create(ctx, keeperCluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("TLS cannot be required"))
+		})
+
+		It("Should check certificate passed if TLS enabled", func() {
+			By("Rejecting wrong settings")
+			keeperCluster.Spec.Settings.TLS = ClusterTLSSpec{
+				Enabled: true,
+			}
+
+			err := k8sClient.Create(ctx, keeperCluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("serverCertSecret must be specified"))
+		})
+	})
 })

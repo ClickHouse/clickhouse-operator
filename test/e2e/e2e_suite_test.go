@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -60,8 +61,8 @@ var _ = BeforeSuite(func() {
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = clickhousecomv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(clickhousecomv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+	Expect(certv1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 

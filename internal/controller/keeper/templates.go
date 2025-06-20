@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -20,23 +21,29 @@ import (
 func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	ports := []corev1.ServicePort{
 		{
-			Protocol:   "TCP",
-			Name:       "keeper",
-			Port:       PortNative,
-			TargetPort: intstr.FromInt32(PortNative),
-		},
-		{
-			Protocol:   "TCP",
-			Name:       "keeper-secure",
-			Port:       PortNativeSecure,
-			TargetPort: intstr.FromInt32(PortNativeSecure),
-		},
-		{
-			Protocol:   "TCP",
+			Protocol:   corev1.ProtocolTCP,
 			Name:       "raft-ipc",
 			Port:       PortInterserver,
 			TargetPort: intstr.FromInt32(PortInterserver),
 		},
+	}
+
+	if cr.Spec.Settings.TLS.Enabled {
+		if !cr.Spec.Settings.TLS.Required {
+			ports = append(ports, corev1.ServicePort{
+				Protocol:   corev1.ProtocolTCP,
+				Name:       "keeper",
+				Port:       PortNative,
+				TargetPort: intstr.FromInt32(PortNative),
+			})
+		}
+
+		ports = append(ports, corev1.ServicePort{
+			Protocol:   corev1.ProtocolTCP,
+			Name:       "keeper-secure",
+			Port:       PortNativeSecure,
+			TargetPort: intstr.FromInt32(PortNativeSecure),
+		})
 	}
 
 	return &corev1.Service{
@@ -166,6 +173,9 @@ type Config struct {
 	Logger       LoggerConfig     `yaml:"logger"`
 	Prometheus   PrometheusConfig `yaml:"prometheus"`
 	KeeperServer KeeperServer     `yaml:"keeper_server"`
+	OpenSSL      struct {
+		Server map[string]any `yaml:"server"`
+	} `yaml:"openSSL,omitempty"`
 }
 
 type LoggerConfig struct {
@@ -189,14 +199,20 @@ type PrometheusConfig struct {
 	AsynchronousMetrics bool   `yaml:"asynchronous_metrics"`
 }
 
+type HTTPControl struct {
+	Port uint16 `yaml:"port"`
+}
+
 type KeeperServer struct {
-	TcpPort              uint16         `yaml:"tcp_port"`
+	TcpPort              uint16         `yaml:"tcp_port,omitempty"`
+	TcpPortSecure        uint16         `yaml:"tcp_port_secure,omitempty"`
 	ServerID             string         `yaml:"server_id"`
 	StoragePath          string         `yaml:"storage_path"`
 	DigestEnabled        bool           `yaml:"digest_enabled"`
 	LogStoragePath       string         `yaml:"log_storage_path"`
 	SnapshotStoragePath  string         `yaml:"snapshot_storage_path"`
 	CoordinationSettings map[string]any `yaml:"coordination_settings"`
+	HTTPControl          HTTPControl    `yaml:"http_control"`
 }
 
 func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
@@ -252,11 +268,6 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.StatefulSet {
 	volumes, volumeMounts := buildVolumes(cr, replicaID)
 
-	expectedState := "standalone"
-	if len(cr.Status.Replicas) > 1 {
-		expectedState = "leader\\|follower"
-	}
-
 	keeperContainer := corev1.Container{
 		Name:            ContainerName,
 		Image:           cr.Spec.ContainerTemplate.Image.String(),
@@ -270,22 +281,12 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 		},
 		Ports: []corev1.ContainerPort{
 			{
-				Protocol:      "TCP",
-				Name:          "keeper",
-				ContainerPort: PortNative,
-			},
-			{
-				Protocol:      "TCP",
-				Name:          "keeper-secure",
-				ContainerPort: PortNativeSecure,
-			},
-			{
-				Protocol:      "TCP",
+				Protocol:      corev1.ProtocolTCP,
 				Name:          "raft-ipc",
 				ContainerPort: PortInterserver,
 			},
 			{
-				Protocol:      "TCP",
+				Protocol:      corev1.ProtocolTCP,
 				Name:          "prometheus",
 				ContainerPort: PortPrometheusScrape,
 			},
@@ -297,7 +298,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 					Command: []string{
 						"/bin/bash",
 						"-c",
-						fmt.Sprintf("echo 'mntr' | nc 127.0.0.1 -w 4 %d | grep -e 'zk_server_state\\t\\(%s\\)';", PortNative, expectedState),
+						fmt.Sprintf("wget -qO- http://127.0.0.1:%d/ready | grep -o '\"status\":\"ok\"'", PortHTTPControl),
 					},
 				},
 			},
@@ -332,6 +333,21 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
 			},
 		},
+	}
+
+	if cr.Spec.Settings.TLS.Enabled {
+		if !cr.Spec.Settings.TLS.Required {
+			keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "keeper",
+				ContainerPort: PortNative,
+			})
+		}
+		keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          "keeper-secure",
+			ContainerPort: PortNativeSecure,
+		})
 	}
 
 	spec := appsv1.StatefulSetSpec{
@@ -439,6 +455,9 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 				"raft_logs_level": "trace",
 				"compress_logs":   false,
 			},
+			HTTPControl: HTTPControl{
+				Port: PortHTTPControl,
+			},
 		},
 	}
 
@@ -455,6 +474,22 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 		config.Logger.ErrorLog = LogPath + "clickhouse-keeper.err.log"
 		config.Logger.Size = "1000M"
 		config.Logger.Count = 50
+	}
+
+	if cr.Spec.Settings.TLS.Enabled {
+		if cr.Spec.Settings.TLS.Required {
+			config.KeeperServer.TcpPort = 0
+		}
+
+		config.KeeperServer.TcpPortSecure = PortNativeSecure
+		config.OpenSSL.Server = map[string]any{
+			"certificateFile":     path.Join(TLSConfigPath, CertificateFilename),
+			"privateKeyFile":      path.Join(TLSConfigPath, KeyFilename),
+			"caConfig":            path.Join(TLSConfigPath, CABundleFilename),
+			"verificationMode":    "relaxed",
+			"disableProtocols":    "sslv2,sslv3",
+			"preferServerCiphers": true,
+		}
 	}
 
 	yamlConfig, err := yaml.Marshal(config)
@@ -486,10 +521,12 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 		{
 			Name:      QuorumConfigVolumeName,
 			MountPath: QuorumConfigPath,
+			ReadOnly:  true,
 		},
 		{
 			Name:      ConfigVolumeName,
 			MountPath: ConfigPath,
+			ReadOnly:  true,
 		},
 		{
 			Name:      PersistentVolumeName,
@@ -533,6 +570,29 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 				},
 			},
 		},
+	}
+
+	if cr.Spec.Settings.TLS.Enabled {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      TLSVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: TLSVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
+					DefaultMode: &TLSFileMode,
+					Items: []corev1.KeyToPath{
+						{Key: "ca.crt", Path: CABundleFilename},
+						{Key: "tls.crt", Path: CertificateFilename},
+						{Key: "tls.key", Path: KeyFilename},
+					},
+				},
+			},
+		})
 	}
 
 	return volumes, volumeMounts

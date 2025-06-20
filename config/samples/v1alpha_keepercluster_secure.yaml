@@ -1,0 +1,47 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/name: keeper-cert-issuer
+    app.kubernetes.io/managed-by: kustomize
+  name: db-issuer
+  namespace: default
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/name: keeper-cert
+    app.kubernetes.io/managed-by: kustomize
+  name: keeper-cert
+  namespace: default
+spec:
+  dnsNames:
+    - test-keeper-cluster-keeper-0-0.test-keeper-cluster-keeper-headless.default.svc
+    - test-keeper-cluster-keeper-0-0.test-keeper-cluster-keeper-headless.default.svc.cluster.local
+    - test-keeper-cluster-keeper-1-0.test-keeper-cluster-keeper-headless.default.svc
+    - test-keeper-cluster-keeper-1-0.test-keeper-cluster-keeper-headless.default.svc.cluster.local
+    - test-keeper-cluster-keeper-2-0.test-keeper-cluster-keeper-headless.default.svc
+    - test-keeper-cluster-keeper-2-0.test-keeper-cluster-keeper-headless.default.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: db-issuer
+  secretName: keeper-cert
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: clickhouse-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: test-keeper-cluster
+spec:
+  replicas: 3
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert

@@ -24,22 +24,26 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
 var keeperWebhookLog = logf.Log.WithName("keeper-webhook")
 
 // +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-keepercluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=mkeepercluster.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-keepercluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=vkeepercluster.kb.io,admissionReviewVersions=v1
 
 type KeeperClusterWebhook struct{}
 
 var _ webhook.CustomDefaulter = &KeeperClusterWebhook{}
+var _ webhook.CustomValidator = &KeeperClusterWebhook{}
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks.
 func (w *KeeperClusterWebhook) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(&KeeperCluster{}).
 		WithDefaulter(w).
+		WithValidator(w).
 		Complete()
 }
 
@@ -53,4 +57,20 @@ func (w *KeeperClusterWebhook) Default(ctx context.Context, obj runtime.Object) 
 	keeperWebhookLog.Info("default", "name", keeperCluster.Name, "namespace", keeperCluster.Namespace)
 	keeperCluster.Spec.WithDefaults()
 	return nil
+}
+
+func (w *KeeperClusterWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	return nil, w.validateImpl(obj.(*KeeperCluster))
+}
+
+func (w *KeeperClusterWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
+	return nil, w.validateImpl(newObj.(*KeeperCluster))
+}
+
+func (w *KeeperClusterWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	return nil, nil
+}
+
+func (w *KeeperClusterWebhook) validateImpl(obj *KeeperCluster) error {
+	return obj.Spec.Settings.TLS.Validate()
 }
