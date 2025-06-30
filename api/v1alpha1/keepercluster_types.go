@@ -159,6 +159,10 @@ func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+func (v *KeeperCluster) Conditions() *[]metav1.Condition {
+	return &v.Status.Conditions
+}
+
 func (v *KeeperCluster) SpecificName() string {
 	return fmt.Sprintf("%s-keeper", v.GetName())
 }

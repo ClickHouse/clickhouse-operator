@@ -30,6 +30,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -44,6 +46,14 @@ const (
 var ctx context.Context
 var cancel context.CancelFunc
 var k8sClient client.Client
+var defaultStorage = corev1.PersistentVolumeClaimSpec{
+	AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	Resources: corev1.VolumeResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("1Gi"),
+		},
+	},
+}
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {

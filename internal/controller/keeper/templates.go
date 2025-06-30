@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/imdario/mergo"
 	"gopkg.in/yaml.v2"
@@ -28,16 +29,16 @@ func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 		},
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
-		if !cr.Spec.Settings.TLS.Required {
-			ports = append(ports, corev1.ServicePort{
-				Protocol:   corev1.ProtocolTCP,
-				Name:       "keeper",
-				Port:       PortNative,
-				TargetPort: intstr.FromInt32(PortNative),
-			})
-		}
+	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
+		ports = append(ports, corev1.ServicePort{
+			Protocol:   corev1.ProtocolTCP,
+			Name:       "keeper",
+			Port:       PortNative,
+			TargetPort: intstr.FromInt32(PortNative),
+		})
+	}
 
+	if cr.Spec.Settings.TLS.Enabled {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:   corev1.ProtocolTCP,
 			Name:       "keeper-secure",
@@ -168,35 +169,12 @@ func generateQuorumConfig(cr *v1.KeeperCluster) QuorumConfig {
 }
 
 type Config struct {
-	ListenHost   string           `yaml:"listen_host"`
-	Path         string           `yaml:"path"`
-	Logger       LoggerConfig     `yaml:"logger"`
-	Prometheus   PrometheusConfig `yaml:"prometheus"`
-	KeeperServer KeeperServer     `yaml:"keeper_server"`
-	OpenSSL      struct {
-		Server map[string]any `yaml:"server"`
-	} `yaml:"openSSL,omitempty"`
-}
-
-type LoggerConfig struct {
-	Console    bool   `yaml:"console"`
-	Level      string `yaml:"level"`
-	Formatting struct {
-		Type string `yaml:"type"`
-	} `yaml:"formatting,omitempty"`
-	// File logging settings
-	Log      string `yaml:"log,omitempty"`
-	ErrorLog string `yaml:"errorlog,omitempty"`
-	Size     string `yaml:"size,omitempty"`
-	Count    int64  `yaml:"count,omitempty"`
-}
-
-type PrometheusConfig struct {
-	Endpoint            string `yaml:"endpoint"`
-	Port                uint16 `yaml:"port"`
-	Metrics             bool   `yaml:"metrics"`
-	Events              bool   `yaml:"events"`
-	AsynchronousMetrics bool   `yaml:"asynchronous_metrics"`
+	ListenHost   string                      `yaml:"listen_host"`
+	Path         string                      `yaml:"path"`
+	Logger       controller.LoggerConfig     `yaml:"logger"`
+	Prometheus   controller.PrometheusConfig `yaml:"prometheus"`
+	KeeperServer KeeperServer                `yaml:"keeper_server"`
+	OpenSSL      controller.OpenSSLConfig    `yaml:"openSSL"`
 }
 
 type HTTPControl struct {
@@ -204,8 +182,8 @@ type HTTPControl struct {
 }
 
 type KeeperServer struct {
-	TcpPort              uint16         `yaml:"tcp_port,omitempty"`
-	TcpPortSecure        uint16         `yaml:"tcp_port_secure,omitempty"`
+	TCPPort              uint16         `yaml:"tcp_port,omitempty"`
+	TCPPortSecure        uint16         `yaml:"tcp_port_secure,omitempty"`
 	ServerID             string         `yaml:"server_id"`
 	StoragePath          string         `yaml:"storage_path"`
 	DigestEnabled        bool           `yaml:"digest_enabled"`
@@ -276,7 +254,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 		Env: []corev1.EnvVar{
 			{
 				Name:  "KEEPER_CONFIG",
-				Value: "/etc/clickhouse-keeper/config.yaml",
+				Value: QuorumConfigPath + QuorumConfigFileName,
 			},
 		},
 		Ports: []corev1.ContainerPort{
@@ -335,14 +313,15 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 		},
 	}
 
+	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
+		keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          "keeper",
+			ContainerPort: PortNative,
+		})
+	}
+
 	if cr.Spec.Settings.TLS.Enabled {
-		if !cr.Spec.Settings.TLS.Required {
-			keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "keeper",
-				ContainerPort: PortNative,
-			})
-		}
 		keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
 			Name:          "keeper-secure",
@@ -433,19 +412,10 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 	config := Config{
 		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
-		Prometheus: PrometheusConfig{
-			Endpoint:            "/metrics",
-			Port:                PortPrometheusScrape,
-			Metrics:             true,
-			Events:              true,
-			AsynchronousMetrics: true,
-		},
-		Logger: LoggerConfig{
-			Console: true,
-			Level:   "trace",
-		},
+		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
+		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),
 		KeeperServer: KeeperServer{
-			TcpPort:             PortNative,
+			TCPPort:             PortNative,
 			ServerID:            replicaID,
 			StoragePath:         BaseDataPath,
 			DigestEnabled:       true,
@@ -461,34 +431,21 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 		},
 	}
 
-	if cr.Spec.Settings.Logger.JSONLogs {
-		config.Logger.Formatting.Type = "json"
-	}
-
-	if cr.Spec.Settings.Logger.Level != "" {
-		config.Logger.Level = cr.Spec.Settings.Logger.Level
-	}
-
-	if cr.Spec.Settings.Logger.LogToFile {
-		config.Logger.Log = LogPath + "clickhouse-keeper.log"
-		config.Logger.ErrorLog = LogPath + "clickhouse-keeper.err.log"
-		config.Logger.Size = "1000M"
-		config.Logger.Count = 50
-	}
-
 	if cr.Spec.Settings.TLS.Enabled {
 		if cr.Spec.Settings.TLS.Required {
-			config.KeeperServer.TcpPort = 0
+			config.KeeperServer.TCPPort = 0
 		}
 
-		config.KeeperServer.TcpPortSecure = PortNativeSecure
-		config.OpenSSL.Server = map[string]any{
-			"certificateFile":     path.Join(TLSConfigPath, CertificateFilename),
-			"privateKeyFile":      path.Join(TLSConfigPath, KeyFilename),
-			"caConfig":            path.Join(TLSConfigPath, CABundleFilename),
-			"verificationMode":    "relaxed",
-			"disableProtocols":    "sslv2,sslv3",
-			"preferServerCiphers": true,
+		config.KeeperServer.TCPPortSecure = PortNativeSecure
+		config.OpenSSL = controller.OpenSSLConfig{
+			Server: controller.OpenSSLParams{
+				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
+				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
+				CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
+				VerificationMode:    "relaxed",
+				DisableProtocols:    "sslv2,sslv3",
+				PreferServerCiphers: true,
+			},
 		}
 	}
 

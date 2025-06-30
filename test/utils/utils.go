@@ -17,13 +17,24 @@ limitations under the License.
 package utils
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
+	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
+	. "github.com/onsi/gomega"    //nolint:golint,revive,staticcheck
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -142,4 +153,175 @@ func GetFreePort() (int, error) {
 		return 0, err
 	}
 	return l.Addr().(*net.TCPAddr).Port, l.Close()
+}
+
+func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) error {
+	var pods corev1.PodList
+	for {
+		if err := k8sClient.List(ctx, &pods,
+			client.InNamespace(namespace), client.MatchingLabels{util.LabelAppKey: app}); err != nil {
+			return fmt.Errorf("list app=%s pods failed: %w", app, err)
+		}
+		if len(pods.Items) == replicas {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for %d replicas of %s, got %d", replicas, app, len(pods.Items))
+		case <-time.After(time.Second):
+			continue
+		}
+	}
+}
+
+type ForwardedCluster struct {
+	PodToAddr map[string]string
+	cancel    context.CancelFunc
+	cmds      []*exec.Cmd
+}
+
+func NewForwardedCluster(ctx context.Context, k8sClient client.Client,
+	namespace, app string, port uint16,
+) (*ForwardedCluster, error) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	cluster := &ForwardedCluster{
+		cancel: cancel,
+	}
+	if err := cluster.forwardNodes(ctx, k8sClient, namespace, app, port); err != nil {
+		cancel()
+		return nil, fmt.Errorf("forwarding nodes failed: %w", err)
+	}
+
+	return cluster, nil
+}
+
+func (c *ForwardedCluster) Close() {
+	c.cancel()
+	for _, cmd := range c.cmds {
+		if err := cmd.Wait(); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "wait port forward to finish: %s\n", err)
+		}
+	}
+}
+
+func (c *ForwardedCluster) forwardNodes(ctx context.Context, k8sClient client.Client,
+	namespace, app string, servicePort uint16,
+) error {
+	var pods corev1.PodList
+	if err := k8sClient.List(ctx, &pods,
+		client.InNamespace(namespace),
+		client.MatchingLabels{util.LabelAppKey: app}); err != nil {
+		return fmt.Errorf("list app=%s pods failed: %w", app, err)
+	}
+
+	c.PodToAddr = make(map[string]string, len(pods.Items))
+	c.cmds = make([]*exec.Cmd, 0, len(pods.Items))
+
+	for _, pod := range pods.Items {
+		port, err := GetFreePort()
+		if err != nil {
+			return fmt.Errorf("failed to get free port: %w", err)
+		}
+
+		c.PodToAddr[pod.Name] = fmt.Sprintf("127.0.0.1:%d", port)
+
+		cmd := exec.CommandContext(ctx, "kubectl", "port-forward", pod.Name, fmt.Sprintf("%d:%d", port, servicePort),
+			"--namespace", namespace)
+		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+		c.cmds = append(c.cmds, cmd)
+		_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", strings.Join(cmd.Args, " "))
+
+		stderr, err := cmd.StderrPipe()
+		if err != nil {
+			return fmt.Errorf("fail to create stderr pipe for port forward to pod %q: %w", pod.Name, err)
+		}
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("fail to create stdout pipe for port forward to pod %q: %w", pod.Name, err)
+		}
+
+		if err = cmd.Start(); err != nil {
+			return fmt.Errorf("fail to create port forward to pod %q: %w", pod.Name, err)
+		}
+
+		data, err := bufio.NewReader(stdout).ReadString('\n') // Wait the port forward to report it started
+		if err != nil {
+			return fmt.Errorf("fail to read to from pod %q port forward stdout: %w", pod.Name, err)
+		}
+
+		if !strings.HasPrefix(data, "Forwarding from") {
+			stderrData, _ := bufio.NewReader(stderr).ReadString('\n')
+			return fmt.Errorf("unexpected output from pod %q port forward: stdout: %q, stderr %q",
+				pod.Name, data, stderrData)
+		}
+	}
+
+	return nil
+}
+
+func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suffix uint32) {
+	ssIssuer := certv1.ClusterIssuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("issuer-%d", suffix),
+		},
+		Spec: certv1.IssuerSpec{
+			IssuerConfig: certv1.IssuerConfig{
+				SelfSigned: &certv1.SelfSignedIssuer{},
+			},
+		},
+	}
+	By("creating self-signed issuer")
+	Expect(k8sClient.Create(ctx, &ssIssuer)).To(Succeed())
+	DeferCleanup(func() {
+		if err := k8sClient.Delete(ctx, &ssIssuer); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete self-signed issuer: %v\n", err)
+		}
+	})
+
+	caCert := certv1.Certificate{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("ca-cert-%d", suffix),
+		},
+		Spec: certv1.CertificateSpec{
+			IssuerRef: cmmeta.ObjectReference{
+				Kind: "ClusterIssuer",
+				Name: ssIssuer.Name,
+			},
+			IsCA:       true,
+			CommonName: fmt.Sprintf("ca-cert-%d", suffix),
+			SecretName: fmt.Sprintf("ca-cert-%d", suffix),
+		},
+	}
+	By("creating CA cert")
+	Expect(k8sClient.Create(ctx, &caCert)).To(Succeed())
+	DeferCleanup(func() {
+		if err := k8sClient.Delete(ctx, &caCert); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CA certificate: %v\n", err)
+		}
+	})
+
+	issuer := certv1.Issuer{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      fmt.Sprintf("issuer-%d", suffix),
+		},
+		Spec: certv1.IssuerSpec{
+			IssuerConfig: certv1.IssuerConfig{
+				CA: &certv1.CAIssuer{
+					SecretName: caCert.Spec.SecretName,
+				},
+			},
+		},
+	}
+	By("creating Issuer")
+	Expect(k8sClient.Create(ctx, &issuer)).To(Succeed())
+	DeferCleanup(func() {
+		if err := k8sClient.Delete(ctx, &issuer); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CA issuer: %v\n", err)
+		}
+	})
 }

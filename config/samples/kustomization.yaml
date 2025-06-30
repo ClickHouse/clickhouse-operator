@@ -1,7 +1,7 @@
 ## Append samples of your project ##
 resources:
-- v1alpha1_keepercluster.yaml
+- v1alpha1_keeper.yaml
 - _v1alpha1_keepercluster.yaml
-- v1alpha1_clickhousecluster.yaml
+- v1alpha1_clickhouse.yaml
 - _v1alpha1_clickhousecluster.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

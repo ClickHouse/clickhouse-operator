@@ -17,8 +17,8 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -30,7 +30,6 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -41,21 +40,12 @@ const (
 	KeeperUpdateVersion = "25.5"
 )
 
-var defaultStorage = corev1.PersistentVolumeClaimSpec{
-	AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-	Resources: corev1.VolumeResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceStorage: resource.MustParse("1Gi"),
-		},
-	},
-}
-
-var _ = Describe("Keeper controller", func() {
+var _ = Describe("Keeper controller", Label("keeper"), func() {
 	DescribeTable("standalone keeper updates", func(specUpdate v1.KeeperClusterSpec) {
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("test-%d", rand.Uint32()),
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
@@ -71,12 +61,12 @@ var _ = Describe("Keeper controller", func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		defer func() {
+		DeferCleanup(func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
-		}()
-		WaitUpdatedAndReady(&cr, time.Minute)
-		RWChecks(&cr, &checks)
+		})
+		WaitKeeperUpdatedAndReady(&cr, time.Minute)
+		KeeperRWChecks(&cr, &checks)
 
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
@@ -84,8 +74,8 @@ var _ = Describe("Keeper controller", func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitUpdatedAndReady(&cr, 3*time.Minute)
-		RWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(&cr, 3*time.Minute)
+		KeeperRWChecks(&cr, &checks)
 	},
 		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
 			Logger: v1.LoggerConfig{Level: "warning"},
@@ -121,12 +111,12 @@ var _ = Describe("Keeper controller", func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		defer func() {
+		DeferCleanup(func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
-		}()
-		WaitUpdatedAndReady(&cr, 2*time.Minute)
-		RWChecks(&cr, &checks)
+		})
+		WaitKeeperUpdatedAndReady(&cr, 2*time.Minute)
+		KeeperRWChecks(&cr, &checks)
 
 		// TODO ensure updates one-by-one
 		By("updating cluster CR")
@@ -135,8 +125,8 @@ var _ = Describe("Keeper controller", func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitUpdatedAndReady(&cr, 5*time.Minute)
-		RWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(&cr, 5*time.Minute)
+		KeeperRWChecks(&cr, &checks)
 	},
 		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
 			Logger: v1.LoggerConfig{Level: "warning"},
@@ -194,11 +184,6 @@ var _ = Describe("Keeper controller", func() {
 			},
 		}
 
-		var hostnames []string
-		for i := 0; i < int(cr.Replicas()); i++ {
-			hostnames = append(hostnames, cr.HostnameById(strconv.Itoa(i)))
-		}
-
 		cert := &certv1.Certificate{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
@@ -209,13 +194,17 @@ var _ = Describe("Keeper controller", func() {
 					Kind: "Issuer",
 					Name: issuer.Name,
 				},
-				DNSNames:   hostnames,
+				DNSNames: []string{
+					fmt.Sprintf("*.%s.%s.svc", cr.HeadlessServiceName(), cr.Namespace),
+					fmt.Sprintf("*.%s.%s.svc.cluster.local", cr.HeadlessServiceName(), cr.Namespace),
+				},
 				SecretName: certName,
 			},
 		}
 
 		It("should create secure cluster", func() {
 			DeferCleanup(func() {
+				By("deleting all resources")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, cert)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, issuer)).To(Succeed())
@@ -227,37 +216,44 @@ var _ = Describe("Keeper controller", func() {
 			By("creating secure keeper cluster CR")
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
-			WaitUpdatedAndReady(&cr, 2*time.Minute)
-			RWChecks(&cr, ptr.To(0))
+			WaitKeeperUpdatedAndReady(&cr, 2*time.Minute)
+			KeeperRWChecks(&cr, ptr.To(0))
 		})
 	})
 })
 
-func WaitUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
-	By("waiting for cluster to be ready")
-	Eventually(func() bool {
+func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
+	EventuallyWithOffset(1, func() bool {
 		var cluster v1.KeeperCluster
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
 		return cluster.Generation == cluster.Status.ObservedGeneration &&
 			cluster.Status.CurrentRevision == cluster.Status.UpdateRevision &&
 			cluster.Status.ReadyReplicas == cluster.Replicas()
 	}, timeout).Should(BeTrue())
+	// Needed for replica deletion to not forward deleting pods.
+	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
+	count := int(cr.Replicas())
+	ExpectWithOffset(1, utils.WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)).To(Succeed())
 }
 
-func RWChecks(cr *v1.KeeperCluster, checksDone *int) {
-	Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
+func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
+	ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 	By("connecting to cluster")
-	client, err := utils.NewKeeperClient(ctx, cr)
-	Expect(err).NotTo(HaveOccurred())
+	client, err := utils.NewKeeperClient(ctx, k8sClient, cr)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer client.Close()
 
 	By("writing new test data")
-	Expect(client.CheckWrite(*checksDone)).To(Succeed())
+	ExpectWithOffset(1, client.CheckWrite(*checksDone)).To(Succeed())
 	*checksDone++
 
 	By("reading all test data")
 	for i := range *checksDone {
-		Expect(client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
+		ExpectWithOffset(1, client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
 	}
 }

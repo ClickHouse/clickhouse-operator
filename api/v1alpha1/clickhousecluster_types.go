@@ -30,12 +30,19 @@ import (
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 type ClickHouseClusterSpec struct {
-	// Number of replicas in the cluster
+	// Number of replicas in the single shard
 	// This is a pointer to distinguish between explicit zero and unspecified.
 	// +optional
 	// +kubebuilder:default:=3
-	// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15
+	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas"`
+
+	// Number of shards in the cluster
+	// This is a pointer to distinguish between explicit zero and unspecified.
+	// +optional
+	// +kubebuilder:default:=1
+	// +kubebuilder:validation:Minimum=0
+	Shards *int32 `json:"shards"`
 
 	// Reference to the KeeperCluster that is used for ClickHouse coordination.
 	KeeperClusterRef *corev1.LocalObjectReference `json:"keeperClusterRef"`
@@ -63,6 +70,8 @@ type ClickHouseClusterSpec struct {
 	// Configuration parameters for ClickHouse server.
 	// +optional
 	Settings ClickHouseConfig `json:"settings,omitempty"`
+
+	// TODO RBAC
 }
 
 func (s *ClickHouseClusterSpec) WithDefaults() {
@@ -151,8 +160,46 @@ func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+func (v *ClickHouseCluster) Conditions() *[]metav1.Condition {
+	return &v.Status.Conditions
+}
+
 func (v *ClickHouseCluster) SpecificName() string {
 	return fmt.Sprintf("%s-clickhouse", v.GetName())
+}
+
+func (v *ClickHouseCluster) Shards() int32 {
+	if v.Spec.Shards == nil {
+		// In case of absence, value must be populated by default, if it's nil then some wrong logic in controller erased it.
+		panic(".spec.shards is nil, this is a bug")
+	}
+
+	return *v.Spec.Shards
+}
+
+func (v *ClickHouseCluster) Replicas() int32 {
+	if v.Spec.Replicas == nil {
+		// In case of absence, value must be populated by default, if it's nil then some wrong logic in controller erased it.
+		panic(".spec.replicas is nil, this is a bug")
+	}
+
+	return *v.Spec.Replicas
+}
+
+func (v *ClickHouseCluster) HeadlessServiceName() string {
+	return fmt.Sprintf("%s-headless", v.SpecificName())
+}
+
+func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
+	return fmt.Sprintf("%s-%d", v.SpecificName(), shard)
+}
+
+func (v *ClickHouseCluster) ConfigMapNameByReplicaID(shard int32, index int32) string {
+	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), shard, index)
+}
+
+func (v *ClickHouseCluster) StatefulSetNameByReplicaID(shard int32, index int32) string {
+	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), shard, index)
 }
 
 // +kubebuilder:object:root=true

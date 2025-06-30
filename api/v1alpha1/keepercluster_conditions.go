@@ -1,24 +1,24 @@
 package v1alpha1
 
-type KeeperConditionType string
+type ConditionType string
 
 const (
 	// KeeperConditionTypeReconcileSucceeded indicates that latest reconciliation was successful.
-	KeeperConditionTypeReconcileSucceeded KeeperConditionType = "TypeReconcileSucceeded"
+	KeeperConditionTypeReconcileSucceeded ConditionType = "ReconcileSucceeded"
 	// KeeperConditionTypeReplicaStartupSucceeded indicates that all replicas of the KeeperCluster are able to start.
-	KeeperConditionTypeReplicaStartupSucceeded KeeperConditionType = "ReplicaStartupSucceeded"
+	KeeperConditionTypeReplicaStartupSucceeded ConditionType = "ReplicaStartupSucceeded"
 	// KeeperConditionTypeHealthy indicates that all replicas of the KeeperCluster are ready to accept connections.
 	KeeperConditionTypeHealthy = "Healthy"
 	// KeeperConditionTypeClusterSizeAligned indicates that KeeperCluster replica amount matches the requested value.
-	KeeperConditionTypeClusterSizeAligned KeeperConditionType = "ClusterSizeAligned"
+	KeeperConditionTypeClusterSizeAligned ConditionType = "ClusterSizeAligned"
 	// KeeperConditionTypeConfigurationInSync indicates that KeeperCluster configuration is in desired state.
-	KeeperConditionTypeConfigurationInSync KeeperConditionType = "ConfigurationInSync"
+	KeeperConditionTypeConfigurationInSync ConditionType = "ConfigurationInSync"
 	// KeeperConditionTypeReady indicates that KeeperCluster is ready to serve client requests.
-	KeeperConditionTypeReady KeeperConditionType = "Ready"
+	KeeperConditionTypeReady ConditionType = "Ready"
 )
 
 var (
-	AllConditionTypes = []KeeperConditionType{
+	AllKeeperConditionTypes = []ConditionType{
 		KeeperConditionTypeReconcileSucceeded,
 		KeeperConditionTypeReplicaStartupSucceeded,
 		KeeperConditionTypeHealthy,
@@ -28,26 +28,26 @@ var (
 	}
 )
 
-type KeeperConditionReason string
+type ConditionReason string
 
 const (
-	KeeperConditionReasonStepFailed        KeeperConditionReason = "ReconcileStepFailed"
-	KeeperConditionReasonReconcileFinished KeeperConditionReason = "ReconcileFinished"
+	KeeperConditionReasonStepFailed        ConditionReason = "ReconcileStepFailed"
+	KeeperConditionReasonReconcileFinished ConditionReason = "ReconcileFinished"
 
-	KeeperConditionReasonReplicasRunning KeeperConditionReason = "ReplicasRunning"
-	KeeperConditionReasonReplicaError    KeeperConditionReason = "ReplicaError"
+	KeeperConditionReasonReplicasRunning ConditionReason = "ReplicasRunning"
+	KeeperConditionReasonReplicaError    ConditionReason = "ReplicaError"
 
-	KeeperConditionReasonReplicasReady    KeeperConditionReason = "ReplicasReady"
-	KeeperConditionReasonReplicasNotReady KeeperConditionReason = "ReplicasNotReady"
+	KeeperConditionReasonReplicasReady    ConditionReason = "ReplicasReady"
+	KeeperConditionReasonReplicasNotReady ConditionReason = "ReplicasNotReady"
 
-	KeeperConditionReasonUpToDate             KeeperConditionReason = "UpToDate"
-	KeeperConditionReasonScalingDown          KeeperConditionReason = "ScalingDown"
-	KeeperConditionReasonScalingUp            KeeperConditionReason = "ScalingUp"
-	KeeperConditionReasonConfigurationChanged KeeperConditionReason = "ConfigurationChanged"
+	KeeperConditionReasonUpToDate             ConditionReason = "UpToDate"
+	KeeperConditionReasonScalingDown          ConditionReason = "ScalingDown"
+	KeeperConditionReasonScalingUp            ConditionReason = "ScalingUp"
+	KeeperConditionReasonConfigurationChanged ConditionReason = "ConfigurationChanged"
 
-	KeeperConditionReasonStandaloneReady    KeeperConditionReason = "StandaloneReady"
-	KeeperConditionReasonClusterReady       KeeperConditionReason = "ClusterReady"
-	KeeperConditionReasonNoLeader           KeeperConditionReason = "NoLeader"
-	KeeperConditionReasonInconsistentState  KeeperConditionReason = "InconsistentState"
-	KeeperConditionReasonNotEnoughFollowers KeeperConditionReason = "NotEnoughFollowers"
+	KeeperConditionReasonStandaloneReady    ConditionReason = "StandaloneReady"
+	KeeperConditionReasonClusterReady       ConditionReason = "ClusterReady"
+	KeeperConditionReasonNoLeader           ConditionReason = "NoLeader"
+	KeeperConditionReasonInconsistentState  ConditionReason = "InconsistentState"
+	KeeperConditionReasonNotEnoughFollowers ConditionReason = "NotEnoughFollowers"
 )

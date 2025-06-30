@@ -1,3 +1,7 @@
+load('ext://cert_manager', 'deploy_cert_manager')
+
+deploy_cert_manager(version='v1.18.0')
+
 local_resource(
     "generate",
     cmd="make manifests && make generate",
@@ -64,10 +68,33 @@ k8s_resource(
     ],
 )
 
-# Deploy test cluster
-test_app = k8s_yaml('config/samples/v1alpha1_keepercluster.yaml')
+secure = True
+if secure:
+    k8s_yaml('config/samples/issuer.yaml')
+    k8s_yaml('config/samples/v1alpha1_keeper_secure.yaml')
+    k8s_yaml('config/samples/v1alpha1_clickhouse_secure.yaml')
+    k8s_resource(
+        new_name='certs',
+        objects=[
+            'selfsigned-issuer:ClusterIssuer:default',
+            'ca-cert:Certificate:default',
+            'local-issuer:Issuer:default',
+            'keeper-cert:Certificate:default',
+            'clickhouse-cert:Certificate:default',
+        ],
+        labels=['test'],
+    )
+else:
+    k8s_yaml('config/samples/v1alpha1_keeper.yaml')
+    k8s_yaml('config/samples/v1alpha1_clickhouse.yaml')
+
 k8s_resource(
-    new_name='keeper-cluster',
-    objects=['test-keeper-cluster:KeeperCluster:default'],
+    new_name='keeper',
+    objects=['sample:KeeperCluster:default'],
+    labels=['test'],
+)
+k8s_resource(
+    new_name='clickhouse',
+    objects=['sample:ClickHouseCluster:default'],
     labels=['test'],
 )

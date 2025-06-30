@@ -58,7 +58,11 @@ jobs:
           make test-ci
 
 
+
   e2e-test:
+    strategy:
+      matrix:
+        scope: [ test-keeper-e2e, test-clickhouse-e2e ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -83,4 +87,4 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          make test-e2e
+          make ${{ matrix.scope }}

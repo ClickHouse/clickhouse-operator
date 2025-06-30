@@ -133,6 +133,7 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("clickhouse.ClickHouseCluster"),
+		Reader:   mgr.GetAPIReader(),
 		Logger:   util.NewZapLogger(logger).Named("clickhouse"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClickHouseCluster")

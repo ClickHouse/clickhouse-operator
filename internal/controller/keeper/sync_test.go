@@ -24,25 +24,25 @@ func TestUpdateReplica(t *testing.T) {
 	r, ctx := setupReconciler(t)
 
 	replicaID := "1"
-	configMapName := ctx.KeeperCluster.ConfigMapNameByReplicaID(replicaID)
-	stsName := ctx.KeeperCluster.StatefulSetNameByReplicaID(replicaID)
+	configMapName := ctx.Cluster.ConfigMapNameByReplicaID(replicaID)
+	stsName := ctx.Cluster.StatefulSetNameByReplicaID(replicaID)
 
 	// Create resources
 	result, err := r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
 
-	configMap := mustGet[*corev1.ConfigMap](t, r.Client, types.NamespacedName{Namespace: ctx.KeeperCluster.Namespace, Name: configMapName})
-	sts := mustGet[*appsv1.StatefulSet](t, r.Client, types.NamespacedName{Namespace: ctx.KeeperCluster.Namespace, Name: stsName})
+	configMap := mustGet[*corev1.ConfigMap](t, r.Client, types.NamespacedName{Namespace: ctx.Cluster.Namespace, Name: configMapName})
+	sts := mustGet[*appsv1.StatefulSet](t, r.Client, types.NamespacedName{Namespace: ctx.Cluster.Namespace, Name: stsName})
 	require.NotEmpty(t, configMap)
 	require.NotEmpty(t, sts)
-	require.Equal(t, ctx.KeeperCluster.Status.ConfigurationRevision, util.GetConfigHashFromObject(sts))
-	require.Equal(t, ctx.KeeperCluster.Status.StatefulSetRevision, util.GetSpecHashFromObject(sts))
+	require.Equal(t, ctx.Cluster.Status.ConfigurationRevision, util.GetConfigHashFromObject(sts))
+	require.Equal(t, ctx.Cluster.Status.StatefulSetRevision, util.GetSpecHashFromObject(sts))
 
 	// Nothing to update
 	sts.Status.ObservedGeneration = sts.Generation
 	sts.Status.ReadyReplicas = 1
-	ctx.stateByID[replicaID] = replicaState{
+	ctx.ReplicaState[replicaID] = replicaState{
 		Error:       false,
 		StatefulSet: sts,
 		Status: ServerStatus{
@@ -54,9 +54,9 @@ func TestUpdateReplica(t *testing.T) {
 	require.True(t, result.IsZero())
 
 	// Apply changes
-	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
-	ctx.KeeperCluster.Spec.ContainerTemplate.Image.Tag = "latest"
-	ctx.KeeperCluster.Status.StatefulSetRevision = "sts-v2"
+	ctx.Cluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
+	ctx.Cluster.Spec.ContainerTemplate.Image.Tag = "latest"
+	ctx.Cluster.Status.StatefulSetRevision = "sts-v2"
 	result, err = r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
@@ -64,8 +64,8 @@ func TestUpdateReplica(t *testing.T) {
 
 	// Config changes trigger restart
 	require.Empty(t, sts.Spec.Template.Annotations[util.AnnotationRestartedAt])
-	ctx.KeeperCluster.Spec.Settings.Logger.Level = "info"
-	ctx.KeeperCluster.Status.ConfigurationRevision = "cfg-v2"
+	ctx.Cluster.Spec.Settings.Logger.Level = "info"
+	ctx.Cluster.Status.ConfigurationRevision = "cfg-v2"
 	result, err = r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
@@ -94,22 +94,23 @@ func setupReconciler(t *testing.T) (*ClusterReconciler, reconcileContext) {
 		Logger: util.NewZapLogger(zaptest.NewLogger(t)),
 	}
 
-	return reconciler, reconcileContext{
-		KeeperCluster: &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "default",
-				Name:      "test",
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
-			},
-			Status: v1.KeeperClusterStatus{
-				ConfigurationRevision: "config-v1",
-				StatefulSetRevision:   "sts-v1",
-				Replicas:              []string{"1"},
-			},
+	ctx := reconcileContext{}
+	ctx.Cluster = &v1.KeeperCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test",
 		},
-		Context:   t.Context(),
-		stateByID: map[string]replicaState{},
+		Spec: v1.KeeperClusterSpec{
+			Replicas: ptr.To[int32](1),
+		},
+		Status: v1.KeeperClusterStatus{
+			ConfigurationRevision: "config-v1",
+			StatefulSetRevision:   "sts-v1",
+			Replicas:              []string{"1"},
+		},
 	}
+	ctx.Context = t.Context()
+	ctx.ReplicaState = map[string]replicaState{}
+
+	return reconciler, ctx
 }
