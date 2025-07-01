@@ -63,7 +63,7 @@ jobs:
     strategy:
       matrix:
         scope: [ test-keeper-e2e, test-clickhouse-e2e ]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
