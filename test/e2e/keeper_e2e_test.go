@@ -244,7 +244,7 @@ func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
 	ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 	By("connecting to cluster")
-	client, err := utils.NewKeeperClient(ctx, k8sClient, cr)
+	client, err := utils.NewKeeperClient(ctx, config, cr)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer client.Close()
 

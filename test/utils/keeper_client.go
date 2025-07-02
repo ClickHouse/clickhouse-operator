@@ -13,7 +13,7 @@ import (
 	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/go-zookeeper/zk"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -32,13 +32,13 @@ type KeeperClient struct {
 	client  *zk.Conn
 }
 
-func NewKeeperClient(ctx context.Context, k8sClient client.Client, cr *v1.KeeperCluster) (*KeeperClient, error) {
+func NewKeeperClient(ctx context.Context, config *rest.Config, cr *v1.KeeperCluster) (*KeeperClient, error) {
 	var port uint16 = keeper.PortNative
 	if cr.Spec.Settings.TLS.Enabled {
 		port = keeper.PortNativeSecure
 	}
 
-	cluster, err := NewForwardedCluster(ctx, k8sClient, cr.Namespace, cr.SpecificName(), port)
+	cluster, err := NewForwardedCluster(ctx, config, cr.Namespace, cr.SpecificName(), port)
 	if err != nil {
 		return nil, fmt.Errorf("forwarding zk nodes failed: %w", err)
 	}

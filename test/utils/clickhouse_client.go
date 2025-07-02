@@ -11,7 +11,7 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	chcontrol "github.com/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/onsi/ginkgo/v2"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/client-go/rest"
 )
 
 type ClickHouseClient struct {
@@ -21,7 +21,7 @@ type ClickHouseClient struct {
 
 func NewClickHouseClient(
 	ctx context.Context,
-	k8sClient client.Client,
+	config *rest.Config,
 	cr *v1.ClickHouseCluster,
 ) (*ClickHouseClient, error) {
 	var port uint16 = chcontrol.PortNative
@@ -29,7 +29,7 @@ func NewClickHouseClient(
 		port = chcontrol.PortNativeSecure
 	}
 
-	cluster, err := NewForwardedCluster(ctx, k8sClient, cr.Namespace, cr.SpecificName(), port)
+	cluster, err := NewForwardedCluster(ctx, config, cr.Namespace, cr.SpecificName(), port)
 	if err != nil {
 		return nil, fmt.Errorf("forwarding ch nodes failed: %w", err)
 	}
