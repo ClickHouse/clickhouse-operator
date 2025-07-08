@@ -57,8 +57,6 @@ jobs:
           go list ./... | grep -v /e2e
           make test-ci
 
-
-
   e2e-test:
     strategy:
       matrix:

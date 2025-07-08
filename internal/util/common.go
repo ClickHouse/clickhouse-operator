@@ -3,6 +3,8 @@ package util
 import (
 	"context"
 	"crypto/md5" //nolint:gosec
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"maps"
@@ -237,4 +239,32 @@ func ReconcileResource(ctx context.Context, log Logger, cli client.Client, schem
 	}
 
 	return true, nil
+}
+
+const (
+	alpha    = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	numeric  = "0123456789"
+	special  = "!@#$%^*()_+-=[]{}|;',./?`~"
+	alphabet = alpha + numeric + special
+	length   = 32
+)
+
+func GeneratePassword() string {
+	password := make([]byte, length)
+	if _, err := rand.Read(password); err != nil {
+		// This should never happen
+		// Method returns error for interface compatibility, implementation panics in case of error
+		panic(fmt.Sprintf("read random source: %v", err))
+	}
+
+	for i, b := range password {
+		password[i] = alphabet[b%byte(len(alphabet))]
+	}
+
+	return string(password)
+}
+
+func Sha256Hash(password []byte) string {
+	sum := sha256.Sum256(password)
+	return hex.EncodeToString(sum[:])
 }

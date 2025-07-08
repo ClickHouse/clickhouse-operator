@@ -52,6 +52,7 @@ var (
 	k8sClient client.Client
 	cfg       *rest.Config
 	testEnv   *envtest.Environment
+	warnings  []string
 )
 
 func TestAPIs(t *testing.T) {
@@ -62,7 +63,6 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
@@ -90,6 +90,11 @@ var _ = BeforeSuite(func() {
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
+	cfg.WarningHandler = &warningsHandler{
+		l: logf.NewKubeAPIWarningLogger(logf.Log, logf.KubeAPIWarningLoggerOptions{
+			Deduplicate: false,
+		}),
+	}
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
@@ -140,6 +145,10 @@ var _ = AfterSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 })
 
+var _ = BeforeEach(func() {
+	warnings = warnings[:0]
+})
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
 // controller-runtime. When running tests directly (e.g., via an IDE) without using
@@ -161,4 +170,17 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+type warningsHandler struct {
+	l *logf.KubeAPIWarningLogger
+}
+
+func (h *warningsHandler) HandleWarningHeader(code int, agent string, text string) {
+	if code != 299 || len(text) == 0 {
+		return
+	}
+
+	warnings = append(warnings, text)
+	h.l.HandleWarningHeader(code, agent, text)
 }

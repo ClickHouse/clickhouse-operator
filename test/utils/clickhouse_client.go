@@ -23,6 +23,7 @@ func NewClickHouseClient(
 	ctx context.Context,
 	config *rest.Config,
 	cr *v1.ClickHouseCluster,
+	auth ...clickhouse.Auth,
 ) (*ClickHouseClient, error) {
 	var port uint16 = chcontrol.PortNative
 	if cr.Spec.Settings.TLS.Enabled {
@@ -40,11 +41,13 @@ func NewClickHouseClient(
 		Auth: clickhouse.Auth{
 			Database: "default",
 			Username: "default",
-			Password: "",
 		},
 		Debugf: func(format string, args ...interface{}) {
 			ginkgo.GinkgoWriter.Printf(format, args...)
 		},
+	}
+	if len(auth) > 0 {
+		opts.Auth = auth[0]
 	}
 	if cr.Spec.Settings.TLS.Enabled {
 		opts.TLS = &tls.Config{

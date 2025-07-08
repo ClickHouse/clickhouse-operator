@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"maps"
 	"path"
 	"strconv"
 
@@ -117,8 +118,49 @@ func TemplatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 	}
 }
 
-func GetConfigurationRevision(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster, extraConfig map[string]any) (string, error) {
-	config, err := generateConfigForSingleReplica(cr, keeper, extraConfig, replicaID{})
+func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bool, error) {
+	secret.Name = cr.SecretName()
+	secret.Namespace = cr.Namespace
+	secret.Type = corev1.SecretTypeOpaque
+
+	changed := false
+
+	labels := util.MergeMaps(cr.Spec.Labels, map[string]string{
+		util.LabelAppKey: cr.SpecificName(),
+	})
+	if !maps.Equal(labels, secret.Labels) {
+		changed = true
+		secret.Labels = labels
+	}
+
+	annotations := util.MergeMaps(cr.Spec.Annotations)
+	if !maps.Equal(annotations, secret.Annotations) {
+		changed = true
+		secret.Annotations = annotations
+	}
+
+	if secret.Data == nil {
+		changed = true
+		secret.Data = map[string][]byte{}
+	}
+	for key, template := range SecretsToGenerate {
+		if _, ok := secret.Data[key]; !ok {
+			changed = true
+			secret.Data[key] = []byte(fmt.Sprintf(template, util.GeneratePassword()))
+		}
+	}
+	for key := range secret.Data {
+		if _, ok := SecretsToGenerate[key]; !ok {
+			changed = true
+			delete(secret.Data, key)
+		}
+	}
+
+	return changed, nil
+}
+
+func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
+	config, err := generateConfigForSingleReplica(ctx, replicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
@@ -131,8 +173,8 @@ func GetConfigurationRevision(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster,
 	return hash, nil
 }
 
-func GetStatefulSetRevision(cr *v1.ClickHouseCluster) (string, error) {
-	sts := TemplateStatefulSet(cr, replicaID{})
+func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
+	sts := TemplateStatefulSet(ctx, replicaID{})
 	hash, err := util.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
@@ -141,13 +183,13 @@ func GetStatefulSetRevision(cr *v1.ClickHouseCluster) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster, extraConfig map[string]any, id replicaID) (*corev1.ConfigMap, error) {
-	config, err := generateConfigForSingleReplica(cr, keeper, extraConfig, id)
+func TemplateConfigMap(ctx *reconcileContext, id replicaID) (*corev1.ConfigMap, error) {
+	config, err := generateConfigForSingleReplica(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate config for replica %v: %w", id, err)
 	}
 
-	userConfig, err := generateUsersConfig(cr)
+	userConfig, err := generateUsersConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("generate user config for replica %v: %w", id, err)
 	}
@@ -158,12 +200,12 @@ func TemplateConfigMap(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster, extraC
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.ConfigMapNameByReplicaID(id.shardID, id.index),
-			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, id.Labels(), map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+			Name:      ctx.Cluster.ConfigMapNameByReplicaID(id.shardID, id.index),
+			Namespace: ctx.Cluster.Namespace,
+			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+				util.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
-			Annotations: cr.Spec.Annotations,
+			Annotations: ctx.Cluster.Spec.Annotations,
 		},
 		Data: map[string]string{
 			ConfigFileName: config,
@@ -172,14 +214,14 @@ func TemplateConfigMap(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster, extraC
 	}, nil
 }
 
-func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.StatefulSet {
-	volumes, volumeMounts := buildVolumes(cr, id)
+func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSet {
+	volumes, volumeMounts := buildVolumes(ctx, id)
 
 	container := corev1.Container{
 		Name:            ContainerName,
-		Image:           cr.Spec.ContainerTemplate.Image.String(),
-		ImagePullPolicy: cr.Spec.ContainerTemplate.ImagePullPolicy,
-		Resources:       cr.Spec.ContainerTemplate.Resources,
+		Image:           ctx.Cluster.Spec.ContainerTemplate.Image.String(),
+		ImagePullPolicy: ctx.Cluster.Spec.ContainerTemplate.ImagePullPolicy,
+		Resources:       ctx.Cluster.Spec.ContainerTemplate.Resources,
 		Env: []corev1.EnvVar{
 			{
 				Name:  "CLICKHOUSE_CONFIG",
@@ -188,6 +230,28 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 			{
 				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
 				Value: "1",
+			},
+			{
+				Name: EnvInterserverPassword,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: ctx.Cluster.SecretName(),
+						},
+						Key: SecretKeyInterserverPassword,
+					},
+				},
+			},
+			{
+				Name: EnvKeeperIdentity,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: ctx.Cluster.SecretName(),
+						},
+						Key: SecretKeyKeeperIdentity,
+					},
+				},
 			},
 		},
 		Ports: []corev1.ContainerPort{
@@ -227,7 +291,7 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 		},
 	}
 
-	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
+	if !ctx.Cluster.Spec.Settings.TLS.Enabled || !ctx.Cluster.Spec.Settings.TLS.Required {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
 			Name:          "native",
@@ -239,7 +303,7 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 		})
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
+	if ctx.Cluster.Spec.Settings.TLS.Enabled {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
 			Name:          "native-secure",
@@ -251,13 +315,27 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 		})
 	}
 
+	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: EnvDefaultUserPassword,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ctx.Cluster.Spec.Settings.DefaultUserPassword.Name,
+					},
+					Key: ctx.Cluster.Spec.Settings.DefaultUserPassword.Key,
+				},
+			},
+		})
+	}
+
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: util.MergeMaps(id.Labels(), map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+				util.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
 		},
-		ServiceName:         cr.HeadlessServiceName(),
+		ServiceName:         ctx.Cluster.HeadlessServiceName(),
 		PodManagementPolicy: appsv1.ParallelPodManagement,
 		Replicas:            ptr.To[int32](1),
 		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
@@ -266,27 +344,27 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: cr.SpecificName(),
-				Labels: util.MergeMaps(cr.Spec.Labels, id.Labels(), map[string]string{
-					util.LabelAppKey:         cr.SpecificName(),
+				GenerateName: ctx.Cluster.SpecificName(),
+				Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+					util.LabelAppKey:         ctx.Cluster.SpecificName(),
 					util.LabelKindKey:        util.LabelClickHouseValue,
 					util.LabelRoleKey:        util.LabelClickHouseValue,
 					util.LabelAppK8sKey:      util.LabelClickHouseValue,
-					util.LabelInstanceK8sKey: cr.SpecificName(),
+					util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
 				}),
-				Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
+				Annotations: util.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
-				TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
-				ImagePullSecrets:              cr.Spec.PodTemplate.ImagePullSecrets,
-				NodeSelector:                  cr.Spec.PodTemplate.NodeSelector,
-				Affinity:                      cr.Spec.PodTemplate.Affinity,
-				Tolerations:                   cr.Spec.PodTemplate.Tolerations,
-				SchedulerName:                 cr.Spec.PodTemplate.SchedulerName,
-				ServiceAccountName:            cr.Spec.PodTemplate.ServiceAccountName,
+				TerminationGracePeriodSeconds: ctx.Cluster.Spec.PodTemplate.TerminationGracePeriodSeconds,
+				TopologySpreadConstraints:     ctx.Cluster.Spec.PodTemplate.TopologySpreadConstraints,
+				ImagePullSecrets:              ctx.Cluster.Spec.PodTemplate.ImagePullSecrets,
+				NodeSelector:                  ctx.Cluster.Spec.PodTemplate.NodeSelector,
+				Affinity:                      ctx.Cluster.Spec.PodTemplate.Affinity,
+				Tolerations:                   ctx.Cluster.Spec.PodTemplate.Tolerations,
+				SchedulerName:                 ctx.Cluster.Spec.PodTemplate.SchedulerName,
+				ServiceAccountName:            ctx.Cluster.Spec.PodTemplate.ServiceAccountName,
 				RestartPolicy:                 corev1.RestartPolicyAlways,
 				DNSPolicy:                     corev1.DNSClusterFirst,
 				Volumes:                       volumes,
@@ -300,7 +378,7 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 				ObjectMeta: metav1.ObjectMeta{
 					Name: PersistentVolumeName,
 				},
-				Spec: cr.Spec.DataVolumeClaimSpec,
+				Spec: ctx.Cluster.Spec.DataVolumeClaimSpec,
 			},
 		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
@@ -312,14 +390,14 @@ func TemplateStatefulSet(cr *v1.ClickHouseCluster, id replicaID) *appsv1.Statefu
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.StatefulSetNameByReplicaID(id.shardID, id.index),
-			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, id.Labels(), map[string]string{
-				util.LabelAppKey:         cr.SpecificName(),
-				util.LabelInstanceK8sKey: cr.SpecificName(),
+			Name:      ctx.Cluster.StatefulSetNameByReplicaID(id.shardID, id.index),
+			Namespace: ctx.Cluster.Namespace,
+			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+				util.LabelAppKey:         ctx.Cluster.SpecificName(),
+				util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
 				util.LabelAppK8sKey:      util.LabelClickHouseValue,
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
+			Annotations: util.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
 				util.AnnotationStatefulSetVersion: BreakingStatefulSetVersion.String(),
 			}),
 		},
@@ -342,25 +420,34 @@ type KeeperNode struct {
 	Secure int32  `yaml:"secure,omitempty"` // 0 for insecure, 1 for secure
 }
 
+type ZooKeeper struct {
+	Nodes    []KeeperNode `yaml:"node"`
+	Identity EnvVal
+}
+
 type DistributedDDL struct {
 	Path    string `yaml:"path"`
 	Profile string `yaml:"profile"`
 }
 
+type EnvVal struct {
+	FromEnv string `yaml:"@from_env"`
+}
+
 type Config struct {
-	// TODO ipv6, ipv4
-	ListenHost               string                       `yaml:"listen_host"`
-	Path                     string                       `yaml:"path"`
-	Logger                   controller.LoggerConfig      `yaml:"logger"`
-	Prometheus               controller.PrometheusConfig  `yaml:"prometheus"`
-	OpenSSL                  controller.OpenSSLConfig     `yaml:"openSSL"`
-	UserDirectories          map[string]map[string]string `yaml:"user_directories,omitempty"`
-	Macros                   map[string]string            `yaml:"macros,omitempty"`
-	RemoteServers            map[string]RemoteCluster     `yaml:"remote_servers"`
-	DistributedDDL           DistributedDDL               `yaml:"distributed_ddl"`
-	ZooKeeper                yaml.MapSlice                `yaml:"zookeeper,omitempty"`
-	UserDefinedZookeeperPath string                       `yaml:"user_defined_zookeeper_path"`
-	// TODO interserver credentials, log tables
+	ListenHost                 string                       `yaml:"listen_host"`
+	Path                       string                       `yaml:"path"`
+	Logger                     controller.LoggerConfig      `yaml:"logger"`
+	Prometheus                 controller.PrometheusConfig  `yaml:"prometheus"`
+	OpenSSL                    controller.OpenSSLConfig     `yaml:"openSSL"`
+	UserDirectories            map[string]map[string]string `yaml:"user_directories,omitempty"`
+	Macros                     map[string]string            `yaml:"macros,omitempty"`
+	RemoteServers              map[string]RemoteCluster     `yaml:"remote_servers"`
+	DistributedDDL             DistributedDDL               `yaml:"distributed_ddl"`
+	ZooKeeper                  ZooKeeper                    `yaml:"zookeeper,omitempty"`
+	UserDefinedZookeeperPath   string                       `yaml:"user_defined_zookeeper_path"`
+	InterserverHTTPCredentials map[string]any               `yaml:"interserver_http_credentials"`
+	// TODO log tables
 	// TODO merge tree settings, named collections, engines (kafka/rocksdb/etc)
 
 	// Port settings
@@ -373,12 +460,12 @@ type Config struct {
 	AllowExperimentalClusterDiscovery bool `yaml:"allow_experimental_cluster_discovery"`
 }
 
-func generateConfigForSingleReplica(cr *v1.ClickHouseCluster, keeper v1.KeeperCluster, extraConfig map[string]any, id replicaID) (string, error) {
+func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string, error) {
 	config := Config{
 		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
 		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
-		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-server"),
+		Logger:     controller.GenerateLoggerConfig(ctx.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
 		UserDirectories: map[string]map[string]string{
 			"users_xml": {
 				"path": UsersFileName,
@@ -404,7 +491,19 @@ func generateConfigForSingleReplica(cr *v1.ClickHouseCluster, keeper v1.KeeperCl
 			Path:    KeeperPathDistributedDDL,
 			Profile: DefaultProfileName,
 		},
+		ZooKeeper: ZooKeeper{
+			Identity: EnvVal{
+				FromEnv: EnvKeeperIdentity,
+			},
+		},
 		UserDefinedZookeeperPath: KeeperPathUDF,
+		InterserverHTTPCredentials: map[string]any{
+			"user":        InterserverUserName,
+			"allow_empty": false,
+			"password": EnvVal{
+				FromEnv: EnvInterserverPassword,
+			},
+		},
 
 		// Port settings
 		InterserverHTTPPort: PortInterserver,
@@ -414,8 +513,8 @@ func generateConfigForSingleReplica(cr *v1.ClickHouseCluster, keeper v1.KeeperCl
 		AllowExperimentalClusterDiscovery: true,
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
-		if cr.Spec.Settings.TLS.Required {
+	if ctx.Cluster.Spec.Settings.TLS.Enabled {
+		if ctx.Cluster.Spec.Settings.TLS.Required {
 			config.TCPPort = 0
 		}
 
@@ -441,20 +540,17 @@ func generateConfigForSingleReplica(cr *v1.ClickHouseCluster, keeper v1.KeeperCl
 		}
 	}
 
-	for _, host := range keeper.Hostnames() {
-		if keeper.Spec.Settings.TLS.Enabled {
-			config.ZooKeeper = append(config.ZooKeeper, yaml.MapItem{
-				Key: "node",
-				Value: KeeperNode{
-					Host:   host,
-					Port:   keepercontroller.PortNativeSecure,
-					Secure: 1,
-				},
+	for _, host := range ctx.keeper.Hostnames() {
+		if ctx.Cluster.Spec.Settings.TLS.Enabled {
+			config.ZooKeeper.Nodes = append(config.ZooKeeper.Nodes, KeeperNode{
+				Host:   host,
+				Port:   keepercontroller.PortNativeSecure,
+				Secure: 1,
 			})
 		} else {
-			config.ZooKeeper = append(config.ZooKeeper, yaml.MapItem{
-				Key:   "node",
-				Value: KeeperNode{Host: host, Port: keepercontroller.PortNative},
+			config.ZooKeeper.Nodes = append(config.ZooKeeper.Nodes, KeeperNode{
+				Host: host,
+				Port: keepercontroller.PortNative,
 			})
 		}
 	}
@@ -464,13 +560,13 @@ func generateConfigForSingleReplica(cr *v1.ClickHouseCluster, keeper v1.KeeperCl
 		return "", fmt.Errorf("error marshalling config to yaml: %w", err)
 	}
 
-	if len(extraConfig) > 0 {
+	if len(ctx.ExtraConfig) > 0 {
 		configMap := map[string]any{}
 		if err := yaml.Unmarshal(yamlConfig, &configMap); err != nil {
 			return "", fmt.Errorf("error unmarshalling config from yaml: %w", err)
 		}
 
-		if err := mergo.Merge(&configMap, extraConfig, mergo.WithOverride); err != nil {
+		if err := mergo.Merge(&configMap, ctx.ExtraConfig, mergo.WithOverride); err != nil {
 			return "", fmt.Errorf("error merging config with extraConfig: %w", err)
 		}
 
@@ -488,10 +584,12 @@ type querySpec struct {
 }
 
 type User struct {
-	Password string      `yaml:"password"`
-	Profile  string      `yaml:"profile,omitempty"`
-	Quota    string      `yaml:"quota,omitempty"`
-	Grants   []querySpec `yaml:"grants,omitempty"`
+	PasswordSha256 string      `yaml:"password_sha256_hex,omitempty"`
+	Password       EnvVal      `yaml:"password,omitempty"`
+	NoPassword     *struct{}   `yaml:"no_password,omitempty"`
+	Profile        string      `yaml:"profile,omitempty"`
+	Quota          string      `yaml:"quota,omitempty"`
+	Grants         []querySpec `yaml:"grants,omitempty"`
 	// TODO add user settings
 }
 
@@ -509,13 +607,29 @@ type UserConfig struct {
 	Quotas   map[string]Quota   `yaml:"quotas"`
 }
 
-func generateUsersConfig(*v1.ClickHouseCluster) (string, error) {
+func generateUsersConfig(ctx *reconcileContext) (string, error) {
+	defaultUser := User{
+		Profile: DefaultProfileName,
+		Quota:   "default",
+		Grants: []querySpec{
+			{Query: "GRANT ALL ON *.*"},
+		},
+	}
+	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
+		defaultUser.Password = EnvVal{FromEnv: EnvDefaultUserPassword}
+	} else {
+		defaultUser.NoPassword = &struct{}{}
+	}
+
 	config := UserConfig{
 		Users: map[string]User{
-			"default": {
-				Profile: DefaultProfileName,
-				Quota:   "default",
+			"default": defaultUser,
+			OperatorManagementUsername: {
+				Profile:        DefaultProfileName,
+				Quota:          "default",
+				PasswordSha256: util.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
 				Grants: []querySpec{
+					// TODO keep only necessary grants
 					{Query: "GRANT ALL ON *.*"},
 				},
 			},
@@ -538,7 +652,7 @@ func generateUsersConfig(*v1.ClickHouseCluster) (string, error) {
 	return string(yamlConfig), nil
 }
 
-func buildVolumes(cr *v1.ClickHouseCluster, id replicaID) ([]corev1.Volume, []corev1.VolumeMount) {
+func buildVolumes(ctx *reconcileContext, id replicaID) ([]corev1.Volume, []corev1.VolumeMount) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      ConfigVolumeName,
@@ -565,14 +679,14 @@ func buildVolumes(cr *v1.ClickHouseCluster, id replicaID) ([]corev1.Volume, []co
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &defaultConfigMapMode,
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.ConfigMapNameByReplicaID(id.shardID, id.index),
+						Name: ctx.Cluster.ConfigMapNameByReplicaID(id.shardID, id.index),
 					},
 				},
 			},
 		},
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
+	if ctx.Cluster.Spec.Settings.TLS.Enabled {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      TLSVolumeName,
 			MountPath: TLSConfigPath,
@@ -583,7 +697,7 @@ func buildVolumes(cr *v1.ClickHouseCluster, id replicaID) ([]corev1.Volume, []co
 			Name: TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
+					SecretName:  ctx.Cluster.Spec.Settings.TLS.ServerCertSecret.Name,
 					DefaultMode: &TLSFileMode,
 					Items: []corev1.KeyToPath{
 						{Key: "ca.crt", Path: CABundleFilename},

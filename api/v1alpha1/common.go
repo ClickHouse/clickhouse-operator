@@ -168,3 +168,12 @@ func (s *ClusterTLSSpec) Validate() error {
 
 	return nil
 }
+
+type SecretKeySelector struct {
+	// The name of the secret in the cluster's namespace to select from.
+	// +kubebuilder:validation:Required
+	Name string `json:"name,omitempty"`
+	// The key of the secret to select from.  Must be a valid secret key.
+	// +kubebuilder:validation:Required
+	Key string `json:"key,omitempty"`
+}

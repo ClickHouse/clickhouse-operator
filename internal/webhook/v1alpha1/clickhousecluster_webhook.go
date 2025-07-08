@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,9 +44,7 @@ func SetupClickHouseWebhookWithManager(mgr ctrl.Manager) error {
 // +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-clickhousecluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=mclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
 // +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-clickhousecluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=vclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
 
-type ClickHouseClusterWebhook struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
+type ClickHouseClusterWebhook struct{}
 
 var _ webhook.CustomDefaulter = &ClickHouseClusterWebhook{}
 var _ webhook.CustomValidator = &ClickHouseClusterWebhook{}
@@ -64,22 +63,32 @@ func (w *ClickHouseClusterWebhook) Default(ctx context.Context, obj runtime.Obje
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
 func (w *ClickHouseClusterWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	return nil, w.validateImpl(obj.(*chv1.ClickHouseCluster))
+	return w.validateImpl(obj.(*chv1.ClickHouseCluster))
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
 func (w *ClickHouseClusterWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	return nil, w.validateImpl(newObj.(*chv1.ClickHouseCluster))
+	return w.validateImpl(newObj.(*chv1.ClickHouseCluster))
 }
 
 func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
 
-func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) error {
+func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, error) {
+	var warns admission.Warnings
+	var errs []error
 	if obj.Spec.KeeperClusterRef != nil && obj.Spec.KeeperClusterRef.Name == "" {
-		return fmt.Errorf("keeperClusterRef name must not be empty")
+		errs = append(errs, fmt.Errorf("keeperClusterRef name must not be empty"))
 	}
 
-	return obj.Spec.Settings.TLS.Validate()
+	if err := obj.Spec.Settings.TLS.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	if obj.Spec.Settings.DefaultUserPassword == nil {
+		warns = append(warns, ".spec.settings.defaultUserPassword is empty, 'default' user will be without password ")
+	}
+
+	return warns, errors.Join(errs...)
 }

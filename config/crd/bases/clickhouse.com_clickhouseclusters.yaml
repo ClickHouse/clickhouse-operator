@@ -1573,6 +1573,22 @@ spec:
               settings:
                 description: Configuration parameters for ClickHouse server.
                 properties:
+                  defaultUserPassword:
+                    description: Reference to the Secret key, which contains password
+                      for the user 'default'.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        description: The name of the secret in the cluster's namespace
+                          to select from.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
                   extraConfig:
                     description: Additional ClickHouse configuration that will be
                       merged with the default one.

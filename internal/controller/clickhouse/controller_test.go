@@ -31,6 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -88,6 +89,7 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 
 		var services corev1.ServiceList
 		var pdbs policyv1.PodDisruptionBudgetList
+		var secrets corev1.SecretList
 		var configs corev1.ConfigMapList
 		var statefulsets appsv1.StatefulSetList
 
@@ -133,6 +135,9 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 			Expect(suite.Client.List(suite.Context, &pdbs, listOpts)).To(Succeed())
 			Expect(pdbs.Items).To(HaveLen(2))
 
+			Expect(suite.Client.List(suite.Context, &secrets, listOpts)).To(Succeed())
+			Expect(secrets.Items).To(HaveLen(1))
+
 			Expect(suite.Client.List(suite.Context, &configs, listOpts)).To(Succeed())
 			Expect(configs.Items).To(HaveLen(4))
 
@@ -172,6 +177,17 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 				}
 			}
 
+			By("setting meta attributes for secrets")
+			for _, secret := range secrets.Items {
+				Expect(secret.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+				for k, v := range cr.Spec.Labels {
+					Expect(secret.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				}
+				for k, v := range cr.Spec.Annotations {
+					Expect(secret.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				}
+			}
+
 			By("setting meta attributes for configs")
 			for _, config := range configs.Items {
 				Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
@@ -195,6 +211,36 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 					Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 				}
 			}
+		})
+
+		It("should generate all secret values", func() {
+			for key := range SecretsToGenerate {
+				Expect(secrets.Items[0].Data).To(HaveKey(key))
+				Expect(secrets.Items[0].Data[key]).To(Not(BeEmpty()))
+			}
+		})
+
+		It("should delete unneeded secrets and generate missing", func() {
+			secret := secrets.Items[0]
+			secret.Data["invalid-key"] = []byte("invalid-value")
+			delete(secrets.Items[0].Data, SecretKeyManagementPassword)
+			By("Changing secret data")
+			Expect(suite.Client.Update(suite.Context, &secret)).To(Succeed())
+
+			By("reconciling the cluster")
+			_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+
+			By("checking that secret is updated")
+			Expect(suite.Client.Get(suite.Context, types.NamespacedName{
+				Name:      secret.Name,
+				Namespace: secret.Namespace,
+			}, &secret)).To(Succeed())
+
+			Expect(secret.Data).NotTo(HaveKey("invalid-key"))
+			Expect(secret.Data).To(HaveKey(SecretKeyManagementPassword))
+			Expect(secret.Data[SecretKeyManagementPassword]).NotTo(BeEmpty())
 		})
 
 		It("should reflect configuration changes in revisions", func() {

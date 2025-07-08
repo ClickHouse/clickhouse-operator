@@ -160,6 +160,8 @@ type reconcileContext struct {
 
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	keeper v1.KeeperCluster
+	// Should be populated by reconcileCommonResources.
+	secret corev1.Secret
 }
 
 type ReconcileFunc func(util.Logger, *reconcileContext) (*ctrl.Result, error)
@@ -177,9 +179,9 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	}
 
 	reconcileSteps := []ReconcileFunc{
+		r.reconcileCommonResources,
 		r.reconcileClusterRevisions,
 		r.reconcileActiveReplicaStatus,
-		r.reconcileCommonResources,
 		r.reconcileReplicaResources,
 		r.reconcileCleanUp,
 		r.reconcileConditions,
@@ -276,16 +278,16 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 		}
 	}
 
-	configRevison, err := GetConfigurationRevision(ctx.Cluster, ctx.keeper, ctx.ExtraConfig)
+	configRevision, err := GetConfigurationRevision(ctx)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("get configuration revision: %w", err)
 	}
-	if configRevison != ctx.Cluster.Status.ConfigurationRevision {
-		ctx.Cluster.Status.ConfigurationRevision = configRevison
-		log.Debug(fmt.Sprintf("observed new configuration revision %q", configRevison))
+	if configRevision != ctx.Cluster.Status.ConfigurationRevision {
+		ctx.Cluster.Status.ConfigurationRevision = configRevision
+		log.Debug(fmt.Sprintf("observed new configuration revision %q", configRevision))
 	}
 
-	stsRevision, err := GetStatefulSetRevision(ctx.Cluster)
+	stsRevision, err := GetStatefulSetRevision(ctx)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("get StatefulSet revision: %w", err)
 	}
@@ -347,6 +349,32 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
 		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
 			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource fr shard %d: %w", shard, err)
+		}
+	}
+
+	getErr := r.Get(ctx.Context, types.NamespacedName{
+		Namespace: ctx.Cluster.Namespace,
+		Name:      ctx.Cluster.SecretName(),
+	}, &ctx.secret)
+	if getErr != nil && !k8serrors.IsNotFound(getErr) {
+		return &ctrl.Result{}, fmt.Errorf("get ClickHouse cluster secret %q: %w", ctx.Cluster.SecretName(), getErr)
+	}
+	secretsUpdated, err := TemplateClusterSecrets(ctx.Cluster, &ctx.secret)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("template cluster secrets: %w", err)
+	}
+	if err := ctrl.SetControllerReference(ctx.Cluster, &ctx.secret, r.Scheme); err != nil {
+		return &ctrl.Result{}, fmt.Errorf("set controller reference for cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+	}
+
+	if getErr != nil {
+		log.Info("cluster secret not found, creating", "secret", ctx.Cluster.SecretName())
+		if err = r.Create(ctx.Context, &ctx.secret); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("create cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		}
+	} else if secretsUpdated {
+		if err := r.Update(ctx.Context, &ctx.secret); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("update cluster secret %q: %w", ctx.Cluster.SecretName(), err)
 		}
 	}
 
@@ -593,7 +621,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	log = log.With("replica_id", id)
 	log.Info("updating replica")
 
-	configMap, err := TemplateConfigMap(ctx.Cluster, ctx.keeper, ctx.ExtraConfig, id)
+	configMap, err := TemplateConfigMap(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", id, err)
 	}
@@ -603,7 +631,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", id, err)
 	}
 
-	statefulSet := TemplateStatefulSet(ctx.Cluster, id)
+	statefulSet := TemplateStatefulSet(ctx, id)
 	if err := ctrl.SetControllerReference(ctx.Cluster, statefulSet, r.Scheme); err != nil {
 		return nil, fmt.Errorf("set replica %q StatefulSet controller reference: %w", id, err)
 	}

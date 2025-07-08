@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	mcertv1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -32,6 +34,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -225,7 +228,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		cr := &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
 			},
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: ptr.To[int32](2),
@@ -293,6 +296,95 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			ClickHouseRWChecks(cr, ptr.To(0))
 		})
 	})
+
+	Describe("default and management users works", Ordered, func() {
+		secret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()),
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				"password": []byte(fmt.Sprintf("test-password-%d", rand.Uint32())),
+			},
+		}
+		auth := clickhouse.Auth{
+			Username: "default",
+			Password: string(secret.Data["password"]),
+		}
+
+		keeperCR := &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](1),
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+				},
+				DataVolumeClaimSpec: defaultStorage,
+			},
+		}
+
+		cr := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: ptr.To[int32](2),
+				KeeperClusterRef: &corev1.LocalObjectReference{
+					Name: keeperCR.Name,
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+				},
+				DataVolumeClaimSpec: defaultStorage,
+				Settings: v1.ClickHouseConfig{
+					DefaultUserPassword: &v1.SecretKeySelector{
+						Name: secret.Name,
+						Key:  "password",
+					},
+				},
+			},
+		}
+
+		checks := 0
+
+		It("should create cluster with default user password", func() {
+			By("creating secret")
+			Expect(k8sClient.Create(ctx, &secret)).To(Succeed())
+
+			By("creating keeper")
+			Expect(k8sClient.Create(ctx, keeperCR)).To(Succeed())
+
+			By("creating clickhouse")
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+		})
+
+		It("should be accessible with default user credentials", func() {
+			ClickHouseRWChecks(cr, &checks, auth)
+		})
+
+		It("should be accessible with operator management user credentials", func() {
+			var managementSecret corev1.Secret
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      cr.SecretName(),
+				Namespace: cr.Namespace,
+			}, &managementSecret)).To(Succeed())
+
+			ClickHouseRWChecks(cr, &checks, clickhouse.Auth{
+				Username: chctrl.OperatorManagementUsername,
+				Password: string(managementSecret.Data[chctrl.SecretKeyManagementPassword]),
+			})
+		})
+	})
 })
 
 func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Duration) {
@@ -333,11 +425,12 @@ func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Durati
 	}).Should(BeTrue())
 }
 
-func ClickHouseRWChecks(cr *v1.ClickHouseCluster, checksDone *int) {
+func ClickHouseRWChecks(cr *v1.ClickHouseCluster, checksDone *int, auth ...clickhouse.Auth) {
 	ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 	By("connecting to cluster")
-	chClient, err := utils.NewClickHouseClient(ctx, config, cr)
+	Expect(len(auth)).To(Or(Equal(0), Equal(1)))
+	chClient, err := utils.NewClickHouseClient(ctx, config, cr, auth...)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer chClient.Close()
 

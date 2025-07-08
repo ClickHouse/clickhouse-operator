@@ -51,6 +51,8 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters/finalizers,verbs=update
 
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;create;update;delete
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

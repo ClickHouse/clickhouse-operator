@@ -44,10 +44,25 @@ const (
 	ContainerName          = "clickhouse-server"
 	DefaultRevisionHistory = 10
 
-	DefaultProfileName = "default"
+	InterserverUserName        = "interserver"
+	OperatorManagementUsername = "operator"
+	DefaultProfileName         = "default"
+
+	EnvInterserverPassword = "CLICKHOUSE_INTERSERVER_PASSWORD"
+	EnvDefaultUserPassword = "CLICKHOUSE_DEFAULT_USER_PASSWORD"
+	EnvKeeperIdentity      = "CLICKHOUSE_KEEPER_IDENTITY"
+
+	SecretKeyInterserverPassword = "interserver-password"
+	SecretKeyManagementPassword  = "management-password"
+	SecretKeyKeeperIdentity      = "keeper-identity"
 )
 
 var (
 	BreakingStatefulSetVersion, _       = semver.Parse("0.0.1")
 	TLSFileMode                   int32 = 0444
+	SecretsToGenerate                   = map[string]string{
+		SecretKeyInterserverPassword: "%s",
+		SecretKeyManagementPassword:  "%s",
+		SecretKeyKeeperIdentity:      "clickhouse:%s",
+	}
 )

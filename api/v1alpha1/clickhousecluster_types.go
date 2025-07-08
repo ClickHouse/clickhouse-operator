@@ -102,6 +102,10 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 }
 
 type ClickHouseConfig struct {
+	// Reference to the Secret key, which contains password for the user 'default'.
+	// +optional
+	DefaultUserPassword *SecretKeySelector `json:"defaultUserPassword,omitempty"`
+
 	// Optionally you can lower the logger level or disable logging to file at all.
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
@@ -192,6 +196,10 @@ func (v *ClickHouseCluster) HeadlessServiceName() string {
 
 func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
 	return fmt.Sprintf("%s-%d", v.SpecificName(), shard)
+}
+
+func (v *ClickHouseCluster) SecretName() string {
+	return v.SpecificName()
 }
 
 func (v *ClickHouseCluster) ConfigMapNameByReplicaID(shard int32, index int32) string {
