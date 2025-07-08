@@ -1,25 +1,24 @@
 package utils
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"maps"
 	"net"
-	"os/exec"
-	"strings"
-	"syscall"
+	"slices"
 	"time"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/go-zookeeper/zk"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
+	"k8s.io/client-go/rest"
 )
 
 const (
-	testDataKey = "/%d_test_data_%d"
-	testDataVal = "test data value %d"
+	keeperTestDataKey = "/%d_test_data_%d"
+	keeperTestDataVal = "test data value %d"
 )
 
 type zkLogger struct{}
@@ -29,16 +28,18 @@ func (l zkLogger) Printf(s string, args ...any) {
 }
 
 type KeeperClient struct {
-	cancel context.CancelFunc
-	cmds   []*exec.Cmd
-	client *zk.Conn
+	cluster *ForwardedCluster
+	client  *zk.Conn
 }
 
-func NewKeeperClient(ctx context.Context, cr *v1.KeeperCluster) (*KeeperClient, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	addrs, cmds, err := forwardNodes(ctx, cr)
+func NewKeeperClient(ctx context.Context, config *rest.Config, cr *v1.KeeperCluster) (*KeeperClient, error) {
+	var port uint16 = keeper.PortNative
+	if cr.Spec.Settings.TLS.Enabled {
+		port = keeper.PortNativeSecure
+	}
+
+	cluster, err := NewForwardedCluster(ctx, config, cr.Namespace, cr.SpecificName(), port)
 	if err != nil {
-		cancel()
 		return nil, fmt.Errorf("forwarding zk nodes failed: %w", err)
 	}
 
@@ -49,38 +50,33 @@ func NewKeeperClient(ctx context.Context, cr *v1.KeeperCluster) (*KeeperClient, 
 
 		timeCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		//nolint:gosec // Test certs are self signed, so we skip verification.
+		//nolint:gosec // Test certs are self-signed, so we skip verification.
 		dial := tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true}}
 		return dial.DialContext(timeCtx, network, address)
 	}
 
-	conn, _, err := zk.Connect(addrs, 5*time.Second, zk.WithLogger(zkLogger{}), zk.WithDialer(dialer))
+	keeperAddrs := slices.Collect(maps.Values(cluster.PodToAddr))
+	conn, _, err := zk.Connect(keeperAddrs, 5*time.Second, zk.WithLogger(zkLogger{}), zk.WithDialer(dialer))
 	if err != nil {
-		cancel()
+		cluster.Close()
 		return nil, fmt.Errorf("connecting to zk %v failed: %w", cr.NamespacedName(), err)
 	}
 
 	return &KeeperClient{
-		cancel: cancel,
-		cmds:   cmds,
-		client: conn,
+		cluster: cluster,
+		client:  conn,
 	}, nil
 }
 
 func (c *KeeperClient) Close() {
 	c.client.Close()
-	c.cancel()
-	for _, cmd := range c.cmds {
-		if err := cmd.Wait(); err != nil {
-			_, _ = fmt.Fprintf(GinkgoWriter, "wait port forward to finish: %s\n", err)
-		}
-	}
+	c.cluster.Close()
 }
 
 func (c *KeeperClient) CheckWrite(order int) error {
 	for i := range 10 {
-		path := fmt.Sprintf(testDataKey, order, i)
-		if _, err := c.client.Create(path, []byte(fmt.Sprintf(testDataVal, i)), 0, nil); err != nil {
+		path := fmt.Sprintf(keeperTestDataKey, order, i)
+		if _, err := c.client.Create(path, []byte(fmt.Sprintf(keeperTestDataVal, i)), 0, nil); err != nil {
 			return fmt.Errorf("creating test data failed: %w", err)
 		}
 		if _, err := c.client.Sync(path); err != nil {
@@ -93,66 +89,15 @@ func (c *KeeperClient) CheckWrite(order int) error {
 
 func (c *KeeperClient) CheckRead(order int) error {
 	for i := range 10 {
-		data, _, err := c.client.Get(fmt.Sprintf(testDataKey, order, i))
+		data, _, err := c.client.Get(fmt.Sprintf(keeperTestDataKey, order, i))
 		if err != nil {
 			return fmt.Errorf("check test data failed: %w", err)
 		}
 
-		if string(data) != fmt.Sprintf(testDataVal, i) {
-			return fmt.Errorf("check test data failed: expected %q, got %q", fmt.Sprintf(testDataVal, i), string(data))
+		if string(data) != fmt.Sprintf(keeperTestDataVal, i) {
+			return fmt.Errorf("check test data failed: expected %q, got %q", fmt.Sprintf(keeperTestDataVal, i), string(data))
 		}
 	}
 
 	return nil
-}
-
-func forwardNodes(ctx context.Context, cr *v1.KeeperCluster) ([]string, []*exec.Cmd, error) {
-	keeperAddrs := make([]string, 0, cr.Replicas())
-	keeperCmds := make([]*exec.Cmd, 0, len(keeperAddrs))
-
-	keeperPort := keeper.PortNative
-	if cr.Spec.Settings.TLS.Required {
-		keeperPort = keeper.PortNativeSecure
-	}
-
-	for _, id := range cr.Status.Replicas {
-		pod := fmt.Sprintf("%s-0", cr.StatefulSetNameByReplicaID(id))
-		port, err := GetFreePort()
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get free port: %w", err)
-		}
-
-		keeperAddrs = append(keeperAddrs, fmt.Sprintf("127.0.0.1:%d", port))
-		cmd := exec.CommandContext(ctx, "kubectl", "port-forward", pod, fmt.Sprintf("%d:%d", port, keeperPort),
-			"--namespace", cr.Namespace)
-		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-		keeperCmds = append(keeperCmds, cmd)
-		_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", strings.Join(cmd.Args, " "))
-
-		stderr, err := cmd.StderrPipe()
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to create stderr pipe for port forward to keeper pod %q: %w", pod, err)
-		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to create stdout pipe for port forward to keeper pod %q: %w", pod, err)
-		}
-
-		if err = cmd.Start(); err != nil {
-			return nil, nil, fmt.Errorf("fail to create port forward to keeper pod %q: %w", pod, err)
-		}
-
-		data, err := bufio.NewReader(stdout).ReadString('\n') // Wait the port forward to report it started
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to read to from pod %q port forward stdout: %w", pod, err)
-		}
-
-		if !strings.HasPrefix(data, "Forwarding from") {
-			stderrData, _ := bufio.NewReader(stderr).ReadString('\n')
-			return nil, nil, fmt.Errorf("unexpected output from pod %q port forward: stdout: %q, stderr %q",
-				pod, data, stderrData)
-		}
-	}
-
-	return keeperAddrs, keeperCmds, nil
 }

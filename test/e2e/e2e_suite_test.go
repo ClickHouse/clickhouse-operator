@@ -30,7 +30,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/rand"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,6 +47,15 @@ const (
 var ctx context.Context
 var cancel context.CancelFunc
 var k8sClient client.Client
+var config *rest.Config
+var defaultStorage = corev1.PersistentVolumeClaimSpec{
+	AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	Resources: corev1.VolumeResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("1Gi"),
+		},
+	},
+}
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
@@ -53,12 +65,13 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	var err error
 	rand.Seed(uint64(GinkgoRandomSeed()))
 
 	ctx, cancel = context.WithCancel(context.Background())
 
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	Expect(err).NotTo(HaveOccurred())
 
 	Expect(clickhousecomv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
@@ -66,7 +79,7 @@ var _ = BeforeSuite(func() {
 
 	// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(cfg, client.Options{
+	k8sClient, err = client.New(config, client.Options{
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).NotTo(HaveOccurred())

@@ -124,6 +124,14 @@ test-ci: manifests generate fmt vet envtest ## Run tests.
 test-e2e:
 	go test ./test/e2e/ -v -ginkgo.v -test.timeout 30m
 
+.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+test-keeper-e2e:
+	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter keeper -test.timeout 30m
+
+.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+test-clickhouse-e2e:
+	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter clickhouse -test.timeout 30m
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run

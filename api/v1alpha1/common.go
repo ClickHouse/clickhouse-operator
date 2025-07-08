@@ -45,9 +45,19 @@ type LoggerConfig struct {
 	JSONLogs bool `json:"jsonLogs,omitempty"`
 
 	// +optional
-	// +kubebuilder:validation:Enum:=test;trace;debug;information;error;warning
+	// +kubebuilder:validation:Enum:=test;trace;debug;information;notice;warning;error;critical;fatal
 	// +kubebuilder:default:=trace
 	Level string `json:"level,omitempty"`
+
+	// Maximum log file size.
+	// +optional
+	// +kubebuilder:default:="1000M"
+	Size string `json:"size,omitempty"`
+
+	// Maximum number of log files to keep.
+	// +optional
+	// +kubebuilder:default:=50
+	Count int64 `json:"count,omitempty"`
 }
 
 type PodTemplateSpec struct {

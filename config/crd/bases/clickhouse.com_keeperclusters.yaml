@@ -1593,6 +1593,11 @@ spec:
                     description: Optionally you can lower the logger level or disable
                       logging to file at all.
                     properties:
+                      count:
+                        default: 50
+                        description: Maximum number of log files to keep.
+                        format: int64
+                        type: integer
                       jsonLogs:
                         default: false
                         description: If true, then log in JSON format.
@@ -1604,13 +1609,20 @@ spec:
                         - trace
                         - debug
                         - information
-                        - error
+                        - notice
                         - warning
+                        - error
+                        - critical
+                        - fatal
                         type: string
                       logToFile:
                         default: true
                         description: If false then disable all logging to file.
                         type: boolean
+                      size:
+                        default: 1000M
+                        description: Maximum log file size.
+                        type: string
                     type: object
                   tls:
                     description: TLS settings, allows to enable TLS settings for Keeper.
