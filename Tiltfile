@@ -1,6 +1,7 @@
 load('ext://cert_manager', 'deploy_cert_manager')
+load("ext://restart_process", "docker_build_with_restart")
 
-deploy_cert_manager(version='v1.18.0')
+# deploy_cert_manager(version='v1.18.0')
 
 local_resource(
     "generate",
@@ -12,22 +13,41 @@ local_resource(
         '*/*/*/*test*',
     ],
     auto_init=False,
-    labels=["makefile"],
+    labels=["operator"],
 )
 
-docker_build('clickhouse.com/clickhouse-operator', '.',
-    dockerfile='Dockerfile',
+local_resource(
+    "go-compile",
+    "make build-linux-manager",
+    deps=['api/', 'cmd/','internal/controller'],
     ignore=[
-        'config',
-        'test',
-        'bin',
         '*/*/*test*',
         '*/*/*/*test*',
+    ],
+    labels=['operator'],
+    resource_deps=[
+        'generate',
+    ],
+
+    auto_init = False,
+    trigger_mode = TRIGGER_MODE_AUTO,
+)
+
+docker_build_with_restart(
+    "clickhouse.com/clickhouse-operator",
+    ".",
+    dockerfile = "./Dockerfile.tilt",
+    entrypoint = ["/manager"],
+    only = [
+        "bin/manager_linux",
+    ],
+    live_update = [
+        sync("bin/manager_linux", "/manager"),
     ],
 )
 
 # Deploy crd & operator
-k8s_yaml(kustomize('config/default'))
+k8s_yaml(kustomize('config/tilt'))
 
 k8s_resource(
     new_name='operator-resources',

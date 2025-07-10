@@ -6,12 +6,14 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
@@ -267,4 +269,67 @@ func GeneratePassword() string {
 func Sha256Hash(password []byte) string {
 	sum := sha256.Sum256(password)
 	return hex.EncodeToString(sum[:])
+}
+
+type executionResult[Id comparable, Result any] struct {
+	id     Id
+	result Result
+	err    error
+}
+
+type ExecutionError struct {
+	error
+	Id any
+}
+
+func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
+	tasks Tasks,
+	f func(Item) (Id, Result, error),
+) (map[Id]Result, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+
+	wg := sync.WaitGroup{}
+	var results = make(chan executionResult[Id, Result], len(tasks))
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(task Item) {
+			defer wg.Done()
+			id, res, err := f(task)
+			if err != nil {
+				err = ExecutionError{err, id}
+			}
+			results <- executionResult[Id, Result]{
+				id:     id,
+				result: res,
+				err:    err,
+			}
+		}(task)
+	}
+
+	wg.Wait()
+	close(results)
+
+	resultMap := make(map[Id]Result, len(tasks))
+	var errs []error
+	for res := range results {
+		if res.err != nil {
+			errs = append(errs, res.err)
+		} else {
+			resultMap[res.id] = res.result
+		}
+	}
+
+	return resultMap, errors.Join(errs...)
+}
+
+func UnwrapErrors(err error) []error {
+	switch e := err.(type) {
+	case interface{ Unwrap() []error }:
+		return e.Unwrap()
+	}
+
+	return nil
 }

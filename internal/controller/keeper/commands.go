@@ -6,10 +6,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"maps"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/clickhouse-operator/internal/util"
 )
@@ -134,50 +135,20 @@ func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus
 }
 
 func queryAllPods(ctx context.Context, log util.Logger, connections Connections) map[string]ServerStatus {
-	// Contains the hostName along with parsed response from it
-	type NamedFourLetterCommandResponse struct {
-		id    string
-		state ServerStatus
-	}
-
-	// Buffered channels will block only if buffer is full
-	// In out case it won't block in any situation
-	fails := make(chan error, len(connections))
-	resultChan := make(chan NamedFourLetterCommandResponse, len(connections))
-
-	var wg sync.WaitGroup
-	for id, conn := range connections {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp, err := queryPod(ctx, log.With("replica_id", id), conn)
-			if err != nil {
-				fails <- err
-			} else {
-				resultChan <- NamedFourLetterCommandResponse{id, resp}
-			}
-		}()
-	}
-
-	result := map[string]ServerStatus{}
-	errs := []error{}
-
-	// Wait for all goroutines to return error or result
-	wg.Wait()
+	result, err := util.ExecuteParallel(slices.Collect(maps.Keys(connections)), func(id string) (string, ServerStatus, error) {
+		resp, err := queryPod(ctx, log.With("replica_id", id), connections[id])
+		return id, resp, err
+	})
 	log.Debug("all keeper pods have responded")
-	close(fails)
-	close(resultChan)
 
-	for err := range fails {
-		errs = append(errs, err)
-	}
-
-	for response := range resultChan {
-		result[response.id] = response.state
-	}
-
-	for _, err := range errs {
-		log.Info("failed to query keeper pod", "error", err)
+	if err != nil {
+		if errs := util.UnwrapErrors(err); errs != nil {
+			for _, err := range errs {
+				log.Info("failed to query keeper pod", "error", err, "replica_id", err.(util.ExecutionError).Id)
+			}
+		} else {
+			log.Info("failed to query keeper pods", "error", err)
+		}
 	}
 
 	return result

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"path"
+	"slices"
 	"strconv"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
@@ -22,48 +23,29 @@ import (
 )
 
 func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
-	ports := []corev1.ServicePort{
-		{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       "prometheus",
-			Port:       PortPrometheusScrape,
-			TargetPort: intstr.FromInt32(PortPrometheusScrape),
-		},
-		{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       "interserver",
-			Port:       PortInterserver,
-			TargetPort: intstr.FromInt32(PortInterserver),
-		},
-	}
+	protocols := buildProtocols(cr)
+	ports := make([]corev1.ServicePort, 0, len(protocols))
+	for name, protocol := range protocols {
+		if protocol.Port == 0 {
+			continue
+		}
 
-	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:   corev1.ProtocolTCP,
-			Name:       "native",
-			Port:       PortNative,
-			TargetPort: intstr.FromInt32(PortNative),
-		}, corev1.ServicePort{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       "http",
-			Port:       PortHTTP,
-			TargetPort: intstr.FromInt32(PortHTTP),
+			Name:       name,
+			Port:       int32(protocol.Port),
+			TargetPort: intstr.FromInt32(int32(protocol.Port)),
 		})
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
-		ports = append(ports, corev1.ServicePort{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       "native-secure",
-			Port:       PortNativeSecure,
-			TargetPort: intstr.FromInt32(PortNativeSecure),
-		}, corev1.ServicePort{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       "http-secure",
-			Port:       PortHTTPSecure,
-			TargetPort: intstr.FromInt32(PortHTTPSecure),
-		})
-	}
+	slices.SortFunc(ports, func(a, b corev1.ServicePort) int {
+		if a.Name < b.Name {
+			return -1
+		} else if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
 
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
@@ -216,6 +198,14 @@ func TemplateConfigMap(ctx *reconcileContext, id replicaID) (*corev1.ConfigMap, 
 
 func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSet {
 	volumes, volumeMounts := buildVolumes(ctx, id)
+	protocols := buildProtocols(ctx.Cluster)
+	var readyCheck string
+	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
+		readyCheck = fmt.Sprintf("wget -qO- http://127.0.0.1:%d | grep -o Ok.", PortHTTP)
+	} else {
+		readyCheck = fmt.Sprintf("wget --ca-certificate=%s -qO- https://%s:%d | grep -o Ok.",
+			path.Join(TLSConfigPath, CABundleFilename), ctx.Cluster.HostnameById(id.shardID, id.index), PortHTTPSecure)
+	}
 
 	container := corev1.Container{
 		Name:            ContainerName,
@@ -267,14 +257,27 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 			},
 		},
 		VolumeMounts: volumeMounts,
-		ReadinessProbe: &corev1.Probe{
+		// TODO do not restart if liveness probe fails?
+		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
 					Command: []string{
-						"/bin/bash",
-						"-c",
-						fmt.Sprintf("wget -qO- http://127.0.0.1:%d | grep -o Ok.", PortHTTP),
+						"/usr/bin/clickhouse", "client",
+						"--port", strconv.Itoa(PortManagement),
+						// "--user", OperatorManagementUsername, // TODO pass password or generate user for it
+						"-q", "SELECT 'liveness'",
 					},
+				},
+			},
+			TimeoutSeconds:   10,
+			PeriodSeconds:    1,
+			SuccessThreshold: 1,
+			FailureThreshold: 15,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/bash", "-c", readyCheck},
 				},
 			},
 			TimeoutSeconds:   10,
@@ -291,29 +294,25 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 		},
 	}
 
-	if !ctx.Cluster.Spec.Settings.TLS.Enabled || !ctx.Cluster.Spec.Settings.TLS.Required {
+	container.Ports = make([]corev1.ContainerPort, 0, len(protocols))
+	for name, protocol := range protocols {
+		if protocol.Port == 0 {
+			continue
+		}
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
-			Name:          "native",
-			ContainerPort: PortNative,
-		}, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          "http",
-			ContainerPort: PortHTTP,
+			Name:          name,
+			ContainerPort: int32(protocol.Port),
 		})
 	}
-
-	if ctx.Cluster.Spec.Settings.TLS.Enabled {
-		container.Ports = append(container.Ports, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          "native-secure",
-			ContainerPort: PortNativeSecure,
-		}, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          "http-secure",
-			ContainerPort: PortHTTPSecure,
-		})
-	}
+	slices.SortFunc(container.Ports, func(a, b corev1.ContainerPort) int {
+		if a.Name < b.Name {
+			return -1
+		} else if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
 
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
 		container.Env = append(container.Env, corev1.EnvVar{
@@ -405,67 +404,12 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 	}
 }
 
-type RemoteCluster struct {
-	Discovery ClusterDiscovery `yaml:"discovery"`
-}
-
-type ClusterDiscovery struct {
-	Path  string `yaml:"path"`
-	Shard int32  `yaml:"shard"`
-}
-
-type KeeperNode struct {
-	Host   string `yaml:"host"`
-	Port   int32  `yaml:"port"`
-	Secure int32  `yaml:"secure,omitempty"` // 0 for insecure, 1 for secure
-}
-
-type ZooKeeper struct {
-	Nodes    []KeeperNode `yaml:"node"`
-	Identity EnvVal
-}
-
-type DistributedDDL struct {
-	Path    string `yaml:"path"`
-	Profile string `yaml:"profile"`
-}
-
-type EnvVal struct {
-	FromEnv string `yaml:"@from_env"`
-}
-
-type Config struct {
-	ListenHost                 string                       `yaml:"listen_host"`
-	Path                       string                       `yaml:"path"`
-	Logger                     controller.LoggerConfig      `yaml:"logger"`
-	Prometheus                 controller.PrometheusConfig  `yaml:"prometheus"`
-	OpenSSL                    controller.OpenSSLConfig     `yaml:"openSSL"`
-	UserDirectories            map[string]map[string]string `yaml:"user_directories,omitempty"`
-	Macros                     map[string]string            `yaml:"macros,omitempty"`
-	RemoteServers              map[string]RemoteCluster     `yaml:"remote_servers"`
-	DistributedDDL             DistributedDDL               `yaml:"distributed_ddl"`
-	ZooKeeper                  ZooKeeper                    `yaml:"zookeeper,omitempty"`
-	UserDefinedZookeeperPath   string                       `yaml:"user_defined_zookeeper_path"`
-	InterserverHTTPCredentials map[string]any               `yaml:"interserver_http_credentials"`
-	// TODO log tables
-	// TODO merge tree settings, named collections, engines (kafka/rocksdb/etc)
-
-	// Port settings
-	InterserverHTTPPort uint16 `yaml:"interserver_http_port"`
-	TCPPort             uint16 `yaml:"tcp_port,omitempty"`
-	TCPPortSecure       uint16 `yaml:"tcp_port_secure,omitempty"`
-	HTTPPort            uint16 `yaml:"http_port,omitempty"`
-	HTTPSPort           uint16 `yaml:"https_port,omitempty"`
-
-	AllowExperimentalClusterDiscovery bool `yaml:"allow_experimental_cluster_discovery"`
-}
-
 func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string, error) {
 	config := Config{
-		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
-		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
+		ListenHost: DefaultListenHost,
 		Logger:     controller.GenerateLoggerConfig(ctx.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
+		Protocols:  buildProtocols(ctx.Cluster),
 		UserDirectories: map[string]map[string]string{
 			"users_xml": {
 				"path": UsersFileName,
@@ -487,9 +431,9 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string
 				},
 			},
 		},
-		DistributedDDL: DistributedDDL{
-			Path:    KeeperPathDistributedDDL,
-			Profile: DefaultProfileName,
+		DistributedDDL: map[string]string{
+			"path":    KeeperPathDistributedDDL,
+			"profile": DefaultProfileName,
 		},
 		ZooKeeper: ZooKeeper{
 			Identity: EnvVal{
@@ -505,43 +449,34 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string
 			},
 		},
 
-		// Port settings
-		InterserverHTTPPort: PortInterserver,
-		TCPPort:             PortNative,
-		HTTPPort:            PortHTTP,
-
 		AllowExperimentalClusterDiscovery: true,
 	}
 
 	if ctx.Cluster.Spec.Settings.TLS.Enabled {
-		if ctx.Cluster.Spec.Settings.TLS.Required {
-			config.TCPPort = 0
+		params := controller.OpenSSLParams{
+			CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
+			PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
+			CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
+			VerificationMode:    "relaxed",
+			DisableProtocols:    "sslv2,sslv3",
+			PreferServerCiphers: true,
 		}
 
-		config.TCPPortSecure = PortNativeSecure
-		config.HTTPSPort = PortHTTPSecure
 		config.OpenSSL = controller.OpenSSLConfig{
-			Server: controller.OpenSSLParams{
-				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
-				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-				CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
-				VerificationMode:    "relaxed",
-				DisableProtocols:    "sslv2,sslv3",
-				PreferServerCiphers: true,
-			},
-			Client: controller.OpenSSLParams{
-				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
-				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-				CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
-				VerificationMode:    "relaxed",
-				DisableProtocols:    "sslv2,sslv3",
-				PreferServerCiphers: true,
-			},
+			Server: params,
+			Client: params,
 		}
 	}
 
+	if ctx.Cluster.Spec.Settings.TLS.CABundle != nil {
+		config.OpenSSL.Client.CAConfig = CustomCAFilename
+		config.OpenSSL.Client.VerificationMode = "relaxed"
+		config.OpenSSL.Client.DisableProtocols = "sslv2,sslv3"
+		config.OpenSSL.Client.PreferServerCiphers = true
+	}
+
 	for _, host := range ctx.keeper.Hostnames() {
-		if ctx.Cluster.Spec.Settings.TLS.Enabled {
+		if ctx.keeper.Spec.Settings.TLS.Enabled {
 			config.ZooKeeper.Nodes = append(config.ZooKeeper.Nodes, KeeperNode{
 				Host:   host,
 				Port:   keepercontroller.PortNativeSecure,
@@ -579,32 +514,60 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string
 	return string(yamlConfig), nil
 }
 
-type querySpec struct {
-	Query string `yaml:"query"`
-}
+func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
+	protocols := map[string]Protocol{
+		"interserver": {
+			Type:        "interserver",
+			Port:        PortInterserver,
+			Description: "interserver",
+		},
+		"prometheus": {
+			Type:        "prometheus",
+			Port:        PortPrometheusScrape,
+			Description: "prometheus",
+		},
+		"management": {
+			Type:        "tcp",
+			Port:        PortManagement,
+			Description: "tcp-management",
+		},
+		"tcp": {
+			Type: "tcp",
+		},
+		"http": {
+			Type: "http",
+		},
+	}
 
-type User struct {
-	PasswordSha256 string      `yaml:"password_sha256_hex,omitempty"`
-	Password       EnvVal      `yaml:"password,omitempty"`
-	NoPassword     *struct{}   `yaml:"no_password,omitempty"`
-	Profile        string      `yaml:"profile,omitempty"`
-	Quota          string      `yaml:"quota,omitempty"`
-	Grants         []querySpec `yaml:"grants,omitempty"`
-	// TODO add user settings
-}
+	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
+		protocols["http"] = Protocol{
+			Type:        "http",
+			Port:        PortHTTP,
+			Description: "http",
+		}
+		protocols["tcp"] = Protocol{
+			Type:        "tcp",
+			Port:        PortNative,
+			Description: "native protocol",
+		}
+	}
 
-type Profile struct {
-	// TODO add profile settings
-}
+	if cr.Spec.Settings.TLS.Enabled {
+		protocols["tcp-secure"] = Protocol{
+			Type:        "tls",
+			Port:        PortNativeSecure,
+			Impl:        "tcp",
+			Description: "secure native protocol",
+		}
+		protocols["http-secure"] = Protocol{
+			Type:        "tls",
+			Port:        PortHTTPSecure,
+			Impl:        "http",
+			Description: "https",
+		}
+	}
 
-type Quota struct {
-	// TODO add quota settings
-}
-
-type UserConfig struct {
-	Users    map[string]User    `yaml:"users"`
-	Profiles map[string]Profile `yaml:"profiles"`
-	Quotas   map[string]Quota   `yaml:"quotas"`
+	return protocols
 }
 
 func generateUsersConfig(ctx *reconcileContext) (string, error) {
@@ -703,6 +666,27 @@ func buildVolumes(ctx *reconcileContext, id replicaID) ([]corev1.Volume, []corev
 						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
 						{Key: "tls.key", Path: KeyFilename},
+					},
+				},
+			},
+		})
+	}
+
+	if ctx.Cluster.Spec.Settings.TLS.CABundle != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      CustomCAVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		})
+
+		volumes = append(volumes, corev1.Volume{
+			Name: CustomCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  ctx.Cluster.Spec.Settings.TLS.CABundle.Name,
+					DefaultMode: &TLSFileMode,
+					Items: []corev1.KeyToPath{
+						{Key: ctx.Cluster.Spec.Settings.TLS.CABundle.Key, Path: CustomCAFilename},
 					},
 				},
 			},

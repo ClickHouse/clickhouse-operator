@@ -45,7 +45,7 @@ const (
 )
 
 var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
-	When("clickhouse with single keeper", func() {
+	When("manage clickhouse with single keeper", func() {
 		var keeper v1.KeeperCluster
 
 		BeforeEach(func() {
@@ -175,7 +175,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		)
 	})
 
-	Describe("secure cluster with secure keeper", func() {
+	Describe("is handling TLS settings correctly", Ordered, func() {
 		suffix := rand.Uint32()
 		issuer := fmt.Sprintf("issuer-%d", suffix)
 
@@ -271,29 +271,49 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 		}
 
-		It("should create secure cluster", func() {
+		BeforeAll(func() {
 			By("issuing certificates")
 			utils.SetupCA(ctx, k8sClient, testNamespace, suffix)
 			Expect(k8sClient.Create(ctx, keeperCert)).To(Succeed())
 			Expect(k8sClient.Create(ctx, chCert)).To(Succeed())
-			DeferCleanup(func() {
-				Expect(k8sClient.Delete(ctx, keeperCert)).To(Succeed())
-				Expect(k8sClient.Delete(ctx, chCert)).To(Succeed())
-			})
 			By("creating keeper")
 			Expect(k8sClient.Create(ctx, keeperCR)).To(Succeed())
-			DeferCleanup(func() {
-				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
-			})
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
+		})
+
+		AfterAll(func() {
+			Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, keeperCert)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, chCert)).To(Succeed())
+		})
+
+		It("should use server ca bundle to connect to the keeper", func() {
 			By("creating clickhouse")
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
 			DeferCleanup(func() {
 				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
 
-			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
 			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
 			ClickHouseRWChecks(cr, ptr.To(0))
+		})
+
+		It("should use custom ca bundle to connect to the keeper", func() {
+			customCR := cr.DeepCopy()
+			customCR.Spec.Settings.TLS = v1.ClusterTLSSpec{
+				CABundle: &v1.SecretKeySelector{
+					Name: keeperCertName,
+				},
+			}
+
+			By("creating clickhouse")
+			Expect(k8sClient.Create(ctx, customCR)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, customCR)).To(Succeed())
+			})
+
+			WaitClickHouseUpdatedAndReady(customCR, 2*time.Minute)
+			ClickHouseRWChecks(customCR, ptr.To(0))
 		})
 	})
 

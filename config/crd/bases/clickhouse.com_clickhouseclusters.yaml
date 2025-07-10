@@ -1589,6 +1589,12 @@ spec:
                     - key
                     - name
                     type: object
+                  enableDatabaseSync:
+                    default: true
+                    description: |-
+                      Enables synchronization of ClickHouse databases to the newly created replicas by the operator.
+                      Supports only Replicated and integration tables.
+                    type: boolean
                   extraConfig:
                     description: Additional ClickHouse configuration that will be
                       merged with the default one.
@@ -1633,6 +1639,25 @@ spec:
                   tls:
                     description: TLS settings, allows to enable TLS settings for ClickHouse.
                     properties:
+                      caBundle:
+                        description: |-
+                          CABundle is a reference to a TLS Secret containing the CA bundle.
+                          If empty and ServerCertSecret is specified, the CA bundle from certificate will be used.
+                          Otherwise, system trusted CA bundle will be used.
+                          Key is defaulted to "ca.crt" if not specified.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: The name of the secret in the cluster's namespace
+                              to select from.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
                       enabled:
                         default: false
                         description: Enabled indicates whether TLS is enabled, determining

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -115,5 +116,36 @@ func TestUpdateResult(t *testing.T) {
 		UpdateResult(&result, &update)
 		require.True(t, result.Requeue)
 		require.Equal(t, time.Duration(0), result.RequeueAfter)
+	})
+}
+
+func TestExecuteParallel(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		result, err := ExecuteParallel(
+			[]int{1, 2, 3},
+			func(item int) (int, int, error) {
+				return item, item * 2, nil
+			})
+		require.NoError(t, err)
+		require.Equal(t, map[int]int{
+			1: 2,
+			2: 4,
+			3: 6,
+		}, result)
+	})
+	t.Run("some errors", func(t *testing.T) {
+		result, err := ExecuteParallel(
+			[]int{1, 2, 3},
+			func(item int) (int, int, error) {
+				if item%2 == 0 {
+					return item, 0, fmt.Errorf("failed")
+				}
+				return item, item * 2, nil
+			})
+		require.ErrorContains(t, err, "failed")
+		require.Equal(t, map[int]int{
+			1: 2,
+			3: 6,
+		}, result)
 	})
 }

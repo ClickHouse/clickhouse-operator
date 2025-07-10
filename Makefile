@@ -150,6 +150,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-linux-manager
+build-linux-manager:
+	CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} GO111MODULE=on go build -gcflags="all=-N -l" -o bin/manager_linux cmd/main.go
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go

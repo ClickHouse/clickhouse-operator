@@ -11,10 +11,12 @@ const (
 	RequeueOnErrorTimeout   = time.Second * 5
 	StatusRequestTimeout    = time.Second * 10
 
-	PortNative       = 9000
-	PortNativeSecure = 9440
-	PortHTTP         = 8123
-	PortHTTPSecure   = 8443
+	DefaultListenHost = "::"
+	PortManagement    = 9001
+	PortNative        = 9000
+	PortNativeSecure  = 9440
+	PortHTTP          = 8123
+	PortHTTPSecure    = 8443
 
 	PortPrometheusScrape = 9363
 	PortInterserver      = 9009
@@ -31,6 +33,8 @@ const (
 	CertificateFilename = "clickhouse-server.crt"
 	KeyFilename         = "clickhouse-server.key"
 	TLSVolumeName       = "clickhouse-server-tls-volume"
+	CustomCAFilename    = "custom-ca.crt"
+	CustomCAVolumeName  = "clickhouse-server-custom-ca-volume"
 
 	LogPath      = "/var/log/clickhouse-server/"
 	BaseDataPath = "/var/lib/clickhouse/"

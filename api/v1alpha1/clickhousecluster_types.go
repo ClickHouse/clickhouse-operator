@@ -99,6 +99,10 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 	if err := util.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
 	}
+
+	if s.Settings.TLS.CABundle != nil && s.Settings.TLS.CABundle.Key == "" {
+		s.Settings.TLS.CABundle.Key = "ca.crt"
+	}
 }
 
 type ClickHouseConfig struct {
@@ -113,6 +117,12 @@ type ClickHouseConfig struct {
 	// TLS settings, allows to enable TLS settings for ClickHouse.
 	// +optional
 	TLS ClusterTLSSpec `json:"tls,omitempty"`
+
+	// Enables synchronization of ClickHouse databases to the newly created replicas by the operator.
+	// Supports only Replicated and integration tables.
+	// +optional
+	// +kubebuilder:default:=true
+	EnableDatabaseSync bool `json:"enableDatabaseSync,omitempty"`
 
 	// Additional ClickHouse configuration that will be merged with the default one.
 	// +nullable
@@ -208,6 +218,11 @@ func (v *ClickHouseCluster) ConfigMapNameByReplicaID(shard int32, index int32) s
 
 func (v *ClickHouseCluster) StatefulSetNameByReplicaID(shard int32, index int32) string {
 	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), shard, index)
+}
+
+func (v *ClickHouseCluster) HostnameById(shard int32, index int32) string {
+	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
+	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(shard, index), v.HeadlessServiceName(), v.Namespace)
 }
 
 // +kubebuilder:object:root=true

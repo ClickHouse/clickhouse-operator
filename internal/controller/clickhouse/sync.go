@@ -84,6 +84,7 @@ func compareReplicaID(a, b replicaID) int {
 type replicaState struct {
 	Error       bool `json:"error"`
 	StatefulSet *appsv1.StatefulSet
+	Pinged      bool
 }
 
 func (r replicaState) Updated() bool {
@@ -100,8 +101,8 @@ func (r replicaState) Ready() bool {
 		return false
 	}
 
-	// TODO design better health check
-	return r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
+	return r.Pinged && r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
+
 }
 
 func (r replicaState) HasStatefulSetDiff(ctx *reconcileContext) bool {
@@ -161,7 +162,8 @@ type reconcileContext struct {
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	keeper v1.KeeperCluster
 	// Should be populated by reconcileCommonResources.
-	secret corev1.Secret
+	secret    corev1.Secret
+	commander *Commander
 }
 
 type ReconcileFunc func(util.Logger, *reconcileContext) (*ctrl.Result, error)
@@ -239,6 +241,51 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	return result, nil
 }
 
+func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	service := TemplateHeadlessService(ctx.Cluster)
+	if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, service); err != nil {
+		return &ctrl.Result{}, fmt.Errorf("reconcile service resource: %w", err)
+	}
+
+	for shard := range ctx.Cluster.Shards() {
+		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
+		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource fr shard %d: %w", shard, err)
+		}
+	}
+
+	getErr := r.Get(ctx.Context, types.NamespacedName{
+		Namespace: ctx.Cluster.Namespace,
+		Name:      ctx.Cluster.SecretName(),
+	}, &ctx.secret)
+	if getErr != nil && !k8serrors.IsNotFound(getErr) {
+		return &ctrl.Result{}, fmt.Errorf("get ClickHouse cluster secret %q: %w", ctx.Cluster.SecretName(), getErr)
+	}
+	secretsUpdated, err := TemplateClusterSecrets(ctx.Cluster, &ctx.secret)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("template cluster secrets: %w", err)
+	}
+	if err := ctrl.SetControllerReference(ctx.Cluster, &ctx.secret, r.Scheme); err != nil {
+		return &ctrl.Result{}, fmt.Errorf("set controller reference for cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+	}
+
+	if getErr != nil {
+		log.Info("cluster secret not found, creating", "secret", ctx.Cluster.SecretName())
+		if err = r.Create(ctx.Context, &ctx.secret); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("create cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		}
+	} else if secretsUpdated {
+		if err := r.Update(ctx.Context, &ctx.secret); err != nil {
+			return &ctrl.Result{}, fmt.Errorf("update cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		}
+	} else {
+		log.Debug("cluster secret is up to date")
+	}
+
+	ctx.commander = NewCommander(log, ctx.Cluster, &ctx.secret)
+	return nil, nil
+}
+
 func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	if ctx.Cluster.Status.ObservedGeneration != ctx.Cluster.Generation {
 		ctx.Cluster.Status.ObservedGeneration = ctx.Cluster.Generation
@@ -314,11 +361,12 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 		return nil, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	for _, sts := range statefulSets.Items {
+	// TODO add timeout here or global reconcile timeout.
+	states, err := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (replicaID, replicaState, error) {
 		id, err := idFromLabels(sts.Labels)
 		if err != nil {
 			log.Error(err, "failed to get replica ID from StatefulSet labels", "stateful_set", sts.Name)
-			continue
+			return replicaID{}, replicaState{}, err
 		}
 
 		hasError, err := chctrl.CheckPodError(ctx.Context, log, r.Client, &sts)
@@ -327,54 +375,32 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 			hasError = true
 		}
 
-		if exists := ctx.SetReplica(id, replicaState{
+		pingErr := ctx.commander.Ping(ctx.Context, id)
+		if pingErr != nil {
+			log.Debug("failed to ping replica", "replica_id", id, "error", err)
+		}
+
+		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
+		return id, replicaState{
 			StatefulSet: &sts,
 			Error:       hasError,
-		}); exists {
-			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
-				"replica_id", id, "statefuleset", sts.Name)
-		}
-	}
-
-	return nil, nil
-}
-
-func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	service := TemplateHeadlessService(ctx.Cluster)
-	if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, service); err != nil {
-		return &ctrl.Result{}, fmt.Errorf("reconcile service resource: %w", err)
-	}
-
-	for shard := range ctx.Cluster.Shards() {
-		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
-		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource fr shard %d: %w", shard, err)
-		}
-	}
-
-	getErr := r.Get(ctx.Context, types.NamespacedName{
-		Namespace: ctx.Cluster.Namespace,
-		Name:      ctx.Cluster.SecretName(),
-	}, &ctx.secret)
-	if getErr != nil && !k8serrors.IsNotFound(getErr) {
-		return &ctrl.Result{}, fmt.Errorf("get ClickHouse cluster secret %q: %w", ctx.Cluster.SecretName(), getErr)
-	}
-	secretsUpdated, err := TemplateClusterSecrets(ctx.Cluster, &ctx.secret)
+			Pinged:      pingErr == nil,
+		}, nil
+	})
 	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("template cluster secrets: %w", err)
-	}
-	if err := ctrl.SetControllerReference(ctx.Cluster, &ctx.secret, r.Scheme); err != nil {
-		return &ctrl.Result{}, fmt.Errorf("set controller reference for cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		if errs := util.UnwrapErrors(err); errs != nil {
+			for _, err := range errs {
+				log.Info("failed to load replica state", "error", err, "replica_id", err.(util.ExecutionError).Id)
+			}
+		} else {
+			log.Warn("failed to load replicas state", "error", err)
+		}
 	}
 
-	if getErr != nil {
-		log.Info("cluster secret not found, creating", "secret", ctx.Cluster.SecretName())
-		if err = r.Create(ctx.Context, &ctx.secret); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("create cluster secret %q: %w", ctx.Cluster.SecretName(), err)
-		}
-	} else if secretsUpdated {
-		if err := r.Update(ctx.Context, &ctx.secret); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("update cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+	for id, state := range states {
+		if exists := ctx.SetReplica(id, state); exists {
+			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
+				"replica_id", id, "statefuleset", state.StatefulSet.Name)
 		}
 	}
 

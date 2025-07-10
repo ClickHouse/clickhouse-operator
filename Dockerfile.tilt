@@ -1,0 +1,3 @@
+FROM ubuntu:latest
+
+ADD bin/manager_linux /manager

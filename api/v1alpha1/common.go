@@ -151,6 +151,12 @@ type ClusterTLSSpec struct {
 	// ServerCertSecretRef is a reference to a TLS Secret containing the server certificate.
 	// +optional
 	ServerCertSecret *corev1.LocalObjectReference `json:"serverCertSecret,omitempty"`
+	// CABundle is a reference to a TLS Secret containing the CA bundle.
+	// If empty and ServerCertSecret is specified, the CA bundle from certificate will be used.
+	// Otherwise, system trusted CA bundle will be used.
+	// Key is defaulted to "ca.crt" if not specified.
+	// +optional
+	CABundle *SecretKeySelector `json:"caBundle,omitempty"`
 }
 
 func (s *ClusterTLSSpec) Validate() error {
