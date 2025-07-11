@@ -246,7 +246,7 @@ func ReconcileResource(ctx context.Context, log Logger, cli client.Client, schem
 const (
 	alpha    = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	numeric  = "0123456789"
-	special  = "!@#$%^*()_+-=[]{}|;',./?`~"
+	special  = "!@#%^-_+="
 	alphabet = alpha + numeric + special
 	length   = 32
 )

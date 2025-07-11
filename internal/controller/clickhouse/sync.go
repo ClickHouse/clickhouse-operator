@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -28,54 +27,45 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type replicaID struct {
-	shardID int32
-	index   int32
-}
-
-func idFromLabels(labels map[string]string) (replicaID, error) {
+func idFromLabels(labels map[string]string) (v1.ReplicaID, error) {
 	shardIDStr, ok := labels[util.LabelClickHouseShardID]
 	if !ok {
-		return replicaID{}, fmt.Errorf("missing shard ID label")
+		return v1.ReplicaID{}, fmt.Errorf("missing shard ID label")
 	}
 
 	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
 	if err != nil {
-		return replicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
+		return v1.ReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
 	}
 
 	replicaIDStr, ok := labels[util.LabelClickHouseReplicaID]
 	if !ok {
-		return replicaID{}, fmt.Errorf("missing replica ID label")
+		return v1.ReplicaID{}, fmt.Errorf("missing replica ID label")
 	}
 
 	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
 	if err != nil {
-		return replicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
+		return v1.ReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
 	}
 
-	return replicaID{shardID: int32(shardID), index: int32(index)}, nil
+	return v1.ReplicaID{
+		ShardID: int32(shardID),
+		Index:   int32(index),
+	}, nil
 }
 
-func (id replicaID) Labels() map[string]string {
-	return map[string]string{
-		util.LabelClickHouseShardID:   strconv.Itoa(int(id.shardID)),
-		util.LabelClickHouseReplicaID: strconv.Itoa(int(id.index)),
-	}
-}
-
-func compareReplicaID(a, b replicaID) int {
-	if a.shardID < b.shardID {
+func compareReplicaID(a, b v1.ReplicaID) int {
+	if a.ShardID < b.ShardID {
 		return -1
 	}
-	if a.shardID > b.shardID {
+	if a.ShardID > b.ShardID {
 		return 1
 	}
 
-	if a.index < b.index {
+	if a.Index < b.Index {
 		return -1
 	}
-	if a.index > b.index {
+	if a.Index > b.Index {
 		return 1
 	}
 	return 0
@@ -157,7 +147,7 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 }
 
 type reconcileContext struct {
-	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, replicaID, replicaState]
+	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]
 
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	keeper v1.KeeperCluster
@@ -172,11 +162,10 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	log.Info("Enter ClickHouse Reconcile", "spec", cr.Spec, "status", cr.Status)
 
 	recCtx := reconcileContext{
-		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.ClickHouseCluster, replicaID, replicaState]{
+		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]{
 			Cluster:      cr,
 			Context:      ctx,
-			ExtraConfig:  map[string]any{},
-			ReplicaState: map[replicaID]replicaState{},
+			ReplicaState: map[v1.ReplicaID]replicaState{},
 		},
 	}
 
@@ -250,7 +239,7 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 	for shard := range ctx.Cluster.Shards() {
 		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
 		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource fr shard %d: %w", shard, err)
+			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
 		}
 	}
 
@@ -299,15 +288,6 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 	if updateRevision != ctx.Cluster.Status.UpdateRevision {
 		ctx.Cluster.Status.UpdateRevision = updateRevision
 		log.Debug(fmt.Sprintf("observed new CR revision %q", updateRevision))
-	}
-
-	var extraConfig map[string]interface{}
-	if len(ctx.Cluster.Spec.Settings.ExtraConfig.Raw) > 0 {
-		if err := json.Unmarshal(ctx.Cluster.Spec.Settings.ExtraConfig.Raw, &extraConfig); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("unmarshal extra config: %w", err)
-		}
-
-		ctx.ExtraConfig = extraConfig
 	}
 
 	if err := r.Get(ctx.Context, types.NamespacedName{
@@ -362,11 +342,11 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 	}
 
 	// TODO add timeout here or global reconcile timeout.
-	states, err := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (replicaID, replicaState, error) {
+	states, err := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ReplicaID, replicaState, error) {
 		id, err := idFromLabels(sts.Labels)
 		if err != nil {
 			log.Error(err, "failed to get replica ID from StatefulSet labels", "stateful_set", sts.Name)
-			return replicaID{}, replicaState{}, err
+			return v1.ReplicaID{}, replicaState{}, err
 		}
 
 		hasError, err := chctrl.CheckPodError(ctx.Context, log, r.Client, &sts)
@@ -377,7 +357,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 
 		pingErr := ctx.commander.Ping(ctx.Context, id)
 		if pingErr != nil {
-			log.Debug("failed to ping replica", "replica_id", id, "error", err)
+			log.Debug("failed to ping replica", "replica_id", id, "error", pingErr)
 		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
@@ -413,11 +393,11 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 // NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
 func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	highestStage := chctrl.StageUpToDate
-	var replicasInStatus []replicaID
+	var replicasInStatus []v1.ReplicaID
 
 	for shard := range ctx.Cluster.Shards() {
 		for replica := range ctx.Cluster.Replicas() {
-			id := replicaID{shardID: shard, index: replica}
+			id := v1.ReplicaID{ShardID: shard, Index: replica}
 
 			stage := ctx.Replica(id).UpdateStage(ctx)
 			if stage == highestStage {
@@ -427,7 +407,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 
 			if stage > highestStage {
 				highestStage = stage
-				replicasInStatus = []replicaID{id}
+				replicasInStatus = []v1.ReplicaID{id}
 			}
 		}
 	}
@@ -446,12 +426,12 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 		// Prefer replicas with higher id.
 		chosenReplica := replicasInStatus[0]
 		for _, id := range replicasInStatus {
-			if id.shardID > chosenReplica.shardID || (id.shardID == chosenReplica.shardID && id.index > chosenReplica.index) {
+			if compareReplicaID(id, chosenReplica) == 1 {
 				chosenReplica = id
 			}
 		}
 		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
-		replicasInStatus = []replicaID{chosenReplica}
+		replicasInStatus = []v1.ReplicaID{chosenReplica}
 	case chctrl.StageNotReadyWithDiff, chctrl.StageNotExists, chctrl.StageError:
 		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
 	}
@@ -478,7 +458,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		LabelSelector: labels.NewSelector().Add(*appReq),
 	}
 
-	replicasToRemove := map[replicaID]struct {
+	replicasToRemove := map[v1.ReplicaID]struct {
 		cfg corev1.ConfigMap
 		sts appsv1.StatefulSet
 	}{}
@@ -495,7 +475,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		if id.shardID < ctx.Cluster.Shards() && id.index < ctx.Cluster.Replicas() {
+		if id.ShardID < ctx.Cluster.Shards() && id.Index < ctx.Cluster.Replicas() {
 			continue
 		}
 
@@ -516,7 +496,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		if id.shardID < ctx.Cluster.Shards() && id.index < ctx.Cluster.Replicas() {
+		if id.ShardID < ctx.Cluster.Shards() && id.Index < ctx.Cluster.Replicas() {
 			continue
 		}
 
@@ -554,16 +534,16 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 }
 
 func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	var errorReplicas []replicaID
-	var notReadyReplicas []replicaID
-	var notUpdatedReplicas []replicaID
+	var errorReplicas []v1.ReplicaID
+	var notReadyReplicas []v1.ReplicaID
+	var notUpdatedReplicas []v1.ReplicaID
 	var notReadyShards []int32
 
 	ctx.Cluster.Status.ReadyReplicas = 0
 	for shard := range ctx.Cluster.Shards() {
 		hasReady := false
 		for index := range ctx.Cluster.Replicas() {
-			id := replicaID{shardID: shard, index: index}
+			id := v1.ReplicaID{ShardID: shard, Index: index}
 			replica := ctx.Replica(id)
 
 			if replica.Error {
@@ -643,7 +623,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	return &ctrl.Result{}, nil
 }
 
-func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, id replicaID) (*ctrl.Result, error) {
+func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, id v1.ReplicaID) (*ctrl.Result, error) {
 	log = log.With("replica_id", id)
 	log.Info("updating replica")
 

@@ -1,0 +1,22 @@
+users:
+  default:
+    profile: {{ .DefaultProfileName }}
+    quota: default
+    {{- if .DefaultUserPasswordEnv }}
+    password:
+      - '@from_env': {{ .DefaultUserPasswordEnv }}
+    {{ else }}
+    no_password:
+    {{ end}}
+    grants:
+      - query: "GRANT ALL ON *.*"
+  {{ .OperatorUserName }}:
+    profile: {{ .DefaultProfileName }}
+    quota: default
+    password_sha256_hex: {{ .OperatorUserPasswordHash }}
+    grants: {{/* TODO restrict */}}
+      - query: "GRANT ALL ON *.*"
+profiles:
+  {{ .DefaultProfileName }}:
+quotas:
+  default:

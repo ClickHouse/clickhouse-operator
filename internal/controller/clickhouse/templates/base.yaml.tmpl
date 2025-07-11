@@ -1,0 +1,42 @@
+path: {{ .Path }}
+logger:
+{{ yaml .Log | indent 2 }}
+macros:
+  {{- range $key, $value := .Macros }}
+  {{ $key }}: {{ $value }}
+  {{- end }}
+
+{{- /* Replication settings */}}
+zookeeper:
+  nodes:
+    {{- range $index, $node := .KeeperNodes }}
+    - host: {{ $node.Host }}
+      port: {{ $node.Port }}
+      {{- if $node.Secure }}
+      secure: 1
+      {{- end }}
+    {{- end }}
+  identity:
+    "@from_env": {{ .KeeperIdentityEnv }}
+
+remote_servers:
+  default:
+    discovery:
+      path: {{ .ClusterDiscoveryPath }}
+      shard: {{ .ShardID}}
+distributed_ddl:
+  path: {{ .DistributedDDLPath }}
+  profile: {{ .DistributedDDLProfileName }}
+user_directories:
+  users_xml:
+    path: {{ .UsersXMLPath }}
+  replicated:
+    zookeeper_path: {{ .UsersZookeeperPath }}
+user_defined_zookeeper_path: {{ .UDFZookeeperPath }}
+
+{{- /* SSL settings */}}
+openSSL:
+{{ yaml .OpenSSL | indent 2 }}
+
+{{- /* Special settings, required for default config */}}
+allow_experimental_cluster_discovery: true

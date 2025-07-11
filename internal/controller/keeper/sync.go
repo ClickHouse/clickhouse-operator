@@ -109,6 +109,9 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 
 type reconcileContext struct {
 	chctrl.ReconcileContextBase[*v1.KeeperCluster, string, replicaState]
+
+	// Should be populated after reconcileClusterRevisions with parsed extra config.
+	ExtraConfig map[string]any
 }
 
 type ReconcileFunc func(util.Logger, *reconcileContext) (*ctrl.Result, error)
@@ -120,9 +123,10 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.KeeperCluster, string, replicaState]{
 			Cluster:      cr,
 			Context:      ctx,
-			ExtraConfig:  map[string]any{},
 			ReplicaState: map[string]replicaState{},
 		},
+
+		ExtraConfig: map[string]any{},
 	}
 
 	reconcileSteps := []ReconcileFunc{

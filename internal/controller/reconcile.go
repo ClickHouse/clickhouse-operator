@@ -59,8 +59,6 @@ type ReconcileContextBase[T ClusterObject, ReplicaKey comparable, ReplicaState a
 	Cluster T
 	Context context.Context
 
-	// Should be populated after reconcileClusterRevisions with parsed extra config.
-	ExtraConfig map[string]any
 	// Should be populated by reconcileActiveReplicaStatus.
 	ReplicaState map[ReplicaKey]ReplicaState
 }

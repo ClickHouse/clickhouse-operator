@@ -8,12 +8,8 @@ import (
 	"strconv"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller"
-	keepercontroller "github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/clickhouse-operator/internal/util"
 
-	"github.com/imdario/mergo"
-	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -142,7 +138,7 @@ func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bo
 }
 
 func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
-	config, err := generateConfigForSingleReplica(ctx, replicaID{})
+	config, err := generateConfigForSingleReplica(ctx, v1.ReplicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
@@ -156,7 +152,7 @@ func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
 }
 
 func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
-	sts := TemplateStatefulSet(ctx, replicaID{})
+	sts := TemplateStatefulSet(ctx, v1.ReplicaID{})
 	hash, err := util.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
@@ -165,15 +161,10 @@ func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(ctx *reconcileContext, id replicaID) (*corev1.ConfigMap, error) {
-	config, err := generateConfigForSingleReplica(ctx, id)
+func TemplateConfigMap(ctx *reconcileContext, id v1.ReplicaID) (*corev1.ConfigMap, error) {
+	configData, err := generateConfigForSingleReplica(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate config for replica %v: %w", id, err)
-	}
-
-	userConfig, err := generateUsersConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("generate user config for replica %v: %w", id, err)
 	}
 
 	return &corev1.ConfigMap{
@@ -182,21 +173,18 @@ func TemplateConfigMap(ctx *reconcileContext, id replicaID) (*corev1.ConfigMap, 
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctx.Cluster.ConfigMapNameByReplicaID(id.shardID, id.index),
+			Name:      ctx.Cluster.ConfigMapNameByReplicaID(id),
 			Namespace: ctx.Cluster.Namespace,
-			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
 				util.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
 			Annotations: ctx.Cluster.Spec.Annotations,
 		},
-		Data: map[string]string{
-			ConfigFileName: config,
-			UsersFileName:  userConfig,
-		},
+		Data: configData,
 	}, nil
 }
 
-func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSet {
+func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.StatefulSet {
 	volumes, volumeMounts := buildVolumes(ctx, id)
 	protocols := buildProtocols(ctx.Cluster)
 	var readyCheck string
@@ -204,7 +192,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 		readyCheck = fmt.Sprintf("wget -qO- http://127.0.0.1:%d | grep -o Ok.", PortHTTP)
 	} else {
 		readyCheck = fmt.Sprintf("wget --ca-certificate=%s -qO- https://%s:%d | grep -o Ok.",
-			path.Join(TLSConfigPath, CABundleFilename), ctx.Cluster.HostnameById(id.shardID, id.index), PortHTTPSecure)
+			path.Join(TLSConfigPath, CABundleFilename), ctx.Cluster.HostnameById(id), PortHTTPSecure)
 	}
 
 	container := corev1.Container{
@@ -330,7 +318,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: util.MergeMaps(id.Labels(), map[string]string{
+			MatchLabels: util.MergeMaps(labelsFromID(id), map[string]string{
 				util.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
 		},
@@ -344,7 +332,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: ctx.Cluster.SpecificName(),
-				Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+				Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
 					util.LabelAppKey:         ctx.Cluster.SpecificName(),
 					util.LabelKindKey:        util.LabelClickHouseValue,
 					util.LabelRoleKey:        util.LabelClickHouseValue,
@@ -389,9 +377,9 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ctx.Cluster.StatefulSetNameByReplicaID(id.shardID, id.index),
+			Name:      ctx.Cluster.StatefulSetNameByReplicaID(id),
 			Namespace: ctx.Cluster.Namespace,
-			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, id.Labels(), map[string]string{
+			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
 				util.LabelAppKey:         ctx.Cluster.SpecificName(),
 				util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
 				util.LabelAppK8sKey:      util.LabelClickHouseValue,
@@ -404,114 +392,37 @@ func TemplateStatefulSet(ctx *reconcileContext, id replicaID) *appsv1.StatefulSe
 	}
 }
 
-func generateConfigForSingleReplica(ctx *reconcileContext, id replicaID) (string, error) {
-	config := Config{
-		Path:       BaseDataPath,
-		ListenHost: DefaultListenHost,
-		Logger:     controller.GenerateLoggerConfig(ctx.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
-		Protocols:  buildProtocols(ctx.Cluster),
-		UserDirectories: map[string]map[string]string{
-			"users_xml": {
-				"path": UsersFileName,
-			},
-			"replicated": {
-				"zookeeper_path": KeeperPathUsers,
-			},
-		},
-		Macros: map[string]string{
-			"cluster": DefaultClusterName,
-			"shard":   strconv.Itoa(int(id.shardID)),
-			"replica": strconv.Itoa(int(id.index)),
-		},
-		RemoteServers: map[string]RemoteCluster{
-			DefaultClusterName: {
-				Discovery: ClusterDiscovery{
-					Path:  KeeperPathDiscovery,
-					Shard: id.shardID,
-				},
-			},
-		},
-		DistributedDDL: map[string]string{
-			"path":    KeeperPathDistributedDDL,
-			"profile": DefaultProfileName,
-		},
-		ZooKeeper: ZooKeeper{
-			Identity: EnvVal{
-				FromEnv: EnvKeeperIdentity,
-			},
-		},
-		UserDefinedZookeeperPath: KeeperPathUDF,
-		InterserverHTTPCredentials: map[string]any{
-			"user":        InterserverUserName,
-			"allow_empty": false,
-			"password": EnvVal{
-				FromEnv: EnvInterserverPassword,
-			},
-		},
-
-		AllowExperimentalClusterDiscovery: true,
+func labelsFromID(id v1.ReplicaID) map[string]string {
+	return map[string]string{
+		util.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
+		util.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
 	}
+}
 
-	if ctx.Cluster.Spec.Settings.TLS.Enabled {
-		params := controller.OpenSSLParams{
-			CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
-			PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-			CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
-			VerificationMode:    "relaxed",
-			DisableProtocols:    "sslv2,sslv3",
-			PreferServerCiphers: true,
+func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ReplicaID) (map[string]string, error) {
+	configFiles := map[string]string{}
+	for _, generator := range generators {
+		if !generator.Exists(ctx) {
+			continue
 		}
 
-		config.OpenSSL = controller.OpenSSLConfig{
-			Server: params,
-			Client: params,
-		}
-	}
-
-	if ctx.Cluster.Spec.Settings.TLS.CABundle != nil {
-		config.OpenSSL.Client.CAConfig = CustomCAFilename
-		config.OpenSSL.Client.VerificationMode = "relaxed"
-		config.OpenSSL.Client.DisableProtocols = "sslv2,sslv3"
-		config.OpenSSL.Client.PreferServerCiphers = true
-	}
-
-	for _, host := range ctx.keeper.Hostnames() {
-		if ctx.keeper.Spec.Settings.TLS.Enabled {
-			config.ZooKeeper.Nodes = append(config.ZooKeeper.Nodes, KeeperNode{
-				Host:   host,
-				Port:   keepercontroller.PortNativeSecure,
-				Secure: 1,
-			})
-		} else {
-			config.ZooKeeper.Nodes = append(config.ZooKeeper.Nodes, KeeperNode{
-				Host: host,
-				Port: keepercontroller.PortNative,
-			})
-		}
-	}
-
-	yamlConfig, err := yaml.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("error marshalling config to yaml: %w", err)
-	}
-
-	if len(ctx.ExtraConfig) > 0 {
-		configMap := map[string]any{}
-		if err := yaml.Unmarshal(yamlConfig, &configMap); err != nil {
-			return "", fmt.Errorf("error unmarshalling config from yaml: %w", err)
-		}
-
-		if err := mergo.Merge(&configMap, ctx.ExtraConfig, mergo.WithOverride); err != nil {
-			return "", fmt.Errorf("error merging config with extraConfig: %w", err)
-		}
-
-		yamlConfig, err = yaml.Marshal(configMap)
+		data, err := generator.Generate(ctx, id)
 		if err != nil {
-			return "", fmt.Errorf("error marshalling merged config to yaml: %w", err)
+			return nil, err
 		}
+
+		_, filename := path.Split(generator.Filename())
+		configFiles[filename] = data
 	}
 
-	return string(yamlConfig), nil
+	return configFiles, nil
+}
+
+type Protocol struct {
+	Type        string `yaml:"type"`
+	Port        uint16 `yaml:"port,omitempty"`
+	Impl        string `yaml:"impl,omitempty"`
+	Description string `yaml:"description,omitempty"`
 }
 
 func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
@@ -570,52 +481,7 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 	return protocols
 }
 
-func generateUsersConfig(ctx *reconcileContext) (string, error) {
-	defaultUser := User{
-		Profile: DefaultProfileName,
-		Quota:   "default",
-		Grants: []querySpec{
-			{Query: "GRANT ALL ON *.*"},
-		},
-	}
-	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
-		defaultUser.Password = EnvVal{FromEnv: EnvDefaultUserPassword}
-	} else {
-		defaultUser.NoPassword = &struct{}{}
-	}
-
-	config := UserConfig{
-		Users: map[string]User{
-			"default": defaultUser,
-			OperatorManagementUsername: {
-				Profile:        DefaultProfileName,
-				Quota:          "default",
-				PasswordSha256: util.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
-				Grants: []querySpec{
-					// TODO keep only necessary grants
-					{Query: "GRANT ALL ON *.*"},
-				},
-			},
-		},
-		Profiles: map[string]Profile{
-			DefaultProfileName: {},
-		},
-		Quotas: map[string]Quota{
-			"default": {},
-		},
-	}
-
-	// TODO pass from CR
-
-	yamlConfig, err := yaml.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("error marshalling config to yaml: %w", err)
-	}
-
-	return string(yamlConfig), nil
-}
-
-func buildVolumes(ctx *reconcileContext, id replicaID) ([]corev1.Volume, []corev1.VolumeMount) {
+func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []corev1.VolumeMount) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      ConfigVolumeName,
@@ -634,6 +500,20 @@ func buildVolumes(ctx *reconcileContext, id replicaID) ([]corev1.Volume, []corev
 		},
 	}
 
+	configItems := make([]corev1.KeyToPath, 0, len(generators))
+	for _, generator := range generators {
+		if !generator.Exists(ctx) {
+			continue
+		}
+
+		filePath := generator.Filename()
+		_, name := path.Split(filePath)
+		configItems = append(configItems, corev1.KeyToPath{
+			Key:  name,
+			Path: filePath,
+		})
+	}
+
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
 	volumes := []corev1.Volume{
 		{
@@ -642,8 +522,9 @@ func buildVolumes(ctx *reconcileContext, id replicaID) ([]corev1.Volume, []corev
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &defaultConfigMapMode,
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: ctx.Cluster.ConfigMapNameByReplicaID(id.shardID, id.index),
+						Name: ctx.Cluster.ConfigMapNameByReplicaID(id),
 					},
+					Items: configItems,
 				},
 			},
 		},

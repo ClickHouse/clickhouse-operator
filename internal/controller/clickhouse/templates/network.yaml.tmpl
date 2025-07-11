@@ -1,0 +1,42 @@
+listen_host: "::"
+{{- /* can't use composable protocol for interserver, because server disables replication,
+      if interserver_http_port is not set */}}
+interserver_http_port: {{ .InterserverHTTPPort }}
+interserver_http_credentials:
+  user: {{ .InterserverHTTPUser }}
+  password:
+    - "@from_env": {{ .InterserverHTTPPasswordEnvVar }}
+  allow_empty: false
+
+protocols:
+{{- range $name, $protocol := .Protocols }}
+  {{ $name }}:
+    type: {{ $protocol.Type }}
+    {{- if ne $protocol.Impl "" }}
+    impl: {{ $protocol.Impl }}
+    {{- end }}
+    {{- if ne $protocol.Port 0 }}
+    port: {{ $protocol.Port }}
+    {{- end }}
+    {{- if ne $protocol.Description "" }}
+    description: {{ $protocol.Description }}
+    {{- end }}
+{{- end }}
+
+{{- /* disable the following ports that may overlap ports with composable protocols */}}
+tcp_port:
+  '@remove': '1'
+tcp_port_secure:
+  '@remove': '1'
+http_port:
+  '@remove': '1'
+https_port:
+  '@remove': '1'
+mysql_port:
+  '@remove': '1'
+postgresql_port:
+  '@remove': '1'
+tcp_with_proxy_port:
+  '@remove': '1'
+tcp_ssh_port:
+  '@remove': '1'

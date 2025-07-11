@@ -159,12 +159,22 @@ type ClickHouseClusterStatus struct {
 // +kubebuilder:subresource:status
 
 // ClickHouseCluster is the Schema for the clickhouseclusters API.
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
+// +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"
+// +kubebuilder:printcolumn:name="Replicas",type="number",JSONPath=".spec.replicas"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type ClickHouseCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   ClickHouseClusterSpec   `json:"spec,omitempty"`
 	Status ClickHouseClusterStatus `json:"status,omitempty"`
+}
+
+type ReplicaID struct {
+	ShardID int32
+	Index   int32
 }
 
 func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
@@ -212,17 +222,17 @@ func (v *ClickHouseCluster) SecretName() string {
 	return v.SpecificName()
 }
 
-func (v *ClickHouseCluster) ConfigMapNameByReplicaID(shard int32, index int32) string {
-	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), shard, index)
+func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ReplicaID) string {
+	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
-func (v *ClickHouseCluster) StatefulSetNameByReplicaID(shard int32, index int32) string {
-	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), shard, index)
+func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ReplicaID) string {
+	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
-func (v *ClickHouseCluster) HostnameById(shard int32, index int32) string {
+func (v *ClickHouseCluster) HostnameById(id ReplicaID) string {
 	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
-	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(shard, index), v.HeadlessServiceName(), v.Namespace)
+	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace)
 }
 
 // +kubebuilder:object:root=true

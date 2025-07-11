@@ -182,112 +182,125 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		keeperCertName := fmt.Sprintf("keeper-cert-%d", suffix)
 		chCertName := fmt.Sprintf("ch-cert-%d", suffix)
 
-		keeperCR := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
-					},
-				},
-				DataVolumeClaimSpec: defaultStorage,
-				Settings: v1.KeeperConfig{
-					TLS: v1.ClusterTLSSpec{
-						Enabled:  true,
-						Required: true,
-						ServerCertSecret: &corev1.LocalObjectReference{
-							Name: keeperCertName,
-						},
-					},
-				},
-			},
-		}
-
-		keeperCert := &certv1.Certificate{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
-			},
-			Spec: certv1.CertificateSpec{
-				IssuerRef: mcertv1.ObjectReference{
-					Name: issuer,
-					Kind: "Issuer",
-				},
-				SecretName: keeperCertName,
-				DNSNames: []string{
-					fmt.Sprintf("*.%s.%s.svc", keeperCR.HeadlessServiceName(), keeperCR.Namespace),
-					fmt.Sprintf("*.%s.%s.svc.cluster.local", keeperCR.HeadlessServiceName(), keeperCR.Namespace),
-				},
-			},
-		}
-
-		cr := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
-			},
-			Spec: v1.ClickHouseClusterSpec{
-				Replicas: ptr.To[int32](2),
-				KeeperClusterRef: &corev1.LocalObjectReference{
-					Name: keeperCR.Name,
-				},
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
-					},
-				},
-				DataVolumeClaimSpec: defaultStorage,
-				Settings: v1.ClickHouseConfig{
-					TLS: v1.ClusterTLSSpec{
-						Enabled:  true,
-						Required: true,
-						ServerCertSecret: &corev1.LocalObjectReference{
-							Name: chCertName,
-						},
-					},
-				},
-			},
-		}
-
-		chCert := &certv1.Certificate{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("ch-cert-%d", suffix),
-			},
-			Spec: certv1.CertificateSpec{
-				IssuerRef: mcertv1.ObjectReference{
-					Name: issuer,
-					Kind: "Issuer",
-				},
-				SecretName: chCertName,
-				DNSNames: []string{
-					fmt.Sprintf("*.%s.%s.svc", cr.HeadlessServiceName(), cr.Namespace),
-					fmt.Sprintf("*.%s.%s.svc.cluster.local", cr.HeadlessServiceName(), cr.Namespace),
-				},
-			},
-		}
+		var keeperCR *v1.KeeperCluster
+		var keeperCert *certv1.Certificate
+		var baseCr *v1.ClickHouseCluster
+		var chCert *certv1.Certificate
 
 		BeforeAll(func() {
-			By("issuing certificates")
 			utils.SetupCA(ctx, k8sClient, testNamespace, suffix)
+		})
+
+		BeforeEach(func() {
+			keeperCR = &v1.KeeperCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				},
+				Spec: v1.KeeperClusterSpec{
+					Replicas: ptr.To[int32](1),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{
+							Tag: KeeperBaseVersion,
+						},
+					},
+					DataVolumeClaimSpec: defaultStorage,
+					Settings: v1.KeeperConfig{
+						TLS: v1.ClusterTLSSpec{
+							Enabled:  true,
+							Required: true,
+							ServerCertSecret: &corev1.LocalObjectReference{
+								Name: keeperCertName,
+							},
+						},
+					},
+				},
+			}
+			keeperCert = &certv1.Certificate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("keeper-cert-%d", suffix),
+				},
+				Spec: certv1.CertificateSpec{
+					IssuerRef: mcertv1.ObjectReference{
+						Name: issuer,
+						Kind: "Issuer",
+					},
+					SecretName: keeperCertName,
+					DNSNames: []string{
+						fmt.Sprintf("*.%s.%s.svc", keeperCR.HeadlessServiceName(), keeperCR.Namespace),
+						fmt.Sprintf("*.%s.%s.svc.cluster.local", keeperCR.HeadlessServiceName(), keeperCR.Namespace),
+					},
+				},
+			}
+			baseCr = &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: ptr.To[int32](2),
+					KeeperClusterRef: &corev1.LocalObjectReference{
+						Name: keeperCR.Name,
+					},
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{
+							Tag: ClickHouseBaseVersion,
+						},
+					},
+					DataVolumeClaimSpec: defaultStorage,
+					Settings: v1.ClickHouseConfig{
+						TLS: v1.ClusterTLSSpec{
+							Enabled:  true,
+							Required: true,
+							ServerCertSecret: &corev1.LocalObjectReference{
+								Name: chCertName,
+							},
+						},
+					},
+				},
+			}
+			chCert = &certv1.Certificate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("ch-cert-%d", suffix),
+				},
+				Spec: certv1.CertificateSpec{
+					IssuerRef: mcertv1.ObjectReference{
+						Name: issuer,
+						Kind: "Issuer",
+					},
+					SecretName: chCertName,
+					DNSNames: []string{
+						fmt.Sprintf("*.%s.%s.svc", baseCr.HeadlessServiceName(), baseCr.Namespace),
+						fmt.Sprintf("*.%s.%s.svc.cluster.local", baseCr.HeadlessServiceName(), baseCr.Namespace),
+					},
+				},
+			}
+
+			By("issuing certificates")
+
 			Expect(k8sClient.Create(ctx, keeperCert)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, keeperCert)).To(Succeed())
+			})
+
 			Expect(k8sClient.Create(ctx, chCert)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, chCert)).To(Succeed())
+			})
+
 			By("creating keeper")
 			Expect(k8sClient.Create(ctx, keeperCR)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
+			})
 			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
 		})
 
-		AfterAll(func() {
-			Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, keeperCert)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, chCert)).To(Succeed())
-		})
+		It("should use server cert ca bundle to connect to the keeper", func() {
+			cr := baseCr.DeepCopy()
 
-		It("should use server ca bundle to connect to the keeper", func() {
 			By("creating clickhouse")
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
 			DeferCleanup(func() {
@@ -299,21 +312,21 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		})
 
 		It("should use custom ca bundle to connect to the keeper", func() {
-			customCR := cr.DeepCopy()
-			customCR.Spec.Settings.TLS = v1.ClusterTLSSpec{
+			cr := baseCr.DeepCopy()
+			cr.Spec.Settings.TLS = v1.ClusterTLSSpec{
 				CABundle: &v1.SecretKeySelector{
 					Name: keeperCertName,
 				},
 			}
 
 			By("creating clickhouse")
-			Expect(k8sClient.Create(ctx, customCR)).To(Succeed())
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
 			DeferCleanup(func() {
-				Expect(k8sClient.Delete(ctx, customCR)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
 
-			WaitClickHouseUpdatedAndReady(customCR, 2*time.Minute)
-			ClickHouseRWChecks(customCR, ptr.To(0))
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+			ClickHouseRWChecks(cr, ptr.To(0))
 		})
 	})
 
@@ -375,15 +388,24 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 		checks := 0
 
-		It("should create cluster with default user password", func() {
+		BeforeAll(func() {
 			By("creating secret")
 			Expect(k8sClient.Create(ctx, &secret)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, &secret)).To(Succeed())
+			})
 
 			By("creating keeper")
 			Expect(k8sClient.Create(ctx, keeperCR)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
+			})
 
 			By("creating clickhouse")
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
+			})
 			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
 			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
 		})

@@ -24,6 +24,7 @@ import (
 	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -217,6 +218,15 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 			for key := range SecretsToGenerate {
 				Expect(secrets.Items[0].Data).To(HaveKey(key))
 				Expect(secrets.Items[0].Data[key]).To(Not(BeEmpty()))
+			}
+		})
+
+		It("should generate a valid YAML objects as config files", func() {
+			var unused map[string]any
+			for _, config := range configs.Items {
+				for filename, data := range config.Data {
+					Expect(yaml.Unmarshal([]byte(data), &unused)).To(Succeed(), filename, data)
+				}
 			}
 		})
 

@@ -43,7 +43,7 @@ func (cmd *Commander) Close() {
 	cmd.conns.Clear()
 }
 
-func (cmd *Commander) Ping(ctx context.Context, id replicaID) error {
+func (cmd *Commander) Ping(ctx context.Context, id v1.ReplicaID) error {
 	conn, err := cmd.getConn(id)
 	if err != nil {
 		return fmt.Errorf("failed to get connection for replica %v: %w", id, err)
@@ -52,15 +52,14 @@ func (cmd *Commander) Ping(ctx context.Context, id replicaID) error {
 	return conn.Ping(ctx)
 }
 
-func (cmd *Commander) getConn(id replicaID) (clickhouse.Conn, error) {
+func (cmd *Commander) getConn(id v1.ReplicaID) (clickhouse.Conn, error) {
 	if conn, ok := cmd.conns.Load(id); ok {
 		return conn.(clickhouse.Conn), nil
 	}
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr:  []string{fmt.Sprintf("%s:%d", cmd.cluster.HostnameById(id.shardID, id.index), PortManagement)},
-		Auth:  cmd.auth,
-		Debug: true, // TODO disable or configure in operator config
+		Addr: []string{fmt.Sprintf("%s:%d", cmd.cluster.HostnameById(id), PortManagement)},
+		Auth: cmd.auth,
 		Debugf: func(format string, args ...interface{}) {
 			cmd.log.Debug(fmt.Sprintf(format, args...))
 		},

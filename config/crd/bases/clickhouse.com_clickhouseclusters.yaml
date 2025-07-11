@@ -14,7 +14,23 @@ spec:
     singular: clickhousecluster
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Status
+      type: string
+    - jsonPath: .status.readyReplicas
+      name: ReadyReplicas
+      type: number
+    - jsonPath: .spec.replicas
+      name: Replicas
+      type: number
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: ClickHouseCluster is the Schema for the clickhouseclusters API.

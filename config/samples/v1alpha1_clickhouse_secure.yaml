@@ -26,7 +26,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: sample
 spec:
-  replicas: 1
+  replicas: 2
   dataVolumeClaimSpec:
     accessModes:
       - ReadWriteOnce
