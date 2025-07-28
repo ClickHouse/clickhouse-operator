@@ -1,5 +1,13 @@
 package util
 
+import (
+	"fmt"
+
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
 // Contains common labels keys and helpers to work with.
 const (
 	LabelAppKey         = "app"
@@ -20,3 +28,14 @@ const (
 
 	LabelClickHouseValue = "clickhouse-server"
 )
+
+func AppRequirements(namespace, app string) client.ListOption {
+	appReq, err := labels.NewRequirement(LabelAppKey, selection.Equals, []string{app})
+	if err != nil {
+		panic(fmt.Sprintf("make %q requirement to list: %s", LabelAppKey, err))
+	}
+	return &client.ListOptions{
+		Namespace:     namespace,
+		LabelSelector: labels.NewSelector().Add(*appReq),
+	}
+}

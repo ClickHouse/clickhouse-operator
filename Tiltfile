@@ -1,7 +1,7 @@
 load('ext://cert_manager', 'deploy_cert_manager')
 load("ext://restart_process", "docker_build_with_restart")
 
-# deploy_cert_manager(version='v1.18.0')
+# deploy_cert_manager(version='v1.18.2')
 
 local_resource(
     "generate",

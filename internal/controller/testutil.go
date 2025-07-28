@@ -12,8 +12,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -77,11 +75,7 @@ func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 func ReconcileStatefulSets[T interface {
 	SpecificName() string
 }](cr T, suite TestSuit) {
-	appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{cr.SpecificName()})
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	listOpts := &client.ListOptions{
-		LabelSelector: labels.NewSelector().Add(*appReq),
-	}
+	listOpts := util.AppRequirements("", cr.SpecificName())
 
 	var stsList appsv1.StatefulSetList
 	gomega.ExpectWithOffset(1, suite.Client.List(suite.Context, &stsList, listOpts)).To(gomega.Succeed())

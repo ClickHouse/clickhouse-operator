@@ -80,8 +80,8 @@ func DeepHashResource(obj client.Object, specFields []string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)[0:]), nil
 }
 
-func MergeMaps(mapsToMerge ...map[string]string) map[string]string {
-	result := map[string]string{}
+func MergeMaps[Value any](mapsToMerge ...map[string]Value) map[string]Value {
+	result := map[string]Value{}
 	for _, m := range mapsToMerge {
 		maps.Copy(result, m)
 	}

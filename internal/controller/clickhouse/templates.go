@@ -80,7 +80,8 @@ func TemplatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 			Name:      cr.PodDisruptionBudgetNameByShard(shardID),
 			Namespace: cr.Namespace,
 			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+				util.LabelAppKey:            cr.SpecificName(),
+				util.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
 			}),
 			Annotations: util.MergeMaps(cr.Spec.Annotations),
 		},

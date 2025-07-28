@@ -170,8 +170,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Image: v1.ContainerImage{Tag: ClickHouseUpdateVersion},
 			}}),
 			Entry("scale up to 3 replicas", 2, v1.ClickHouseClusterSpec{Replicas: ptr.To[int32](3)}),
-			// TODO Uncomment after correct replica deletion is implemented
-			// Entry("scale down to 2 replicas", 3, v1.ClickHouseClusterSpec{Replicas: ptr.To[int32](2)}),
+			Entry("scale down to 2 replicas", 3, v1.ClickHouseClusterSpec{Replicas: ptr.To[int32](2)}),
 		)
 	})
 
@@ -475,6 +474,11 @@ func ClickHouseRWChecks(cr *v1.ClickHouseCluster, checksDone *int, auth ...click
 	chClient, err := utils.NewClickHouseClient(ctx, config, cr, auth...)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer chClient.Close()
+
+	if *checksDone == 0 {
+		By("creating test database")
+		Expect(chClient.CreateDatabase(ctx)).To(Succeed())
+	}
 
 	By("writing new test data")
 	ExpectWithOffset(1, chClient.CheckWrite(ctx, *checksDone)).To(Succeed())

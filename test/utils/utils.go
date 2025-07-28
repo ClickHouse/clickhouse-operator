@@ -45,7 +45,7 @@ const (
 	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
 		"releases/download/%s/bundle.yaml"
 
-	certmanagerVersion = "v1.18.0"
+	certmanagerVersion = "v1.18.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 )
 
@@ -179,7 +179,7 @@ func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, a
 }
 
 type ForwardedCluster struct {
-	PodToAddr map[string]string
+	PodToAddr map[*corev1.Pod]string
 	cancel    context.CancelFunc
 }
 
@@ -223,7 +223,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 		return fmt.Errorf("unable to create k8sround tripper: %w", err)
 	}
 
-	c.PodToAddr = make(map[string]string, len(pods.Items))
+	c.PodToAddr = make(map[*corev1.Pod]string, len(pods.Items))
 	for _, pod := range pods.Items {
 		reqURL := clientset.CoreV1().
 			RESTClient().
@@ -265,7 +265,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 		case <-readyCh:
 		}
 
-		c.PodToAddr[pod.Name] = fmt.Sprintf("127.0.0.1:%d", port)
+		c.PodToAddr[&pod] = fmt.Sprintf("127.0.0.1:%d", port)
 	}
 
 	return nil

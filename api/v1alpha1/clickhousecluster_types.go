@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/clickhouse-operator/internal/util"
 	corev1 "k8s.io/api/core/v1"
@@ -175,6 +176,33 @@ type ClickHouseCluster struct {
 type ReplicaID struct {
 	ShardID int32
 	Index   int32
+}
+
+func IDFromLabels(labels map[string]string) (ReplicaID, error) {
+	shardIDStr, ok := labels[util.LabelClickHouseShardID]
+	if !ok {
+		return ReplicaID{}, fmt.Errorf("missing shard ID label")
+	}
+
+	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
+	if err != nil {
+		return ReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
+	}
+
+	replicaIDStr, ok := labels[util.LabelClickHouseReplicaID]
+	if !ok {
+		return ReplicaID{}, fmt.Errorf("missing replica ID label")
+	}
+
+	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
+	if err != nil {
+		return ReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
+	}
+
+	return ReplicaID{
+		ShardID: int32(shardID),
+		Index:   int32(index),
+	}, nil
 }
 
 func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {

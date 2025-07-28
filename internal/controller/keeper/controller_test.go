@@ -27,14 +27,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
@@ -103,12 +100,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
 
-			appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{cr.SpecificName()})
-			Expect(err).ToNot(HaveOccurred())
-			listOpts := &runtimeclient.ListOptions{
-				Namespace:     cr.Namespace,
-				LabelSelector: labels.NewSelector().Add(*appReq),
-			}
+			listOpts := util.AppRequirements(cr.Namespace, cr.SpecificName())
 
 			Expect(suite.Client.List(suite.Context, &services, listOpts)).To(Succeed())
 			Expect(services.Items).To(HaveLen(1))

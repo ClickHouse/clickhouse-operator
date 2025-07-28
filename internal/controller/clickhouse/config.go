@@ -19,6 +19,8 @@ var (
 	baseConfigTemplateStr string
 	//go:embed templates/network.yaml.tmpl
 	networkConfigTemplateStr string
+	//go:embed templates/log_tables.yaml.tmpl
+	logTablesConfigTemplateStr string
 	//go:embed templates/users.yaml.tmpl
 	userConfigTemplateStr string
 
@@ -38,6 +40,10 @@ func init() {
 		Filename:  path.Join(ConfigDPath, "00-network.yaml"),
 		Raw:       networkConfigTemplateStr,
 		Generator: networkConfigGenerator,
+	}, {
+		Filename:  path.Join(ConfigDPath, "00-logs-tables.yaml"),
+		Raw:       logTablesConfigTemplateStr,
+		Generator: logTablesConfigGenerator,
 	}, {
 		Filename:  UsersFileName,
 		Raw:       userConfigTemplateStr,
@@ -226,6 +232,15 @@ func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1
 	return builder.String(), nil
 }
 
+func logTablesConfigGenerator(tmpl *template.Template, _ *reconcileContext, _ v1.ReplicaID) (string, error) {
+	builder := strings.Builder{}
+	if err := tmpl.Execute(&builder, nil); err != nil {
+		return "", err
+	}
+
+	return builder.String(), nil
+}
+
 type userConfigParams struct {
 	DefaultUserPasswordEnv   string
 	DefaultProfileName       string
@@ -264,7 +279,7 @@ func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {
 	return len(ctx.Cluster.Spec.Settings.ExtraConfig.Raw) > 0
 }
 
-func (g *extraConfigGenerator) Generate(ctx *reconcileContext, id v1.ReplicaID) (string, error) {
+func (g *extraConfigGenerator) Generate(ctx *reconcileContext, _ v1.ReplicaID) (string, error) {
 	if !g.Exists(ctx) {
 		return "", fmt.Errorf("extra config generator called, but no extra config provided")
 	}

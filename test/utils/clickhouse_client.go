@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"maps"
-	"slices"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
@@ -16,7 +14,7 @@ import (
 
 type ClickHouseClient struct {
 	cluster *ForwardedCluster
-	client  clickhouse.Conn
+	clients map[v1.ReplicaID]clickhouse.Conn
 }
 
 func NewClickHouseClient(
@@ -34,10 +32,18 @@ func NewClickHouseClient(
 	if err != nil {
 		return nil, fmt.Errorf("forwarding ch nodes failed: %w", err)
 	}
+	created := false
+	clients := map[v1.ReplicaID]clickhouse.Conn{}
+	defer func() {
+		if !created {
+			for _, client := range clients {
+				_ = client.Close()
+			}
+			cluster.Close()
+		}
+	}()
 
-	chAddrs := slices.Collect(maps.Values(cluster.PodToAddr))
 	opts := clickhouse.Options{
-		Addr: chAddrs,
 		Auth: clickhouse.Auth{
 			Database: "default",
 			Username: "default",
@@ -56,71 +62,123 @@ func NewClickHouseClient(
 		}
 	}
 
-	conn, err := clickhouse.Open(&opts)
+	for pod, addr := range cluster.PodToAddr {
+		id, err := v1.IDFromLabels(pod.Labels)
+		if err != nil {
+			return nil, fmt.Errorf("get replica id from pod %s labels: %w", pod.Name, err)
+		}
 
+		opts.Addr = []string{addr}
+		conn, err := clickhouse.Open(&opts)
+		if err != nil {
+			return nil, fmt.Errorf("connect node %s: %w", pod.Name, err)
+		}
+
+		clients[id] = conn
+	}
+
+	created = true
 	return &ClickHouseClient{
 		cluster: cluster,
-		client:  conn,
+		clients: clients,
 	}, err
 }
 
 func (c *ClickHouseClient) Close() {
-	_ = c.client.Close()
+	for _, client := range c.clients {
+		_ = client.Close()
+	}
+
 	c.cluster.Close()
 }
 
+func (c *ClickHouseClient) CreateDatabase(ctx context.Context) error {
+	for _, client := range c.clients {
+		err := client.Exec(ctx, "CREATE DATABASE IF NOT EXISTS e2e_test ON CLUSTER 'default' "+
+			"Engine=Replicated('/data/e2e_test', '{shard}', '{replica}')")
+		if err != nil {
+			return fmt.Errorf("create database: %w", err)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("no cluster nodes available")
+}
+
 func (c *ClickHouseClient) CheckWrite(ctx context.Context, order int) error {
-	// Do it every time until we'll create it in controller
-	err := c.client.Exec(ctx, "CREATE DATABASE IF NOT EXISTS e2e_test ON CLUSTER 'default' "+
-		"Engine=Replicated('/data/e2e_test', '{shard}', '{replica}')")
-	if err != nil {
-		return fmt.Errorf("create database: %w", err)
-	}
-
 	tableName := fmt.Sprintf("e2e_test.e2e_test_%d", order)
-	err = c.client.Exec(ctx, fmt.Sprintf("CREATE TABLE %s (id Int64, val String) "+
-		"Engine=ReplicatedMergeTree() ORDER BY id", tableName))
-	if err != nil {
-		return fmt.Errorf("create table: %w", err)
+
+	if len(c.clients) == 0 {
+		return fmt.Errorf("no cluster nodes available")
 	}
 
-	err = c.client.Exec(ctx, fmt.Sprintf("INSERT INTO %s SELECT number, 'test' FROM numbers(10)", tableName))
-	if err != nil {
-		return fmt.Errorf("insert test data: %w", err)
+	for id, client := range c.clients {
+		if err := client.Exec(ctx, fmt.Sprintf("CREATE TABLE %s (id Int64, val String) "+
+			"Engine=ReplicatedMergeTree() ORDER BY id", tableName)); err != nil {
+			return fmt.Errorf("create table on %v: %w", id, err)
+		}
+		break
 	}
 
+	writtenShards := make(map[int32]struct{})
+	for id, client := range c.clients {
+		if _, ok := writtenShards[id.ShardID]; ok {
+			continue
+		}
+
+		err := client.Exec(ctx, fmt.Sprintf("INSERT INTO %s SELECT number, 'test' FROM numbers(10)", tableName))
+		if err != nil {
+			return fmt.Errorf("insert test data on %v: %w", id, err)
+		}
+
+		writtenShards[id.ShardID] = struct{}{}
+	}
 	return nil
 }
 
 func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 	tableName := fmt.Sprintf("e2e_test.e2e_test_%d", order)
 
-	err := c.client.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s", tableName))
-	if err != nil {
-		return err
-	}
-
-	rows, err := c.client.Query(ctx, fmt.Sprintf("SELECT * FROM %s ORDER BY id", tableName))
-	if err != nil {
-		return fmt.Errorf("query test data: %w", err)
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	for i := range 10 {
-		if !rows.Next() {
-			return fmt.Errorf("expected 10 rows, got less")
+	for id, client := range c.clients {
+		err := client.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s", tableName))
+		if err != nil {
+			return fmt.Errorf("sync replica on %v: %w", id, err)
 		}
 
-		var id int64
-		var val string
-		if err := rows.Scan(&id, &val); err != nil {
-			return fmt.Errorf("scan row %d: %w", i, err)
-		}
+		err = func() error {
+			rows, err := client.Query(ctx, fmt.Sprintf("SELECT * FROM %s ORDER BY id", tableName))
+			if err != nil {
+				return fmt.Errorf("query test data on %v: %w", id, err)
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
 
-		if id != int64(i) || val != "test" {
-			return fmt.Errorf("unexpected data in row %d: got (%d, %s), want (%d, test)", i, id, val, i)
+			for i := range 10 {
+				if !rows.Next() {
+					return fmt.Errorf("expected 10 rows, got less")
+				}
+
+				var id int64
+				var val string
+				if err := rows.Scan(&id, &val); err != nil {
+					return fmt.Errorf("scan row %d: %w", i, err)
+				}
+
+				if id != int64(i) || val != "test" {
+					return fmt.Errorf("unexpected data in row %d: got (%d, %s), want (%d, test)", i, id, val, i)
+				}
+			}
+
+			if rows.Next() {
+				return fmt.Errorf("expected 10 rows on %v, got more", id)
+			}
+
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
 	}
 

@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -16,43 +17,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-func idFromLabels(labels map[string]string) (v1.ReplicaID, error) {
-	shardIDStr, ok := labels[util.LabelClickHouseShardID]
-	if !ok {
-		return v1.ReplicaID{}, fmt.Errorf("missing shard ID label")
-	}
-
-	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
-	if err != nil {
-		return v1.ReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
-	}
-
-	replicaIDStr, ok := labels[util.LabelClickHouseReplicaID]
-	if !ok {
-		return v1.ReplicaID{}, fmt.Errorf("missing replica ID label")
-	}
-
-	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
-	if err != nil {
-		return v1.ReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
-	}
-
-	return v1.ReplicaID{
-		ShardID: int32(shardID),
-		Index:   int32(index),
-	}, nil
-}
 
 func compareReplicaID(a, b v1.ReplicaID) int {
 	if a.ShardID < b.ShardID {
@@ -149,7 +121,7 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 type reconcileContext struct {
 	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]
 
-	// Should be populated after reconcileClusterRevisions with parsed extra config.
+	// Should be populated after reconcileClusterRevisions.
 	keeper v1.KeeperCluster
 	// Should be populated by reconcileCommonResources.
 	secret    corev1.Secret
@@ -168,12 +140,18 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 			ReplicaState: map[v1.ReplicaID]replicaState{},
 		},
 	}
+	defer func() {
+		if recCtx.commander != nil {
+			recCtx.commander.Close()
+		}
+	}()
 
 	reconcileSteps := []ReconcileFunc{
 		r.reconcileCommonResources,
 		r.reconcileClusterRevisions,
 		r.reconcileActiveReplicaStatus,
 		r.reconcileReplicaResources,
+		r.reconcileReplicateSchema,
 		r.reconcileCleanUp,
 		r.reconcileConditions,
 	}
@@ -240,6 +218,29 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
 		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
 			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
+		}
+	}
+
+	var disruptionBudgets policyv1.PodDisruptionBudgetList
+	if err := r.List(ctx.Context, &disruptionBudgets,
+		util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())); err != nil {
+		return nil, fmt.Errorf("list PodDisruptionBudgets: %w", err)
+	}
+	for _, pdb := range disruptionBudgets.Items {
+		shardID, err := strconv.Atoi(pdb.Labels[util.LabelClickHouseShardID])
+		if err != nil {
+			log.Warn("failed to get shard ID from PodDisruptionBudget labels", "pdb", pdb.Name, "error", err)
+			continue
+		}
+
+		if shardID >= int(ctx.Cluster.Shards()) {
+			log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
+			if err := r.Delete(ctx.Context, &pdb); err != nil {
+				if !k8serrors.IsNotFound(err) {
+					return nil, fmt.Errorf("delete PodDisruptionBudget %s: %w", pdb.Name, err)
+				}
+				log.Warn("PodDisruptionBudget already deleted", "pdb", pdb.Name)
+			}
 		}
 	}
 
@@ -327,14 +328,7 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 }
 
 func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{ctx.Cluster.SpecificName()})
-	if err != nil {
-		return nil, fmt.Errorf("make %q requirement to list: %w", util.LabelAppKey, err)
-	}
-	listOpts := &client.ListOptions{
-		Namespace:     ctx.Cluster.Namespace,
-		LabelSelector: labels.NewSelector().Add(*appReq),
-	}
+	listOpts := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
 
 	var statefulSets appsv1.StatefulSetList
 	if err := r.List(ctx.Context, &statefulSets, listOpts); err != nil {
@@ -343,7 +337,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 
 	// TODO add timeout here or global reconcile timeout.
 	states, err := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ReplicaID, replicaState, error) {
-		id, err := idFromLabels(sts.Labels)
+		id, err := v1.IDFromLabels(sts.Labels)
 		if err != nil {
 			log.Error(err, "failed to get replica ID from StatefulSet labels", "stateful_set", sts.Name)
 			return v1.ReplicaID{}, replicaState{}, err
@@ -448,20 +442,66 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 	return &result, nil
 }
 
-func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{ctx.Cluster.SpecificName()})
-	if err != nil {
-		return nil, fmt.Errorf("make %q requirement to list: %w", util.LabelAppKey, err)
-	}
-	listOpts := &client.ListOptions{
-		Namespace:     ctx.Cluster.Namespace,
-		LabelSelector: labels.NewSelector().Add(*appReq),
+func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	if !ctx.Cluster.Spec.Settings.EnableDatabaseSync {
+		log.Info("database sync is disabled, skipping")
+		return &ctrl.Result{}, nil
 	}
 
-	replicasToRemove := map[v1.ReplicaID]struct {
-		cfg corev1.ConfigMap
-		sts appsv1.StatefulSet
-	}{}
+	var readyReplicas []v1.ReplicaID
+	for id, replica := range ctx.ReplicaState {
+		if replica.Ready() {
+			readyReplicas = append(readyReplicas, id)
+		}
+	}
+
+	if readyReplicas == nil {
+		log.Info("no ready replicas to replicate schema, skipping")
+		return &ctrl.Result{}, nil
+	}
+
+	replicaDatabases, err := util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, map[string]DatabaseDescriptor, error) {
+		databases, err := ctx.commander.Databases(ctx.Context, id)
+		return id, databases, err
+	})
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("failed to get replicas %v databases: %w", readyReplicas, err)
+	}
+
+	databases := util.MergeMaps(slices.Collect(maps.Values(replicaDatabases))...)
+	_, err = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
+		if len(databases) == len(replicaDatabases[id]) {
+			log.Debug("replica is in sync", "replica_id", id)
+			return id, struct{}{}, nil
+		}
+		dbsToSync := map[string]DatabaseDescriptor{}
+		for name, desc := range databases {
+			if _, ok := replicaDatabases[id][name]; !ok {
+				dbsToSync[name] = desc
+			}
+		}
+		log.Info("replicating databases to replica", "replica_id", id, "databases", slices.Collect(maps.Keys(dbsToSync)))
+		err := ctx.commander.CreateDatabases(ctx.Context, id, dbsToSync)
+		if err != nil {
+			log.Info("failed to create databases on replica", "error", err, "replica_id", id)
+		}
+		return id, struct{}{}, nil
+	})
+	if err != nil {
+		log.Warn("failed to sync databases on replicas", "error", err)
+	}
+
+	return nil, nil
+}
+
+type replicaResources struct {
+	cfg *corev1.ConfigMap
+	sts *appsv1.StatefulSet
+}
+
+func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	listOpts := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
+	replicasToRemove := map[int32]map[int32]replicaResources{}
 
 	var configMaps corev1.ConfigMapList
 	if err := r.List(ctx.Context, &configMaps, listOpts); err != nil {
@@ -469,7 +509,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	for _, configMap := range configMaps.Items {
-		id, err := idFromLabels(configMap.Labels)
+		id, err := v1.IDFromLabels(configMap.Labels)
 		if err != nil {
 			log.Warn("failed to get replica ID from ConfigMap labels", "configmap", configMap.Name, "error", err)
 			continue
@@ -479,9 +519,12 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		state := replicasToRemove[id]
-		state.cfg = configMap
-		replicasToRemove[id] = state
+		if _, ok := replicasToRemove[id.ShardID]; !ok {
+			replicasToRemove[id.ShardID] = map[int32]replicaResources{}
+		}
+		state := replicasToRemove[id.ShardID][id.Index]
+		state.cfg = &configMap
+		replicasToRemove[id.ShardID][id.Index] = state
 	}
 
 	var statefulSets appsv1.StatefulSetList
@@ -490,7 +533,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	for _, sts := range statefulSets.Items {
-		id, err := idFromLabels(sts.Labels)
+		id, err := v1.IDFromLabels(sts.Labels)
 		if err != nil {
 			log.Warn("failed to get replica ID from ConfigMap labels", "statefulset", sts.Name, "error", err)
 			continue
@@ -500,35 +543,58 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		state := replicasToRemove[id]
-		state.sts = sts
-		replicasToRemove[id] = state
+		if _, ok := replicasToRemove[id.ShardID]; !ok {
+			replicasToRemove[id.ShardID] = map[int32]replicaResources{}
+		}
+		state := replicasToRemove[id.ShardID][id.Index]
+		state.sts = &sts
+		replicasToRemove[id.ShardID][id.Index] = state
 	}
 
-	for id, state := range replicasToRemove {
-		// TODO check replica is synced
+	shardsInSync, err := util.ExecuteParallel(slices.Collect(maps.Keys(replicasToRemove)), func(shardID int32) (int32, struct{}, error) {
+		log.Info("Pre scale-down shard sync", "shard_id", shardID)
+		err := ctx.commander.SyncShard(ctx.Context, log, shardID)
+		if err != nil {
+			log.Info("failed to sync shard", "shard_id", shardID, "error", err)
+		}
+		return shardID, struct{}{}, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sync shards: %w", err)
+	}
 
-		log.Info("removing replica resources", "replica_id", id)
-		if len(state.cfg.Name) > 0 {
-			if err := r.Delete(ctx.Context, &state.cfg); err != nil {
-				if !k8serrors.IsNotFound(err) {
-					return nil, fmt.Errorf("delete ConfigMap %s: %w", state.cfg.Name, err)
-
-				}
-				log.Warn("ConfigMap already deleted", "configmap", state.cfg.Name)
+	for shardID, replicas := range replicasToRemove {
+		if shardID < ctx.Cluster.Shards() {
+			if _, Ok := shardsInSync[shardID]; !Ok {
+				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
+				continue
 			}
 		}
-		if len(state.sts.Name) > 0 {
-			if err := r.Delete(ctx.Context, &state.sts); err != nil {
-				if !k8serrors.IsNotFound(err) {
-					return nil, fmt.Errorf("delete StatefulSet %s: %w", state.sts.Name, err)
+
+		for index, res := range replicas {
+			id := v1.ReplicaID{ShardID: shardID, Index: index}
+			if res.sts != nil {
+				log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
+				if err := r.Delete(ctx.Context, res.sts); err != nil {
+					if !k8serrors.IsNotFound(err) {
+						return nil, fmt.Errorf("delete StatefulSet %s: %w", res.sts.Name, err)
+					}
+					log.Warn("StatefulSet already deleted", "statefulset", res.sts.Name)
 				}
-				log.Warn("StatefulSet already deleted", "statefulset", state.sts.Name)
+			}
+
+			if res.cfg != nil {
+				log.Info("removing replica configmap", "replica_id", id, "configmap", res.sts.Name)
+				if err := r.Delete(ctx.Context, res.cfg); err != nil {
+					if !k8serrors.IsNotFound(err) {
+						return nil, fmt.Errorf("delete ConfigMap %s: %w", res.cfg.Name, err)
+
+					}
+					log.Warn("ConfigMap already deleted", "configmap", res.cfg.Name)
+				}
 			}
 		}
 	}
-
-	// TODO cleanup shard disruption budgets
 
 	return nil, nil
 }
@@ -595,9 +661,9 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	expected := int(ctx.Cluster.Replicas() * ctx.Cluster.Shards())
 
 	if exists < expected {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingUp, "Cluster has less replicas that requested")
+		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingUp, "Cluster has less replicas than requested")
 	} else if exists > expected {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingDown, "Cluster has more replicas that requested")
+		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingDown, "Cluster has more replicas than requested")
 	} else {
 		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ClickHouseConditionReasonUpToDate, "")
 	}

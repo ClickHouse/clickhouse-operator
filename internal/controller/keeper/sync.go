@@ -20,12 +20,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type replicaState struct {
@@ -465,15 +462,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 }
 
 func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	appReq, err := labels.NewRequirement(util.LabelAppKey, selection.Equals, []string{ctx.Cluster.SpecificName()})
-	if err != nil {
-		return nil, fmt.Errorf("make %q requirement to list: %w", util.LabelAppKey, err)
-	}
-	listOpts := &client.ListOptions{
-		Namespace:     ctx.Cluster.Namespace,
-		LabelSelector: labels.NewSelector().Add(*appReq),
-	}
-
+	listOpts := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
 	var configMaps corev1.ConfigMapList
 	if err := r.List(ctx.Context, &configMaps, listOpts); err != nil {
 		return nil, fmt.Errorf("list ConfigMaps: %w", err)
@@ -569,9 +558,9 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	expected := int(ctx.Cluster.Replicas())
 
 	if exists < expected {
-		ctx.SetCondition(log, v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.KeeperConditionReasonScalingUp, "Cluster has less replicas that requested")
+		ctx.SetCondition(log, v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.KeeperConditionReasonScalingUp, "Cluster has less replicas than requested")
 	} else if exists > expected {
-		ctx.SetCondition(log, v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.KeeperConditionReasonScalingDown, "Cluster has more replicas that requested")
+		ctx.SetCondition(log, v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.KeeperConditionReasonScalingDown, "Cluster has more replicas than requested")
 	} else {
 		ctx.SetCondition(log, v1.KeeperConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.KeeperConditionReasonUpToDate, "")
 	}
