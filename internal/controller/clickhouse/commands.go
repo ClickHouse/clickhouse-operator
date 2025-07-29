@@ -12,6 +12,36 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const (
+	listDatabasesQuery = `SELECT name, engine_full, engine = 'Replicated' AS is_replicated
+FROM system.databases 
+WHERE 
+	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary')
+SETTINGS
+	format_display_secrets_in_show_and_select=1`
+	listOldDatabaseReplicasQuery = `SELECT
+	database,
+	toInt32(database_shard_name) AS shard_id,
+	toInt32(database_replica_name) AS replica_id,
+	sum(is_active)::Bool AS is_active,
+	any(hostname) AS hostname
+FROM (
+	SELECT 
+		name as database,
+		database_shard_name,
+		database_replica_name,
+		is_active,
+		hostname() AS hostname
+	FROM clusterAllReplicas(default, system.clusters)
+	WHERE database_replica_name != ''
+)
+GROUP BY 
+	database, shard_id, replica_id
+HAVING
+	shard_id >= ?
+	OR replica_id >= ?`
+)
+
 type DatabaseDescriptor struct {
 	Name         string `ch:"name"`
 	EngineFull   string `ch:"engine_full"`
@@ -65,11 +95,7 @@ func (cmd *Commander) Databases(ctx context.Context, id v1.ReplicaID) (map[strin
 		return nil, fmt.Errorf("failed to get connection for replica %v: %w", id, err)
 	}
 
-	rows, err := conn.Query(ctx, `
-SELECT name, engine_full, engine = 'Replicated' AS is_replicated
-FROM system.databases 
-WHERE engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary')
-SETTINGS format_display_secrets_in_show_and_select=1`)
+	rows, err := conn.Query(ctx, listDatabasesQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query databases on replica %v: %w", id, err)
 	}
@@ -182,6 +208,69 @@ func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.Re
 	}
 
 	return errs
+}
+
+// CleanupDatabaseReplicas removes old replicated database replicas, skipping unsync ones.
+func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ReplicaID]struct{}) error {
+	var anyID v1.ReplicaID
+	for id := range cmd.cluster.ReplicaIDs() {
+		anyID = id
+	}
+	log = log.With("replica_id", anyID)
+	conn, err := cmd.getConn(anyID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
+	}
+
+	rows, err := conn.Query(ctx, listOldDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
+	if err != nil {
+		return fmt.Errorf("failed to query old database replicas %v: %w", anyID, err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	for rows.Next() {
+		var database string
+		var toDrop v1.ReplicaID
+		var isActive bool
+		var hostname string
+		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive, &hostname); err != nil {
+			log.Info("failed to scan old database %s replica", "error", err)
+			continue
+		}
+
+		if _, ok := notInSync[toDrop]; ok {
+			log.Debug("skipping old database replica cleanup that is not in sync", "database", database, "replica_id", toDrop)
+			continue
+		}
+
+		if isActive {
+			log.Debug("old database replica is still active, skipping", "database", database, "replica_id", toDrop)
+			continue
+		}
+
+		toExec, err := v1.IDFromHostname(cmd.cluster, hostname)
+		if err != nil {
+			log.Warn("failed to parse replica ID from hostname", "hostname", hostname, "error", err)
+			continue
+		}
+
+		execConn, err := cmd.getConn(toExec)
+		if err != nil {
+			log.Warn("failed to get connection for replica", "replica_id", toExec, "error", err)
+			continue
+		}
+
+		log.Debug("deleting old database replica", "database", database, "replica_id", toDrop)
+		err = execConn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
+		if err != nil {
+			log.Info("failed to drop old database replica", "replica_id", toDrop, "error", err)
+			continue
+		}
+	}
+
+	return nil
 }
 
 func (cmd *Commander) getConn(id v1.ReplicaID) (clickhouse.Conn, error) {

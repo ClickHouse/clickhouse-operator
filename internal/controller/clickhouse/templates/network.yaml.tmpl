@@ -8,6 +8,9 @@ interserver_http_credentials:
     - "@from_env": {{ .InterserverHTTPPasswordEnvVar }}
   allow_empty: false
 
+{{- /* use default tcp_port as management to use it in distributed queries */}}
+tcp_port: {{ .ManagementPort }}
+
 protocols:
 {{- range $name, $protocol := .Protocols }}
   {{ $name }}:
@@ -24,8 +27,6 @@ protocols:
 {{- end }}
 
 {{- /* disable the following ports that may overlap ports with composable protocols */}}
-tcp_port:
-  '@remove': '1'
 tcp_port_secure:
   '@remove': '1'
 http_port:

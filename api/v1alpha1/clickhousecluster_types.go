@@ -18,7 +18,9 @@ package v1alpha1
 
 import (
 	"fmt"
+	"iter"
 	"strconv"
+	"strings"
 
 	"github.com/clickhouse-operator/internal/util"
 	corev1 "k8s.io/api/core/v1"
@@ -205,6 +207,29 @@ func IDFromLabels(labels map[string]string) (ReplicaID, error) {
 	}, nil
 }
 
+func IDFromHostname(v *ClickHouseCluster, hostname string) (ReplicaID, error) {
+	idParts := hostname[len(v.SpecificName())+1 : len(hostname)-2] // leave only {shard}-{index}
+	parts := strings.Split(idParts, "-")
+	if len(parts) != 2 {
+		return ReplicaID{}, fmt.Errorf("invalid hostname %q, expected format: <name>-<shard>-<index>-0", hostname)
+	}
+
+	shardID, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		return ReplicaID{}, fmt.Errorf("invalid shard ID %q in hostname %q: %w", parts[0], hostname, err)
+	}
+
+	index, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		return ReplicaID{}, fmt.Errorf("invalid index %q in hostname %q: %w", parts[1], hostname, err)
+	}
+
+	return ReplicaID{
+		ShardID: int32(shardID),
+		Index:   int32(index),
+	}, nil
+}
+
 func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: v.Namespace,
@@ -236,6 +261,18 @@ func (v *ClickHouseCluster) Replicas() int32 {
 	}
 
 	return *v.Spec.Replicas
+}
+
+func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ReplicaID] {
+	return func(yield func(ReplicaID) bool) {
+		for shard := range v.Shards() {
+			for index := range v.Replicas() {
+				if !yield(ReplicaID{ShardID: shard, Index: index}) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (v *ClickHouseCluster) HeadlessServiceName() string {

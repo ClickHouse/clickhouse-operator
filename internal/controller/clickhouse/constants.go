@@ -20,6 +20,7 @@ const (
 	PortInterserver      = 9009
 
 	ConfigPath          = "/etc/clickhouse-server/"
+	ClientConfigPath    = "/etc/clickhouse-client/"
 	ConfigDPath         = "config.d"
 	ConfigFileName      = "config.yaml"
 	UsersFileName       = "users.yaml"

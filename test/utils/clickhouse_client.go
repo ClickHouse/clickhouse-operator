@@ -10,6 +10,7 @@ import (
 	chcontrol "github.com/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/onsi/ginkgo/v2"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 )
 
 type ClickHouseClient struct {
@@ -93,6 +94,7 @@ func (c *ClickHouseClient) Close() {
 }
 
 func (c *ClickHouseClient) CreateDatabase(ctx context.Context) error {
+	// Query only one random node.
 	for _, client := range c.clients {
 		err := client.Exec(ctx, "CREATE DATABASE IF NOT EXISTS e2e_test ON CLUSTER 'default' "+
 			"Engine=Replicated('/data/e2e_test', '{shard}', '{replica}')")
@@ -141,7 +143,12 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 	tableName := fmt.Sprintf("e2e_test.e2e_test_%d", order)
 
 	for id, client := range c.clients {
-		err := client.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s", tableName))
+		// Newly created table may not be started yet.
+		err := retry.OnError(retry.DefaultBackoff, func(error) bool {
+			return true
+		}, func() error {
+			return client.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s", tableName))
+		})
 		if err != nil {
 			return fmt.Errorf("sync replica on %v: %w", id, err)
 		}

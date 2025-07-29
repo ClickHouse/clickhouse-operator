@@ -210,17 +210,20 @@ type networkConfigParams struct {
 	InterserverHTTPPort           uint16
 	InterserverHTTPUser           string
 	InterserverHTTPPasswordEnvVar string
+	ManagementPort                uint16
 	Protocols                     map[string]Protocol
 }
 
 func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ReplicaID) (string, error) {
 	protocols := buildProtocols(ctx.Cluster)
 	delete(protocols, "interserver")
+	delete(protocols, "management")
 
 	params := networkConfigParams{
 		InterserverHTTPPort:           PortInterserver,
 		InterserverHTTPUser:           InterserverUserName,
 		InterserverHTTPPasswordEnvVar: EnvInterserverPassword,
+		ManagementPort:                PortManagement,
 		Protocols:                     protocols,
 	}
 

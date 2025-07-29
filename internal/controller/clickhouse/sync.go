@@ -389,20 +389,16 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 	highestStage := chctrl.StageUpToDate
 	var replicasInStatus []v1.ReplicaID
 
-	for shard := range ctx.Cluster.Shards() {
-		for replica := range ctx.Cluster.Replicas() {
-			id := v1.ReplicaID{ShardID: shard, Index: replica}
+	for id := range ctx.Cluster.ReplicaIDs() {
+		stage := ctx.Replica(id).UpdateStage(ctx)
+		if stage == highestStage {
+			replicasInStatus = append(replicasInStatus, id)
+			continue
+		}
 
-			stage := ctx.Replica(id).UpdateStage(ctx)
-			if stage == highestStage {
-				replicasInStatus = append(replicasInStatus, id)
-				continue
-			}
-
-			if stage > highestStage {
-				highestStage = stage
-				replicasInStatus = []v1.ReplicaID{id}
-			}
+		if stage > highestStage {
+			highestStage = stage
+			replicasInStatus = []v1.ReplicaID{id}
 		}
 	}
 
@@ -563,10 +559,14 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		return nil, fmt.Errorf("sync shards: %w", err)
 	}
 
+	runningOldReplicas := map[v1.ReplicaID]struct{}{}
 	for shardID, replicas := range replicasToRemove {
 		if shardID < ctx.Cluster.Shards() {
 			if _, Ok := shardsInSync[shardID]; !Ok {
 				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
+				for index := range replicas {
+					runningOldReplicas[v1.ReplicaID{ShardID: shardID, Index: index}] = struct{}{}
+				}
 				continue
 			}
 		}
@@ -584,7 +584,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			}
 
 			if res.cfg != nil {
-				log.Info("removing replica configmap", "replica_id", id, "configmap", res.sts.Name)
+				log.Info("removing replica configmap", "replica_id", id, "configmap", res.cfg.Name)
 				if err := r.Delete(ctx.Context, res.cfg); err != nil {
 					if !k8serrors.IsNotFound(err) {
 						return nil, fmt.Errorf("delete ConfigMap %s: %w", res.cfg.Name, err)
@@ -594,6 +594,10 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 				}
 			}
 		}
+	}
+
+	if err = ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningOldReplicas); err != nil {
+		return nil, fmt.Errorf("cleanup database replicas: %w", err)
 	}
 
 	return nil, nil
