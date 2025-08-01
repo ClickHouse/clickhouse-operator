@@ -126,6 +126,9 @@ type reconcileContext struct {
 	// Should be populated by reconcileCommonResources.
 	secret    corev1.Secret
 	commander *Commander
+
+	databasesInSync        bool
+	staleReplicasCleanedUp bool
 }
 
 type ReconcileFunc func(util.Logger, *reconcileContext) (*ctrl.Result, error)
@@ -177,15 +180,13 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 
 			stepLog.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
 			errMsg := "Reconcile returned error"
-			recCtx.SetConditions(log, []metav1.Condition{
-				recCtx.NewCondition(v1.ClickHouseConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ClickHouseConditionReasonStepFailed, errMsg),
-				// Operator did not finish reconciliation, some conditions may not be valid already.
-				recCtx.NewCondition(v1.ClickHouseConditionTypeReady, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.ClickHouseConditionTypeHealthy, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.ClickHouseConditionTypeReplicaStartupSucceeded, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.ClickHouseConditionTypeConfigurationInSync, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg),
-				recCtx.NewCondition(v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg),
-			})
+
+			var unknownConditions []metav1.Condition
+			for _, cond := range v1.AllClickHouseConditionTypes {
+				unknownConditions = append(unknownConditions, recCtx.NewCondition(cond, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg))
+			}
+			meta.SetStatusCondition(&unknownConditions, recCtx.NewCondition(v1.ClickHouseConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ClickHouseConditionReasonStepFailed, errMsg))
+			recCtx.SetConditions(log, unknownConditions)
 
 			return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, r.upsertStatus(log, &recCtx)
 		}
@@ -464,6 +465,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		return &ctrl.Result{}, fmt.Errorf("failed to get replicas %v databases: %w", readyReplicas, err)
 	}
 
+	hasNotSynced := false
 	databases := util.MergeMaps(slices.Collect(maps.Values(replicaDatabases))...)
 	_, err = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
 		if len(databases) == len(replicaDatabases[id]) {
@@ -480,6 +482,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		err := ctx.commander.CreateDatabases(ctx.Context, id, dbsToSync)
 		if err != nil {
 			log.Info("failed to create databases on replica", "error", err, "replica_id", id)
+			hasNotSynced = true
 		}
 		return id, struct{}{}, nil
 	})
@@ -487,6 +490,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		log.Warn("failed to sync databases on replicas", "error", err)
 	}
 
+	ctx.databasesInSync = !hasNotSynced
 	return nil, nil
 }
 
@@ -559,13 +563,13 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		return nil, fmt.Errorf("sync shards: %w", err)
 	}
 
-	runningOldReplicas := map[v1.ReplicaID]struct{}{}
+	runningStaleReplicas := map[v1.ReplicaID]struct{}{}
 	for shardID, replicas := range replicasToRemove {
 		if shardID < ctx.Cluster.Shards() {
 			if _, Ok := shardsInSync[shardID]; !Ok {
 				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
 				for index := range replicas {
-					runningOldReplicas[v1.ReplicaID{ShardID: shardID, Index: index}] = struct{}{}
+					runningStaleReplicas[v1.ReplicaID{ShardID: shardID, Index: index}] = struct{}{}
 				}
 				continue
 			}
@@ -596,8 +600,10 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		}
 	}
 
-	if err = ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningOldReplicas); err != nil {
-		return nil, fmt.Errorf("cleanup database replicas: %w", err)
+	if ctx.Cluster.Spec.Settings.EnableDatabaseSync {
+		if ctx.staleReplicasCleanedUp, err = ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas); err != nil {
+			return nil, fmt.Errorf("cleanup database replicas: %w", err)
+		}
 	}
 
 	return nil, nil
@@ -682,6 +688,29 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		slices.Sort(notReadyShards)
 		message := fmt.Sprintf("Some shards are not ready: %v", notReadyShards)
 		ctx.SetCondition(log, v1.ClickHouseConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message)
+	}
+
+	{
+		condType := metav1.ConditionTrue
+		condReason := v1.ClickHouseConditionSchemaSyncDisabled
+		condMessage := "Database schema sync is disabled"
+		if ctx.Cluster.Spec.Settings.EnableDatabaseSync {
+			if !ctx.databasesInSync {
+				condType = metav1.ConditionFalse
+				condReason = v1.ClickHouseConditionDatabasesNotCreated
+				condMessage = "Some databases are not created on all replicas"
+			} else if !ctx.staleReplicasCleanedUp {
+				condType = metav1.ConditionFalse
+				condReason = v1.ClickHouseConditionReplicasNotCleanedUp
+				condMessage = "Some stale replicas are not cleaned up"
+			} else {
+				condType = metav1.ConditionTrue
+				condReason = v1.ClickHouseConditionReplicasInSync
+				condMessage = "Databases are sync on all replicas"
+			}
+		}
+
+		ctx.SetCondition(log, v1.ClickHouseConditionTypeSchemaInSync, condType, condReason, condMessage)
 	}
 
 	for _, condition := range ctx.Cluster.Status.Conditions {

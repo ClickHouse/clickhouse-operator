@@ -13,6 +13,10 @@ const (
 	ClickHouseConditionTypeConfigurationInSync ConditionType = "ConfigurationInSync"
 	// ClickHouseConditionTypeReady indicates that ClickHouseCluster is ready to serve client requests.
 	ClickHouseConditionTypeReady ConditionType = "Ready"
+	// ClickHouseConditionTypeSchemaInSync indicates that databases were created on all new replicas and deleted
+	// replicas metadata was removed. This condition indicates that newly created replicas are ready to use or cluster
+	// should operate normally after scale down, but it does not mean that all replicas have the same schema.
+	ClickHouseConditionTypeSchemaInSync ConditionType = "SchemaInSync"
 )
 
 var (
@@ -23,6 +27,7 @@ var (
 		ClickHouseConditionTypeClusterSizeAligned,
 		ClickHouseConditionTypeConfigurationInSync,
 		ClickHouseConditionTypeReady,
+		ClickHouseConditionTypeSchemaInSync,
 	}
 )
 
@@ -43,4 +48,9 @@ const (
 
 	ClickHouseConditionAllShardsReady     ConditionReason = "AllShardsReady"
 	ClickHouseConditionSomeShardsNotReady ConditionReason = "SomeShardsNotReady"
+
+	ClickHouseConditionSchemaSyncDisabled   ConditionReason = "SchemaSyncDisabled"
+	ClickHouseConditionReplicasInSync       ConditionReason = "ReplicasInSync"
+	ClickHouseConditionDatabasesNotCreated  ConditionReason = "DatabasesNotCreated"
+	ClickHouseConditionReplicasNotCleanedUp ConditionReason = "ReplicasNotCleanedUp"
 )

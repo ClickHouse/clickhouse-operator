@@ -436,9 +436,9 @@ func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Durati
 	EventuallyWithOffset(1, func() bool {
 		var cluster v1.ClickHouseCluster
 		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-		if !(cluster.Generation == cluster.Status.ObservedGeneration &&
-			cluster.Status.CurrentRevision == cluster.Status.UpdateRevision &&
-			cluster.Status.ReadyReplicas == cluster.Replicas()) {
+		if cluster.Generation != cluster.Status.ObservedGeneration ||
+			cluster.Status.CurrentRevision != cluster.Status.UpdateRevision ||
+			cluster.Status.ReadyReplicas != cluster.Replicas() {
 			return false
 		}
 		for _, cond := range cluster.Status.Conditions {

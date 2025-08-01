@@ -19,7 +19,7 @@ WHERE
 	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary')
 SETTINGS
 	format_display_secrets_in_show_and_select=1`
-	listOldDatabaseReplicasQuery = `SELECT
+	listStaleDatabaseReplicasQuery = `SELECT
 	database,
 	toInt32(database_shard_name) AS shard_id,
 	toInt32(database_replica_name) AS replica_id,
@@ -210,8 +210,8 @@ func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.Re
 	return errs
 }
 
-// CleanupDatabaseReplicas removes old replicated database replicas, skipping unsync ones.
-func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ReplicaID]struct{}) error {
+// CleanupDatabaseReplicas removes stale replicated database replicas, skipping unsync ones.
+func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ReplicaID]struct{}) (bool, error) {
 	var anyID v1.ReplicaID
 	for id := range cmd.cluster.ReplicaIDs() {
 		anyID = id
@@ -219,34 +219,37 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 	log = log.With("replica_id", anyID)
 	conn, err := cmd.getConn(anyID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
+		return false, fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
 	}
 
-	rows, err := conn.Query(ctx, listOldDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
+	rows, err := conn.Query(ctx, listStaleDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
 	if err != nil {
-		return fmt.Errorf("failed to query old database replicas %v: %w", anyID, err)
+		return false, fmt.Errorf("failed to query stale database replicas %v: %w", anyID, err)
 	}
 	defer func() {
 		_ = rows.Close()
 	}()
 
+	total := 0
+	succeed := 0
 	for rows.Next() {
 		var database string
 		var toDrop v1.ReplicaID
 		var isActive bool
 		var hostname string
 		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive, &hostname); err != nil {
-			log.Info("failed to scan old database %s replica", "error", err)
+			total++
+			log.Info("failed to scan stale database %s replica", "error", err)
 			continue
 		}
 
 		if _, ok := notInSync[toDrop]; ok {
-			log.Debug("skipping old database replica cleanup that is not in sync", "database", database, "replica_id", toDrop)
+			log.Debug("skipping stale database replica cleanup that is not in sync", "database", database, "replica_id", toDrop)
 			continue
 		}
 
 		if isActive {
-			log.Debug("old database replica is still active, skipping", "database", database, "replica_id", toDrop)
+			log.Debug("stale database replica is still active, skipping", "database", database, "replica_id", toDrop)
 			continue
 		}
 
@@ -262,15 +265,17 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 			continue
 		}
 
-		log.Debug("deleting old database replica", "database", database, "replica_id", toDrop)
+		log.Debug("deleting stale database replica", "database", database, "replica_id", toDrop)
 		err = execConn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
 		if err != nil {
-			log.Info("failed to drop old database replica", "replica_id", toDrop, "error", err)
+			log.Info("failed to drop stale database replica", "replica_id", toDrop, "error", err)
 			continue
 		}
+
+		succeed++
 	}
 
-	return nil
+	return total == succeed, nil
 }
 
 func (cmd *Commander) getConn(id v1.ReplicaID) (clickhouse.Conn, error) {
