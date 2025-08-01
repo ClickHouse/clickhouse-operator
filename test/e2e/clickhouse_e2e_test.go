@@ -436,9 +436,18 @@ func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Durati
 	EventuallyWithOffset(1, func() bool {
 		var cluster v1.ClickHouseCluster
 		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-		return cluster.Generation == cluster.Status.ObservedGeneration &&
+		if !(cluster.Generation == cluster.Status.ObservedGeneration &&
 			cluster.Status.CurrentRevision == cluster.Status.UpdateRevision &&
-			cluster.Status.ReadyReplicas == cluster.Replicas()
+			cluster.Status.ReadyReplicas == cluster.Replicas()) {
+			return false
+		}
+		for _, cond := range cluster.Status.Conditions {
+			if cond.Status != metav1.ConditionTrue {
+				return false
+			}
+		}
+
+		return true
 	}, timeout).Should(BeTrue())
 	// Needed for replica deletion to not forward deleting pods.
 	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
