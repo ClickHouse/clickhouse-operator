@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -30,7 +31,6 @@ import (
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"golang.org/x/exp/rand"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -52,7 +52,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			keeper = v1.KeeperCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      fmt.Sprintf("clickhouse-test-%d", rand.Uint32()),
+					Name:      fmt.Sprintf("clickhouse-test-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.KeeperClusterSpec{
 					// Use standalone keeper for ClickHouse tests to save resources in CI
@@ -73,7 +73,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			cr := v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      fmt.Sprintf("test-%d", rand.Uint32()),
+					Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: ptr.To[int32](1),
@@ -124,7 +124,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			cr := v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      fmt.Sprintf("test-%d", rand.Uint32()),
+					Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: ptr.To(int32(baseReplicas)),
@@ -175,7 +175,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 	})
 
 	Describe("is handling TLS settings correctly", Ordered, func() {
-		suffix := rand.Uint32()
+		suffix := rand.Uint32() //nolint:gosec
 		issuer := fmt.Sprintf("issuer-%d", suffix)
 
 		keeperCertName := fmt.Sprintf("keeper-cert-%d", suffix)
@@ -194,7 +194,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			keeperCR = &v1.KeeperCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+					Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.KeeperClusterSpec{
 					Replicas: ptr.To[int32](1),
@@ -235,7 +235,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			baseCr = &v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
-					Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
+					Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: ptr.To[int32](2),
@@ -332,11 +332,11 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 	Describe("default and management users works", Ordered, func() {
 		secret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
 				Namespace: testNamespace,
 			},
 			Data: map[string][]byte{
-				"password": []byte(fmt.Sprintf("test-password-%d", rand.Uint32())),
+				"password": []byte(fmt.Sprintf("test-password-%d", rand.Uint32())), //nolint:gosec
 			},
 		}
 		auth := clickhouse.Auth{
@@ -347,7 +347,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		keeperCR := &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
@@ -363,7 +363,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		cr := &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: ptr.To[int32](2),

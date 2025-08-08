@@ -1,10 +1,11 @@
 name: Operator CI
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+env:
+  kind-version: 'v0.29.0'
 
 jobs:
   lint:
@@ -16,7 +17,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: 'go.mod'
           
       - name: Go Tidy
         run: go mod tidy && git diff --exit-code
@@ -30,8 +31,38 @@ jobs:
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1
+          version: v2.3.1
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Check bundle generated
+        run: make bundle && git diff --ignore-matching-lines='.*createdAt:.*' --exit-code
+
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: 'test-bundle'
+          version: ${{ env.kind-version }}
+
+      - name: Export kubeconfig
+        run: kind export kubeconfig --name test-bundle
+
+      - name: Create bundle image
+        run: make bundle-build
+
+      - name: Load image into Kind cluster
+        run: kind load docker-image clickhouse.com/clickhouse-operator-bundle:v0.0.1 --name test-bundle
+
+      - name: Run scorecard tests
+        run: make scorecard
   build_and_test:
     runs-on: ubuntu-latest
     steps:
@@ -41,7 +72,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: 'go.mod'
 
       - name: Go Mod
         run: go mod download
@@ -69,7 +100,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: 'go.mod'
 
       - name: Go Mod
         run: go mod download
@@ -81,6 +112,7 @@ jobs:
         uses: helm/kind-action@v1
         with:
           cluster_name: kind
+          version: ${{ env.kind-version }}
           config: ci/kind-cluster.config
 
       - name: Run e2e tests

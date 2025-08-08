@@ -1,17 +1,28 @@
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    cert-manager.io/inject-ca-from: clickhouse-operator-system/clickhouse-operator-serving-cert
     controller-gen.kubebuilder.io/version: v0.16.1
-  name: clickhouseclusters.clickhouse.com
+  creationTimestamp: null
+  name: keeperclusters.clickhouse.com
 spec:
+  conversion:
+    strategy: Webhook
+    webhook:
+      clientConfig:
+        service:
+          name: clickhouse-operator-webhook-service
+          namespace: clickhouse-operator-system
+          path: /convert
+      conversionReviewVersions:
+      - v1
   group: clickhouse.com
   names:
-    kind: ClickHouseCluster
-    listKind: ClickHouseClusterList
-    plural: clickhouseclusters
-    singular: clickhousecluster
+    kind: KeeperCluster
+    listKind: KeeperClusterList
+    plural: keeperclusters
+    singular: keepercluster
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -33,7 +44,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClickHouseCluster is the Schema for the clickhouseclusters API.
+        description: KeeperCluster is the Schema for the keeperclusters API.
         properties:
           apiVersion:
             description: |-
@@ -53,7 +64,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
+            description: KeeperClusterSpec defines the desired state of KeeperCluster.
             properties:
               annotations:
                 additionalProperties:
@@ -61,7 +72,7 @@ spec:
                 description: Additional annotations that are added to resources.
                 type: object
               containerTemplate:
-                description: Parameters passed to the ClickHouse container spec.
+                description: Parameters passed to the Keeper container spec.
                 properties:
                   image:
                     description: Image is the container image to be deployed.
@@ -348,21 +359,6 @@ spec:
                       backing this claim.
                     type: string
                 type: object
-              keeperClusterRef:
-                description: Reference to the KeeperCluster that is used for ClickHouse
-                  coordination.
-                properties:
-                  name:
-                    default: ""
-                    description: |-
-                      Name of the referent.
-                      This field is effectively required, but due to backwards compatibility is
-                      allowed to be empty. Instances of this type with an empty value here are
-                      almost certainly wrong.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                type: object
-                x-kubernetes-map-type: atomic
               labels:
                 additionalProperties:
                   type: string
@@ -1571,39 +1567,26 @@ spec:
               replicas:
                 default: 3
                 description: |-
-                  Number of replicas in the single shard
+                  Number of replicas in the cluster
                   This is a pointer to distinguish between explicit zero and unspecified.
+                enum:
+                - 0
+                - 1
+                - 3
+                - 5
+                - 7
+                - 9
+                - 11
+                - 13
+                - 15
                 format: int32
-                minimum: 0
                 type: integer
               settings:
-                description: Configuration parameters for ClickHouse server.
+                description: Configuration parameters for ClickHouse Keeper server.
                 properties:
-                  defaultUserPassword:
-                    description: Reference to the Secret key, which contains password
-                      for the user 'default'.
-                    properties:
-                      key:
-                        description: The key of the secret to select from.  Must be
-                          a valid secret key.
-                        type: string
-                      name:
-                        description: The name of the secret in the cluster's namespace
-                          to select from.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    type: object
-                  enableDatabaseSync:
-                    default: true
-                    description: |-
-                      Enables synchronization of ClickHouse databases to the newly created replicas by the operator.
-                      Supports only Replicated and integration tables.
-                    type: boolean
                   extraConfig:
-                    description: Additional ClickHouse configuration that will be
-                      merged with the default one.
+                    description: Additional ClickHouse Keeper configuration that will
+                      be merged with the default one.
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
@@ -1643,7 +1626,7 @@ spec:
                         type: string
                     type: object
                   tls:
-                    description: TLS settings, allows to enable TLS settings for ClickHouse.
+                    description: TLS settings, allows to enable TLS settings for Keeper.
                     properties:
                       caBundle:
                         description: |-
@@ -1691,20 +1674,11 @@ spec:
                         x-kubernetes-map-type: atomic
                     type: object
                 type: object
-              shards:
-                default: 1
-                description: |-
-                  Number of shards in the cluster
-                  This is a pointer to distinguish between explicit zero and unspecified.
-                format: int32
-                minimum: 0
-                type: integer
             required:
             - dataVolumeClaimSpec
-            - keeperClusterRef
             type: object
           status:
-            description: ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
+            description: KeeperClusterStatus defines the observed state of KeeperCluster.
             properties:
               conditions:
                 items:
@@ -1770,7 +1744,7 @@ spec:
                   revision for every replica.
                 type: string
               currentRevision:
-                description: CurrentRevision indicates latest applied ClickHouseCluster
+                description: CurrentRevision indicates latest applied KeeperCluster
                   spec revision.
                 type: string
               observedGeneration:
@@ -1783,12 +1757,17 @@ spec:
                   requests.
                 format: int32
                 type: integer
+              replicas:
+                description: Replicas that should be present in config
+                items:
+                  type: string
+                type: array
               statefulSetRevision:
                 description: StatefulSetRevision indicates target StatefulSet revision
                   for every replica.
                 type: string
               updateRevision:
-                description: UpdateRevision indicates latest requested ClickHouseCluster
+                description: CurrentRevision indicates latest requested KeeperCluster
                   spec revision.
                 type: string
             type: object
@@ -1797,3 +1776,9 @@ spec:
     storage: true
     subresources:
       status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: null
+  storedVersions: null

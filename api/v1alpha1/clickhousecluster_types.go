@@ -38,6 +38,7 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum=0
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Replica count in shard"
 	Replicas *int32 `json:"replicas"`
 
 	// Number of shards in the cluster
@@ -48,6 +49,7 @@ type ClickHouseClusterSpec struct {
 	Shards *int32 `json:"shards"`
 
 	// Reference to the KeeperCluster that is used for ClickHouse coordination.
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
 	KeeperClusterRef *corev1.LocalObjectReference `json:"keeperClusterRef"`
 
 	// Parameters passed to the Keeper pod spec.
@@ -60,6 +62,7 @@ type ClickHouseClusterSpec struct {
 
 	// Settings for the replicas storage.
 	// +required
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional labels that are added to resources.
@@ -141,32 +144,46 @@ type ClickHouseClusterStatus struct {
 	// +patchStrategy=merge
 	// +patchMergeKey=type
 	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// ReadyReplicas Total number of replicas ready to server requests.
 	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ReadyReplicas int32 `json:"readyReplicas"`
 	// ConfigurationRevision indicates target configuration revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ConfigurationRevision string `json:"configurationRevision,omitempty"`
 	// StatefulSetRevision indicates target StatefulSet revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	StatefulSetRevision string `json:"statefulSetRevision,omitempty"`
 
 	// CurrentRevision indicates latest applied ClickHouseCluster spec revision.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	CurrentRevision string `json:"currentRevision,omitempty"`
 	// UpdateRevision indicates latest requested ClickHouseCluster spec revision.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	UpdateRevision string `json:"updateRevision,omitempty"`
 	// ObservedGeneration indicates lastest generation observed by controller.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
+// ClickHouseCluster is the Schema for the clickhouseclusters API.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// ClickHouseCluster is the Schema for the clickhouseclusters API.
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
 // +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"
 // +kubebuilder:printcolumn:name="Replicas",type="number",JSONPath=".spec.replicas"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +operator-sdk:csv:customresourcedefinitions:displayName="ClickHouse Cluster"
+// +operator-sdk:csv:customresourcedefinitions:resources={{Pod,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{PersistentVolumeClaim,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{StatefulSet,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{ConfigMap,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{Secret,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{Service,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{PodDisruptionBudget,v1}}
 type ClickHouseCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -237,8 +237,8 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 		var toDrop v1.ReplicaID
 		var isActive bool
 		var hostname string
+		total++
 		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive, &hostname); err != nil {
-			total++
 			log.Info("failed to scan stale database %s replica", "error", err)
 			continue
 		}

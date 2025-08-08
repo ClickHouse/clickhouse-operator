@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: clickhouse-operator
+  name: clickhouse-operator-keepercluster-viewer-role
+rules:
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - keeperclusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - keeperclusters/status
+  verbs:
+  - get

@@ -91,7 +91,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 	cfg.WarningHandler = &warningsHandler{
-		l: logf.NewKubeAPIWarningLogger(logf.Log, logf.KubeAPIWarningLoggerOptions{
+		l: logf.NewKubeAPIWarningLogger(logf.KubeAPIWarningLoggerOptions{
 			Deduplicate: false,
 		}),
 	}
@@ -182,5 +182,5 @@ func (h *warningsHandler) HandleWarningHeader(code int, agent string, text strin
 	}
 
 	warnings = append(warnings, text)
-	h.l.HandleWarningHeader(code, agent, text)
+	h.l.HandleWarningHeaderWithContext(ctx, code, agent, text)
 }

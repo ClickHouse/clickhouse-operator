@@ -3,17 +3,19 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"slices"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
+	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -21,11 +23,8 @@ type ReplicaUpdateStage int
 
 const (
 	StageUpToDate ReplicaUpdateStage = iota
-	StageStsAndConfigDiff
-	StageConfigDiff
-	StageStsDiff
+	StageHasDiff
 	StageNotReadyUpToDate
-	StageNotReadyWithDiff
 	StageUpdating
 	StageError
 	StageNotExists
@@ -34,11 +33,8 @@ const (
 var (
 	mapStatusText = map[ReplicaUpdateStage]string{
 		StageUpToDate:         "UpToDate",
-		StageStsAndConfigDiff: "StatefulSetAndConfigDiff",
-		StageConfigDiff:       "ConfigDiff",
-		StageStsDiff:          "StatefulSetDiff",
+		StageHasDiff:          "StatefulSetDiff",
 		StageNotReadyUpToDate: "NotReadyUpToDate",
-		StageNotReadyWithDiff: "NotReadyWithDiff",
 		StageUpdating:         "Updating",
 		StageError:            "Error",
 		StageNotExists:        "NotExists",
@@ -47,71 +43,6 @@ var (
 
 func (s ReplicaUpdateStage) String() string {
 	return mapStatusText[s]
-}
-
-type ClusterObject interface {
-	runtime.Object
-	GetGeneration() int64
-	Conditions() *[]metav1.Condition
-}
-
-type ReconcileContextBase[T ClusterObject, ReplicaKey comparable, ReplicaState any] struct {
-	Cluster T
-	Context context.Context
-
-	// Should be populated by reconcileActiveReplicaStatus.
-	ReplicaState map[ReplicaKey]ReplicaState
-}
-
-func (c *ReconcileContextBase[T, K, S]) Replica(key K) S {
-	return c.ReplicaState[key]
-}
-
-func (c *ReconcileContextBase[T, K, S]) SetReplica(key K, state S) bool {
-	_, exists := c.ReplicaState[key]
-	c.ReplicaState[key] = state
-	return exists
-}
-
-func (c *ReconcileContextBase[T, K, S]) NewCondition(
-	condType v1.ConditionType,
-	status metav1.ConditionStatus,
-	reason v1.ConditionReason,
-	message string,
-) metav1.Condition {
-	return metav1.Condition{
-		Type:               string(condType),
-		Status:             status,
-		Reason:             string(reason),
-		Message:            message,
-		ObservedGeneration: c.Cluster.GetGeneration(),
-	}
-}
-
-func (c *ReconcileContextBase[T, K, S]) SetConditions(
-	log util.Logger,
-	conditions []metav1.Condition,
-) {
-	clusterCond := c.Cluster.Conditions()
-	if *clusterCond == nil {
-		*clusterCond = make([]metav1.Condition, 0, len(conditions))
-	}
-
-	for _, condition := range conditions {
-		if meta.SetStatusCondition(clusterCond, condition) {
-			log.Debug("condition changed", "condition", condition.Type, "condition_value", condition.Status)
-		}
-	}
-}
-
-func (c *ReconcileContextBase[T, K, S]) SetCondition(
-	log util.Logger,
-	condType v1.ConditionType,
-	status metav1.ConditionStatus,
-	reason v1.ConditionReason,
-	message string,
-) {
-	c.SetConditions(log, []metav1.Condition{c.NewCondition(condType, status, reason, message)})
 }
 
 var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"}
@@ -142,4 +73,88 @@ func CheckPodError(ctx context.Context, log util.Logger, client client.Client, s
 	}
 
 	return isError, nil
+}
+
+func diffFilter(specFields []string) cmp.Option {
+	return cmp.FilterPath(func(path cmp.Path) bool {
+		inMeta := false
+		for _, s := range path {
+			if f, ok := s.(cmp.StructField); ok {
+				switch {
+				case inMeta:
+					return !slices.Contains([]string{"Labels", "Annotations"}, f.Name())
+				case f.Name() == "ObjectMeta":
+					inMeta = true
+				default:
+					return !slices.Contains(specFields, f.Name())
+				}
+			}
+		}
+
+		return false
+	}, cmp.Ignore())
+}
+
+func ReconcileResource(ctx context.Context, log util.Logger, cli client.Client, scheme *k8sruntime.Scheme, controller metav1.Object, resource client.Object, specFields ...string) (bool, error) {
+	kind := resource.GetObjectKind().GroupVersionKind().Kind
+	log = log.With(kind, resource.GetName())
+
+	if err := ctrl.SetControllerReference(controller, resource, scheme); err != nil {
+		return false, err
+	}
+
+	if len(specFields) == 0 {
+		specFields = []string{"Spec"}
+	}
+
+	resourceHash, err := util.DeepHashResource(resource, specFields)
+	if err != nil {
+		return false, fmt.Errorf("deep hash %s:%s: %w", kind, resource.GetName(), err)
+	}
+	util.AddHashWithKeyToAnnotations(resource, util.AnnotationSpecHash, resourceHash)
+
+	foundResource := resource.DeepCopyObject().(client.Object)
+	err = cli.Get(ctx, types.NamespacedName{
+		Namespace: resource.GetNamespace(),
+		Name:      resource.GetName(),
+	}, foundResource)
+	if err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return false, fmt.Errorf("get %s:%s: %w", kind, resource.GetName(), err)
+		}
+
+		log.Info("resource not found, creating")
+		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			return cli.Create(ctx, resource)
+		}); err != nil {
+			return false, fmt.Errorf("create %s:%s: %w", kind, resource.GetName(), err)
+		}
+		return true, nil
+	}
+
+	if util.GetSpecHashFromObject(foundResource) == resourceHash {
+		log.Debug("resource is up to date")
+		return false, nil
+	}
+
+	log.Debug(fmt.Sprintf("resource changed, diff: %s", cmp.Diff(foundResource, resource, diffFilter(specFields))))
+
+	foundResource.SetAnnotations(resource.GetAnnotations())
+	foundResource.SetLabels(resource.GetLabels())
+	for _, fieldName := range specFields {
+		field := reflect.ValueOf(foundResource).Elem().FieldByName(fieldName)
+		if !field.IsValid() || !field.CanSet() {
+			panic(fmt.Sprintf("invalid data field  %s", fieldName))
+		}
+
+		field.Set(reflect.ValueOf(resource).Elem().FieldByName(fieldName))
+	}
+
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		return cli.Update(ctx, foundResource)
+	}); err != nil {
+		return false, fmt.Errorf("update %s:%s: %w", kind, resource.GetName(), err)
+	}
+
+	return true, nil
 }

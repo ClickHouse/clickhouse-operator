@@ -6,10 +6,10 @@ import (
 	"slices"
 	"strings"
 
+	"dario.cat/mergo"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
-	"github.com/imdario/mergo"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

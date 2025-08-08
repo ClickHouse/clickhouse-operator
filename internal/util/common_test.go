@@ -76,7 +76,6 @@ func TestUpdateResult(t *testing.T) {
 		result := ctrl.Result{}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
-		require.True(t, result.Requeue)
 		require.Equal(t, update.RequeueAfter, result.RequeueAfter)
 	})
 
@@ -90,7 +89,6 @@ func TestUpdateResult(t *testing.T) {
 		result := ctrl.Result{RequeueAfter: time.Minute}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
-		require.True(t, result.Requeue)
 		require.Equal(t, time.Second, result.RequeueAfter)
 	})
 
@@ -98,23 +96,13 @@ func TestUpdateResult(t *testing.T) {
 		result := ctrl.Result{RequeueAfter: time.Second}
 		update := ctrl.Result{RequeueAfter: time.Minute}
 		UpdateResult(&result, &update)
-		require.True(t, result.Requeue)
 		require.Equal(t, time.Second, result.RequeueAfter)
-	})
-
-	t.Run("update to minimal", func(t *testing.T) {
-		result := ctrl.Result{RequeueAfter: time.Second}
-		update := ctrl.Result{Requeue: true}
-		UpdateResult(&result, &update)
-		require.True(t, result.Requeue)
-		require.Equal(t, time.Duration(0), result.RequeueAfter)
 	})
 
 	t.Run("already minimal", func(t *testing.T) {
 		result := ctrl.Result{Requeue: true}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
-		require.True(t, result.Requeue)
 		require.Equal(t, time.Duration(0), result.RequeueAfter)
 	})
 }

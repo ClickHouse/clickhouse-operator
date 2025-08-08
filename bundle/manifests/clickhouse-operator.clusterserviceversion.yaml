@@ -1,0 +1,494 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "clickhouse.com/v1alpha1",
+          "kind": "ClickHouseCluster",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/managed-by": "kustomize",
+              "app.kubernetes.io/name": "clickhouse-operator"
+            },
+            "name": "sample"
+          },
+          "spec": {
+            "dataVolumeClaimSpec": {
+              "accessModes": [
+                "ReadWriteOnce"
+              ],
+              "resources": {
+                "requests": {
+                  "storage": "1Gi"
+                }
+              }
+            },
+            "keeperClusterRef": {
+              "name": "sample"
+            },
+            "replicas": 2
+          }
+        },
+        {
+          "apiVersion": "clickhouse.com/v1alpha1",
+          "kind": "KeeperCluster",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/managed-by": "kustomize",
+              "app.kubernetes.io/name": "clickhouse-operator"
+            },
+            "name": "sample"
+          },
+          "spec": {
+            "dataVolumeClaimSpec": {
+              "accessModes": [
+                "ReadWriteOnce"
+              ],
+              "resources": {
+                "requests": {
+                  "storage": "1Gi"
+                }
+              }
+            },
+            "replicas": 3
+          }
+        }
+      ]
+    capabilities: Full Lifecycle
+    createdAt: "2025-08-08T19:25:58Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.41.1
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+  name: clickhouse-operator.v0.0.1
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: ClickHouseCluster is the Schema for the clickhouseclusters API.
+      displayName: ClickHouse Cluster
+      kind: ClickHouseCluster
+      name: clickhouseclusters.clickhouse.com
+      resources:
+      - kind: ConfigMap
+        name: ""
+        version: v1
+      - kind: PersistentVolumeClaim
+        name: ""
+        version: v1
+      - kind: Pod
+        name: ""
+        version: v1
+      - kind: PodDisruptionBudget
+        name: ""
+        version: v1
+      - kind: Secret
+        name: ""
+        version: v1
+      - kind: Service
+        name: ""
+        version: v1
+      - kind: StatefulSet
+        name: ""
+        version: v1
+      specDescriptors:
+      - description: Settings for the replicas storage.
+        displayName: Data Volume Claim Spec
+        path: dataVolumeClaimSpec
+      - description: Reference to the KeeperCluster that is used for ClickHouse coordination.
+        displayName: Keeper Cluster Reference
+        path: keeperClusterRef
+      - description: |-
+          Number of replicas in the single shard
+          This is a pointer to distinguish between explicit zero and unspecified.
+        displayName: Replica count in shard
+        path: replicas
+      statusDescriptors:
+      - displayName: Conditions
+        path: conditions
+      - description: ConfigurationRevision indicates target configuration revision
+          for every replica.
+        displayName: Configuration Revision
+        path: configurationRevision
+      - description: CurrentRevision indicates latest applied ClickHouseCluster spec
+          revision.
+        displayName: Current Revision
+        path: currentRevision
+      - description: ObservedGeneration indicates lastest generation observed by controller.
+        displayName: Observed Generation
+        path: observedGeneration
+      - description: ReadyReplicas Total number of replicas ready to server requests.
+        displayName: Ready Replicas
+        path: readyReplicas
+      - description: StatefulSetRevision indicates target StatefulSet revision for
+          every replica.
+        displayName: Stateful Set Revision
+        path: statefulSetRevision
+      - description: UpdateRevision indicates latest requested ClickHouseCluster spec
+          revision.
+        displayName: Update Revision
+        path: updateRevision
+      version: v1alpha1
+    - description: KeeperCluster is the Schema for the keeperclusters API.
+      displayName: Keeper Cluster
+      kind: KeeperCluster
+      name: keeperclusters.clickhouse.com
+      resources:
+      - kind: ConfigMap
+        name: ""
+        version: v1
+      - kind: PersistentVolumeClaim
+        name: ""
+        version: v1
+      - kind: Pod
+        name: ""
+        version: v1
+      - kind: PodDisruptionBudget
+        name: ""
+        version: v1
+      - kind: Service
+        name: ""
+        version: v1
+      - kind: StatefulSet
+        name: ""
+        version: v1
+      specDescriptors:
+      - description: Settings for the replicas storage.
+        displayName: Data Volume Claim Spec
+        path: dataVolumeClaimSpec
+      - description: |-
+          Number of replicas in the cluster
+          This is a pointer to distinguish between explicit zero and unspecified.
+        displayName: Replica count
+        path: replicas
+      statusDescriptors:
+      - displayName: Conditions
+        path: conditions
+      - description: ConfigurationRevision indicates target configuration revision
+          for every replica.
+        displayName: Configuration Revision
+        path: configurationRevision
+      - description: CurrentRevision indicates latest applied KeeperCluster spec revision.
+        displayName: Current Revision
+        path: currentRevision
+      - description: ObservedGeneration indicates lastest generation observed by controller.
+        displayName: Observed Generation
+        path: observedGeneration
+      - description: ReadyReplicas Total number of replicas ready to server requests.
+        displayName: Ready Replicas
+        path: readyReplicas
+      - description: Replicas that should be present in config
+        displayName: Replicas
+        path: replicas
+      - description: StatefulSetRevision indicates target StatefulSet revision for
+          every replica.
+        displayName: Stateful Set Revision
+        path: statefulSetRevision
+      - description: CurrentRevision indicates latest requested KeeperCluster spec
+          revision.
+        displayName: Update Revision
+        path: updateRevision
+      version: v1alpha1
+  description: ClickHouse K8s operator
+  displayName: clickhouse-operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          - pods
+          - secrets
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - statefulsets/status
+          verbs:
+          - get
+        - apiGroups:
+          - clickhouse.com
+          resources:
+          - clickhouseclusters
+          - keeperclusters
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - clickhouse.com
+          resources:
+          - clickhouseclusters/finalizers
+          - keeperclusters/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - clickhouse.com
+          resources:
+          - clickhouseclusters/status
+          - keeperclusters/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - policy
+          resources:
+          - poddisruptionbudgets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - update
+          - watch
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: clickhouse-operator-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: clickhouse-operator
+          control-plane: controller-manager
+        name: clickhouse-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                - --metrics-bind-address=:8443
+                command:
+                - /manager
+                image: clickhouse.com/clickhouse-operator:v0.0.1
+                imagePullPolicy: IfNotPresent
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                ports:
+                - containerPort: 9443
+                  name: webhook-server
+                  protocol: TCP
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    cpu: 500m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 64Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+              serviceAccountName: clickhouse-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: clickhouse-operator-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - clickhouse
+  - database
+  links:
+  - name: Clickhouse Operator
+    url: https://github.com/ClickHouse/clickhouse-operator
+  maturity: alpha
+  minKubeVersion: 1.33.0
+  provider:
+    name: clickhouse.com
+    url: https://clickhouse.com
+  version: 0.0.1
+  webhookdefinitions:
+  - admissionReviewVersions:
+    - v1
+    containerPort: 443
+    conversionCRDs:
+    - keeperclusters.clickhouse.com
+    deploymentName: clickhouse-operator-controller-manager
+    generateName: ckeeperclusters.kb.io
+    sideEffects: None
+    targetPort: 9443
+    type: ConversionWebhook
+    webhookPath: /convert
+  - admissionReviewVersions:
+    - v1
+    containerPort: 443
+    deploymentName: clickhouse-operator-controller-manager
+    failurePolicy: Fail
+    generateName: mclickhousecluster-v1alpha1.kb.io
+    rules:
+    - apiGroups:
+      - clickhouse.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - clickhouseclusters
+    sideEffects: None
+    targetPort: 9443
+    type: MutatingAdmissionWebhook
+    webhookPath: /mutate-clickhouse-com-v1alpha1-clickhousecluster
+  - admissionReviewVersions:
+    - v1
+    containerPort: 443
+    deploymentName: clickhouse-operator-controller-manager
+    failurePolicy: Fail
+    generateName: mkeepercluster.kb.io
+    rules:
+    - apiGroups:
+      - clickhouse.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - keeperclusters
+    sideEffects: None
+    targetPort: 9443
+    type: MutatingAdmissionWebhook
+    webhookPath: /mutate-clickhouse-com-v1alpha1-keepercluster
+  - admissionReviewVersions:
+    - v1
+    containerPort: 443
+    deploymentName: clickhouse-operator-controller-manager
+    failurePolicy: Fail
+    generateName: vclickhousecluster-v1alpha1.kb.io
+    rules:
+    - apiGroups:
+      - clickhouse.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - clickhouseclusters
+    sideEffects: None
+    targetPort: 9443
+    type: ValidatingAdmissionWebhook
+    webhookPath: /validate-clickhouse-com-v1alpha1-clickhousecluster
+  - admissionReviewVersions:
+    - v1
+    containerPort: 443
+    deploymentName: clickhouse-operator-controller-manager
+    failurePolicy: Fail
+    generateName: vkeepercluster.kb.io
+    rules:
+    - apiGroups:
+      - clickhouse.com
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - keeperclusters
+    sideEffects: None
+    targetPort: 9443
+    type: ValidatingAdmissionWebhook
+    webhookPath: /validate-clickhouse-com-v1alpha1-keepercluster

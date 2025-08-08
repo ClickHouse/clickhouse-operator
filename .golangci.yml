@@ -34,6 +34,9 @@ linters:
     gosec:
       excludes:
         - G204
+    godot:
+      exclude:
+        - "^ *\\+operator-sdk:"
   exclusions:
     generated: lax
     rules:

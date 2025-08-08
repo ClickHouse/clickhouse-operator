@@ -271,6 +271,50 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 	return nil
 }
 
+func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod string) error {
+	if ctx.Done() == nil {
+		return fmt.Errorf("context is not cancellable")
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("unable to create k8s client: %w", err)
+	}
+
+	res, err := clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get logs for pod %s in namespace %s: %w", pod, namespace, err)
+	}
+
+	go func() {
+		defer func() {
+			_ = res.Close()
+		}()
+
+		buffer := make([]byte, 4096)
+		c := 0
+		for {
+			for c, err = res.Read(buffer); err == nil && c > 0; c, err = res.Read(buffer) {
+				GinkgoWriter.Printf(string(buffer[:c]))
+			}
+
+			if err != nil {
+				GinkgoWriter.Printf("error while reading pod %s:%s logs: %v\n", namespace, pod, err)
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				GinkgoWriter.Printf("context cancelled, stopping log capture for pod %s:%s\n", namespace, pod)
+				return
+			case <-time.After(time.Millisecond * 100):
+			}
+		}
+	}()
+
+	return nil
+}
+
 func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suffix uint32) {
 	ssIssuer := certv1.ClusterIssuer{
 		ObjectMeta: metav1.ObjectMeta{
