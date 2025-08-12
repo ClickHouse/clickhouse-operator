@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -28,7 +29,6 @@ import (
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"golang.org/x/exp/rand"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,7 +45,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("test-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](1),
@@ -95,7 +95,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To(int32(baseReplicas)),
@@ -144,13 +144,13 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 	)
 
 	Describe("secure keeper cluster", func() {
-		suffix := rand.Uint32()
+		suffix := rand.Uint32() //nolint:gosec
 		certName := fmt.Sprintf("keeper-cert-%d", suffix)
 
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()),
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: ptr.To[int32](3),

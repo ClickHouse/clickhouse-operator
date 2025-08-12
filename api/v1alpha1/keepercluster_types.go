@@ -36,6 +36,7 @@ type KeeperClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Replica count"
 	Replicas *int32 `json:"replicas"`
 
 	// Parameters passed to the Keeper pod spec.
@@ -48,6 +49,7 @@ type KeeperClusterSpec struct {
 
 	// Settings for the replicas storage.
 	// +required
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional labels that are added to resources.
@@ -113,24 +115,32 @@ type KeeperClusterStatus struct {
 	// +patchStrategy=merge
 	// +patchMergeKey=type
 	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Replicas that should be present in config
 	// TODO probably can be tracked by rereading quorum config.
 	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Replicas []string `json:"replicas"`
 	// ReadyReplicas Total number of replicas ready to server requests.
 	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ReadyReplicas int32 `json:"readyReplicas"`
 	// ConfigurationRevision indicates target configuration revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ConfigurationRevision string `json:"configurationRevision,omitempty"`
 	// StatefulSetRevision indicates target StatefulSet revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	StatefulSetRevision string `json:"statefulSetRevision,omitempty"`
 
 	// CurrentRevision indicates latest applied KeeperCluster spec revision.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	CurrentRevision string `json:"currentRevision,omitempty"`
 	// CurrentRevision indicates latest requested KeeperCluster spec revision.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	UpdateRevision string `json:"updateRevision,omitempty"`
 	// ObservedGeneration indicates lastest generation observed by controller.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
@@ -138,12 +148,18 @@ type KeeperClusterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// KeeperCluster is the Schema for the keeperclusters API
+// KeeperCluster is the Schema for the keeperclusters API.
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
 // +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"
 // +kubebuilder:printcolumn:name="Replicas",type="number",JSONPath=".spec.replicas"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +operator-sdk:csv:customresourcedefinitions:resources={{Pod,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{PersistentVolumeClaim,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{StatefulSet,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{ConfigMap,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{Service,v1}}
+// +operator-sdk:csv:customresourcedefinitions:resources={{PodDisruptionBudget,v1}}
 type KeeperCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

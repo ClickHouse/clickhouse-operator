@@ -1,0 +1,166 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Full Lifecycle
+  name: clickhouse-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: ClickHouseCluster is the Schema for the clickhouseclusters API.
+      displayName: ClickHouse Cluster
+      kind: ClickHouseCluster
+      name: clickhouseclusters.clickhouse.com
+      resources:
+      - kind: ConfigMap
+        name: ""
+        version: v1
+      - kind: PersistentVolumeClaim
+        name: ""
+        version: v1
+      - kind: Pod
+        name: ""
+        version: v1
+      - kind: PodDisruptionBudget
+        name: ""
+        version: v1
+      - kind: Secret
+        name: ""
+        version: v1
+      - kind: Service
+        name: ""
+        version: v1
+      - kind: StatefulSet
+        name: ""
+        version: v1
+      specDescriptors:
+      - description: Settings for the replicas storage.
+        displayName: Data Volume Claim Spec
+        path: dataVolumeClaimSpec
+      - description: Reference to the KeeperCluster that is used for ClickHouse coordination.
+        displayName: Keeper Cluster Reference
+        path: keeperClusterRef
+      - description: |-
+          Number of replicas in the single shard
+          This is a pointer to distinguish between explicit zero and unspecified.
+        displayName: Replica count in shard
+        path: replicas
+      statusDescriptors:
+      - displayName: Conditions
+        path: conditions
+      - description: ConfigurationRevision indicates target configuration revision
+          for every replica.
+        displayName: Configuration Revision
+        path: configurationRevision
+      - description: CurrentRevision indicates latest applied ClickHouseCluster spec
+          revision.
+        displayName: Current Revision
+        path: currentRevision
+      - description: ObservedGeneration indicates lastest generation observed by controller.
+        displayName: Observed Generation
+        path: observedGeneration
+      - description: ReadyReplicas Total number of replicas ready to server requests.
+        displayName: Ready Replicas
+        path: readyReplicas
+      - description: StatefulSetRevision indicates target StatefulSet revision for
+          every replica.
+        displayName: Stateful Set Revision
+        path: statefulSetRevision
+      - description: UpdateRevision indicates latest requested ClickHouseCluster spec
+          revision.
+        displayName: Update Revision
+        path: updateRevision
+      version: v1alpha1
+    - description: KeeperCluster is the Schema for the keeperclusters API.
+      displayName: Keeper Cluster
+      kind: KeeperCluster
+      name: keeperclusters.clickhouse.com
+      resources:
+      - kind: ConfigMap
+        name: ""
+        version: v1
+      - kind: PersistentVolumeClaim
+        name: ""
+        version: v1
+      - kind: Pod
+        name: ""
+        version: v1
+      - kind: PodDisruptionBudget
+        name: ""
+        version: v1
+      - kind: Service
+        name: ""
+        version: v1
+      - kind: StatefulSet
+        name: ""
+        version: v1
+      specDescriptors:
+      - description: Settings for the replicas storage.
+        displayName: Data Volume Claim Spec
+        path: dataVolumeClaimSpec
+      - description: |-
+          Number of replicas in the cluster
+          This is a pointer to distinguish between explicit zero and unspecified.
+        displayName: Replica count
+        path: replicas
+      statusDescriptors:
+      - displayName: Conditions
+        path: conditions
+      - description: ConfigurationRevision indicates target configuration revision
+          for every replica.
+        displayName: Configuration Revision
+        path: configurationRevision
+      - description: CurrentRevision indicates latest applied KeeperCluster spec revision.
+        displayName: Current Revision
+        path: currentRevision
+      - description: ObservedGeneration indicates lastest generation observed by controller.
+        displayName: Observed Generation
+        path: observedGeneration
+      - description: ReadyReplicas Total number of replicas ready to server requests.
+        displayName: Ready Replicas
+        path: readyReplicas
+      - description: Replicas that should be present in config
+        displayName: Replicas
+        path: replicas
+      - description: StatefulSetRevision indicates target StatefulSet revision for
+          every replica.
+        displayName: Stateful Set Revision
+        path: statefulSetRevision
+      - description: CurrentRevision indicates latest requested KeeperCluster spec
+          revision.
+        displayName: Update Revision
+        path: updateRevision
+      version: v1alpha1
+  description: ClickHouse K8s operator
+  displayName: clickhouse-operator
+  icon:
+  - base64data: ""
+    mediatype: ""
+  install:
+    spec:
+      deployments: null
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - clickhouse
+  - database
+  links:
+  - name: Clickhouse Operator
+    url: https://github.com/ClickHouse/clickhouse-operator
+  maturity: alpha
+  minKubeVersion: 1.33.0
+  provider:
+    name: clickhouse.com
+    url: https://clickhouse.com
+  version: 0.0.1

@@ -29,7 +29,6 @@ import (
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"golang.org/x/exp/rand"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -68,7 +67,6 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	var err error
-	rand.Seed(uint64(GinkgoRandomSeed()))
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.Background())
@@ -151,6 +149,7 @@ var _ = BeforeSuite(func() {
 		}
 		controllerPodName = podNames[0]
 		Expect(controllerPodName).Should(ContainSubstring("controller-manager"))
+		Expect(utils.CapturePodLogs(ctx, config, namespace, controllerPodName)).To(Succeed())
 
 		// Validate pod status
 		cmd = exec.Command("kubectl", "get",

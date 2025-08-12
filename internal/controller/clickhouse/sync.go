@@ -96,23 +96,12 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 		return chctrl.StageUpdating
 	}
 
-	configDiff := r.HasConfigMapDiff(ctx)
-	stsDiff := r.HasStatefulSetDiff(ctx)
-
-	if !r.Ready() {
-		if configDiff || stsDiff {
-			return chctrl.StageNotReadyWithDiff
-		}
-		return chctrl.StageNotReadyUpToDate
+	if r.HasConfigMapDiff(ctx) || r.HasStatefulSetDiff(ctx) {
+		return chctrl.StageHasDiff
 	}
 
-	switch {
-	case configDiff && stsDiff:
-		return chctrl.StageStsAndConfigDiff
-	case configDiff:
-		return chctrl.StageConfigDiff
-	case stsDiff:
-		return chctrl.StageStsDiff
+	if !r.Ready() {
+		return chctrl.StageNotReadyUpToDate
 	}
 
 	return chctrl.StageUpToDate
@@ -211,13 +200,13 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 
 func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	service := TemplateHeadlessService(ctx.Cluster)
-	if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, service); err != nil {
+	if _, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, service); err != nil {
 		return &ctrl.Result{}, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	for shard := range ctx.Cluster.Shards() {
 		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
-		if _, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
+		if _, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
 			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
 		}
 	}
@@ -412,7 +401,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 	case chctrl.StageNotReadyUpToDate, chctrl.StageUpdating:
 		log.Info("waiting for updated replicas to become ready", "replicas", replicasInStatus, "priority", highestStage.String())
 		result = ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}
-	case chctrl.StageStsAndConfigDiff, chctrl.StageConfigDiff, chctrl.StageStsDiff:
+	case chctrl.StageHasDiff:
 		// Leave one replica to rolling update. replicasInStatus must not be empty.
 		// Prefer replicas with higher id.
 		chosenReplica := replicasInStatus[0]
@@ -423,7 +412,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 		}
 		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
 		replicasInStatus = []v1.ReplicaID{chosenReplica}
-	case chctrl.StageNotReadyWithDiff, chctrl.StageNotExists, chctrl.StageError:
+	case chctrl.StageNotExists, chctrl.StageError:
 		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
 	}
 
@@ -602,7 +591,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 
 	if ctx.Cluster.Spec.Settings.EnableDatabaseSync {
 		if ctx.staleReplicasCleanedUp, err = ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas); err != nil {
-			return nil, fmt.Errorf("cleanup database replicas: %w", err)
+			log.Warn("failed to cleanup database replicas", "error", err)
 		}
 	}
 
@@ -731,7 +720,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", id, err)
 	}
 
-	configChanged, err := util.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, configMap, "Data", "BinaryData")
+	configChanged, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, configMap, "Data", "BinaryData")
 	if err != nil {
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", id, err)
 	}
@@ -766,7 +755,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 			return nil, fmt.Errorf("delete StatefulSet: %w", err)
 		}
 
-		return &ctrl.Result{Requeue: true}, nil
+		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
 	stsNeedsUpdate := replica.HasStatefulSetDiff(ctx)
