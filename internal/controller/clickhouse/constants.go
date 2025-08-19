@@ -20,12 +20,10 @@ const (
 	PortInterserver      = 9009
 
 	ConfigPath          = "/etc/clickhouse-server/"
-	ClientConfigPath    = "/etc/clickhouse-client/"
 	ConfigDPath         = "config.d"
 	ConfigFileName      = "config.yaml"
 	UsersFileName       = "users.yaml"
 	ExtraConfigFileName = "99-extra-config.yaml"
-	ConfigVolumeName    = "clickhouse-config-volume"
 
 	PersistentVolumeName = "clickhouse-storage-volume"
 
@@ -69,5 +67,10 @@ var (
 		SecretKeyInterserverPassword: "%s",
 		SecretKeyManagementPassword:  "%s",
 		SecretKeyKeeperIdentity:      "clickhouse:%s",
+	}
+	ReservedVolumeNames = []string{
+		PersistentVolumeName,
+		TLSVolumeName,
+		CustomCAVolumeName,
 	}
 )

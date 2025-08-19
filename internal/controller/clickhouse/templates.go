@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"maps"
 	"path"
-	"slices"
 	"strconv"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,13 +34,8 @@ func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		})
 	}
 
-	slices.SortFunc(ports, func(a, b corev1.ServicePort) int {
-		if a.Name < b.Name {
-			return -1
-		} else if a.Name > b.Name {
-			return 1
-		}
-		return 0
+	util.SortKey(ports, func(port corev1.ServicePort) string {
+		return port.Name
 	})
 
 	return &corev1.Service{
@@ -153,7 +148,11 @@ func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
 }
 
 func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
-	sts := TemplateStatefulSet(ctx, v1.ReplicaID{})
+	sts, err := TemplateStatefulSet(ctx, v1.ReplicaID{})
+	if err != nil {
+		return "", fmt.Errorf("generate template StatefulSet: %w", err)
+	}
+
 	hash, err := util.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
@@ -185,8 +184,12 @@ func TemplateConfigMap(ctx *reconcileContext, id v1.ReplicaID) (*corev1.ConfigMa
 	}, nil
 }
 
-func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.StatefulSet {
-	volumes, volumeMounts := buildVolumes(ctx, id)
+func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.StatefulSet, error) {
+	volumes, volumeMounts, err := buildVolumes(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("build volumes: %w", err)
+	}
+
 	protocols := buildProtocols(ctx.Cluster)
 	var readyCheck string
 	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
@@ -201,7 +204,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.Statefu
 		Image:           ctx.Cluster.Spec.ContainerTemplate.Image.String(),
 		ImagePullPolicy: ctx.Cluster.Spec.ContainerTemplate.ImagePullPolicy,
 		Resources:       ctx.Cluster.Spec.ContainerTemplate.Resources,
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{
 				Name:  "CLICKHOUSE_CONFIG",
 				Value: ConfigPath + ConfigFileName,
@@ -232,7 +235,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.Statefu
 					},
 				},
 			},
-		},
+		}, ctx.Cluster.Spec.ContainerTemplate.Env...),
 		Ports: []corev1.ContainerPort{
 			{
 				Protocol:      corev1.ProtocolTCP,
@@ -294,13 +297,8 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.Statefu
 			ContainerPort: int32(protocol.Port),
 		})
 	}
-	slices.SortFunc(container.Ports, func(a, b corev1.ContainerPort) int {
-		if a.Name < b.Name {
-			return -1
-		} else if a.Name > b.Name {
-			return 1
-		}
-		return 0
+	util.SortKey(container.Ports, func(port corev1.ContainerPort) string {
+		return port.Name
 	})
 
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
@@ -390,7 +388,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) *appsv1.Statefu
 			}),
 		},
 		Spec: spec,
-	}
+	}, nil
 }
 
 func labelsFromID(id v1.ReplicaID) map[string]string {
@@ -412,8 +410,7 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ReplicaID) (map
 			return nil, err
 		}
 
-		_, filename := path.Split(generator.Filename())
-		configFiles[filename] = data
+		configFiles[generator.Filename()] = data
 	}
 
 	return configFiles, nil
@@ -482,13 +479,8 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 	return protocols
 }
 
-func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []corev1.VolumeMount) {
+func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
-		{
-			Name:      ConfigVolumeName,
-			MountPath: ConfigPath,
-			ReadOnly:  true,
-		},
 		{
 			Name:      PersistentVolumeName,
 			MountPath: BaseDataPath,
@@ -501,34 +493,45 @@ func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []co
 		},
 	}
 
-	configItems := make([]corev1.KeyToPath, 0, len(generators))
+	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
+	configVolumes := map[string]corev1.Volume{}
 	for _, generator := range generators {
 		if !generator.Exists(ctx) {
 			continue
 		}
 
-		filePath := generator.Filename()
-		_, name := path.Split(filePath)
-		configItems = append(configItems, corev1.KeyToPath{
-			Key:  name,
-			Path: filePath,
-		})
-	}
-
-	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
-	volumes := []corev1.Volume{
-		{
-			Name: ConfigVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					DefaultMode: &defaultConfigMapMode,
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: ctx.Cluster.ConfigMapNameByReplicaID(id),
+		volume, ok := configVolumes[generator.Path()]
+		if !ok {
+			volume = corev1.Volume{
+				Name: util.PathToName(generator.Path()),
+				VolumeSource: corev1.VolumeSource{
+					ConfigMap: &corev1.ConfigMapVolumeSource{
+						DefaultMode: &defaultConfigMapMode,
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: ctx.Cluster.ConfigMapNameByReplicaID(id),
+						},
 					},
-					Items: configItems,
 				},
-			},
-		},
+			}
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      volume.Name,
+				MountPath: generator.Path(),
+				ReadOnly:  true,
+			})
+		}
+
+		volume.ConfigMap.Items = append(volume.ConfigMap.Items, corev1.KeyToPath{
+			Key:  generator.Filename(),
+			Path: generator.Filename(),
+		})
+		configVolumes[generator.Path()] = volume
+	}
+	volumes := []corev1.Volume{}
+	for _, volume := range configVolumes {
+		util.SortKey(volume.ConfigMap.Items, func(item corev1.KeyToPath) string {
+			return item.Key
+		})
+		volumes = append(volumes, volume)
 	}
 
 	if ctx.Cluster.Spec.Settings.TLS.Enabled {
@@ -575,5 +578,16 @@ func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []co
 		})
 	}
 
-	return volumes, volumeMounts
+	volumes = append(volumes, ctx.Cluster.Spec.PodTemplate.Volumes...)
+	volumeMounts = append(volumeMounts, ctx.Cluster.Spec.ContainerTemplate.VolumeMounts...)
+
+	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
+	util.SortKey(volumes, func(volume corev1.Volume) string {
+		return volume.Name
+	})
+	util.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
+		return mount.MountPath
+	})
+
+	return volumes, volumeMounts, err
 }

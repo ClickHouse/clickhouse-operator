@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/clickhouse-operator/internal/controller/clickhouse"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -85,6 +86,8 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	if err := obj.Spec.Settings.TLS.Validate(); err != nil {
 		errs = append(errs, err)
 	}
+
+	errs = append(errs, ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, clickhouse.ReservedVolumeNames)...)
 
 	if obj.Spec.Settings.DefaultUserPassword == nil {
 		warns = append(warns, ".spec.settings.defaultUserPassword is empty, 'default' user will be without password ")

@@ -46,4 +46,10 @@ const (
 var (
 	BreakingStatefulSetVersion, _       = semver.Parse("0.0.1")
 	TLSFileMode                   int32 = 0444
+	ReservedVolumeNames                 = []string{
+		QuorumConfigVolumeName,
+		PersistentVolumeName,
+		ConfigVolumeName,
+		TLSVolumeName,
+	}
 )

@@ -208,7 +208,11 @@ func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) 
 }
 
 func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
-	sts := TemplateStatefulSet(cr, "template")
+	sts, err := TemplateStatefulSet(cr, "template")
+	if err != nil {
+		return "", fmt.Errorf("generate template StatefulSet: %w", err)
+	}
+
 	hash, err := util.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
@@ -243,20 +247,23 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 	}, nil
 }
 
-func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.StatefulSet {
-	volumes, volumeMounts := buildVolumes(cr, replicaID)
+func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.StatefulSet, error) {
+	volumes, volumeMounts, err := buildVolumes(cr, replicaID)
+	if err != nil {
+		return nil, fmt.Errorf("build volumes for StatefulSet: %w", err)
+	}
 
 	keeperContainer := corev1.Container{
 		Name:            ContainerName,
 		Image:           cr.Spec.ContainerTemplate.Image.String(),
 		ImagePullPolicy: cr.Spec.ContainerTemplate.ImagePullPolicy,
 		Resources:       cr.Spec.ContainerTemplate.Resources,
-		Env: []corev1.EnvVar{
+		Env: append([]corev1.EnvVar{
 			{
 				Name:  "KEEPER_CONFIG",
 				Value: QuorumConfigPath + QuorumConfigFileName,
 			},
-		},
+		}, cr.Spec.ContainerTemplate.Env...),
 		Ports: []corev1.ContainerPort{
 			{
 				Protocol:      corev1.ProtocolTCP,
@@ -405,7 +412,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) *appsv1.Statefu
 			}),
 		},
 		Spec: spec,
-	}
+	}, nil
 }
 
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID string) (string, error) {
@@ -473,7 +480,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 	return string(yamlConfig), nil
 }
 
-func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []corev1.VolumeMount) {
+func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      QuorumConfigVolumeName,
@@ -552,5 +559,16 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 		})
 	}
 
-	return volumes, volumeMounts
+	volumes, volumeMounts, err := controller.ProjectVolumes(
+		append(volumes, cr.Spec.PodTemplate.Volumes...),
+		append(volumeMounts, cr.Spec.ContainerTemplate.VolumeMounts...),
+	)
+	util.SortKey(volumes, func(volume corev1.Volume) string {
+		return volume.Name
+	})
+	util.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
+		return mount.MountPath
+	})
+
+	return volumes, volumeMounts, err
 }

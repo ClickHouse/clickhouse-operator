@@ -79,5 +79,25 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("serverCertSecret must be specified"))
 		})
+
+		It("Should check that all volumes from volume mounts are exists", func() {
+			cluster := keeperCluster.DeepCopy()
+
+			cluster.Spec.ContainerTemplate.VolumeMounts = []corev1.VolumeMount{{
+				Name: "non-existing-volume",
+			}}
+			By("Rejecting cr with non existing volume")
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("the volume mount 'non-existing-volume' is invalid because the volume is not defined"))
+
+			cluster.Spec.ContainerTemplate.VolumeMounts = nil
+			cluster.Spec.PodTemplate.Volumes = []corev1.Volume{{
+				Name: "clickhouse-keeper-config-volume",
+			}}
+			err = k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("reserved and cannot be used"))
+		})
 	})
 })

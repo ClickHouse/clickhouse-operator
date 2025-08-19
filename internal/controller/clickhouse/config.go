@@ -29,22 +29,27 @@ var (
 
 func init() {
 	for _, templateSpec := range []struct {
+		Path      string
 		Filename  string
 		Raw       string
 		Generator configGeneratorFunc
 	}{{
+		Path:      ConfigPath,
 		Filename:  ConfigFileName,
 		Raw:       baseConfigTemplateStr,
 		Generator: baseConfigGenerator,
 	}, {
-		Filename:  path.Join(ConfigDPath, "00-network.yaml"),
+		Path:      path.Join(ConfigPath, ConfigDPath),
+		Filename:  "00-network.yaml",
 		Raw:       networkConfigTemplateStr,
 		Generator: networkConfigGenerator,
 	}, {
-		Filename:  path.Join(ConfigDPath, "00-logs-tables.yaml"),
+		Path:      path.Join(ConfigPath, ConfigDPath),
+		Filename:  "00-logs-tables.yaml",
 		Raw:       logTablesConfigTemplateStr,
 		Generator: logTablesConfigGenerator,
 	}, {
+		Path:      ConfigPath,
 		Filename:  UsersFileName,
 		Raw:       userConfigTemplateStr,
 		Generator: userConfigGenerator,
@@ -71,7 +76,8 @@ func init() {
 		}
 
 		generators = append(generators, &templateConfigGenerator{
-			File:      templateSpec.Filename,
+			filename:  templateSpec.Filename,
+			path:      templateSpec.Path,
 			template:  tmpl,
 			generator: templateSpec.Generator,
 		})
@@ -82,18 +88,24 @@ func init() {
 
 type ConfigGenerator interface {
 	Filename() string
+	Path() string
 	Exists(ctx *reconcileContext) bool
 	Generate(ctx *reconcileContext, id v1.ReplicaID) (string, error)
 }
 
 type templateConfigGenerator struct {
-	File      string
+	filename  string
+	path      string
 	template  *template.Template
 	generator configGeneratorFunc
 }
 
 func (g *templateConfigGenerator) Filename() string {
-	return g.File
+	return g.filename
+}
+
+func (g *templateConfigGenerator) Path() string {
+	return g.path
 }
 
 func (g *templateConfigGenerator) Exists(*reconcileContext) bool {
@@ -103,7 +115,7 @@ func (g *templateConfigGenerator) Exists(*reconcileContext) bool {
 func (g *templateConfigGenerator) Generate(ctx *reconcileContext, id v1.ReplicaID) (string, error) {
 	data, err := g.generator(g.template, ctx, id)
 	if err != nil {
-		return "", fmt.Errorf("generate config %s: %w", g.File, err)
+		return "", fmt.Errorf("generate config %s: %w", g.filename, err)
 	}
 
 	return data, nil
@@ -275,7 +287,11 @@ func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.Re
 type extraConfigGenerator struct{}
 
 func (g *extraConfigGenerator) Filename() string {
-	return path.Join(ConfigDPath, ExtraConfigFileName)
+	return ExtraConfigFileName
+}
+
+func (g *extraConfigGenerator) Path() string {
+	return path.Join(ConfigPath, ConfigDPath)
 }
 
 func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {

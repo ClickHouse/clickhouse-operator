@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -14,7 +15,7 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
-	"github.com/google/go-cmp/cmp"
+	gcmp "github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -27,20 +28,11 @@ import (
 )
 
 func compareReplicaID(a, b v1.ReplicaID) int {
-	if a.ShardID < b.ShardID {
-		return -1
-	}
-	if a.ShardID > b.ShardID {
-		return 1
+	if res := cmp.Compare(a.ShardID, b.ShardID); res != 0 {
+		return res
 	}
 
-	if a.Index < b.Index {
-		return -1
-	}
-	if a.Index > b.Index {
-		return 1
-	}
-	return 0
+	return cmp.Compare(a.Index, b.Index)
 }
 
 type replicaState struct {
@@ -725,7 +717,10 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", id, err)
 	}
 
-	statefulSet := TemplateStatefulSet(ctx, id)
+	statefulSet, err := TemplateStatefulSet(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("template replica %q StatefulSet: %w", id, err)
+	}
 	if err := ctrl.SetControllerReference(ctx.Cluster, statefulSet, r.Scheme); err != nil {
 		return nil, fmt.Errorf("set replica %q StatefulSet controller reference: %w", id, err)
 	}
@@ -809,7 +804,7 @@ func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext)
 			log.Info("statuses are equal, nothing to do")
 			return nil
 		}
-		log.Debug(fmt.Sprintf("status difference:\n%s", cmp.Diff(*preStatus, ctx.Cluster.Status)))
+		log.Debug(fmt.Sprintf("status difference:\n%s", gcmp.Diff(*preStatus, ctx.Cluster.Status)))
 		crdInstance.Status = ctx.Cluster.Status
 		return r.Status().Update(ctx.Context, crdInstance)
 	})

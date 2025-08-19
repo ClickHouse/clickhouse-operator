@@ -631,7 +631,10 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", replicaID, err)
 	}
 
-	statefulSet := TemplateStatefulSet(ctx.Cluster, replicaID)
+	statefulSet, err := TemplateStatefulSet(ctx.Cluster, replicaID)
+	if err != nil {
+		return nil, fmt.Errorf("template replica %q StatefulSet: %w", replicaID, err)
+	}
 	if err := ctrl.SetControllerReference(ctx.Cluster, statefulSet, r.Scheme); err != nil {
 		return nil, fmt.Errorf("set replica %q StatefulSet controller reference: %w", replicaID, err)
 	}

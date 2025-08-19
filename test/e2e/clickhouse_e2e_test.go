@@ -426,6 +426,137 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			})
 		})
 	})
+
+	Describe("custom data mount works", Ordered, func() {
+		auth := clickhouse.Auth{
+			Username: "custom",
+			Password: "test-password",
+		}
+		customConfigMap := corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("custom-config-%d", rand.Uint32()), //nolint:gosec
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{
+				"user.yaml": fmt.Sprintf(`{"users": {"%s": {
+					"password_sha256_hex": "%s",
+					"grants": [{"query": "GRANT ALL ON *.*"}]
+				}}}`, auth.Username, util.Sha256Hash([]byte(auth.Password))),
+				"config.yaml": `{"max_table_size_to_drop": 7}`,
+			},
+		}
+
+		keeperCR := &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](1),
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+				},
+				DataVolumeClaimSpec: defaultStorage,
+			},
+		}
+
+		cr := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()), //nolint:gosec
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: ptr.To[int32](2),
+				KeeperClusterRef: &corev1.LocalObjectReference{
+					Name: keeperCR.Name,
+				},
+				PodTemplate: v1.PodTemplateSpec{
+					Volumes: []corev1.Volume{{
+						Name: "custom-user",
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: customConfigMap.Name,
+								},
+								Items: []corev1.KeyToPath{{
+									Key:  "user.yaml",
+									Path: "custom.yaml",
+								}},
+							},
+						},
+					},
+						{
+							Name: "custom-config",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: customConfigMap.Name,
+									},
+									Items: []corev1.KeyToPath{{
+										Key:  "config.yaml",
+										Path: "max_size.yaml",
+									}},
+								},
+							},
+						}},
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "custom-user",
+						MountPath: "/etc/clickhouse-server/users.d/",
+						ReadOnly:  true,
+					}, {
+						Name:      "custom-config",
+						MountPath: "/etc/clickhouse-server/config.d/",
+						ReadOnly:  true,
+					}},
+				},
+				DataVolumeClaimSpec: defaultStorage,
+			},
+		}
+
+		checks := 0
+
+		It("should mount custom configmap", func() {
+			By("creating keeper")
+			Expect(k8sClient.Create(ctx, keeperCR)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
+			})
+
+			By("creating custom configmap")
+			Expect(k8sClient.Create(ctx, &customConfigMap)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, &customConfigMap)).To(Succeed())
+			})
+
+			By("creating clickhouse")
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
+			})
+
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+
+			By("checking custom user access works")
+			ClickHouseRWChecks(cr, &checks, auth)
+
+			chClient, err := utils.NewClickHouseClient(ctx, config, cr, auth)
+			Expect(err).NotTo(HaveOccurred())
+			defer chClient.Close()
+			var maxTableSizeToDrop string
+			query := "SELECT value FROM system.server_settings WHERE name = 'max_table_size_to_drop'"
+			By("checking custom setting applied")
+			Expect(chClient.QueryRow(ctx, query, &maxTableSizeToDrop)).To(Succeed())
+			Expect(maxTableSizeToDrop).To(Equal("7"))
+		})
+	})
 })
 
 func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Duration) {

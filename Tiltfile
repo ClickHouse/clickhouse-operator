@@ -90,9 +90,7 @@ k8s_resource(
 
 secure = True
 if secure:
-    k8s_yaml('examples/issuer.yaml')
-    k8s_yaml('examples/v1alpha1_keeper_secure.yaml')
-    k8s_yaml('examples/v1alpha1_clickhouse_secure.yaml')
+    k8s_yaml('examples/cluster_with_ssl.yaml')
     k8s_resource(
         new_name='certs',
         objects=[
@@ -105,8 +103,7 @@ if secure:
         labels=['test'],
     )
 else:
-    k8s_yaml('examples/v1alpha1_keeper.yaml')
-    k8s_yaml('examples/v1alpha1_clickhouse.yaml')
+    k8s_yaml('examples/minimal.yaml')
 
 k8s_resource(
     new_name='keeper',

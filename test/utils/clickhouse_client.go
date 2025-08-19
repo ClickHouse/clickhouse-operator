@@ -191,3 +191,32 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 
 	return nil
 }
+
+func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result any) error {
+	if len(c.clients) == 0 {
+		return fmt.Errorf("no cluster nodes available")
+	}
+
+	// Query only one random node.
+	for _, client := range c.clients {
+		rows, err := client.Query(ctx, query)
+		if err != nil {
+			return fmt.Errorf("query on cluster: %w", err)
+		}
+
+		defer func() {
+			_ = rows.Close()
+		}()
+
+		if !rows.Next() {
+			return fmt.Errorf("no rows returned for query: %s", query)
+		}
+		if err := rows.Scan(result); err != nil {
+			return fmt.Errorf("scan row: %w", err)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("no cluster nodes available")
+}

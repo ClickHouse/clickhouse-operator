@@ -1,6 +1,7 @@
 package util
 
 import (
+	"cmp"
 	"crypto/md5" //nolint:gosec
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,7 @@ import (
 	"maps"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -238,4 +240,17 @@ func UnwrapErrors(err error) []error {
 	}
 
 	return nil
+}
+
+func PathToName(path string) string {
+	path = strings.Trim(path, "/")
+	path = strings.ReplaceAll(path, "/", "-")
+	path = strings.ReplaceAll(path, ".", "-")
+	return path
+}
+
+func SortKey[T any, V cmp.Ordered](slice []T, key func(T) V) {
+	slices.SortFunc(slice, func(a, b T) int {
+		return cmp.Compare(key(a), key(b))
+	})
 }

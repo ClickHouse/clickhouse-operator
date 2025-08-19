@@ -18,9 +18,11 @@ package v1alpha1
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	chv1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller/keeper"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -74,5 +76,11 @@ func (w *KeeperClusterWebhook) ValidateDelete(ctx context.Context, obj runtime.O
 }
 
 func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) error {
-	return obj.Spec.Settings.TLS.Validate()
+	errs := ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, keeper.ReservedVolumeNames)
+
+	if err := obj.Spec.Settings.TLS.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errors.Join(errs...)
 }
