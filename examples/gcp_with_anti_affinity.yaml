@@ -1,0 +1,177 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ca-cert
+  namespace: default
+spec:
+  isCA: true
+  commonName: sample-root-cert
+  secretName: ca-cert-secret
+  subject:
+    organizations:
+      - sample-ca-org
+  duration: 8760h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: local-issuer
+  namespace: default
+spec:
+  ca:
+    secretName: ca-cert-secret
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: keeper-cert
+  namespace: default
+spec:
+  dnsNames:
+    - "*.sample-keeper-headless.default.svc"
+    - "*.sample-keeper-headless.default.svc.cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: local-issuer
+  secretName: keeper-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-cert
+  namespace: default
+spec:
+  dnsNames:
+    - "*.sample-clickhouse-headless.default.svc"
+    - "*.sample-clickhouse-headless.default.svc.cluster.local"
+  subject:
+    organizations:
+      - sample-ch
+  issuerRef:
+    kind: Issuer
+    name: local-issuer
+  secretName: clickhouse-cert
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    storageClassName: premium-rwo
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+  podTemplate:
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: sample-keeper
+            role: clickhouse-keeper
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app: sample-keeper
+                role: clickhouse-keeper
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: default-password
+data:
+  # secret-password
+  password: "c2VjcmV0LXBhc3N3b3Jk"
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  dataVolumeClaimSpec:
+    storageClassName: premium-rwo
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Gi
+  keeperClusterRef:
+    name: sample
+  podTemplate:
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: sample-clickhouse
+            role: clickhouse-server
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: topology.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                app: sample-clickhouse
+                role: clickhouse-server
+      podAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  role: clickhouse-keeper
+                  app: sample-keeper
+              topologyKey: topology.kubernetes.io/zone
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: clickhouse-cert
+    defaultUserPassword:
+      key: password
+      name: default-password
+    extraConfig:
+      listen_host: "0.0.0.0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse-lb
+spec:
+  type: LoadBalancer
+  selector:
+    app: sample-clickhouse
+  ports:
+    - port: 9440
+      targetPort: 9440
+      protocol: TCP

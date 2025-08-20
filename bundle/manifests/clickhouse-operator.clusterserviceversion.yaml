@@ -57,7 +57,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-08-19T17:58:34Z"
+    createdAt: "2025-08-20T15:30:07Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
@@ -203,6 +203,7 @@ spec:
           - ""
           resources:
           - configmaps
+          - persistentvolumeclaims
           - pods
           - secrets
           - services

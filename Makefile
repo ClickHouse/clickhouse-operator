@@ -50,7 +50,7 @@ endif
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.41.1
 # Image URL to use all building/pushing image targets
-IMG ?= clickhouse.com/clickhouse-operator:v${VERSION}
+IMG ?= ${IMAGE_TAG_BASE}:v${VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.33.0
 
@@ -302,6 +302,16 @@ bundle-build: ## Build the bundle image.
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.
 	$(MAKE) docker-push IMG=$(BUNDLE_IMG)
+
+.PHONY: bundle-buildx
+bundle-buildx: ## Build and push bundle docker image for cross-platform support
+	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' bundle.Dockerfile > bundle.Dockerfile.cross
+	- $(CONTAINER_TOOL) buildx create --name clickhouse-operator-bundle-builder
+	$(CONTAINER_TOOL) buildx use clickhouse-operator-bundle-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${BUNDLE_IMG} -f bundle.Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx rm clickhouse-operator-bundle-builder
+	rm bundle.Dockerfile.cross
 
 .PHONY: scorecard
 scorecard: operator-sdk

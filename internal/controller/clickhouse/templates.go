@@ -207,7 +207,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 		Env: append([]corev1.EnvVar{
 			{
 				Name:  "CLICKHOUSE_CONFIG",
-				Value: ConfigPath + ConfigFileName,
+				Value: path.Join(ConfigPath, ConfigFileName),
 			},
 			{
 				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
@@ -253,12 +253,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				Exec: &corev1.ExecAction{
-					Command: []string{
-						"/usr/bin/clickhouse", "client",
-						"--port", strconv.Itoa(PortManagement),
-						// "--user", OperatorManagementUsername, // TODO pass password or generate user for it
-						"-q", "SELECT 'liveness'",
-					},
+					Command: []string{"/usr/bin/clickhouse", "client", "-q", "SELECT 'liveness'"},
 				},
 			},
 			TimeoutSeconds:   10,
@@ -410,7 +405,7 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ReplicaID) (map
 			return nil, err
 		}
 
-		configFiles[generator.Filename()] = data
+		configFiles[generator.ConfigKey()] = data
 	}
 
 	return configFiles, nil
@@ -521,7 +516,7 @@ func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []co
 		}
 
 		volume.ConfigMap.Items = append(volume.ConfigMap.Items, corev1.KeyToPath{
-			Key:  generator.Filename(),
+			Key:  generator.ConfigKey(),
 			Path: generator.Filename(),
 		})
 		configVolumes[generator.Path()] = volume

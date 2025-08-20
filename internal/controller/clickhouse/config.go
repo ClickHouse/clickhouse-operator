@@ -23,6 +23,8 @@ var (
 	logTablesConfigTemplateStr string
 	//go:embed templates/users.yaml.tmpl
 	userConfigTemplateStr string
+	//go:embed templates/client.yaml.tmpl
+	clientConfigTemplateStr string
 
 	generators []ConfigGenerator
 )
@@ -53,6 +55,11 @@ func init() {
 		Filename:  UsersFileName,
 		Raw:       userConfigTemplateStr,
 		Generator: userConfigGenerator,
+	}, {
+		Path:      ClientConfigPath,
+		Filename:  ClientConfigFileName,
+		Raw:       clientConfigTemplateStr,
+		Generator: clientConfigGenerator,
 	}} {
 		tmpl := template.New("").Funcs(template.FuncMap{
 			"yaml": func(v any) (string, error) {
@@ -89,6 +96,7 @@ func init() {
 type ConfigGenerator interface {
 	Filename() string
 	Path() string
+	ConfigKey() string
 	Exists(ctx *reconcileContext) bool
 	Generate(ctx *reconcileContext, id v1.ReplicaID) (string, error)
 }
@@ -106,6 +114,10 @@ func (g *templateConfigGenerator) Filename() string {
 
 func (g *templateConfigGenerator) Path() string {
 	return g.path
+}
+
+func (g *templateConfigGenerator) ConfigKey() string {
+	return util.PathToName(path.Join(g.path, g.filename))
 }
 
 func (g *templateConfigGenerator) Exists(*reconcileContext) bool {
@@ -284,6 +296,30 @@ func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.Re
 	return builder.String(), nil
 }
 
+type clientConfigParams struct {
+	ManagementPort         uint16
+	DefaultUserPasswordEnv string
+}
+
+func clientConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ReplicaID) (string, error) {
+	passEnv := EnvDefaultUserPassword
+	if ctx.Cluster.Spec.Settings.DefaultUserPassword == nil {
+		passEnv = ""
+	}
+
+	params := clientConfigParams{
+		ManagementPort:         PortManagement,
+		DefaultUserPasswordEnv: passEnv,
+	}
+
+	builder := strings.Builder{}
+	if err := tmpl.Execute(&builder, params); err != nil {
+		return "", err
+	}
+
+	return builder.String(), nil
+}
+
 type extraConfigGenerator struct{}
 
 func (g *extraConfigGenerator) Filename() string {
@@ -292,6 +328,10 @@ func (g *extraConfigGenerator) Filename() string {
 
 func (g *extraConfigGenerator) Path() string {
 	return path.Join(ConfigPath, ConfigDPath)
+}
+
+func (g *extraConfigGenerator) ConfigKey() string {
+	return ExtraConfigFileName
 }
 
 func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {

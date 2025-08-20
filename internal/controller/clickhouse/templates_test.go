@@ -23,8 +23,8 @@ func TestBuildVolumes(t *testing.T) {
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(2))
-		Expect(mounts).To(HaveLen(4))
+		Expect(volumes).To(HaveLen(3))
+		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -48,8 +48,8 @@ func TestBuildVolumes(t *testing.T) {
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(3))
-		Expect(mounts).To(HaveLen(5))
+		Expect(volumes).To(HaveLen(4))
+		Expect(mounts).To(HaveLen(6))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -83,8 +83,8 @@ func TestBuildVolumes(t *testing.T) {
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(3))
-		Expect(mounts).To(HaveLen(5))
+		Expect(volumes).To(HaveLen(4))
+		Expect(mounts).To(HaveLen(6))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -118,8 +118,8 @@ func TestBuildVolumes(t *testing.T) {
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(2))
-		Expect(mounts).To(HaveLen(4))
+		Expect(volumes).To(HaveLen(3))
+		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -161,8 +161,8 @@ func TestBuildVolumes(t *testing.T) {
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(3))
-		Expect(mounts).To(HaveLen(5))
+		Expect(volumes).To(HaveLen(4))
+		Expect(mounts).To(HaveLen(6))
 		checkVolumeMounts(volumes, mounts)
 	})
 }

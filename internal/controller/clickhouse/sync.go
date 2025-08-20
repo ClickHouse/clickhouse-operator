@@ -22,6 +22,8 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -56,7 +58,6 @@ func (r replicaState) Ready() bool {
 	}
 
 	return r.Pinged && r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
-
 }
 
 func (r replicaState) HasStatefulSetDiff(ctx *reconcileContext) bool {
@@ -411,7 +412,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 	for _, id := range replicasInStatus {
 		replicaResult, err := r.updateReplica(log, ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("update replica %q: %w", id, err)
+			return nil, fmt.Errorf("update replica %s: %w", id, err)
 		}
 
 		util.UpdateResult(&result, replicaResult)
@@ -709,20 +710,20 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 
 	configMap, err := TemplateConfigMap(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("template replica %q ConfigMap: %w", id, err)
+		return nil, fmt.Errorf("template replica %s ConfigMap: %w", id, err)
 	}
 
 	configChanged, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, configMap, "Data", "BinaryData")
 	if err != nil {
-		return nil, fmt.Errorf("update replica %q ConfigMap: %w", id, err)
+		return nil, fmt.Errorf("update replica %s ConfigMap: %w", id, err)
 	}
 
 	statefulSet, err := TemplateStatefulSet(ctx, id)
 	if err != nil {
-		return nil, fmt.Errorf("template replica %q StatefulSet: %w", id, err)
+		return nil, fmt.Errorf("template replica %s StatefulSet: %w", id, err)
 	}
 	if err := ctrl.SetControllerReference(ctx.Cluster, statefulSet, r.Scheme); err != nil {
-		return nil, fmt.Errorf("set replica %q StatefulSet controller reference: %w", id, err)
+		return nil, fmt.Errorf("set replica %s StatefulSet controller reference: %w", id, err)
 	}
 
 	replica := ctx.Replica(id)
@@ -736,7 +737,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		})
 
 		if err != nil {
-			return nil, fmt.Errorf("create replica %q StatefulSet %q: %w", id, statefulSet.Name, err)
+			return nil, fmt.Errorf("create replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
 		}
 
 		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
@@ -778,7 +779,15 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, nil
 	}
 
+	if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, ctx.Cluster.Spec.DataVolumeClaimSpec) {
+		if err = r.updateReplicaPVC(log, ctx, id); err != nil {
+			return nil, fmt.Errorf("update replica %s PVC: %w", id, err)
+		}
+		statefulSet.Spec.VolumeClaimTemplates = replica.StatefulSet.Spec.VolumeClaimTemplates
+	}
+
 	log.Info("updating replica StatefulSet", "stateful_set", statefulSet.Name)
+	log.Info("replica StatefulSet diff", "diff", gcmp.Diff(replica.StatefulSet.Spec, statefulSet.Spec))
 	replica.StatefulSet.Spec = statefulSet.Spec
 	replica.StatefulSet.Annotations = util.MergeMaps(replica.StatefulSet.Annotations, statefulSet.Annotations)
 	replica.StatefulSet.Labels = util.MergeMaps(replica.StatefulSet.Labels, statefulSet.Labels)
@@ -786,10 +795,53 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		return r.Update(ctx.Context, replica.StatefulSet)
 	}); err != nil {
-		return nil, fmt.Errorf("update replica %q StatefulSet %q: %w", id, statefulSet.Name, err)
+		return nil, fmt.Errorf("update replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
 	}
 
 	return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+}
+
+func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileContext, id v1.ReplicaID) error {
+	var pvcs corev1.PersistentVolumeClaimList
+	req := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
+	for k, v := range labelsFromID(id) {
+		idReq, _ := labels.NewRequirement(k, selection.Equals, []string{v})
+		req.LabelSelector = req.LabelSelector.Add(*idReq)
+	}
+	log.Debug("listing replica PVCs", "replica_id", id, "selector", req.LabelSelector.String())
+	if err := r.List(ctx.Context, &pvcs, req); err != nil {
+		return fmt.Errorf("list replica %s PVCs: %w", id, err)
+	}
+
+	if len(pvcs.Items) == 0 {
+		log.Info("no PVCs found for replica, skipping update", "replica_id", id)
+		return nil
+	}
+
+	if len(pvcs.Items) > 1 {
+		pvcNames := make([]string, len(pvcs.Items))
+		for i, pvc := range pvcs.Items {
+			pvcNames[i] = pvc.Name
+		}
+		return fmt.Errorf("found multiple PVCs for replica %s: %v", id, pvcNames)
+	}
+
+	if gcmp.Equal(pvcs.Items[0].Spec, ctx.Cluster.Spec.DataVolumeClaimSpec) {
+		log.Debug("replica PVC is up to date", "pvc", pvcs.Items[0].Name)
+		return nil
+	}
+
+	targetSpec := ctx.Cluster.Spec.DataVolumeClaimSpec.DeepCopy()
+	if err := util.ApplyDefault(targetSpec, pvcs.Items[0].Spec); err != nil {
+		return fmt.Errorf("apply patch to replica PVC %q: %w", id, err)
+	}
+	log.Info("updating replica PVC", "pvc", pvcs.Items[0].Name, "diff", gcmp.Diff(pvcs.Items[0].Spec, targetSpec))
+	pvcs.Items[0].Spec = *targetSpec
+	if err := r.Update(ctx.Context, &pvcs.Items[0]); err != nil {
+		return fmt.Errorf("update replica PVC %q: %w", id, err)
+	}
+
+	return nil
 }
 
 func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext) error {

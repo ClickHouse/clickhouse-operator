@@ -29,7 +29,7 @@ const (
 	LabelClickHouseValue = "clickhouse-server"
 )
 
-func AppRequirements(namespace, app string) client.ListOption {
+func AppRequirements(namespace, app string) *client.ListOptions {
 	appReq, err := labels.NewRequirement(LabelAppKey, selection.Equals, []string{app})
 	if err != nil {
 		panic(fmt.Sprintf("make %q requirement to list: %s", LabelAppKey, err))

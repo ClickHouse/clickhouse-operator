@@ -1,0 +1,6 @@
+user: default
+port: {{ .ManagementPort }}
+{{- if .DefaultUserPasswordEnv }}
+password:
+- '@from_env': {{ .DefaultUserPasswordEnv }}
+{{ end }}

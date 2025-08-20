@@ -19,11 +19,13 @@ const (
 	PortPrometheusScrape = 9363
 	PortInterserver      = 9009
 
-	ConfigPath          = "/etc/clickhouse-server/"
-	ConfigDPath         = "config.d"
-	ConfigFileName      = "config.yaml"
-	UsersFileName       = "users.yaml"
-	ExtraConfigFileName = "99-extra-config.yaml"
+	ConfigPath           = "/etc/clickhouse-server/"
+	ConfigDPath          = "config.d"
+	ConfigFileName       = "config.yaml"
+	UsersFileName        = "users.yaml"
+	ExtraConfigFileName  = "99-extra-config.yaml"
+	ClientConfigPath     = "/etc/clickhouse-client/"
+	ClientConfigFileName = "config.yaml"
 
 	PersistentVolumeName = "clickhouse-storage-volume"
 

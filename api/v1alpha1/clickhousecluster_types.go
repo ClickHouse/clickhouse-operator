@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/clickhouse-operator/internal/util"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -245,6 +246,16 @@ func IDFromHostname(v *ClickHouseCluster, hostname string) (ReplicaID, error) {
 		ShardID: int32(shardID),
 		Index:   int32(index),
 	}, nil
+}
+
+var _ logr.Marshaler = ReplicaID{}
+
+func (id ReplicaID) MarshalLog() any {
+	return id.String()
+}
+
+func (id ReplicaID) String() string {
+	return fmt.Sprintf("(%d:%d)", id.ShardID, id.Index)
 }
 
 func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
