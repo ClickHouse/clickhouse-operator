@@ -135,20 +135,20 @@ func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus
 }
 
 func queryAllPods(ctx context.Context, log util.Logger, connections Connections) map[string]ServerStatus {
-	result, err := util.ExecuteParallel(slices.Collect(maps.Keys(connections)), func(id string) (string, ServerStatus, error) {
+	execResult := util.ExecuteParallel(slices.Collect(maps.Keys(connections)), func(id string) (string, ServerStatus, error) {
 		resp, err := queryPod(ctx, log.With("replica_id", id), connections[id])
 		return id, resp, err
 	})
 	log.Debug("all keeper pods have responded")
 
-	if err != nil {
-		if errs := util.UnwrapErrors(err); errs != nil {
-			for _, err := range errs {
-				log.Info("failed to query keeper pod", "error", err, "replica_id", err.(util.ExecutionError).Id)
-			}
-		} else {
-			log.Info("failed to query keeper pods", "error", err)
+	result := map[string]ServerStatus{}
+	for id, res := range execResult {
+		if res.Err != nil {
+			log.Info("failed to query keeper pod", "error", res.Err, "replica_id", id)
+			continue
 		}
+
+		result[id] = res.Result
 	}
 
 	return result

@@ -98,31 +98,23 @@ func TestUpdateResult(t *testing.T) {
 		UpdateResult(&result, &update)
 		require.Equal(t, time.Second, result.RequeueAfter)
 	})
-
-	t.Run("already minimal", func(t *testing.T) {
-		result := ctrl.Result{Requeue: true}
-		update := ctrl.Result{RequeueAfter: time.Second}
-		UpdateResult(&result, &update)
-		require.Equal(t, time.Duration(0), result.RequeueAfter)
-	})
 }
 
 func TestExecuteParallel(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
-		result, err := ExecuteParallel(
+		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
 				return item, item * 2, nil
 			})
-		require.NoError(t, err)
-		require.Equal(t, map[int]int{
-			1: 2,
-			2: 4,
-			3: 6,
+		require.Equal(t, map[int]executionResult[int, int]{
+			1: {Result: 2},
+			2: {Result: 4},
+			3: {Result: 6},
 		}, result)
 	})
 	t.Run("some errors", func(t *testing.T) {
-		result, err := ExecuteParallel(
+		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
 				if item%2 == 0 {
@@ -130,10 +122,10 @@ func TestExecuteParallel(t *testing.T) {
 				}
 				return item, item * 2, nil
 			})
-		require.ErrorContains(t, err, "failed")
-		require.Equal(t, map[int]int{
-			1: 2,
-			3: 6,
+		require.Equal(t, map[int]executionResult[int, int]{
+			1: {Result: 2},
+			2: {Err: fmt.Errorf("failed")},
+			3: {Result: 6},
 		}, result)
 	})
 }

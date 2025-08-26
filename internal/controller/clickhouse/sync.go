@@ -319,7 +319,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 	}
 
 	// TODO add timeout here or global reconcile timeout.
-	states, err := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ReplicaID, replicaState, error) {
+	execResults := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ReplicaID, replicaState, error) {
 		id, err := v1.IDFromLabels(sts.Labels)
 		if err != nil {
 			log.Error(err, "failed to get replica ID from StatefulSet labels", "stateful_set", sts.Name)
@@ -344,14 +344,14 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 			Pinged:      pingErr == nil,
 		}, nil
 	})
-	if err != nil {
-		if errs := util.UnwrapErrors(err); errs != nil {
-			for _, err := range errs {
-				log.Info("failed to load replica state", "error", err, "replica_id", err.(util.ExecutionError).Id)
-			}
-		} else {
-			log.Warn("failed to load replicas state", "error", err)
+	states := map[v1.ReplicaID]replicaState{}
+	for id, res := range execResults {
+		if res.Err != nil {
+			log.Info("failed to load replica state", "error", res.Err, "replica_id", id)
+			continue
 		}
+
+		states[id] = res.Result
 	}
 
 	for id, state := range states {
@@ -439,24 +439,28 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		return &ctrl.Result{}, nil
 	}
 
-	replicaDatabases, err := util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, map[string]DatabaseDescriptor, error) {
+	replicaDatabases := util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, map[string]DatabaseDescriptor, error) {
 		databases, err := ctx.commander.Databases(ctx.Context, id)
 		return id, databases, err
 	})
-	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("failed to get replicas %v databases: %w", readyReplicas, err)
+	databases := map[string]DatabaseDescriptor{}
+	for id, replDBs := range replicaDatabases {
+		if replDBs.Err != nil {
+			log.Warn("failed to get databases from replica", "replica_id", id, "error", replDBs.Err)
+			return &ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, nil
+		}
+		databases = util.MergeMaps(databases, replDBs.Result)
 	}
 
 	hasNotSynced := false
-	databases := util.MergeMaps(slices.Collect(maps.Values(replicaDatabases))...)
-	_, err = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
-		if len(databases) == len(replicaDatabases[id]) {
+	_ = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
+		if len(databases) == len(replicaDatabases[id].Result) {
 			log.Debug("replica is in sync", "replica_id", id)
 			return id, struct{}{}, nil
 		}
 		dbsToSync := map[string]DatabaseDescriptor{}
 		for name, desc := range databases {
-			if _, ok := replicaDatabases[id][name]; !ok {
+			if _, ok := replicaDatabases[id].Result[name]; !ok {
 				dbsToSync[name] = desc
 			}
 		}
@@ -468,11 +472,12 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		}
 		return id, struct{}{}, nil
 	})
-	if err != nil {
-		log.Warn("failed to sync databases on replicas", "error", err)
-	}
 
 	ctx.databasesInSync = !hasNotSynced
+	if hasNotSynced {
+		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	}
+
 	return nil, nil
 }
 
@@ -533,22 +538,19 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		replicasToRemove[id.ShardID][id.Index] = state
 	}
 
-	shardsInSync, err := util.ExecuteParallel(slices.Collect(maps.Keys(replicasToRemove)), func(shardID int32) (int32, struct{}, error) {
+	shardsInSync := util.ExecuteParallel(slices.Collect(maps.Keys(replicasToRemove)), func(shardID int32) (int32, struct{}, error) {
 		log.Info("Pre scale-down shard sync", "shard_id", shardID)
 		err := ctx.commander.SyncShard(ctx.Context, log, shardID)
 		if err != nil {
 			log.Info("failed to sync shard", "shard_id", shardID, "error", err)
 		}
-		return shardID, struct{}{}, err
+		return shardID, struct{}{}, nil
 	})
-	if err != nil {
-		return nil, fmt.Errorf("sync shards: %w", err)
-	}
 
 	runningStaleReplicas := map[v1.ReplicaID]struct{}{}
 	for shardID, replicas := range replicasToRemove {
 		if shardID < ctx.Cluster.Shards() {
-			if _, Ok := shardsInSync[shardID]; !Ok {
+			if shardsInSync[shardID].Err != nil {
 				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
 				for index := range replicas {
 					runningStaleReplicas[v1.ReplicaID{ShardID: shardID, Index: index}] = struct{}{}
@@ -583,8 +585,11 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	if ctx.Cluster.Spec.Settings.EnableDatabaseSync {
-		if ctx.staleReplicasCleanedUp, err = ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas); err != nil {
+		cleanedUp, err := ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas)
+		if err != nil {
 			log.Warn("failed to cleanup database replicas", "error", err)
+		} else {
+			ctx.staleReplicasCleanedUp = cleanedUp
 		}
 	}
 

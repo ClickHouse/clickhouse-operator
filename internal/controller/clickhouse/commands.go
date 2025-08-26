@@ -146,15 +146,21 @@ func (cmd *Commander) SyncShard(ctx context.Context, log util.Logger, shardID in
 		})
 	}
 
-	_, err := util.ExecuteParallel(replicasToSync, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
+	results := util.ExecuteParallel(replicasToSync, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
 		errs := cmd.SyncReplica(ctx, log.With("replica_id", id), id)
 		if len(errs) > 0 {
 			return id, struct{}{}, fmt.Errorf("sync replica %v: %w", id, errors.Join(errs...))
 		}
 		return id, struct{}{}, nil
 	})
+	var errs []error
+	for _, res := range results {
+		if res.Err != nil {
+			errs = append(errs, res.Err)
+		}
+	}
 
-	return err
+	return errors.Join(errs...)
 }
 
 func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.ReplicaID) (errs []error) {
