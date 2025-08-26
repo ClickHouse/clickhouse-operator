@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -179,37 +178,34 @@ func Sha256Hash(password []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-type executionResult[Id comparable, Result any] struct {
+type executionResultWithID[Id comparable, Result any] struct {
 	id     Id
 	result Result
 	err    error
 }
 
-type ExecutionError struct {
-	error
-	Id any
+type executionResult[Id comparable, Result any] struct {
+	Result Result
+	Err    error
 }
 
 func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	tasks Tasks,
 	f func(Item) (Id, Result, error),
-) (map[Id]Result, error) {
+) map[Id]executionResult[Id, Result] {
 	if len(tasks) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	wg := sync.WaitGroup{}
-	var results = make(chan executionResult[Id, Result], len(tasks))
+	var results = make(chan executionResultWithID[Id, Result], len(tasks))
 
 	for _, task := range tasks {
 		wg.Add(1)
 		go func(task Item) {
 			defer wg.Done()
 			id, res, err := f(task)
-			if err != nil {
-				err = ExecutionError{err, id}
-			}
-			results <- executionResult[Id, Result]{
+			results <- executionResultWithID[Id, Result]{
 				id:     id,
 				result: res,
 				err:    err,
@@ -220,26 +216,15 @@ func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	wg.Wait()
 	close(results)
 
-	resultMap := make(map[Id]Result, len(tasks))
-	var errs []error
+	resultMap := make(map[Id]executionResult[Id, Result], len(tasks))
 	for res := range results {
-		if res.err != nil {
-			errs = append(errs, res.err)
-		} else {
-			resultMap[res.id] = res.result
+		resultMap[res.id] = executionResult[Id, Result]{
+			Result: res.result,
+			Err:    res.err,
 		}
 	}
 
-	return resultMap, errors.Join(errs...)
-}
-
-func UnwrapErrors(err error) []error {
-	switch e := err.(type) {
-	case interface{ Unwrap() []error }:
-		return e.Unwrap()
-	}
-
-	return nil
+	return resultMap
 }
 
 func PathToName(path string) string {
