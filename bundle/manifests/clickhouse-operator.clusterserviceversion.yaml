@@ -57,10 +57,10 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-08-27T15:36:34Z"
+    createdAt: "2025-08-27T16:22:34Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
-  name: clickhouse-operator.v0.0.22
+  name: clickhouse-operator.v0.0.1
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -310,7 +310,7 @@ spec:
                 - --metrics-bind-address=:8443
                 command:
                 - /manager
-                image: clickhouse.com/clickhouse-operator:v0.0.22
+                image: clickhouse.com/clickhouse-operator:v0.0.1
                 imagePullPolicy: IfNotPresent
                 livenessProbe:
                   httpGet:
@@ -400,7 +400,7 @@ spec:
   provider:
     name: clickhouse.com
     url: https://clickhouse.com
-  version: 0.0.22
+  version: 0.0.1
   webhookdefinitions:
   - admissionReviewVersions:
     - v1

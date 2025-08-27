@@ -1,17 +1,17 @@
-name: Build and push docker image
+name: Create release images and GitHub Release
 on:
   push:
-    branches: [ main ]
-  pull_request: # tmp to debug
-    branches: [ main ]
+    tags:
+      - v*.*.*
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: clickhouse/clickhouse-operator
   IMAGE_TAG_BASE: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
-  VERSION: latest
+  VERSION: ${{ github.ref_name }}
 
 jobs:
-  release:
+  docker-release:
     permissions:
       packages: write
       attestations: write
@@ -33,22 +33,21 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set VERSION
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
       - name: Build operator image
         run: make docker-buildx
+      - name: Build operator bundle image
+        run: make bundle bundle-buildx
 
-#      - name: 'Kustomize Build'
-#        uses: karancode/kustomize-github-action@master
-#        if: github.ref_type == 'tag'
-#        with:
-#          kustomize_output_file: "release/manifest.yaml"
-#      - name: Set VERSION
-#        if: github.ref_type == 'tag'
-#        run: echo "VERSION=$(make print_version)" >> $GITHUB_ENV
-#      - name: Create GitHub Release
-#        uses: softprops/action-gh-release@v1
-#        if: github.ref_type == 'tag'
-#        with:
-#          draft: true
-#          tag_name: v${{ github.ref_name }}"
-#          name: Release ${{github.ref_name }}
-#          files: release/manifests.yaml
+      - name: 'Kustomize Build'
+        uses: karancode/kustomize-github-action@master
+        with:
+          kustomize_output_file: "release/manifest.yaml"
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{github.ref_name }}
+          files: release/manifest.yaml

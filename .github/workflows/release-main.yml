@@ -1,0 +1,35 @@
+name: Build and push docker image with latest tag
+on:
+  push:
+    branches: [ main ]
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: clickhouse/clickhouse-operator
+  IMAGE_TAG_BASE: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
+  VERSION: latest
+
+jobs:
+  release:
+    permissions:
+      packages: write
+      attestations: write
+      id-token: write
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: 'true'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build operator image
+        run: make docker-buildx
