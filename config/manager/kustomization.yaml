@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: clickhouse.com/clickhouse-operator
-  newTag: v0.0.1
+  newTag: v0.0.22

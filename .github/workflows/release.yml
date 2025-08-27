@@ -1,0 +1,57 @@
+name: Release docker image and manifests
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*.*.0'
+  pull_request: # tmp to debug
+    branches: [ main ]
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_TAG_BASE: ghcr.io/${{ github.repository }}/clickhouse-operator
+
+jobs:
+  release:
+    permissions:
+      packages: write
+      attestations: write
+      id-token: write
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: 'true'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build operator image
+        run: make docker-buildx
+
+      - name: 'Kustomize Build'
+        uses: karancode/kustomize-github-action@master
+        if: github.ref_type == 'tag'
+        with:
+          kustomize_output_file: "release/manifest.yaml"
+      - name: Set VERSION
+        if: github.ref_type == 'tag'
+        run: echo "VERSION=$(make print_version)" >> $GITHUB_ENV
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: github.ref_type == 'tag'
+        with:
+          draft: true
+          tag_name: v${{ github.ref_name }}"
+          name: Release ${{github.ref_name }}
+          files: release/manifests.yaml
