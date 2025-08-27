@@ -9,7 +9,7 @@ env:
   VERSION: latest
 
 jobs:
-  release:
+  release-main:
     permissions:
       packages: write
       attestations: write
@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-tags: 'true'
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

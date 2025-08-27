@@ -11,7 +11,7 @@ env:
   VERSION: ${{ github.ref_name }}
 
 jobs:
-  docker-release:
+  release:
     permissions:
       packages: write
       attestations: write
@@ -21,8 +21,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-tags: 'true'
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -43,11 +41,21 @@ jobs:
       - name: 'Kustomize Build'
         uses: karancode/kustomize-github-action@master
         with:
-          kustomize_output_file: "release/manifest.yaml"
+          kustomize_output_file: "release/clickhouse-operator.yaml"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           tag_name: ${{ github.ref_name }}
-          name: Release ${{github.ref_name }}
-          files: release/manifest.yaml
+          name: release-${{github.ref_name }}
+          body: |
+            Release ${{github.ref_name }}
+            ```
+            docker pull ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator:${{ github.ref_name }}
+            docker pull ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator-bundle:${{ github.ref_name }}
+            ```
+            To deploy this release use
+            ```
+            kubectl apply -f https://raw.githubusercontent.com/clickhouse/clickhouse-operator/releases/releases/release-${{github.ref_name }}/clickhouse-operator.yaml
+            ```
+          files: release/clickhouse-operator.yaml
