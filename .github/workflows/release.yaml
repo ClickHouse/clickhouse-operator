@@ -59,6 +59,8 @@ jobs:
             ```
             To deploy this release use
             ```
-            kubectl apply -f https://raw.githubusercontent.com/clickhouse/clickhouse-operator/releases/releases/release-${{github.ref_name }}/clickhouse-operator.yaml
+            kubectl apply -f https://raw.githubusercontent.com/clickhouse/clickhouse-operator/releases/releases/${{github.ref_name }}/clickhouse-operator.yaml
             ```
+          generate_release_notes: true
+          append_body: true
           files: release/clickhouse-operator.yaml
