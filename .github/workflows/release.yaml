@@ -41,6 +41,9 @@ jobs:
       - name: 'Kustomize Build'
         uses: karancode/kustomize-github-action@master
         with:
+          token: ${{ github.token }}
+          kustomize_version: 5.7.1
+          kustomize_build_dir: "config/default"
           kustomize_output_file: "release/clickhouse-operator.yaml"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
