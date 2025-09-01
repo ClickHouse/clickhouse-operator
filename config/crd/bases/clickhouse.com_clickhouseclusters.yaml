@@ -11,6 +11,9 @@ spec:
     kind: ClickHouseCluster
     listKind: ClickHouseClusterList
     plural: clickhouseclusters
+    shortNames:
+    - chc
+    - clickhouse
     singular: clickhousecluster
   scope: Namespaced
   versions:

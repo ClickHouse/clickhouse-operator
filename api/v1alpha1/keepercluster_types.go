@@ -144,11 +144,10 @@ type KeeperClusterStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-// +genclient
+// KeeperCluster is the Schema for the keeperclusters API.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// KeeperCluster is the Schema for the keeperclusters API.
+// +kubebuilder:resource:shortName=chk;keeper
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
 // +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"

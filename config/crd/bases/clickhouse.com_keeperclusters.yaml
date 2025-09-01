@@ -11,6 +11,9 @@ spec:
     kind: KeeperCluster
     listKind: KeeperClusterList
     plural: keeperclusters
+    shortNames:
+    - chk
+    - keeper
     singular: keepercluster
   scope: Namespaced
   versions:
