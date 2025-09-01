@@ -31,7 +31,7 @@ jobs:
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.3.1
+          version: v2.4.0
   bundle:
     runs-on: ubuntu-latest
     steps:
