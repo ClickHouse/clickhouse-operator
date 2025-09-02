@@ -19,7 +19,7 @@ package keeper
 import (
 	"testing"
 
-	"github.com/clickhouse-operator/internal/controller"
+	testutil "github.com/clickhouse-operator/internal/controller/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -38,7 +38,7 @@ import (
 	"github.com/clickhouse-operator/internal/util"
 )
 
-var suite controller.TestSuit
+var suite testutil.TestSuit
 var reconciler reconcile.Reconciler
 
 func TestControllers(t *testing.T) {
@@ -48,7 +48,7 @@ func TestControllers(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	suite = controller.SetupEnvironment(v1.AddToScheme)
+	suite = testutil.SetupEnvironment(v1.AddToScheme)
 	reconciler = &ClusterReconciler{
 		Client: suite.Client,
 		Scheme: scheme.Scheme,
@@ -189,7 +189,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 		It("should merge extra config in configmap", func() {
 			updatedCR := cr.DeepCopy()
 			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
-			controller.ReconcileStatefulSets(updatedCR, suite)
+			testutil.ReconcileStatefulSets(updatedCR, suite)
 			updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
 			Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())

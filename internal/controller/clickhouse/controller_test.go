@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller"
+	"github.com/clickhouse-operator/internal/controller/test"
 	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var suite controller.TestSuit
+var suite testutil.TestSuit
 var reconciler reconcile.Reconciler
 
 func TestControllers(t *testing.T) {
@@ -47,7 +47,7 @@ func TestControllers(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	suite = controller.SetupEnvironment(v1.AddToScheme)
+	suite = testutil.SetupEnvironment(v1.AddToScheme)
 	reconciler = &ClusterReconciler{
 		Client: suite.Client,
 		Scheme: scheme.Scheme,

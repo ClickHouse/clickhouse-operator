@@ -24,7 +24,6 @@ import (
 	"github.com/go-logr/zapr"
 
 	"github.com/clickhouse-operator/internal/controller/clickhouse"
-
 	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/clickhouse-operator/internal/util"
 
