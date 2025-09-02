@@ -11,8 +11,8 @@ spec:
     webhook:
       clientConfig:
         service:
-          name: tmp-webhook-service
-          namespace: tmp-system
+          name: clickhouse-operator-webhook-service
+          namespace: clickhouse-operator-system
           path: /convert
       conversionReviewVersions:
       - v1

@@ -4,7 +4,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   labels:
-    app.kubernetes.io/name: tmp
+    app.kubernetes.io/name: clickhouse-operator
     app.kubernetes.io/managed-by: kustomize
   name: metrics-certs  # this name should match the one appeared in kustomizeconfig.yaml
   namespace: system
