@@ -57,7 +57,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-09-01T17:44:48Z"
+    createdAt: "2025-09-02T15:01:29Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
@@ -313,7 +313,7 @@ spec:
                 - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
                 command:
                 - /manager
-                image: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator:v0.0.1
+                image: clickhouse.com/clickhouse-operator:v0.0.1
                 livenessProbe:
                   httpGet:
                     path: /healthz

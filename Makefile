@@ -128,11 +128,11 @@ test-ci: manifests generate fmt vet envtest ## Run tests.
 test-e2e:
 	go test ./test/e2e/ -v -ginkgo.v -test.timeout 30m
 
-.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+.PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-keeper-e2e:
 	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter keeper -test.timeout 30m
 
-.PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
+.PHONY: test-clickhouse-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-clickhouse-e2e:
 	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter clickhouse -test.timeout 30m
 
@@ -147,6 +147,11 @@ golangci-fmt: golangci-lint ## Run golangci-lint fmt
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
+
+.PHONY: generate-helmchart
+generate-helmchart: kubebuilder ## Generate helm charts
+	$(KUBEBUILDER) edit --plugins=helm/v1-alpha
+	rm .github/workflows/test-chart.yml
 
 ##@ Build
 
@@ -232,6 +237,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
@@ -258,6 +264,12 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
+$(KUBEBUILDER): $(LOCALBIN)
+	curl -L -o $(KUBEBUILDER) "https://go.kubebuilder.io/dl/latest/$(shell go env GOOS)/$(shell rgo env GOARCH)"
+	chmod +x $(KUBEBUILDER)
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
