@@ -1,4 +1,4 @@
-# This patch ensures the webhook issuer.yaml are properly mounted in the manager container.
+# This patch ensures the webhook certificates are properly mounted in the manager container.
 # It configures the necessary arguments, volumes, volume mounts, and container ports.
 
 # Add the --webhook-cert-path argument for configuring the webhook certificate path
@@ -6,7 +6,7 @@
   path: /spec/template/spec/containers/0/args/-
   value: --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
 
-# Add the volumeMount for the webhook issuer.yaml
+# Add the volumeMount for the webhook certificates
 - op: add
   path: /spec/template/spec/containers/0/volumeMounts/-
   value:
@@ -22,7 +22,7 @@
     name: webhook-server
     protocol: TCP
 
-# Add the volume configuration for the webhook issuer.yaml
+# Add the volume configuration for the webhook certificates
 - op: add
   path: /spec/template/spec/volumes/-
   value:

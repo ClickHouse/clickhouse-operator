@@ -38,29 +38,38 @@ jobs:
       - name: Build operator bundle image
         run: make bundle bundle-buildx
 
-      - name: 'Kustomize Build'
+      - name: Kustomize Build
         uses: karancode/kustomize-github-action@master
         with:
           token: ${{ github.token }}
           kustomize_version: 5.7.1
           kustomize_build_dir: "config/default"
-          kustomize_output_file: "release/clickhouse-operator.yaml"
+          kustomize_output_file: "dist/clickhouse-operator.yaml"
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.7.0
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        with:
+          charts_dir: dist/chart
+          packages_with_index: true
+          mark_as_latest: true
+          pages_branch: helm-releases
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           draft: true
           tag_name: ${{ github.ref_name }}
-          name: release-${{github.ref_name }}
+          name: ${{github.ref_name }}
           body: |
-            Release ${{github.ref_name }}
+            Pull latest operator images:
             ```
             docker pull ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator:${{ github.ref_name }}
             docker pull ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator-bundle:${{ github.ref_name }}
             ```
             To deploy this release use
             ```
-            kubectl apply -f https://raw.githubusercontent.com/clickhouse/clickhouse-operator/releases/releases/${{github.ref_name }}/clickhouse-operator.yaml
+            kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/${{github.ref_name}}/clickhouse-operator.yaml
             ```
           generate_release_notes: true
           append_body: true
-          files: release/clickhouse-operator.yaml
+          files: dist/clickhouse-operator.yaml

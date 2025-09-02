@@ -1,7 +1,7 @@
 resources:
 - issuer.yaml
-- certificate-metrics.yaml
 - certificate-webhook.yaml
+- certificate-metrics.yaml
 
 configurations:
 - kustomizeconfig.yaml

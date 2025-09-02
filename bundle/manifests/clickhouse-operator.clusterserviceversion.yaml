@@ -57,7 +57,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-08-27T16:22:34Z"
+    createdAt: "2025-09-01T17:44:48Z"
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
@@ -283,17 +283,18 @@ spec:
           - subjectaccessreviews
           verbs:
           - create
-        serviceAccountName: clickhouse-operator-controller-manager
+        serviceAccountName: tmp-controller-manager
       deployments:
       - label:
           app.kubernetes.io/managed-by: kustomize
-          app.kubernetes.io/name: clickhouse-operator
+          app.kubernetes.io/name: tmp
           control-plane: controller-manager
-        name: clickhouse-operator-controller-manager
+        name: tmp-controller-manager
         spec:
           replicas: 1
           selector:
             matchLabels:
+              app.kubernetes.io/name: tmp
               control-plane: controller-manager
           strategy: {}
           template:
@@ -301,17 +302,18 @@ spec:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
               labels:
+                app.kubernetes.io/name: tmp
                 control-plane: controller-manager
             spec:
               containers:
               - args:
+                - --metrics-bind-address=:8443
                 - --leader-elect
                 - --health-probe-bind-address=:8081
-                - --metrics-bind-address=:8443
+                - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
                 command:
                 - /manager
-                image: clickhouse.com/clickhouse-operator:v0.0.1
-                imagePullPolicy: IfNotPresent
+                image: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator:v0.0.1
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -341,9 +343,12 @@ spec:
                   capabilities:
                     drop:
                     - ALL
+                  readOnlyRootFilesystem: true
               securityContext:
                 runAsNonRoot: true
-              serviceAccountName: clickhouse-operator-controller-manager
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: tmp-controller-manager
               terminationGracePeriodSeconds: 10
       permissions:
       - rules:
@@ -378,7 +383,7 @@ spec:
           verbs:
           - create
           - patch
-        serviceAccountName: clickhouse-operator-controller-manager
+        serviceAccountName: tmp-controller-manager
     strategy: deployment
   installModes:
   - supported: false
@@ -407,7 +412,7 @@ spec:
     containerPort: 443
     conversionCRDs:
     - keeperclusters.clickhouse.com
-    deploymentName: clickhouse-operator-controller-manager
+    deploymentName: tmp-controller-manager
     generateName: ckeeperclusters.kb.io
     sideEffects: None
     targetPort: 9443
@@ -416,7 +421,7 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    deploymentName: clickhouse-operator-controller-manager
+    deploymentName: tmp-controller-manager
     failurePolicy: Fail
     generateName: mclickhousecluster-v1alpha1.kb.io
     rules:
@@ -436,7 +441,7 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    deploymentName: clickhouse-operator-controller-manager
+    deploymentName: tmp-controller-manager
     failurePolicy: Fail
     generateName: mkeepercluster.kb.io
     rules:
@@ -456,7 +461,7 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    deploymentName: clickhouse-operator-controller-manager
+    deploymentName: tmp-controller-manager
     failurePolicy: Fail
     generateName: vclickhousecluster-v1alpha1.kb.io
     rules:
@@ -476,7 +481,7 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    deploymentName: clickhouse-operator-controller-manager
+    deploymentName: tmp-controller-manager
     failurePolicy: Fail
     generateName: vkeepercluster.kb.io
     rules:

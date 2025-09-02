@@ -6,6 +6,7 @@ domain: clickhouse.com
 layout:
 - go.kubebuilder.io/v4
 plugins:
+  helm.kubebuilder.io/v1-alpha: {}
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: clickhouse-operator
