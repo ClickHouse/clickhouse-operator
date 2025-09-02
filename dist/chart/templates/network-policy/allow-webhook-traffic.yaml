@@ -13,7 +13,7 @@ spec:
   podSelector:
     matchLabels:
       control-plane: controller-manager
-      app.kubernetes.io/name: tmp
+      app.kubernetes.io/name: clickhouse-operator
   policyTypes:
     - Ingress
   ingress:

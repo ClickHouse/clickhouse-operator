@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/test"
+	"github.com/clickhouse-operator/internal/controller/testutil"
 	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

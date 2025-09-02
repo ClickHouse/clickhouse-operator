@@ -19,7 +19,7 @@ package keeper
 import (
 	"testing"
 
-	testutil "github.com/clickhouse-operator/internal/controller/test"
+	"github.com/clickhouse-operator/internal/controller/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
