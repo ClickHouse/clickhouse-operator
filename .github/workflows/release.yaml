@@ -9,8 +9,6 @@ env:
   IMAGE_NAME: clickhouse/clickhouse-operator
   IMAGE_TAG_BASE: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
   VERSION: ${{ github.ref_name }}
-  # Tempora ry address while repo is private
-  PAGES_URL: https://solid-adventure-16rp7jv.pages.github.io/
 
 jobs:
   release:
@@ -76,14 +74,16 @@ jobs:
           files: |
             dist/clickhouse-operator.yaml
             dist/chart/clickhouse-operator-${VERSION}.tgz
-      - name: Checkout helm-releases branch
+      - name: Push chart and updated index
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git reset --hard
           git fetch origin helm-releases
-          git checkout -f helm-releases
-          helm repo index --url "${PAGES_URL}/dist/chart" dist/chart
-          git add dist/chart/index.yaml
-          git add dist/chart/clickhouse-operator-${VERSION}.tgz
-          git commit -m "Add chart $GITHUB_REF_NAME"
+          git checkout helm-releases
+          find .
+          helm repo index .
+          git add index.yaml
+          git add clickhouse-operator-${VERSION}.tgz
+          git commit -m "Add chart $VERSION"
           git push origin helm-releases
