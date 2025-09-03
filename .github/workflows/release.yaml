@@ -54,7 +54,7 @@ jobs:
           kustomize_build_dir: "config/default"
           kustomize_output_file: "dist/clickhouse-operator.yaml"
       - name: Package helm chart
-        run: helm package --version ${VERSION} --app-version v${VERSION} -d dist/chart
+        run: helm package --version ${VERSION} --app-version v${VERSION} dist/chart
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
