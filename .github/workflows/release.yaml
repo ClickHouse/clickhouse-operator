@@ -81,7 +81,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin helm-releases
-          git checkout helm-releases
+          git checkout -f helm-releases
           helm repo index --url "${PAGES_URL}/dist/chart" dist/chart
           git add dist/chart/index.yaml
           git add dist/chart/clickhouse-operator-${VERSION}.tgz
