@@ -3,5 +3,5 @@ name: clickhouse-operator
 description: A Helm chart for clickhouse-operator
 type: application
 version: 0.0.1
-appVersion: "0.0.1"
+appVersion: "latest"
 icon: "https://clickhouse.com/favicons/favicon.svg"

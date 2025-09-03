@@ -9,6 +9,8 @@ env:
   IMAGE_NAME: clickhouse/clickhouse-operator
   IMAGE_TAG_BASE: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
   VERSION: ${{ github.ref_name }}
+  # Tempora ry address while repo is private
+  PAGES_URL: https://solid-adventure-16rp7jv.pages.github.io/
 
 jobs:
   release:
@@ -31,8 +33,14 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Helm
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      - name: Verify Helm installation
+        run: helm version
+
       - name: Set VERSION
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
       - name: Build operator image
         run: make docker-buildx
       - name: Build operator bundle image
@@ -45,19 +53,12 @@ jobs:
           kustomize_version: 5.7.1
           kustomize_build_dir: "config/default"
           kustomize_output_file: "dist/clickhouse-operator.yaml"
-      - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.7.0
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        with:
-          charts_dir: dist/chart
-          packages_with_index: true
-          mark_as_latest: true
-          pages_branch: helm-releases
+      - name: Package helm chart
+        run: helm package --version ${VERSION} --app-version v${VERSION} -d dist/chart
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          draft: true
           tag_name: ${{ github.ref_name }}
           name: ${{github.ref_name }}
           body: |
@@ -72,4 +73,17 @@ jobs:
             ```
           generate_release_notes: true
           append_body: true
-          files: dist/clickhouse-operator.yaml
+          files: |
+            dist/clickhouse-operator.yaml
+            dist/chart/clickhouse-operator-${VERSION}.tgz
+      - name: Checkout helm-releases branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin helm-releases
+          git checkout helm-releases
+          helm repo index --url "${PAGES_URL}/dist/chart" dist/chart
+          git add dist/chart/index.yaml
+          git add dist/chart/clickhouse-operator-${VERSION}.tgz
+          git commit -m "Add chart $GITHUB_REF_NAME"
+          git push origin helm-releases

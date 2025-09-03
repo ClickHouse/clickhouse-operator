@@ -100,13 +100,11 @@ jobs:
       - name: Check helmchart generated
         run: make generate-helmchart && git diff --exit-code
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
       - name: Verify Helm installation
         run: helm version
       - name: Lint Helm Chart
-        run: |
-          helm lint ./dist/chart
+        run: helm lint ./dist/chart
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
         with:

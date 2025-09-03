@@ -6,6 +6,8 @@
 *.dylib
 bin/*
 Dockerfile.cross
+dist/chart/*.tgz
+dist/chart/index.yaml
 
 # Test binary, built with `go test -c`
 *.test
