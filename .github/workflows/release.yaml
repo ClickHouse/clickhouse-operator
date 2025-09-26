@@ -73,7 +73,7 @@ jobs:
           append_body: true
           files: |
             dist/clickhouse-operator.yaml
-            dist/chart/clickhouse-operator-${VERSION}.tgz
+            clickhouse-operator-${VERSION}.tgz
       - name: Push chart and updated index
         run: |
           git config user.name "github-actions[bot]"
@@ -87,3 +87,5 @@ jobs:
           git add clickhouse-operator-${VERSION}.tgz
           git commit -m "Add chart $VERSION"
           git push origin helm-releases
+          helm regstry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          helm push clickhouse-operator-${VERSION}.tgz oci://ghcr.io/ClickHouse/clickhouse-operator/clickhouse-operator-helm
