@@ -6,8 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: clickhouse/clickhouse-operator
-  IMAGE_TAG_BASE: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
+  IMAGE_REPO: ghcr.io/clickhouse/clickhouse-operator
   VERSION: ${{ github.ref_name }}
 
 permissions:
@@ -63,7 +62,7 @@ jobs:
       - name: Build and push helm OCI image
         run: |
           helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-          helm push clickhouse-operator-${VERSION}.tgz oci://ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator-helm
+          make push-helmchart
       - name: Push chart and updated index
         run: |
           git config user.name "github-actions[bot]"

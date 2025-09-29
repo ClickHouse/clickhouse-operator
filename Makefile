@@ -28,12 +28,14 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
+IMAGE_REPO ?= clickhouse.com
+
 # IMAGE_TAG_BASE defines the docker.io namespace and part of the image name for remote images.
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # clickhouse.com/clickhouse-operator-bundle:$VERSION and clickhouse.com/clickhouse-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= clickhouse.com/clickhouse-operator
+IMAGE_TAG_BASE ?= $(IMAGE_REPO)/clickhouse-operator
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -57,6 +59,9 @@ OPERATOR_SDK_VERSION ?= v1.41.1
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.33.0
+
+# HELM_IMG defines the image used for the helm chart oci-based repo.
+HELM_IMG ?= $(IMAGE_REPO)/helm/
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -152,6 +157,14 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 generate-helmchart: kubebuilder ## Generate helm charts
 	$(KUBEBUILDER) edit --plugins=helm/v1-alpha
 	rm .github/workflows/test-chart.yml
+
+.PHONY: package-helmchart
+package-helmchart:
+	helm package --version ${VERSION} --app-version v${VERSION} dist/chart
+
+.PHONY: push-helmchart
+push-helmchart: package-helmchart ## Push helm image
+	helm push clickhouse-operator-${VERSION}.tgz oci://$(HELM_IMG)
 
 ##@ Build
 
