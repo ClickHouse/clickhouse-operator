@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -9,11 +10,12 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
+	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 )
 
 const (
-	listDatabasesQuery = `SELECT name, engine_full, engine = 'Replicated' AS is_replicated
+	listDatabasesQuery = `SELECT name, engine_full, uuid, engine = 'Replicated' AS is_replicated
 FROM system.databases 
 WHERE 
 	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary')
@@ -45,6 +47,7 @@ HAVING
 type DatabaseDescriptor struct {
 	Name         string `ch:"name"`
 	EngineFull   string `ch:"engine_full"`
+	UUID         string `ch:"uuid"`
 	IsReplicated bool   `ch:"is_replicated"`
 }
 
@@ -122,7 +125,7 @@ func (cmd *Commander) CreateDatabases(ctx context.Context, id v1.ReplicaID, data
 	}
 
 	for name, desc := range databases {
-		query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` ENGINE = %s", name, desc.EngineFull)
+		query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` UUID '%s' ENGINE = %s", name, desc.UUID, desc.EngineFull)
 		if err = conn.Exec(ctx, query); err != nil {
 			return fmt.Errorf("failed to create database %s on replica %v: %w", name, id, err)
 		}
@@ -135,6 +138,50 @@ func (cmd *Commander) CreateDatabases(ctx context.Context, id v1.ReplicaID, data
 	}
 
 	return nil
+}
+
+// EnsureDefaultDatabaseEngine ensures that the default database engine is set to the Selected one.
+func (cmd *Commander) EnsureDefaultDatabaseEngine(ctx context.Context, log util.Logger, cluster *v1.ClickHouseCluster, id v1.ReplicaID) error {
+	log = log.With("replica_id", id)
+
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %v: %w", id, err)
+	}
+
+	var engine string
+	rows := conn.QueryRow(ctx, "SELECT engine FROM system.databases WHERE name='default' ")
+	if err = rows.Scan(&engine); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("failed to scan default database engine for replica %v: %w", id, err)
+		}
+
+		log.Debug("no default database found")
+	} else {
+		if engine == "Replicated" {
+			log.Debug("default database already has the Replicated engine")
+			return nil
+		}
+
+		var count uint64
+		if err = conn.QueryRow(ctx, "SELECT COUNT() FROM system.tables WHERE database='default'").Scan(&count); err != nil {
+			log.Error(err, "error checking if database 'default' has tables")
+			return err
+		}
+
+		if count > 0 {
+			log.Warn("database `default` has tables, but its engine is not Replicated, data loss is possible")
+		}
+
+		log.Debug("dropping default database")
+		if err := conn.Exec(ctx, "DROP DATABASE default SYNC"); err != nil {
+			return fmt.Errorf("failed to drop default database on replica %v: %w", id, err)
+		}
+	}
+
+	log.Debug("creating replicated default database")
+	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cluster.SpecificName())).String()
+	return conn.Exec(ctx, "CREATE DATABASE IF NOT EXISTS `default` UUID ? ENGINE=Replicated('/clickhouse/databases/default', '{shard}', '{replica}')", defaultDatabaseUUID)
 }
 
 func (cmd *Commander) SyncShard(ctx context.Context, log util.Logger, shardID int32) error {

@@ -439,7 +439,13 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		return &ctrl.Result{}, nil
 	}
 
+	hasNotSynced := false
 	replicaDatabases := util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, map[string]DatabaseDescriptor, error) {
+		if err := ctx.commander.EnsureDefaultDatabaseEngine(ctx.Context, log, ctx.Cluster, id); err != nil {
+			log.Info("failed to ensure default database engine for replica", "replica", id, "error", err)
+			hasNotSynced = true
+		}
+
 		databases, err := ctx.commander.Databases(ctx.Context, id)
 		return id, databases, err
 	})
@@ -452,7 +458,6 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		databases = util.MergeMaps(databases, replDBs.Result)
 	}
 
-	hasNotSynced := false
 	_ = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
 		if len(databases) == len(replicaDatabases[id].Result) {
 			log.Debug("replica is in sync", "replica_id", id)

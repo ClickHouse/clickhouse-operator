@@ -220,3 +220,19 @@ func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result an
 
 	return fmt.Errorf("no cluster nodes available")
 }
+
+func (c *ClickHouseClient) CheckDefaultDatabasesReplicated(ctx context.Context) error {
+	for id, client := range c.clients {
+		var isReplicated bool
+		query := "SELECT engine='Replicated' FROM system.databases WHERE name='default'"
+		if err := client.QueryRow(ctx, query).Scan(&isReplicated); err != nil {
+			return fmt.Errorf("query default database engine on %v: %w", id, err)
+		}
+
+		if !isReplicated {
+			return fmt.Errorf("default database is not replicated on %v", id)
+		}
+	}
+
+	return nil
+}

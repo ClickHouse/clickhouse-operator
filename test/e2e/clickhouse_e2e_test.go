@@ -618,6 +618,8 @@ func ClickHouseRWChecks(cr *v1.ClickHouseCluster, checksDone *int, auth ...click
 	if *checksDone == 0 {
 		By("creating test database")
 		Expect(chClient.CreateDatabase(ctx)).To(Succeed())
+		By("checking default database replicated")
+		Expect(chClient.CheckDefaultDatabasesReplicated(ctx)).To(Succeed())
 	}
 
 	By("writing new test data")
