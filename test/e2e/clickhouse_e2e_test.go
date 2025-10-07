@@ -622,7 +622,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(pods.Items).To(HaveLen(int(keeper.Replicas())))
 			for _, pod := range pods.Items {
 				zone, ok := nodeToZone[pod.Spec.NodeName]
-				Expect(ok).To(BeTrue(), "Keeper pod %s  on node %s without zone label", pod.Name, pod.Spec.NodeName)
+				Expect(ok).To(BeTrue(), "Keeper pod %s on node %s without zone label", pod.Name, pod.Spec.NodeName)
 				keeperZones[zone] = struct{}{}
 				affinity := pod.Spec.Affinity
 				Expect(affinity.PodAntiAffinity).NotTo(BeNil())

@@ -129,6 +129,7 @@ jobs:
           helm status my-release --namespace clickhouse-operator-system
 
   e2e-test:
+    needs: [ lint, bundle, build_and_test, helm ]
     strategy:
       matrix:
         scope: [ test-keeper-e2e, test-clickhouse-e2e ]
