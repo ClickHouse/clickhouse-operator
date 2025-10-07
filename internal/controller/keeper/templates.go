@@ -336,6 +336,73 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 		})
 	}
 
+	keeperPodSpec := corev1.PodSpec{
+		TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
+		TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
+		ImagePullSecrets:              cr.Spec.PodTemplate.ImagePullSecrets,
+		NodeSelector:                  cr.Spec.PodTemplate.NodeSelector,
+		Affinity:                      cr.Spec.PodTemplate.Affinity,
+		Tolerations:                   cr.Spec.PodTemplate.Tolerations,
+		SchedulerName:                 cr.Spec.PodTemplate.SchedulerName,
+		ServiceAccountName:            cr.Spec.PodTemplate.ServiceAccountName,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		DNSPolicy:                     corev1.DNSClusterFirst,
+		Volumes:                       volumes,
+		Containers: []corev1.Container{
+			keeperContainer,
+		},
+	}
+
+	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
+		if keeperPodSpec.Affinity == nil {
+			keeperPodSpec.Affinity = &corev1.Affinity{}
+		}
+		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
+			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
+			TopologyKey: *cr.Spec.PodTemplate.TopologyZoneKey,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:  cr.SpecificName(),
+					util.LabelRoleKey: util.LabelKeeperValue,
+				},
+			},
+		})
+
+		keeperPodSpec.TopologySpreadConstraints = append(keeperPodSpec.TopologySpreadConstraints, corev1.TopologySpreadConstraint{
+			MaxSkew:           1,
+			TopologyKey:       *cr.Spec.PodTemplate.TopologyZoneKey,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:  cr.SpecificName(),
+					util.LabelRoleKey: util.LabelKeeperValue,
+				},
+			},
+		})
+	}
+
+	if cr.Spec.PodTemplate.NodeHostnameKey != nil && *cr.Spec.PodTemplate.NodeHostnameKey != "" {
+		if keeperPodSpec.Affinity == nil {
+			keeperPodSpec.Affinity = &corev1.Affinity{}
+		}
+		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
+			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
+			TopologyKey: *cr.Spec.PodTemplate.NodeHostnameKey,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:  cr.SpecificName(),
+					util.LabelRoleKey: util.LabelKeeperValue,
+				},
+			},
+		})
+	}
+
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -355,7 +422,6 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 				GenerateName: cr.SpecificName(),
 				Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
 					util.LabelAppKey:          cr.SpecificName(),
-					util.LabelKindKey:         util.LabelKeeperValue,
 					util.LabelRoleKey:         util.LabelKeeperValue,
 					util.LabelAppK8sKey:       util.LabelKeeperValue,
 					util.LabelInstanceK8sKey:  cr.SpecificName(),
@@ -365,22 +431,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
-			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
-				TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
-				ImagePullSecrets:              cr.Spec.PodTemplate.ImagePullSecrets,
-				NodeSelector:                  cr.Spec.PodTemplate.NodeSelector,
-				Affinity:                      cr.Spec.PodTemplate.Affinity,
-				Tolerations:                   cr.Spec.PodTemplate.Tolerations,
-				SchedulerName:                 cr.Spec.PodTemplate.SchedulerName,
-				ServiceAccountName:            cr.Spec.PodTemplate.ServiceAccountName,
-				RestartPolicy:                 corev1.RestartPolicyAlways,
-				DNSPolicy:                     corev1.DNSClusterFirst,
-				Volumes:                       volumes,
-				Containers: []corev1.Container{
-					keeperContainer,
-				},
-			},
+			Spec: keeperPodSpec,
 		},
 		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 			{

@@ -70,13 +70,16 @@ kind: KeeperCluster
 metadata:
   name: sample
 spec:
-  replicas: 1
+  replicas: 3
   dataVolumeClaimSpec:
     accessModes:
       - ReadWriteOnce
     resources:
       requests:
         storage: 1Gi
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
   settings:
     tls:
       enabled: true
@@ -89,7 +92,7 @@ kind: ClickHouseCluster
 metadata:
   name: sample
 spec:
-  replicas: 1
+  replicas: 3
   dataVolumeClaimSpec:
     accessModes:
       - ReadWriteOnce
@@ -98,6 +101,9 @@ spec:
         storage: 2Gi
   keeperClusterRef:
     name: sample
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
   settings:
     tls:
       enabled: true

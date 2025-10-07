@@ -127,6 +127,20 @@ type PodTemplateSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	Volumes []corev1.Volume `json:"volumes,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+
+	// TopologyZoneKey is the key of node labels.
+	// Nodes that have a label with this key and identical values are considered to be in the same topology zone.
+	// Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.
+	// Recommended to be set to "topology.kubernetes.io/zone"
+	// +optional
+	TopologyZoneKey *string `json:"topologyZoneKey,omitempty"`
+
+	// NodeHostnameKey is the key of node labels.
+	// Nodes that have a label with this key and identical values are considered to be on the same node.
+	// Set it to enable default AntiAffinity rules to spread replicas from the different shards across nodes.
+	// Recommended to be set to "kubernetes.io/hostname"
+	// +optional
+	NodeHostnameKey *string `json:"nodeHostnameKey,omitempty"`
 }
 
 type ContainerTemplateSpec struct {

@@ -310,6 +310,90 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 		})
 	}
 
+	serverPodSpec := corev1.PodSpec{
+		TerminationGracePeriodSeconds: ctx.Cluster.Spec.PodTemplate.TerminationGracePeriodSeconds,
+		TopologySpreadConstraints:     ctx.Cluster.Spec.PodTemplate.TopologySpreadConstraints,
+		ImagePullSecrets:              ctx.Cluster.Spec.PodTemplate.ImagePullSecrets,
+		NodeSelector:                  ctx.Cluster.Spec.PodTemplate.NodeSelector,
+		Affinity:                      ctx.Cluster.Spec.PodTemplate.Affinity,
+		Tolerations:                   ctx.Cluster.Spec.PodTemplate.Tolerations,
+		SchedulerName:                 ctx.Cluster.Spec.PodTemplate.SchedulerName,
+		ServiceAccountName:            ctx.Cluster.Spec.PodTemplate.ServiceAccountName,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		DNSPolicy:                     corev1.DNSClusterFirst,
+		Volumes:                       volumes,
+		Containers: []corev1.Container{
+			container,
+		},
+	}
+
+	if ctx.Cluster.Spec.PodTemplate.TopologyZoneKey != nil && *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey != "" {
+		if serverPodSpec.Affinity == nil {
+			serverPodSpec.Affinity = &corev1.Affinity{}
+		}
+		if serverPodSpec.Affinity.PodAntiAffinity == nil {
+			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+		if serverPodSpec.Affinity.PodAffinity == nil {
+			serverPodSpec.Affinity.PodAffinity = &corev1.PodAffinity{}
+		}
+
+		shardID := strconv.Itoa(int(id.ShardID))
+		serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
+			TopologyKey: *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:            ctx.Cluster.SpecificName(),
+					util.LabelRoleKey:           util.LabelClickHouseValue,
+					util.LabelClickHouseShardID: shardID,
+				},
+			},
+		})
+		serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution, corev1.WeightedPodAffinityTerm{
+			Weight: 100,
+			PodAffinityTerm: corev1.PodAffinityTerm{
+				TopologyKey: *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						util.LabelAppKey:  ctx.keeper.SpecificName(),
+						util.LabelRoleKey: util.LabelKeeperValue,
+					},
+				},
+			},
+		})
+		serverPodSpec.TopologySpreadConstraints = append(serverPodSpec.TopologySpreadConstraints, corev1.TopologySpreadConstraint{
+			MaxSkew:           1,
+			TopologyKey:       *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:            ctx.Cluster.SpecificName(),
+					util.LabelRoleKey:           util.LabelClickHouseValue,
+					util.LabelClickHouseShardID: shardID,
+				},
+			},
+		})
+	}
+
+	if ctx.Cluster.Spec.PodTemplate.NodeHostnameKey != nil && *ctx.Cluster.Spec.PodTemplate.NodeHostnameKey != "" {
+		if serverPodSpec.Affinity == nil {
+			serverPodSpec.Affinity = &corev1.Affinity{}
+		}
+		if serverPodSpec.Affinity.PodAntiAffinity == nil {
+			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
+			TopologyKey: *ctx.Cluster.Spec.PodTemplate.NodeHostnameKey,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					util.LabelAppKey:  ctx.Cluster.SpecificName(),
+					util.LabelRoleKey: util.LabelClickHouseValue,
+				},
+			},
+		})
+	}
+
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: util.MergeMaps(labelsFromID(id), map[string]string{
@@ -328,7 +412,6 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 				GenerateName: ctx.Cluster.SpecificName(),
 				Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
 					util.LabelAppKey:         ctx.Cluster.SpecificName(),
-					util.LabelKindKey:        util.LabelClickHouseValue,
 					util.LabelRoleKey:        util.LabelClickHouseValue,
 					util.LabelAppK8sKey:      util.LabelClickHouseValue,
 					util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
@@ -337,22 +420,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
-			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: ctx.Cluster.Spec.PodTemplate.TerminationGracePeriodSeconds,
-				TopologySpreadConstraints:     ctx.Cluster.Spec.PodTemplate.TopologySpreadConstraints,
-				ImagePullSecrets:              ctx.Cluster.Spec.PodTemplate.ImagePullSecrets,
-				NodeSelector:                  ctx.Cluster.Spec.PodTemplate.NodeSelector,
-				Affinity:                      ctx.Cluster.Spec.PodTemplate.Affinity,
-				Tolerations:                   ctx.Cluster.Spec.PodTemplate.Tolerations,
-				SchedulerName:                 ctx.Cluster.Spec.PodTemplate.SchedulerName,
-				ServiceAccountName:            ctx.Cluster.Spec.PodTemplate.ServiceAccountName,
-				RestartPolicy:                 corev1.RestartPolicyAlways,
-				DNSPolicy:                     corev1.DNSClusterFirst,
-				Volumes:                       volumes,
-				Containers: []corev1.Container{
-					container,
-				},
-			},
+			Spec: serverPodSpec,
 		},
 		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 			{

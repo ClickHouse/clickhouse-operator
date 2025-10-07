@@ -557,6 +557,116 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(maxTableSizeToDrop).To(Equal("7"))
 		})
 	})
+
+	Describe("default affinity settings works", Ordered, func() {
+		nodeToZone := map[string]string{}
+		keeperName := fmt.Sprintf("test-%d", rand.Uint32()) //nolint:gosec
+		keeperZones := map[string]struct{}{}
+		keeper := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      keeperName,
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas:            ptr.To[int32](3),
+				DataVolumeClaimSpec: defaultStorage,
+				PodTemplate: v1.PodTemplateSpec{
+					TopologyZoneKey: ptr.To("topology.kubernetes.io/zone"),
+					NodeHostnameKey: ptr.To("kubernetes.io/hostname"),
+				},
+			},
+		}
+		cluster := v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      keeperName,
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:            ptr.To[int32](3),
+				DataVolumeClaimSpec: defaultStorage,
+				KeeperClusterRef: &corev1.LocalObjectReference{
+					Name: keeperName,
+				},
+				PodTemplate: v1.PodTemplateSpec{
+					TopologyZoneKey: ptr.To("topology.kubernetes.io/zone"),
+					NodeHostnameKey: ptr.To("kubernetes.io/hostname"),
+				},
+			},
+		}
+
+		It("should be executed on cluster with at least 3 nodes in different zones", func() {
+			var nodes corev1.NodeList
+			Expect(k8sClient.List(ctx, &nodes)).To(Succeed())
+			Expect(len(nodes.Items)).To(BeNumerically(">=", 3), "Too few nodes in the cluster to test affinity")
+			zones := map[string]struct{}{}
+			for _, node := range nodes.Items {
+				if zone, ok := node.Labels["topology.kubernetes.io/zone"]; ok {
+					zones[zone] = struct{}{}
+					nodeToZone[node.Name] = zone
+				} else {
+					GinkgoWriter.Printf("Node %s has no zone label\n", node.Name)
+				}
+			}
+			Expect(len(zones)).To(BeNumerically(">=", 3), "Too few zones in the cluster to test affinity")
+		})
+
+		It("should create keeper with default affinity settings", func() {
+			By("creating keeper cluster")
+			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
+			WaitKeeperUpdatedAndReady(&keeper, 2*time.Minute)
+
+			By("checking keeper pod affinity")
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{util.LabelAppKey: keeper.SpecificName()})).To(Succeed())
+			Expect(pods.Items).To(HaveLen(int(keeper.Replicas())))
+			for _, pod := range pods.Items {
+				zone, ok := nodeToZone[pod.Spec.NodeName]
+				Expect(ok).To(BeTrue(), "Keeper pod %s  on node %s without zone label", pod.Name, pod.Spec.NodeName)
+				keeperZones[zone] = struct{}{}
+				affinity := pod.Spec.Affinity
+				Expect(affinity.PodAntiAffinity).NotTo(BeNil())
+				Expect(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty())
+				Expect(pod.Spec.TopologySpreadConstraints).NotTo(BeEmpty())
+			}
+		})
+
+		It("should create ClickHouse with default affinity settings", func() {
+			By("creating clickhouse cluster")
+			Expect(k8sClient.Create(ctx, &cluster)).To(Succeed())
+			WaitClickHouseUpdatedAndReady(&cluster, 2*time.Minute)
+
+			By("checking clickhouse pod affinity")
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{util.LabelAppKey: cluster.SpecificName()})).To(Succeed())
+			Expect(pods.Items).To(HaveLen(int(cluster.Replicas())))
+			zones := map[string]struct{}{}
+			for _, pod := range pods.Items {
+				zone, ok := nodeToZone[pod.Spec.NodeName]
+				Expect(ok).To(BeTrue(), "ClickHouse pod %s on node %s without zone label", pod.Name, pod.Spec.NodeName)
+				zones[zone] = struct{}{}
+				affinity := pod.Spec.Affinity
+				Expect(affinity.PodAffinity).NotTo(BeNil())
+				Expect(affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty())
+				Expect(affinity.PodAntiAffinity).NotTo(BeNil())
+				Expect(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).NotTo(BeEmpty())
+				Expect(pod.Spec.TopologySpreadConstraints).NotTo(BeEmpty())
+				Expect(keeperZones).To(HaveKey(zone), "ClickHouse pod %s in zone %s without keeper", pod.Name, zone)
+			}
+		})
+
+		AfterAll(func() {
+			if cluster.UID != "" {
+				By("deleting clickhouse cluster")
+				Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
+			}
+			if keeper.UID != "" {
+				By("deleting keeper cluster")
+				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
+			}
+		})
+	})
 })
 
 func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Duration) {

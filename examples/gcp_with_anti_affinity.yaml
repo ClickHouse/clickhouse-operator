@@ -79,22 +79,8 @@ spec:
       requests:
         storage: 1Gi
   podTemplate:
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: topology.kubernetes.io/zone
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app: sample-keeper
-            role: clickhouse-keeper
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - topologyKey: topology.kubernetes.io/zone
-            labelSelector:
-              matchLabels:
-                app: sample-keeper
-                role: clickhouse-keeper
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
   settings:
     tls:
       enabled: true
@@ -126,31 +112,8 @@ spec:
   keeperClusterRef:
     name: sample
   podTemplate:
-    topologySpreadConstraints:
-      - maxSkew: 1
-        topologyKey: topology.kubernetes.io/zone
-        whenUnsatisfiable: DoNotSchedule
-        labelSelector:
-          matchLabels:
-            app: sample-clickhouse
-            role: clickhouse-server
-    affinity:
-      podAntiAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          - topologyKey: topology.kubernetes.io/zone
-            labelSelector:
-              matchLabels:
-                app: sample-clickhouse
-                role: clickhouse-server
-      podAffinity:
-        preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchLabels:
-                  role: clickhouse-keeper
-                  app: sample-keeper
-              topologyKey: topology.kubernetes.io/zone
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
   settings:
     tls:
       enabled: true
