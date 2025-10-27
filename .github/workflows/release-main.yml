@@ -4,7 +4,7 @@ on:
     branches: [ main ]
 env:
   REGISTRY: ghcr.io
-  IMAGE_REPO: ghcr.io/clickhouse/clickhouse-operator
+  IMAGE_REPO: ghcr.io/clickhouse
   VERSION: latest
 
 jobs:
