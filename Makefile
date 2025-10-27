@@ -61,7 +61,7 @@ IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 ENVTEST_K8S_VERSION = 1.33.0
 
 # HELM_IMG defines the image used for the helm chart oci-based repo.
-HELM_IMG ?= $(IMAGE_REPO)/helm/
+HELM_IMG ?= $(IMAGE_REPO)/clickhouse-operator-helm
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -124,21 +124,21 @@ test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e)
 
 .PHONY: test-ci
-test-ci: manifests generate fmt vet envtest ## Run tests.
+test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -v -count=1 -race -coverprofile cover.out
 
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e:
+test-e2e: ## Run all e2e tests.
 	go test ./test/e2e/ -v -ginkgo.v -test.timeout 30m
 
 .PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-keeper-e2e:
+test-keeper-e2e: ## Run keeper e2e tests.
 	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter keeper -test.timeout 30m
 
 .PHONY: test-clickhouse-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-clickhouse-e2e:
+test-clickhouse-e2e: ## Run clickhouse e2e tests.
 	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter clickhouse -test.timeout 30m
 
 .PHONY: lint
@@ -153,18 +153,20 @@ golangci-fmt: golangci-lint ## Run golangci-lint fmt
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
+##@ Helm Chart
+
 .PHONY: generate-helmchart
 generate-helmchart: kubebuilder ## Generate helm charts
 	$(KUBEBUILDER) edit --plugins=helm/v1-alpha
 	rm .github/workflows/test-chart.yml
 
 .PHONY: package-helmchart
-package-helmchart:
+package-helmchart: ## Package helm chart. It will be saved as clickhouse-operator-helm-$(VERSION).tgz
 	helm package --version ${VERSION} --app-version v${VERSION} dist/chart
 
 .PHONY: push-helmchart
-push-helmchart: package-helmchart ## Push helm image
-	helm push clickhouse-operator-${VERSION}.tgz oci://$(HELM_IMG)
+push-helmchart: package-helmchart ## Push helm image. It will be pushed to the ${IMAGE_REPO}/(helmchart name, same as in Chart.yaml)
+	helm push clickhouse-operator-helm-${VERSION}.tgz oci://$(IMAGE_REPO)
 
 ##@ Build
 

@@ -1,5 +1,5 @@
 apiVersion: v2
-name: clickhouse-operator
+name: clickhouse-operator-helm
 description: A Helm chart for clickhouse-operator
 type: application
 version: 0.0.1
