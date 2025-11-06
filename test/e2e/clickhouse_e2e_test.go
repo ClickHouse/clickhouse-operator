@@ -330,18 +330,19 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 	})
 
 	Describe("default and management users works", Ordered, func() {
+		password := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
 		secret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
 				Namespace: testNamespace,
 			},
 			Data: map[string][]byte{
-				"password": []byte(fmt.Sprintf("test-password-%d", rand.Uint32())), //nolint:gosec
+				"password": []byte(util.Sha256Hash([]byte(password))),
 			},
 		}
 		auth := clickhouse.Auth{
 			Username: "default",
-			Password: string(secret.Data["password"]),
+			Password: password,
 		}
 
 		keeperCR := &v1.KeeperCluster{
@@ -377,9 +378,12 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				},
 				DataVolumeClaimSpec: defaultStorage,
 				Settings: v1.ClickHouseConfig{
-					DefaultUserPassword: &v1.SecretKeySelector{
-						Name: secret.Name,
-						Key:  "password",
+					DefaultUserPassword: &v1.DefaultPasswordSelector{
+						PasswordType: "password_sha256_hex",
+						Secret: &v1.SecretKeySelector{
+							Name: secret.Name,
+							Key:  "password",
+						},
 					},
 				},
 			},

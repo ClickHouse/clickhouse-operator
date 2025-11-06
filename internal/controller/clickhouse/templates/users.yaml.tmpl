@@ -3,7 +3,7 @@ users:
     profile: {{ .DefaultProfileName }}
     quota: default
     {{- if .DefaultUserPasswordEnv }}
-    password:
+    {{ .DefaultUserType }}:
       - '@from_env': {{ .DefaultUserPasswordEnv }}
     {{ else }}
     no_password:

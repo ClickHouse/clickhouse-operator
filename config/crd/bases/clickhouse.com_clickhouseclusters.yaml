@@ -3724,17 +3724,41 @@ spec:
                     description: Reference to the Secret key, which contains password
                       for the user 'default'.
                     properties:
-                      key:
-                        description: The key of the secret to select from.  Must be
-                          a valid secret key.
+                      configMap:
+                        description: Select password value from a ConfigMap key
+                        properties:
+                          key:
+                            description: The key of the configMap to select from.
+                              Must be a valid key.
+                            type: string
+                          name:
+                            description: The name of the configMap in the cluster's
+                              namespace to select from.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      passwordType:
+                        default: password
+                        description: Type of the password privided. Consider documentation
+                          for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
                         type: string
-                      name:
-                        description: The name of the secret in the cluster's namespace
-                          to select from.
-                        type: string
-                    required:
-                    - key
-                    - name
+                      secret:
+                        description: Select password value from a Secret key
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            description: The name of the secret in the cluster's namespace
+                              to select from.
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
                     type: object
                   enableDatabaseSync:
                     default: true

@@ -297,15 +297,30 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 	})
 
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
+		var secretRef *corev1.SecretKeySelector
+		var configMapRef *corev1.ConfigMapKeySelector
+		if ctx.Cluster.Spec.Settings.DefaultUserPassword.Secret != nil {
+			secretRef = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: ctx.Cluster.Spec.Settings.DefaultUserPassword.Secret.Name,
+				},
+				Key: ctx.Cluster.Spec.Settings.DefaultUserPassword.Secret.Key,
+			}
+		}
+		if ctx.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap != nil {
+			configMapRef = &corev1.ConfigMapKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: ctx.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap.Name,
+				},
+				Key: ctx.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap.Key,
+			}
+		}
+
 		container.Env = append(container.Env, corev1.EnvVar{
 			Name: EnvDefaultUserPassword,
 			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: ctx.Cluster.Spec.Settings.DefaultUserPassword.Name,
-					},
-					Key: ctx.Cluster.Spec.Settings.DefaultUserPassword.Key,
-				},
+				SecretKeyRef:    secretRef,
+				ConfigMapKeyRef: configMapRef,
 			},
 		})
 	}

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -164,6 +166,27 @@ var _ = BeforeSuite(func() {
 		return nil
 	}
 	Eventually(verifyControllerUp, time.Minute*2, time.Second).Should(Succeed())
+
+	// Ensure webhook is accepting admission requests by issuing a dry-run create that must be rejected
+	By("waiting for webhook to accept admission requests")
+	Eventually(func() error {
+		cr := &clickhousecomv1alpha1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      "webhook-probe",
+			},
+		}
+
+		// Use dry-run so nothing is persisted
+		err := k8sClient.Create(ctx, cr, &client.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+		if err == nil {
+			return fmt.Errorf("unexpected success creating object, webhook not engaged yet")
+		}
+		if !strings.Contains(err.Error(), "spec.keeperClusterRef") {
+			return fmt.Errorf("webhook not ready or different error: %v", err)
+		}
+		return nil
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {

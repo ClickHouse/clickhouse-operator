@@ -115,7 +115,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 type ClickHouseConfig struct {
 	// Reference to the Secret key, which contains password for the user 'default'.
 	// +optional
-	DefaultUserPassword *SecretKeySelector `json:"defaultUserPassword,omitempty"`
+	DefaultUserPassword *DefaultPasswordSelector `json:"defaultUserPassword,omitempty"`
 
 	// Optionally you can lower the logger level or disable logging to file at all.
 	// +optional

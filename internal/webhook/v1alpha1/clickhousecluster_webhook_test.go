@@ -92,23 +92,26 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 		It("Should check default password fields if set", func() {
 			cluster := chCluster.DeepCopy()
 
-			By("Rejecting cr with empty secret name")
-			cluster.Spec.Settings.DefaultUserPassword = &chv1.SecretKeySelector{Key: "smth"}
-
+			By("Rejecting cr without source")
+			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{}
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("defaultUserPassword.name: Required value"))
+			Expect(err.Error()).To(ContainSubstring("exactly one of secret or configMap must be specified"))
 
-			By("Rejecting cr with empty secret key")
-			cluster.Spec.Settings.DefaultUserPassword = &chv1.SecretKeySelector{Name: "smth"}
-
+			By("Rejecting cr with empty secret name")
+			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{Secret: &chv1.SecretKeySelector{Key: "smth"}}
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("defaultUserPassword.key: Required value"))
+			Expect(err.Error()).To(ContainSubstring("spec.settings.defaultUserPassword.secret.name: Required value"))
+
+			By("Rejecting cr with empty configmap key")
+			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{ConfigMap: &chv1.ConfigMapKeySelector{Name: "smth"}}
+			err = k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.settings.defaultUserPassword.configMap.key: Required value"))
 
 			By("Warning on empty field")
 			cluster.Spec.Settings.DefaultUserPassword = nil
-
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(Succeed())
 			Expect(warnings).To(HaveLen(1))

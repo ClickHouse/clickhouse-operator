@@ -222,3 +222,55 @@ type SecretKeySelector struct {
 	// +kubebuilder:validation:Required
 	Key string `json:"key,omitempty"`
 }
+
+type ConfigMapKeySelector struct {
+	// The name of the configMap in the cluster's namespace to select from.
+	// +kubebuilder:validation:Required
+	Name string `json:"name,omitempty"`
+	// The key of the configMap to select from. Must be a valid key.
+	// +kubebuilder:validation:Required
+	Key string `json:"key,omitempty"`
+}
+
+type DefaultPasswordSelector struct {
+	// Type of the password privided. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
+	// +kubebuilder:default:=password
+	PasswordType string `json:"passwordType,omitempty"`
+	// Select password value from a Secret key
+	// +optional
+	Secret *SecretKeySelector `json:"secret,omitempty"`
+	// Select password value from a ConfigMap key
+	// +optional
+	ConfigMap *ConfigMapKeySelector `json:"configMap,omitempty"`
+}
+
+func (s *DefaultPasswordSelector) Validate() error {
+	if s == nil {
+		return nil
+	}
+
+	// Ensure exactly one source is specified
+	hasSecret := s.Secret != nil
+	hasConfigMap := s.ConfigMap != nil
+	if hasSecret == hasConfigMap { // both set or both nil
+		return fmt.Errorf("exactly one of secret or configMap must be specified")
+	}
+
+	if hasSecret {
+		if s.Secret.Name == "" || s.Secret.Key == "" {
+			return fmt.Errorf("default user secret name and key must be specified when using secret")
+		}
+	}
+
+	if hasConfigMap {
+		if s.ConfigMap.Name == "" || s.ConfigMap.Key == "" {
+			return fmt.Errorf("default user configMap name and key must be specified when using configMap")
+		}
+	}
+
+	if s.PasswordType == "" {
+		return fmt.Errorf("default user passwordType must be specified")
+	}
+
+	return nil
+}

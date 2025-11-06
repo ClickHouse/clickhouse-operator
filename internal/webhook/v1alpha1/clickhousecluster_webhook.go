@@ -79,7 +79,7 @@ func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Objec
 func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, error) {
 	var warns admission.Warnings
 	var errs []error
-	if obj.Spec.KeeperClusterRef != nil && obj.Spec.KeeperClusterRef.Name == "" {
+	if obj.Spec.KeeperClusterRef == nil || obj.Spec.KeeperClusterRef.Name == "" {
 		errs = append(errs, fmt.Errorf("keeperClusterRef name must not be empty"))
 	}
 
@@ -91,6 +91,10 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 
 	if obj.Spec.Settings.DefaultUserPassword == nil {
 		warns = append(warns, ".spec.settings.defaultUserPassword is empty, 'default' user will be without password ")
+	} else {
+		if err := obj.Spec.Settings.DefaultUserPassword.Validate(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return warns, errors.Join(errs...)

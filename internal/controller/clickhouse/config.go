@@ -270,6 +270,7 @@ func logTablesConfigGenerator(tmpl *template.Template, _ *reconcileContext, _ v1
 
 type userConfigParams struct {
 	DefaultUserPasswordEnv   string
+	DefaultUserType          string
 	DefaultProfileName       string
 	OperatorUserName         string
 	OperatorUserPasswordHash string
@@ -283,6 +284,7 @@ func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.Re
 
 	params := userConfigParams{
 		DefaultUserPasswordEnv:   passEnv,
+		DefaultUserType:          ctx.Cluster.Spec.Settings.DefaultUserPassword.PasswordType,
 		DefaultProfileName:       DefaultProfileName,
 		OperatorUserName:         OperatorManagementUsername,
 		OperatorUserPasswordHash: util.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
