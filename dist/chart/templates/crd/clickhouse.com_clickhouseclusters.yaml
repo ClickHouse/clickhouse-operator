@@ -3747,7 +3747,7 @@ spec:
                         type: object
                       passwordType:
                         default: password
-                        description: Type of the password privided. Consider documentation
+                        description: Type of the provided password. Consider documentation
                           for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
                         type: string
                       secret:

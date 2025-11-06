@@ -278,13 +278,16 @@ type userConfigParams struct {
 
 func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ReplicaID) (string, error) {
 	passEnv := EnvDefaultUserPassword
+	passType := ""
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword == nil {
 		passEnv = ""
+	} else {
+		passType = ctx.Cluster.Spec.Settings.DefaultUserPassword.PasswordType
 	}
 
 	params := userConfigParams{
 		DefaultUserPasswordEnv:   passEnv,
-		DefaultUserType:          ctx.Cluster.Spec.Settings.DefaultUserPassword.PasswordType,
+		DefaultUserType:          passType,
 		DefaultProfileName:       DefaultProfileName,
 		OperatorUserName:         OperatorManagementUsername,
 		OperatorUserPasswordHash: util.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),

@@ -233,7 +233,7 @@ type ConfigMapKeySelector struct {
 }
 
 type DefaultPasswordSelector struct {
-	// Type of the password privided. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
+	// Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
 	// +kubebuilder:default:=password
 	PasswordType string `json:"passwordType,omitempty"`
 	// Select password value from a Secret key
@@ -266,10 +266,6 @@ func (s *DefaultPasswordSelector) Validate() error {
 		if s.ConfigMap.Name == "" || s.ConfigMap.Key == "" {
 			return fmt.Errorf("default user configMap name and key must be specified when using configMap")
 		}
-	}
-
-	if s.PasswordType == "" {
-		return fmt.Errorf("default user passwordType must be specified")
 	}
 
 	return nil
