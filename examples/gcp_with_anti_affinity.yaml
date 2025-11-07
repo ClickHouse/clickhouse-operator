@@ -121,8 +121,9 @@ spec:
       serverCertSecret:
         name: clickhouse-cert
     defaultUserPassword:
-      key: password
-      name: default-password
+      secret:
+        key: password
+        name: default-password
     extraConfig:
       listen_host: "0.0.0.0"
 ---
