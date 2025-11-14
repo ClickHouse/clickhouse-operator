@@ -210,6 +210,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm clickhouse-operator-builder
 	rm Dockerfile.cross
 
+PLATFORMS_SPLITTED = $(shell echo $(PLATFORMS) | tr "," " ")
+.PHONY: docker-save
+docker-save: ## Save docker images as a tgz archives.
+	for PLATFORM in $(PLATFORMS_SPLITTED); do\
+		$(CONTAINER_TOOL) pull --platform=$$PLATFORM $(IMG);\
+		$(CONTAINER_TOOL) image save --platform=$$PLATFORM $(IMG) | gzip > clickhouse-operator_$(VERSION)_$$(echo $$PLATFORM | tr "/" "_").tar.gz;\
+	done
+
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist

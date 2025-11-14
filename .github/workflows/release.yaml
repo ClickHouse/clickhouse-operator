@@ -14,6 +14,7 @@ permissions:
   attestations: write
   id-token: write
   contents: write
+  pull-requests: read
 
 jobs:
   release-operator-image:
@@ -92,6 +93,16 @@ jobs:
         run: helm version
       - name: Package helm chart
         run: make package-helmchart
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Save controller images
+        run: make docker-save
+
       - name: Build Changelog
         id: build_changelog
         uses: mikepenz/release-changelog-builder-action@v6.0.0
@@ -128,3 +139,4 @@ jobs:
           files: |
             dist/clickhouse-operator.yaml
             clickhouse-operator-helm-${{env.VERSION}}.tgz
+            clickhouse-operator_${{env.VERSION}}_*.tar.gz
