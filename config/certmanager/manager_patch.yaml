@@ -1,0 +1,18 @@
+# This patch ensures the webhook certificates are properly mounted in the manager container.
+# It configures the necessary arguments, volumes, volume mounts, and container ports.
+
+# Add the volumeMount for the webhook certificates
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    mountPath: /tmp/k8s-server/serving-certs
+    name: serving-certs
+    readOnly: true
+
+# Add the volume configuration for the webhook certificates
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: serving-certs
+    secret:
+      secretName: serving-cert

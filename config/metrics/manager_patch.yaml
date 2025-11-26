@@ -1,0 +1,28 @@
+# This patch ensures the webhook certificates are properly mounted in the manager container.
+# It configures the necessary arguments, volumes, volume mounts, and container ports.
+
+# Add the --webhook-cert-path argument for configuring the webhook certificate path
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: --metrics-bind-address=:8080
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: --metrics-secure=false
+
+# Add the port configuration for the webhook server
+- op: add
+  path: /spec/template/spec/containers/0/ports/-
+  value:
+    containerPort: 8080
+    protocol: TCP
+    name: metrics-server
+
+- op: add
+  path: /spec/template/metadata/annotations/prometheus.io~1scrape
+  value: "true"
+- op: add
+  path: /spec/template/metadata/annotations/prometheus.io~1path
+  value: /metrics
+- op: add
+  path: /spec/template/metadata/annotations/prometheus.io~1port
+  value: "8080"
