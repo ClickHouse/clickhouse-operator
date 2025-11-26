@@ -1,0 +1,19 @@
+{{- if .Values.certManager.enable }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+    labels:
+      {{- include "chart.labels" . | nindent 6 }}
+    name: clickhouse-operator-serving-cert
+    namespace: {{ .Release.Namespace }}
+spec:
+    dnsNames:
+      - clickhouse-operator-webhook-service.{{ .Release.Namespace }}.svc
+      - clickhouse-operator-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+      - clickhouse-operator-metrics-service.{{ .Release.Namespace }}.svc
+      - clickhouse-operator-metrics-service.{{ .Release.Namespace }}.svc.cluster.local
+    issuerRef:
+        kind: Issuer
+        name: clickhouse-operator-issuer
+    secretName: clickhouse-operator-serving-cert
+{{- end }}

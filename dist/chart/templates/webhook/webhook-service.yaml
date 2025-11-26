@@ -1,0 +1,18 @@
+{{- if .Values.webhook.enable }}
+apiVersion: v1
+kind: Service
+metadata:
+    labels:
+      {{- include "chart.labels" . | nindent 6 }}
+    name: clickhouse-operator-webhook-service
+    namespace: {{ .Release.Namespace }}
+spec:
+    ports:
+        - name: webhook
+          port: 443
+          protocol: TCP
+          targetPort: {{ .Values.webhook.port }}
+    selector:
+        app.kubernetes.io/name: clickhouse-operator
+        control-plane: {{ include "chart.name" . }}
+{{- end }}

@@ -1,0 +1,11 @@
+{{- if .Values.certManager.enable }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+    labels:
+      {{- include "chart.labels" . | nindent 6 }}
+    name: clickhouse-operator-issuer
+    namespace: {{ .Release.Namespace }}
+spec:
+    selfSigned: {}
+{{- end }}

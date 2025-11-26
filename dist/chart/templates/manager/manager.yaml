@@ -5,92 +5,120 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | nindent 4 }}
-    control-plane: controller-manager
 spec:
-  replicas:  {{ .Values.controllerManager.replicas }}
+  replicas:  {{ .Values.manager.replicas }}
   selector:
     matchLabels:
       {{- include "chart.selectorLabels" . | nindent 6 }}
-      control-plane: controller-manager
+      control-plane: {{ include "chart.name" . }}
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        {{- if .Values.prometheus.scraping_annotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "{{ .Values.metrics.port }}"
+        {{- end}}
       labels:
         {{- include "chart.labels" . | nindent 8 }}
-        control-plane: controller-manager
-        {{- if and .Values.controllerManager.pod .Values.controllerManager.pod.labels }}
-        {{- range $key, $value := .Values.controllerManager.pod.labels }}
+        {{- if and .Values.manager.pod .Values.manager.pod.labels }}
+        {{- range $key, $value := .Values.manager.pod.labels }}
         {{ $key }}: {{ $value }}
         {{- end }}
         {{- end }}
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                      - arm64
+                      - ppc64le
+                      - s390x
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
       containers:
         - name: manager
           args:
-            {{- range .Values.controllerManager.container.args }}
+            - "--leader-elect"
+            {{- range .Values.manager.container.args }}
             - {{ . }}
+            {{- end }}
+            {{- if .Values.metrics.enable }}
+            - "--metrics-bind-address=:{{ .Values.metrics.port }}"
+            - "--metrics-secure={{ .Values.metrics.secure }}"
+            - "--health-probe-bind-address=:8081"
+            {{- end }}
+            {{- if .Values.certManager.enable }}
+            - --webhook-cert-path=/tmp/k8s-server/serving-certs
+            - --metrics-cert-path=/tmp/k8s-server/serving-certs
             {{- end }}
           command:
             - /manager
-          image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
-          {{- if .Values.controllerManager.container.imagePullPolicy }}
-          imagePullPolicy: {{ .Values.controllerManager.container.imagePullPolicy }}
-          {{- end }}
-          {{- if .Values.controllerManager.container.env }}
+          image: {{ .Values.manager.container.image.repository }}:{{ .Values.manager.container.image.tag }}
+          imagePullPolicy: {{ .Values.manager.container.image.pullPolicy }}
           env:
-            {{- range $key, $value := .Values.controllerManager.container.env }}
+            - name: ENABLE_WEBHOOKS
+              value: "{{ .Values.webhook.enable }}"
+            {{- range $key, $value := .Values.manager.container.env }}
             - name: {{ $key }}
               value: {{ $value }}
             {{- end }}
-          {{- end }}
           livenessProbe:
-            {{- toYaml .Values.controllerManager.container.livenessProbe | nindent 12 }}
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
           readinessProbe:
-            {{- toYaml .Values.controllerManager.container.readinessProbe | nindent 12 }}
-          {{- if .Values.webhook.enable }}
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          {{- if or .Values.webhook.enable .Values.metrics.enable }}
           ports:
+          {{-   if .Values.webhook.enable }}
             - containerPort: 9443
               name: webhook-server
               protocol: TCP
+          {{-   end }}
+          {{-   if .Values.metrics.enable }}
+            - containerPort: {{ .Values.metrics.port }}
+              name: metrics-server
+              protocol: TCP
+          {{-   end }}
           {{- end }}
           resources:
-            {{- toYaml .Values.controllerManager.container.resources | nindent 12 }}
+            {{- toYaml .Values.manager.container.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
-          {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
+            {{- toYaml .Values.manager.container.securityContext | nindent 12 }}
+          {{- if or .Values.webhook.enable (and .Values.metrics.enable .Values.metrics.secure) }}
           volumeMounts:
-            {{- if and .Values.webhook.enable .Values.certmanager.enable }}
-            - name: webhook-cert
-              mountPath: /tmp/k8s-webhook-server/serving-certs
+            - name: serving-certs
+              mountPath: /tmp/k8s-server/serving-certs
               readOnly: true
-            {{- end }}
-            {{- if and .Values.metrics.enable .Values.certmanager.enable }}
-            - name: metrics-certs
-              mountPath: /tmp/k8s-metrics-server/metrics-certs
-              readOnly: true
-            {{- end }}
           {{- end }}
-      {{- if .Values.controllerManager.imagePullSecrets }}
+      {{- if .Values.manager.imagePullSecrets }}
       imagePullSecrets:
-        {{- range $value := .Values.controllerManager.imagePullSecrets }}
+        {{- range $value := .Values.manager.imagePullSecrets }}
         - name: {{ $value.name }}
         {{- end }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
-      serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
-      terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
-      {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
+        {{- toYaml .Values.manager.securityContext | nindent 8 }}
+      serviceAccountName: {{ .Values.manager.serviceAccountName }}
+      terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
+      {{- if or .Values.webhook.enable (and .Values.metrics.enable .Values.metrics.secure) }}
       volumes:
-        {{- if and .Values.webhook.enable .Values.certmanager.enable }}
-        - name: webhook-cert
+        - name: serving-certs
           secret:
-            secretName: webhook-server-cert
-        {{- end }}
-        {{- if and .Values.metrics.enable .Values.certmanager.enable }}
-        - name: metrics-certs
-          secret:
-            secretName: metrics-server-cert
-        {{- end }}
+            secretName: clickhouse-operator-serving-cert
       {{- end }}

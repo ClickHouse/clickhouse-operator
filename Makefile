@@ -157,8 +157,16 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: generate-helmchart
 generate-helmchart: kubebuilder ## Generate helm charts
-	$(KUBEBUILDER) edit --plugins=helm/v1-alpha
-	rm .github/workflows/test-chart.yml
+	$(KUBEBUILDER) edit --plugins=helm/v2-alpha
+	rm .github/workflows/test-chart.yml dist/install.yaml
+
+.PHONY: generate-helmchart-ci
+generate-helmchart-ci: generate-helmchart ## Generate helm charts and reset some files that will always generate diff
+	git checkout dist/chart/templates/cert-manager/
+	git checkout dist/chart/templates/manager/
+	git checkout dist/chart/templates/metrics/
+	git checkout dist/chart/templates/monitoring/
+	git checkout dist/chart/templates/webhook/
 
 .PHONY: package-helmchart
 package-helmchart: ## Package helm chart. It will be saved as clickhouse-operator-helm-$(VERSION).tgz
@@ -291,7 +299,7 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 .PHONY: kubebuilder
 kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
 $(KUBEBUILDER): $(LOCALBIN)
-	curl -L -o $(KUBEBUILDER) "https://go.kubebuilder.io/dl/latest/$(shell go env GOOS)/$(shell rgo env GOARCH)"
+	curl -L -o $(KUBEBUILDER) "https://go.kubebuilder.io/dl/latest/$(shell go env GOOS)/$(shell go env GOARCH)"
 	chmod +x $(KUBEBUILDER)
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist

@@ -1,7 +1,18 @@
 load('ext://cert_manager', 'deploy_cert_manager')
 load("ext://restart_process", "docker_build_with_restart")
 
-# deploy_cert_manager(version='v1.18.2')
+enable_cert_manager=False
+enable_prometheus=True
+secure_clusters = True
+
+if enable_cert_manager:
+    deploy_cert_manager(version='v1.18.2')
+
+if enable_prometheus:
+    prometheus_operator_url = "https://github.com/prometheus-operator/prometheus-operator/releases/download/v0.87.0/bundle.yaml"
+    manifests = local("curl -Lq " + prometheus_operator_url, quiet=True, echo_off=True)
+    k8s_yaml(manifests)
+    k8s_yaml("examples/prometheus_secure_metrics_scraper.yaml")
 
 local_resource(
     "generate",
@@ -19,7 +30,7 @@ local_resource(
 local_resource(
     "go-compile",
     "make build-linux-manager",
-    deps=['api/', 'cmd/','internal/controller'],
+    deps=['api/', 'cmd/','internal/'],
     ignore=[
         '*/*/*test*',
         '*/*/*/*test*',
@@ -46,36 +57,13 @@ docker_build_with_restart(
     ],
 )
 
-# Deploy crd & operator
-k8s_yaml(kustomize('config/tilt'))
-
-k8s_resource(
-    new_name='operator-resources',
-    labels=['operator'],
-    resource_deps=['generate'],
-    objects=[
-        "clickhouse-operator-system:Namespace:default",
-        "keeperclusters.clickhouse.com:CustomResourceDefinition:default",
-        "clickhouseclusters.clickhouse.com:CustomResourceDefinition:default",
-        "clickhouse-operator-controller-manager:ServiceAccount:clickhouse-operator-system",
-        "clickhouse-operator-leader-election-role:Role:clickhouse-operator-system",
-        "clickhouse-operator-keepercluster-editor-role:ClusterRole:default",
-        "clickhouse-operator-keepercluster-viewer-role:ClusterRole:default",
-        "clickhouse-operator-clickhousecluster-admin-role:ClusterRole",
-        "clickhouse-operator-clickhousecluster-editor-role:ClusterRole",
-        "clickhouse-operator-clickhousecluster-viewer-role:ClusterRole",
-        "clickhouse-operator-manager-role:ClusterRole:default",
-        "clickhouse-operator-metrics-auth-role:ClusterRole:default",
-        "clickhouse-operator-metrics-reader:ClusterRole:default",
-        "clickhouse-operator-leader-election-rolebinding:RoleBinding:clickhouse-operator-system",
-        "clickhouse-operator-manager-rolebinding:ClusterRoleBinding:default",
-        "clickhouse-operator-metrics-auth-rolebinding:ClusterRoleBinding:default",
-        "clickhouse-operator-serving-cert:Certificate:clickhouse-operator-system",
-        "clickhouse-operator-metrics-certs:Certificate:clickhouse-operator-system",
-        "clickhouse-operator-selfsigned-issuer:Issuer:clickhouse-operator-system",
-        "clickhouse-operator-mutating-webhook-configuration:MutatingWebhookConfiguration:default",
-        "clickhouse-operator-validating-webhook-configuration:ValidatingWebhookConfiguration",
-    ],
+k8s_yaml(
+    helm('dist/chart', set=[
+        "manager.container.image.repository=clickhouse.com/clickhouse-operator",
+        "manager.container.image.label=latest",
+        "manager.securityContext=null",
+        "manager.manager.container.securityContext=null",
+    ]),
 )
 
 k8s_resource(
@@ -83,25 +71,12 @@ k8s_resource(
     workload='clickhouse-operator-controller-manager',
     labels=['operator'],
     resource_deps=[
-        'operator-resources',
         'generate',
     ],
 )
 
-secure = True
-if secure:
+if secure_clusters:
     k8s_yaml('examples/cluster_with_ssl.yaml')
-    k8s_resource(
-        new_name='certs',
-        objects=[
-            'selfsigned-issuer:ClusterIssuer:default',
-            'ca-cert:Certificate:default',
-            'local-issuer:Issuer:default',
-            'keeper-cert:Certificate:default',
-            'clickhouse-cert:Certificate:default',
-        ],
-        labels=['test'],
-    )
 else:
     k8s_yaml('examples/minimal.yaml')
 

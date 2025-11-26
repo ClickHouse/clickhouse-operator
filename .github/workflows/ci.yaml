@@ -98,7 +98,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
       - name: Check helmchart generated
-        run: make generate-helmchart && git diff --exit-code
+        run: make generate-helmchart-ci && git diff --exit-code
       - name: Install Helm
         run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
       - name: Verify Helm installation

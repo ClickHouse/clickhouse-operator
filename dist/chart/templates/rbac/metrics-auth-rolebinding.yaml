@@ -1,0 +1,14 @@
+{{- if .Values.metrics.enable }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+    name: clickhouse-operator-metrics-auth-rolebinding
+roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: clickhouse-operator-metrics-auth-role
+subjects:
+    - kind: ServiceAccount
+      name: clickhouse-operator-controller-manager
+      namespace: {{ .Release.Namespace }}
+{{- end }}
