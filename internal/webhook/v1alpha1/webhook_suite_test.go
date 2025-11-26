@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/clickhouse-operator/internal/util"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -62,7 +64,9 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
+	logf.SetLogger(zapr.NewLogger(logger))
+	zapLogger := util.NewZapLogger(logger)
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
@@ -77,7 +81,7 @@ var _ = BeforeSuite(func() {
 		ErrorIfCRDPathMissing: false,
 
 		WebhookInstallOptions: envtest.WebhookInstallOptions{
-			Paths: []string{filepath.Join("..", "..", "..", "config", "webhook")},
+			Paths: []string{filepath.Join("..", "..", "..", "config", "webhook", "manifests.yaml")},
 		},
 	}
 
@@ -113,8 +117,8 @@ var _ = BeforeSuite(func() {
 		Metrics:        metricsserver.Options{BindAddress: "0"},
 	})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(SetupKeeperWebhookWithManager(mgr)).To(Succeed())
-	Expect(SetupClickHouseWebhookWithManager(mgr)).To(Succeed())
+	Expect(SetupKeeperWebhookWithManager(mgr, zapLogger)).To(Succeed())
+	Expect(SetupClickHouseWebhookWithManager(mgr, zapLogger)).To(Succeed())
 
 	// +kubebuilder:scaffold:webhook
 

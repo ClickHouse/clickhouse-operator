@@ -57,8 +57,8 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-11-06T19:15:50Z"
-    operators.operatorframework.io/builder: operator-sdk-v1.41.1
+    createdAt: "2025-11-26T14:28:27Z"
+    operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
   namespace: placeholder
@@ -301,18 +301,41 @@ spec:
             metadata:
               annotations:
                 kubectl.kubernetes.io/default-container: manager
+                prometheus.io/path: /metrics
+                prometheus.io/port: "8080"
+                prometheus.io/scrape: "true"
               labels:
                 app.kubernetes.io/name: clickhouse-operator
                 control-plane: controller-manager
             spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: kubernetes.io/arch
+                        operator: In
+                        values:
+                        - amd64
+                        - arm64
+                        - ppc64le
+                        - s390x
+                      - key: kubernetes.io/os
+                        operator: In
+                        values:
+                        - linux
               containers:
               - args:
-                - --metrics-bind-address=:8443
                 - --leader-elect
                 - --health-probe-bind-address=:8081
-                - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+                - --webhook-cert-path=/tmp/k8s-server/serving-certs
+                - --metrics-bind-address=:8080
+                - --metrics-secure=false
                 command:
                 - /manager
+                env:
+                - name: ENABLE_WEBHOOKS
+                  value: "true"
                 image: clickhouse.com/clickhouse-operator:v0.0.1
                 livenessProbe:
                   httpGet:
@@ -324,6 +347,9 @@ spec:
                 ports:
                 - containerPort: 9443
                   name: webhook-server
+                  protocol: TCP
+                - containerPort: 8080
+                  name: metrics-server
                   protocol: TCP
                 readinessProbe:
                   httpGet:
@@ -410,19 +436,8 @@ spec:
   - admissionReviewVersions:
     - v1
     containerPort: 443
-    conversionCRDs:
-    - keeperclusters.clickhouse.com
     deploymentName: clickhouse-operator-controller-manager
-    generateName: ckeeperclusters.kb.io
-    sideEffects: None
-    targetPort: 9443
-    type: ConversionWebhook
-    webhookPath: /convert
-  - admissionReviewVersions:
-    - v1
-    containerPort: 443
-    deploymentName: clickhouse-operator-controller-manager
-    failurePolicy: Fail
+    failurePolicy: Ignore
     generateName: mclickhousecluster-v1alpha1.kb.io
     rules:
     - apiGroups:
@@ -462,7 +477,7 @@ spec:
     - v1
     containerPort: 443
     deploymentName: clickhouse-operator-controller-manager
-    failurePolicy: Fail
+    failurePolicy: Ignore
     generateName: vclickhousecluster-v1alpha1.kb.io
     rules:
     - apiGroups:

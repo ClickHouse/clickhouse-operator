@@ -6,16 +6,6 @@ metadata:
   creationTimestamp: null
   name: keeperclusters.clickhouse.com
 spec:
-  conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: clickhouse-operator-webhook-service
-          namespace: clickhouse-operator-system
-          path: /convert
-      conversionReviewVersions:
-      - v1
   group: clickhouse.com
   names:
     kind: KeeperCluster
