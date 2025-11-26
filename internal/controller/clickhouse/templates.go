@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal"
 	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
 
@@ -440,7 +441,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 			{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: PersistentVolumeName,
+					Name: internal.PersistentVolumeName,
 				},
 				Spec: ctx.Cluster.Spec.DataVolumeClaimSpec,
 			},
@@ -560,12 +561,12 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
-			Name:      PersistentVolumeName,
+			Name:      internal.PersistentVolumeName,
 			MountPath: BaseDataPath,
 			SubPath:   "var-lib-clickhouse",
 		},
 		{
-			Name:      PersistentVolumeName,
+			Name:      internal.PersistentVolumeName,
 			MountPath: "/var/log/clickhouse-server",
 			SubPath:   "var-log-clickhouse",
 		},
@@ -614,13 +615,13 @@ func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []co
 
 	if ctx.Cluster.Spec.Settings.TLS.Enabled {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      TLSVolumeName,
+			Name:      internal.TLSVolumeName,
 			MountPath: TLSConfigPath,
 			ReadOnly:  true,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: TLSVolumeName,
+			Name: internal.TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  ctx.Cluster.Spec.Settings.TLS.ServerCertSecret.Name,
@@ -637,13 +638,13 @@ func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []co
 
 	if ctx.Cluster.Spec.Settings.TLS.CABundle != nil {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      CustomCAVolumeName,
+			Name:      internal.CustomCAVolumeName,
 			MountPath: TLSConfigPath,
 			ReadOnly:  true,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: CustomCAVolumeName,
+			Name: internal.CustomCAVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  ctx.Cluster.Spec.Settings.TLS.CABundle.Name,

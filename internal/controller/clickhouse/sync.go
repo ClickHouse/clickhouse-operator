@@ -14,6 +14,7 @@ import (
 	"github.com/blang/semver/v4"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/clickhouse-operator/internal/controller"
+	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/clickhouse-operator/internal/util"
 	gcmp "github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
@@ -152,12 +153,12 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 			if k8serrors.IsConflict(err) {
 				stepLog.Error(err, "update conflict for resource, reschedule to retry")
 				// retry immediately, as just the update to the CR failed
-				return ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+				return ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 			}
 			if k8serrors.IsAlreadyExists(err) {
 				stepLog.Error(err, "create already existed resource, reschedule to retry")
 				// retry immediately, as just creating already existed resource
-				return ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+				return ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 			}
 
 			stepLog.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
@@ -170,7 +171,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 			meta.SetStatusCondition(&unknownConditions, recCtx.NewCondition(v1.ClickHouseConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ClickHouseConditionReasonStepFailed, errMsg))
 			recCtx.SetConditions(log, unknownConditions)
 
-			return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, r.upsertStatus(log, &recCtx)
+			return ctrl.Result{RequeueAfter: keeper.RequeueOnErrorTimeout}, r.upsertStatus(log, &recCtx)
 		}
 
 		if !stepResult.IsZero() {
@@ -393,7 +394,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 		return nil, nil
 	case chctrl.StageNotReadyUpToDate, chctrl.StageUpdating:
 		log.Info("waiting for updated replicas to become ready", "replicas", replicasInStatus, "priority", highestStage.String())
-		result = ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}
+		result = ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}
 	case chctrl.StageHasDiff:
 		// Leave one replica to rolling update. replicasInStatus must not be empty.
 		// Prefer replicas with higher id.
@@ -453,7 +454,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 	for id, replDBs := range replicaDatabases {
 		if replDBs.Err != nil {
 			log.Warn("failed to get databases from replica", "replica_id", id, "error", replDBs.Err)
-			return &ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, nil
+			return &ctrl.Result{RequeueAfter: keeper.RequeueOnErrorTimeout}, nil
 		}
 		databases = util.MergeMaps(databases, replDBs.Result)
 	}
@@ -480,7 +481,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 
 	ctx.databasesInSync = !hasNotSynced
 	if hasNotSynced {
-		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 	}
 
 	return nil, nil
@@ -707,7 +708,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 
 	for _, condition := range ctx.Cluster.Status.Conditions {
 		if condition.Status != metav1.ConditionTrue {
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 		}
 	}
 
@@ -750,18 +751,18 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 			return nil, fmt.Errorf("create replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
 		}
 
-		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 	}
 
 	// Check if the StatefulSet is outdated and needs to be recreated
 	v, err := semver.Parse(replica.StatefulSet.Annotations[util.AnnotationStatefulSetVersion])
-	if err != nil || BreakingStatefulSetVersion.GT(v) {
-		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, BreakingStatefulSetVersion))
+	if err != nil || keeper.BreakingStatefulSetVersion.GT(v) {
+		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, keeper.BreakingStatefulSetVersion))
 		if err := r.Delete(ctx.Context, replica.StatefulSet); err != nil {
 			return nil, fmt.Errorf("delete StatefulSet: %w", err)
 		}
 
-		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 	}
 
 	stsNeedsUpdate := replica.HasStatefulSetDiff(ctx)
@@ -783,7 +784,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	if !stsNeedsUpdate {
 		log.Debug("StatefulSet is up to date")
 		if configChanged {
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 		}
 
 		return nil, nil
@@ -808,7 +809,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("update replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
 	}
 
-	return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 }
 
 func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileContext, id v1.ReplicaID) error {

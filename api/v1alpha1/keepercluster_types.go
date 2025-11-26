@@ -85,6 +85,14 @@ func (s *KeeperClusterSpec) WithDefaults() {
 				},
 			},
 		},
+		Settings: KeeperConfig{
+			Logger: LoggerConfig{
+				LogToFile: true,
+				Level:     "trace",
+				Size:      "1000M",
+				Count:     50,
+			},
+		},
 	}
 
 	if err := util.ApplyDefault(s, defaultSpec); err != nil {

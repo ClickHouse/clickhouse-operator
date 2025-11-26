@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -169,7 +170,7 @@ func TestBuildVolumes(t *testing.T) {
 
 func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
 	volumeMap := map[string]struct{}{
-		PersistentVolumeName: {},
+		internal.PersistentVolumeName: {},
 	}
 	for _, volume := range volumes {
 		Expect(volumeMap).NotTo(HaveKey(volume.Name))

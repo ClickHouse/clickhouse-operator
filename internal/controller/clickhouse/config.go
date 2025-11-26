@@ -9,7 +9,7 @@ import (
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller"
-	keepercontroller "github.com/clickhouse-operator/internal/controller/keeper"
+	"github.com/clickhouse-operator/internal/controller/keeper"
 	"github.com/clickhouse-operator/internal/util"
 	"gopkg.in/yaml.v2"
 )
@@ -165,13 +165,13 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.R
 		if ctx.keeper.Spec.Settings.TLS.Enabled {
 			keeperNodes = append(keeperNodes, keeperNode{
 				Host:   host,
-				Port:   keepercontroller.PortNativeSecure,
+				Port:   keeper.PortNativeSecure,
 				Secure: true,
 			})
 		} else {
 			keeperNodes = append(keeperNodes, keeperNode{
 				Host: host,
-				Port: keepercontroller.PortNative,
+				Port: keeper.PortNative,
 			})
 		}
 	}

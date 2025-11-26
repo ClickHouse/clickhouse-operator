@@ -149,35 +149,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&keeper.ClusterReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("clickhouse.KeeperCluster"),
-		Reader:   mgr.GetAPIReader(),
-		Logger:   util.NewZapLogger(logger).Named("keeper"),
-	}).SetupWithManager(mgr); err != nil {
+	zapLogger := util.NewZapLogger(logger)
+
+	if err = keeper.SetupWithManager(mgr, zapLogger); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "KeeperCluster")
 		os.Exit(1)
 	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = whchv1.SetupKeeperWebhookWithManager(mgr); err != nil {
+		if err = whchv1.SetupKeeperWebhookWithManager(mgr, zapLogger); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "KeeperCluster")
 			os.Exit(1)
 		}
 	}
-	if err = (&clickhouse.ClusterReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("clickhouse.ClickHouseCluster"),
-		Reader:   mgr.GetAPIReader(),
-		Logger:   util.NewZapLogger(logger).Named("clickhouse"),
-	}).SetupWithManager(mgr); err != nil {
+	if err = clickhouse.SetupWithManager(mgr, zapLogger); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClickHouseCluster")
 		os.Exit(1)
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = whchv1.SetupClickHouseWebhookWithManager(mgr); err != nil {
+		if err = whchv1.SetupClickHouseWebhookWithManager(mgr, zapLogger); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "ClickHouseCluster")
 			os.Exit(1)
 		}

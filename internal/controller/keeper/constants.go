@@ -17,21 +17,16 @@ const (
 	PortInterserver      = 9234
 	PortHTTPControl      = 9123
 
-	QuorumConfigPath       = "/etc/clickhouse-keeper/"
-	QuorumConfigFileName   = "config.yaml"
-	QuorumConfigVolumeName = "clickhouse-keeper-quorum-config-volume"
+	QuorumConfigPath     = "/etc/clickhouse-keeper/"
+	QuorumConfigFileName = "config.yaml"
 
-	PersistentVolumeName = "keeper-storage-volume"
-
-	ConfigPath       = QuorumConfigPath + "config.d/"
-	ConfigFileName   = "00-config.yaml"
-	ConfigVolumeName = "clickhouse-keeper-config-volume"
+	ConfigPath     = QuorumConfigPath + "config.d/"
+	ConfigFileName = "00-config.yaml"
 
 	TLSConfigPath       = "/etc/clickhouse-keeper/tls/"
 	CABundleFilename    = "ca-bundle.crt"
 	CertificateFilename = "clickhouse-keeper.crt"
 	KeyFilename         = "clickhouse-keeper.key"
-	TLSVolumeName       = "clickhouse-keeper-tls-volume"
 
 	LogPath = "/var/log/clickhouse-keeper/"
 
@@ -46,10 +41,4 @@ const (
 var (
 	BreakingStatefulSetVersion, _       = semver.Parse("0.0.1")
 	TLSFileMode                   int32 = 0444
-	ReservedVolumeNames                 = []string{
-		QuorumConfigVolumeName,
-		PersistentVolumeName,
-		ConfigVolumeName,
-		TLSVolumeName,
-	}
 )

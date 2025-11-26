@@ -21,31 +21,33 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/clickhouse-operator/internal/controller/clickhouse"
+	"github.com/clickhouse-operator/internal"
+	"github.com/clickhouse-operator/internal/util"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	chv1 "github.com/clickhouse-operator/api/v1alpha1"
 )
 
-// log is for logging in this package.
-var clickhouseWebhookLog = logf.Log.WithName("clickhouse-webhook")
-
 // SetupClickHouseWebhookWithManager registers the webhook for ClickHouseCluster in the manager.
-func SetupClickHouseWebhookWithManager(mgr ctrl.Manager) error {
+func SetupClickHouseWebhookWithManager(mgr ctrl.Manager, log util.Logger) error {
+	webhook := &ClickHouseClusterWebhook{
+		Log: log.Named("keeper-webhook"),
+	}
 	return ctrl.NewWebhookManagedBy(mgr).For(&chv1.ClickHouseCluster{}).
-		WithValidator(&ClickHouseClusterWebhook{}).
-		WithDefaulter(&ClickHouseClusterWebhook{}).
+		WithValidator(webhook).
+		WithDefaulter(webhook).
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-clickhousecluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=mclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
-// +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-clickhousecluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=vclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-clickhousecluster,mutating=true,failurePolicy=ignore,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=mclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-clickhousecluster,mutating=false,failurePolicy=ignore,sideEffects=None,groups=clickhouse.com,resources=clickhouseclusters,verbs=create;update,versions=v1alpha1,name=vclickhousecluster-v1alpha1.kb.io,admissionReviewVersions=v1
 
-type ClickHouseClusterWebhook struct{}
+type ClickHouseClusterWebhook struct {
+	Log util.Logger
+}
 
 var _ webhook.CustomDefaulter = &ClickHouseClusterWebhook{}
 var _ webhook.CustomValidator = &ClickHouseClusterWebhook{}
@@ -57,7 +59,7 @@ func (w *ClickHouseClusterWebhook) Default(ctx context.Context, obj runtime.Obje
 		return fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
 	}
 
-	clickhouseWebhookLog.Info("default", "name", cluster.Name, "namespace", cluster.Namespace)
+	w.Log.Info("Fill defaults", "name", cluster.Name, "namespace", cluster.Namespace)
 	cluster.Spec.WithDefaults()
 	return nil
 }
@@ -77,6 +79,8 @@ func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Objec
 }
 
 func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, error) {
+	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
+
 	var warns admission.Warnings
 	var errs []error
 	if obj.Spec.KeeperClusterRef == nil || obj.Spec.KeeperClusterRef.Name == "" {
@@ -87,7 +91,7 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
-	errs = append(errs, ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, clickhouse.ReservedVolumeNames)...)
+	errs = append(errs, ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, internal.ReservedClickHouseVolumeNames)...)
 
 	if obj.Spec.Settings.DefaultUserPassword == nil {
 		warns = append(warns, ".spec.settings.defaultUserPassword is empty, 'default' user will be without password ")

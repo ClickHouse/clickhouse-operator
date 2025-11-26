@@ -22,28 +22,29 @@ import (
 	"fmt"
 
 	chv1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/keeper"
+	"github.com/clickhouse-operator/internal"
+	"github.com/clickhouse-operator/internal/util"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// log is for logging in this package.
-var keeperWebhookLog = logf.Log.WithName("keeper-webhook")
-
 // +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-keepercluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=mkeepercluster.kb.io,admissionReviewVersions=v1
 // +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-keepercluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=vkeepercluster.kb.io,admissionReviewVersions=v1
 
-type KeeperClusterWebhook struct{}
+type KeeperClusterWebhook struct {
+	Log util.Logger
+}
 
 var _ webhook.CustomDefaulter = &KeeperClusterWebhook{}
 var _ webhook.CustomValidator = &KeeperClusterWebhook{}
 
 // SetupKeeperWebhookWithManager registers the webhook for KeeperCluster in the manager.
-func SetupKeeperWebhookWithManager(mgr ctrl.Manager) error {
-	webhook := &KeeperClusterWebhook{}
+func SetupKeeperWebhookWithManager(mgr ctrl.Manager, log util.Logger) error {
+	webhook := &KeeperClusterWebhook{
+		Log: log.Named("keeper-webhook"),
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(&chv1.KeeperCluster{}).
 		WithDefaulter(webhook).
@@ -58,7 +59,7 @@ func (w *KeeperClusterWebhook) Default(ctx context.Context, obj runtime.Object) 
 		return fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
 	}
 
-	keeperWebhookLog.Info("default", "name", keeperCluster.Name, "namespace", keeperCluster.Namespace)
+	w.Log.Info("Filling defaults", "name", keeperCluster.Name, "namespace", keeperCluster.Namespace)
 	keeperCluster.Spec.WithDefaults()
 	return nil
 }
@@ -76,7 +77,8 @@ func (w *KeeperClusterWebhook) ValidateDelete(ctx context.Context, obj runtime.O
 }
 
 func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) error {
-	errs := ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, keeper.ReservedVolumeNames)
+	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
+	errs := ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, internal.ReservedKeeperVolumeNames)
 
 	if err := obj.Spec.Settings.TLS.Validate(); err != nil {
 		errs = append(errs, err)

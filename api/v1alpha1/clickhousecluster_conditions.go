@@ -21,6 +21,7 @@ const (
 
 var (
 	AllClickHouseConditionTypes = []ConditionType{
+		ConditionTypeSpecValid,
 		ClickHouseConditionTypeReconcileSucceeded,
 		ClickHouseConditionTypeReplicaStartupSucceeded,
 		ClickHouseConditionTypeHealthy,

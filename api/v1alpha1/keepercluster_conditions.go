@@ -1,7 +1,5 @@
 package v1alpha1
 
-type ConditionType string
-
 const (
 	// KeeperConditionTypeReconcileSucceeded indicates that latest reconciliation was successful.
 	KeeperConditionTypeReconcileSucceeded ConditionType = "ReconcileSucceeded"
@@ -19,6 +17,7 @@ const (
 
 var (
 	AllKeeperConditionTypes = []ConditionType{
+		ConditionTypeSpecValid,
 		KeeperConditionTypeReconcileSucceeded,
 		KeeperConditionTypeReplicaStartupSucceeded,
 		KeeperConditionTypeHealthy,
@@ -27,8 +26,6 @@ var (
 		KeeperConditionTypeReady,
 	}
 )
-
-type ConditionReason string
 
 const (
 	KeeperConditionReasonStepFailed        ConditionReason = "ReconcileStepFailed"

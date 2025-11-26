@@ -18,14 +18,18 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/util"
+	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -62,7 +66,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.Logger.Info("keeper cluster not found")
-			return ctrl.Result{Requeue: false}, nil
+			return ctrl.Result{}, nil
 		}
 
 		r.Logger.Error(err, "failed to Get keeper cluster")
@@ -70,11 +74,47 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	logger := r.Logger.WithContext(ctx, cluster)
+	wh := webhookv1.KeeperClusterWebhook{Log: logger}
+
+	if err := wh.Default(ctx, cluster); err != nil {
+		return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, fmt.Errorf("fill defaults before reconcile: %w", err)
+	}
+	if _, err := wh.ValidateCreate(ctx, cluster); err != nil {
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:               string(v1.ConditionTypeSpecValid),
+			Status:             metav1.ConditionFalse,
+			Reason:             string(v1.ConditionReasonSpecInvalid),
+			Message:            err.Error(),
+			ObservedGeneration: cluster.GetGeneration(),
+		})
+		if err := r.Status().Update(ctx, cluster); err != nil {
+			return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, fmt.Errorf("update keeper cluster status: %w", err)
+		}
+		return ctrl.Result{}, nil
+	} else {
+		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:               string(v1.ConditionTypeSpecValid),
+			Status:             metav1.ConditionTrue,
+			Reason:             string(v1.ConditionReasonSpecValid),
+			ObservedGeneration: cluster.GetGeneration(),
+		})
+	}
+
 	return r.Sync(ctx, logger, cluster)
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
+	namedLogger := log.Named("keeper")
+
+	controller := &ClusterReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("clickhouse.KeeperCluster"),
+		Reader:   mgr.GetAPIReader(),
+		Logger:   namedLogger,
+	}
+
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
@@ -83,5 +123,5 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&policyv1.PodDisruptionBudget{}).
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{})
 
-	return controllerBuilder.Complete(r)
+	return controllerBuilder.Complete(controller)
 }

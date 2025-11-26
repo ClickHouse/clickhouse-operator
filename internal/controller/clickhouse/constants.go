@@ -27,15 +27,11 @@ const (
 	ClientConfigPath     = "/etc/clickhouse-client/"
 	ClientConfigFileName = "config.yaml"
 
-	PersistentVolumeName = "clickhouse-storage-volume"
-
 	TLSConfigPath       = "/etc/clickhouse-server/tls/"
 	CABundleFilename    = "ca-bundle.crt"
 	CertificateFilename = "clickhouse-server.crt"
 	KeyFilename         = "clickhouse-server.key"
-	TLSVolumeName       = "clickhouse-server-tls-volume"
 	CustomCAFilename    = "custom-ca.crt"
-	CustomCAVolumeName  = "clickhouse-server-custom-ca-volume"
 
 	LogPath      = "/var/log/clickhouse-server/"
 	BaseDataPath = "/var/lib/clickhouse/"
@@ -69,10 +65,5 @@ var (
 		SecretKeyInterserverPassword: "%s",
 		SecretKeyManagementPassword:  "%s",
 		SecretKeyKeeperIdentity:      "clickhouse:%s",
-	}
-	ReservedVolumeNames = []string{
-		PersistentVolumeName,
-		TLSVolumeName,
-		CustomCAVolumeName,
 	}
 )

@@ -8,6 +8,7 @@ import (
 
 	"dario.cat/mergo"
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal"
 	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
 	"gopkg.in/yaml.v2"
@@ -436,7 +437,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 			{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: PersistentVolumeName,
+					Name: internal.PersistentVolumeName,
 				},
 				Spec: cr.Spec.DataVolumeClaimSpec,
 			},
@@ -534,22 +535,22 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
-			Name:      QuorumConfigVolumeName,
+			Name:      internal.QuorumConfigVolumeName,
 			MountPath: QuorumConfigPath,
 			ReadOnly:  true,
 		},
 		{
-			Name:      ConfigVolumeName,
+			Name:      internal.ConfigVolumeName,
 			MountPath: ConfigPath,
 			ReadOnly:  true,
 		},
 		{
-			Name:      PersistentVolumeName,
+			Name:      internal.PersistentVolumeName,
 			MountPath: BaseDataPath,
 			SubPath:   "var-lib-clickhouse",
 		},
 		{
-			Name:      PersistentVolumeName,
+			Name:      internal.PersistentVolumeName,
 			MountPath: "/var/log/clickhouse-keeper",
 			SubPath:   "var-log-clickhouse",
 		},
@@ -558,7 +559,7 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
 	volumes := []corev1.Volume{
 		{
-			Name: QuorumConfigVolumeName,
+			Name: internal.QuorumConfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &defaultConfigMapMode,
@@ -575,7 +576,7 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 			},
 		},
 		{
-			Name: ConfigVolumeName,
+			Name: internal.ConfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &defaultConfigMapMode,
@@ -589,13 +590,13 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []co
 
 	if cr.Spec.Settings.TLS.Enabled {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      TLSVolumeName,
+			Name:      internal.TLSVolumeName,
 			MountPath: TLSConfigPath,
 			ReadOnly:  true,
 		})
 
 		volumes = append(volumes, corev1.Volume{
-			Name: TLSVolumeName,
+			Name: internal.TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
