@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+- service.yaml
+
+patches:
+  - patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --metrics-bind-address=:8443
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --metrics-secure=true
+
+      - op: add
+        path: /spec/template/spec/containers/0/ports/-
+        value:
+          containerPort: 9443
+          protocol: TCP
+          name: metrics-server
+    target:
+      kind: Deployment
+  - patch: |-
+      - op: add
+        path: /spec/dnsNames/-
+        value: "METRICS_SERVICE_NAME.NAMESPACE.svc"
+
+      - op: add
+        path: /spec/dnsNames/-
+        value: "METRICS_SERVICE_NAME.NAMESPACE.svc.cluster.local"
+    target:
+      kind: Certificate

@@ -27,7 +27,113 @@ resources:
 #- ../network-policy
 
 components:
-# [WEBHOOK] To enable webhook, uncomment this field.
- - ../webhook
+# [CERTMANAGER] To enable cert-manager, uncomment this field. Required to enable [WEBHOOK] or [METRICS SECURE]
+  - ../certmanager
+# [WEBHOOK] To enable webhook, uncomment this field and corresponding replacements further.
+  - ../webhook
 # [METRICS] Expose the controller manager metrics service.
- - ../metrics
+  - ../metrics
+# [METRICS SECURE] Expose the controller manager metrics service with certificated and required auth.
+# To enable uncomment this field and corresponding replacements further.
+# To configure service monitor uncomment [PROMETHEUS]
+#  - ../metrics_secure
+
+# These replacements affect other components, but executed from here because
+# - namespace or nameReference transformers are not applicable
+# - subcomponent replacements executed before parent namePrefix
+replacements:
+  - source:
+      kind: Deployment
+      version: v1
+      name: controller-manager
+      fieldPath: metadata.namespace
+    targets:
+      - select:
+          kind: Certificate
+          name: serving-cert
+        fieldPaths:
+          - .spec.dnsNames.[=NAMESPACE]
+        options:
+          delimiter: '.'
+          index: 1
+          create: true
+
+# [METRICS SECURE] To configure secure metrics endpoint uncomment this section.
+#  - source:
+#      kind: Service
+#      version: v1
+#      name: metrics-service
+#      fieldPath: metadata.name
+#    targets:
+#      - select:
+#          kind: Certificate
+#          name: serving-cert
+#        fieldPaths:
+#          - .spec.dnsNames.[=METRICS_SERVICE_NAME]
+#        options:
+#          delimiter: '.'
+#          index: 0
+#          create: true
+
+# [WEBHOOK] To enable webhook, uncomment this section.
+  - source: # Update Certificate DNS names to match the Service name
+      kind: Service
+      version: v1
+      name: webhook-service
+      fieldPath: metadata.name
+    targets:
+      - select:
+          kind: Certificate
+          name: serving-cert
+        fieldPaths:
+          - .spec.dnsNames.[=WEBHOOK_SERVICE_NAME]
+        options:
+          delimiter: '.'
+          index: 0
+          create: true
+  - source: # Set certificate reference to cert-manager.io/inject-ca-from annotation
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert # This name should match the one in certificate.yaml
+      fieldPath: .metadata.namespace # Namespace of the certificate CR
+    targets:
+      - select:
+          kind: ValidatingWebhookConfiguration
+        fieldPaths:
+          - .metadata.annotations.[cert-manager.io/inject-ca-from]
+        options:
+          delimiter: '/'
+          index: 0
+          create: true
+      - select:
+          kind: MutatingWebhookConfiguration
+        fieldPaths:
+          - .metadata.annotations.[cert-manager.io/inject-ca-from]
+        options:
+          delimiter: '/'
+          index: 0
+          create: true
+  - source:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert
+      fieldPath: .metadata.name
+    targets:
+      - select:
+          kind: ValidatingWebhookConfiguration
+        fieldPaths:
+          - .metadata.annotations.[cert-manager.io/inject-ca-from]
+        options:
+          delimiter: '/'
+          index: 1
+          create: true
+      - select:
+          kind: MutatingWebhookConfiguration
+        fieldPaths:
+          - .metadata.annotations.[cert-manager.io/inject-ca-from]
+        options:
+          delimiter: '/'
+          index: 1
+          create: true

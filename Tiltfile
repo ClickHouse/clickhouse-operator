@@ -2,7 +2,8 @@ load('ext://cert_manager', 'deploy_cert_manager')
 load("ext://restart_process", "docker_build_with_restart")
 
 enable_cert_manager=False
-enable_prometheus=True
+enable_prometheus=False
+deploy_source='kustomize'
 secure_clusters = True
 
 if enable_cert_manager:
@@ -57,14 +58,17 @@ docker_build_with_restart(
     ],
 )
 
-k8s_yaml(
-    helm('dist/chart', set=[
-        "manager.container.image.repository=clickhouse.com/clickhouse-operator",
-        "manager.container.image.label=latest",
-        "manager.securityContext=null",
-        "manager.manager.container.securityContext=null",
-    ]),
-)
+if deploy_source == 'helm':
+    k8s_yaml(
+        helm('dist/chart', set=[
+            "manager.container.image.repository=clickhouse.com/clickhouse-operator",
+            "manager.container.image.label=latest",
+            "manager.securityContext=null",
+            "manager.manager.container.securityContext=null",
+        ]),
+    )
+else:
+    k8s_yaml(kustomize('config/tilt'))
 
 k8s_resource(
     new_name='operator-deployment',

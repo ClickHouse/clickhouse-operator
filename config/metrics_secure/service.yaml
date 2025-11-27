@@ -10,9 +10,9 @@ metadata:
 spec:
   ports:
   - name: metrics
-    port: 8080
+    port: 9443
     protocol: TCP
-    targetPort: 8080
+    targetPort: 9443
   selector:
     control-plane: controller-manager
     app.kubernetes.io/name: clickhouse-operator
