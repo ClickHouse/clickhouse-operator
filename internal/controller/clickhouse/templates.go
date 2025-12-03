@@ -92,6 +92,8 @@ func TemplatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 	}
 }
 
+// TemplateClusterSecrets may imply that there are many Secret objects,
+// consider renaming to TemplateClusterSecret
 func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bool, error) {
 	secret.Name = cr.SecretName()
 	secret.Namespace = cr.Namespace
@@ -162,6 +164,13 @@ func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
 }
 
 func TemplateConfigMap(ctx *reconcileContext, id v1.ReplicaID) (*corev1.ConfigMap, error) {
+	// ConfigMap should be immutable (i.e. versioned, so its name includes the hash of configData) to support the following scenario:
+	// * We want to update the config and the version together. And the old version does not work with the new config.
+	// * Then, after the operator updates the ConfigMap, there is a race condition between the operator updating the STS and the pods restarting.
+	//   If a pod restarts before the change to the STS is made, it will see the new config and "break".
+
+
+	// Is there any reason why we can't just have a single ConfigMap object for all the replicas' configs?
 	configData, err := generateConfigForSingleReplica(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate config for replica %v: %w", id, err)

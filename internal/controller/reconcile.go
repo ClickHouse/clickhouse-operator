@@ -144,6 +144,7 @@ func ReconcileResource(ctx context.Context, log util.Logger, cli client.Client, 
 	for _, fieldName := range specFields {
 		field := reflect.ValueOf(foundResource).Elem().FieldByName(fieldName)
 		if !field.IsValid() || !field.CanSet() {
+			// nit: can't we just return an error here?
 			panic(fmt.Sprintf("invalid data field  %s", fieldName))
 		}
 

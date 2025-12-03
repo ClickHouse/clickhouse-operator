@@ -227,6 +227,7 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 		}
 	}
 
+	// for consistency and to avoid code duplication, can't we use chctrl.ReconcileResource here?
 	getErr := r.Get(ctx.Context, types.NamespacedName{
 		Namespace: ctx.Cluster.Namespace,
 		Name:      ctx.Cluster.SecretName(),

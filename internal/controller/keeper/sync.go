@@ -25,6 +25,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
+// we recently realised that running the keeper inside the server process (but still in the standalone mode) provides much better introspection
+// if you consider supporting such a mode, you can read my RFC where I documented subtle gotchas I encountered while implementing this:
+// https://github.com/ClickHouse/clickhouse-private/issues/41325
+
 type replicaState struct {
 	Error       bool `json:"error"`
 	Status      ServerStatus
@@ -353,6 +357,14 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 	if len(ctx.Cluster.Status.Replicas) > requestedReplicas {
 		chosenIndex := -1
 		for i, id := range ctx.Cluster.Status.Replicas {
+			// both ctx.Cluster.Status.Replicas[chosenIndex] and id are strings,
+			// so lexicographic comparison will only work as long as all ids are less than 10,
+			// (e.g. "10" < "2")
+			// to prevent the user from shooting himself in the foot with this,
+			// we can just remove 11;13;15 from
+			// ```
+			// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15
+			// ```
 			if chosenIndex == -1 || ctx.Cluster.Status.Replicas[chosenIndex] < id {
 				chosenIndex = i
 			}
@@ -618,6 +630,11 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 }
 
 func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, replicaID string) (*ctrl.Result, error) {
+	// to avoid having to pass the logger around, we could put it into context.Context
+	// and use it like:
+	// l := logcontext.Get(ctx)
+	// ctx = logcontext.With(ctx, l)
+
 	log = log.With("replica_id", replicaID)
 	log.Info("updating replica")
 

@@ -61,6 +61,7 @@ func DeepHashResource(obj client.Object, specFields []string) (string, error) {
 	for _, field := range specFields {
 		spec := reflect.ValueOf(obj).Elem().FieldByName(field)
 		if !spec.IsValid() {
+			// nit: can't we just return an error here?
 			panic(fmt.Sprintf("invalid spec field %s", field))
 		}
 

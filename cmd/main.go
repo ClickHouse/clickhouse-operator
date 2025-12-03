@@ -145,6 +145,15 @@ func main() {
 		LeaderElectionID:       "d4ceba06.clickhouse.com",
 	})
 	if err != nil {
+		// nit: let's separate main into main and run, so main could look something like this:
+		// ```
+		// if err := run(); err != nil {
+        //   setupLog.Error(err, "failed to run operator")
+        //   os.Exit(1)
+        // }
+		// ```
+		// this way, if we ever need to add defered function calls, they would still run
+		// and also, you would avoid a bit of code duplication
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
