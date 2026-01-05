@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/go-logr/zapr"
@@ -58,6 +59,13 @@ func init() {
 }
 
 func main() {
+	if err := run(); err != nil {
+		setupLog.Error(err, "startup failed")
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
@@ -145,47 +153,41 @@ func main() {
 		LeaderElectionID:       "d4ceba06.clickhouse.com",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
+		return fmt.Errorf("unable to start manager: %w", err)
 	}
 
 	zapLogger := util.NewZapLogger(logger)
 
 	if err = keeper.SetupWithManager(mgr, zapLogger); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "KeeperCluster")
-		os.Exit(1)
+		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = whchv1.SetupKeeperWebhookWithManager(mgr, zapLogger); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "KeeperCluster")
-			os.Exit(1)
+			return fmt.Errorf("unable to setup KeeperCluster webhook: %w", err)
 		}
 	}
 	if err = clickhouse.SetupWithManager(mgr, zapLogger); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClickHouseCluster")
-		os.Exit(1)
+		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = whchv1.SetupClickHouseWebhookWithManager(mgr, zapLogger); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ClickHouseCluster")
-			os.Exit(1)
+			return fmt.Errorf("unable to setup ClickHouseCluster webhook: %w", err)
 		}
 	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		return fmt.Errorf("unable to setup healthz checker: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		return fmt.Errorf("unable to setup readyz checker: %w", err)
 	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return fmt.Errorf("unable to start manager: %w", err)
 	}
+
+	return nil
 }
