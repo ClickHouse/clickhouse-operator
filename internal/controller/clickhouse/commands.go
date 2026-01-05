@@ -73,8 +73,10 @@ func NewCommander(log util.Logger, cluster *v1.ClickHouseCluster, secret *corev1
 }
 
 func (cmd *Commander) Close() {
+	cmd.lock.Lock()
+	defer cmd.lock.Unlock()
 	for id, conn := range cmd.conns {
-		if err := conn.(clickhouse.Conn).Close(); err != nil {
+		if err := conn.Close(); err != nil {
 			cmd.log.Warn("error closing connection", "error", err, "replica_id", id)
 		}
 	}

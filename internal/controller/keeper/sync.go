@@ -272,7 +272,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 		}
 	}
 
-	// If relpica existed before we need to mark it active as quorum expects it.
+	// If replica existed before we need to mark it active as quorum expects it.
 	if len(ctx.ReplicaState) > 0 && len(ctx.ReplicaState) < int(ctx.Cluster.Replicas()) {
 		quorumReplicas, err := r.loadQuorumReplicas(ctx)
 		if err != nil {

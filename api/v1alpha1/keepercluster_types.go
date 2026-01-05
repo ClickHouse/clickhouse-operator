@@ -181,7 +181,7 @@ func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error
 
 	id, err := strconv.ParseInt(idStr, 10, 32)
 	if err != nil {
-		return 0, fmt.Errorf("invalid replica ID %q: %w", id, err)
+		return 0, fmt.Errorf("invalid replica ID %q: %w", idStr, err)
 	}
 
 	return KeeperReplicaID(id), nil
