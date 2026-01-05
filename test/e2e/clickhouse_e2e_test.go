@@ -221,7 +221,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Name:      fmt.Sprintf("keeper-cert-%d", suffix),
 				},
 				Spec: certv1.CertificateSpec{
-					IssuerRef: mcertv1.ObjectReference{
+					IssuerRef: mcertv1.IssuerReference{
 						Name: issuer,
 						Kind: "Issuer",
 					},
@@ -265,7 +265,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Name:      fmt.Sprintf("ch-cert-%d", suffix),
 				},
 				Spec: certv1.CertificateSpec{
-					IssuerRef: mcertv1.ObjectReference{
+					IssuerRef: mcertv1.IssuerReference{
 						Name: issuer,
 						Kind: "Issuer",
 					},

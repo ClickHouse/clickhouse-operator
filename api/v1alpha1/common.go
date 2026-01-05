@@ -13,8 +13,8 @@ const (
 	// ConditionTypeSpecValid indicates that the Custom Resource passes validation.
 	ConditionTypeSpecValid ConditionType = "SpecValid"
 
-	ConditionReasonSpecInvalid ConditionReason = "SpecValid"
-	ConditionReasonSpecValid   ConditionReason = "SpecInvalid"
+	ConditionReasonSpecInvalid ConditionReason = "SpecInvalid"
+	ConditionReasonSpecValid   ConditionReason = "SpecValid"
 )
 
 type ContainerImage struct {

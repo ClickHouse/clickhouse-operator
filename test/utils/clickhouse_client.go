@@ -15,7 +15,7 @@ import (
 
 type ClickHouseClient struct {
 	cluster *ForwardedCluster
-	clients map[v1.ReplicaID]clickhouse.Conn
+	clients map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
 
 func NewClickHouseClient(
@@ -34,7 +34,7 @@ func NewClickHouseClient(
 		return nil, fmt.Errorf("forwarding ch nodes failed: %w", err)
 	}
 	created := false
-	clients := map[v1.ReplicaID]clickhouse.Conn{}
+	clients := map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 	defer func() {
 		if !created {
 			for _, client := range clients {
@@ -64,7 +64,7 @@ func NewClickHouseClient(
 	}
 
 	for pod, addr := range cluster.PodToAddr {
-		id, err := v1.IDFromLabels(pod.Labels)
+		id, err := v1.ClickHouseIDFromLabels(pod.Labels)
 		if err != nil {
 			return nil, fmt.Errorf("get replica id from pod %s labels: %w", pod.Name, err)
 		}

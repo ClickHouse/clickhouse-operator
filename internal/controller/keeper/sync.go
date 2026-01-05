@@ -492,7 +492,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		if _, ok := ctx.ReplicaState[id]; ok {
+		if _, ok := ctx.ReplicaState[id]; !ok {
 			log.Info("deleting stale ConfigMap", "configmap", configMap.Name)
 			if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 				return r.Delete(ctx.Context, &configMap)
@@ -514,7 +514,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		if _, ok := ctx.ReplicaState[id]; ok {
+		if _, ok := ctx.ReplicaState[id]; !ok {
 			log.Info("deleting stale StatefulSet", "statefuleset", sts.Name)
 			if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 				return r.Delete(ctx.Context, &sts)
@@ -751,12 +751,18 @@ func (r *ClusterReconciler) loadQuorumReplicas(ctx *reconcileContext) (map[v1.Ke
 		return nil, fmt.Errorf("get quorum configmap: %w", err)
 	}
 
-	var config QuorumConfig
+	var config struct {
+		KeeperServer struct {
+			RaftConfiguration struct {
+				Server QuorumConfig `yaml:"server"`
+			} `yaml:"raft_configuration"`
+		} `yaml:"keeper_server"`
+	}
 	if err := yaml.Unmarshal([]byte(configMap.Data[QuorumConfigFileName]), &config); err != nil {
 		return nil, fmt.Errorf("unmarshal quorum config: %w", err)
 	}
 	replicas := map[v1.KeeperReplicaID]struct{}{}
-	for _, member := range config {
+	for _, member := range config.KeeperServer.RaftConfiguration.Server {
 		id, err := strconv.ParseInt(member.ID, 10, 32)
 		if err != nil {
 			return nil, fmt.Errorf("parse replica ID %q: %w", member.ID, err)

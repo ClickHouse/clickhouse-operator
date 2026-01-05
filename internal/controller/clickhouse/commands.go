@@ -56,13 +56,14 @@ type Commander struct {
 	cluster *v1.ClickHouseCluster
 	auth    clickhouse.Auth
 
-	conns sync.Map
+	lock  sync.RWMutex
+	conns map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
 
 func NewCommander(log util.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret) *Commander {
 	return &Commander{
 		log:     log.Named("commander"),
-		conns:   sync.Map{},
+		conns:   map[v1.ClickHouseReplicaID]clickhouse.Conn{},
 		cluster: cluster,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
@@ -72,15 +73,13 @@ func NewCommander(log util.Logger, cluster *v1.ClickHouseCluster, secret *corev1
 }
 
 func (cmd *Commander) Close() {
-	cmd.conns.Range(func(id, conn interface{}) bool {
+	for id, conn := range cmd.conns {
 		if err := conn.(clickhouse.Conn).Close(); err != nil {
 			cmd.log.Warn("error closing connection", "error", err, "replica_id", id)
 		}
+	}
 
-		return true
-	})
-
-	cmd.conns.Clear()
+	cmd.conns = map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 }
 
 func (cmd *Commander) Ping(ctx context.Context, id v1.ClickHouseReplicaID) error {
@@ -332,8 +331,19 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 }
 
 func (cmd *Commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
-	if conn, ok := cmd.conns.Load(id); ok {
-		return conn.(clickhouse.Conn), nil
+	cmd.lock.RLock()
+	conn, ok := cmd.conns[id]
+	cmd.lock.RUnlock()
+	if ok {
+		return conn, nil
+	}
+
+	cmd.lock.Lock()
+	defer cmd.lock.Unlock()
+
+	// Check if another goroutine created the connection while we were waiting for the lock
+	if conn, ok := cmd.conns[id]; ok {
+		return conn, nil
 	}
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
@@ -348,6 +358,6 @@ func (cmd *Commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 		return nil, err
 	}
 
-	cmd.conns.Store(id, conn)
+	cmd.conns[id] = conn
 	return conn, nil
 }

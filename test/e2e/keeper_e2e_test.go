@@ -190,7 +190,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
 			},
 			Spec: certv1.CertificateSpec{
-				IssuerRef: mcertv1.ObjectReference{
+				IssuerRef: mcertv1.IssuerReference{
 					Kind: "Issuer",
 					Name: issuer.Name,
 				},
