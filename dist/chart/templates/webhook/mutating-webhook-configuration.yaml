@@ -37,7 +37,7 @@ webhooks:
             name: clickhouse-operator-webhook-service
             namespace: {{ .Release.Namespace }}
             path: /mutate-clickhouse-com-v1alpha1-keepercluster
-      failurePolicy: Fail
+      failurePolicy: Ignore
       name: mkeepercluster.kb.io
       rules:
         - apiGroups:

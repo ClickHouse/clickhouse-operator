@@ -57,7 +57,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2025-11-28T12:31:04Z"
+    createdAt: "2026-01-05T18:22:42Z"
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
@@ -178,9 +178,6 @@ spec:
       - description: ReadyReplicas Total number of replicas ready to server requests.
         displayName: Ready Replicas
         path: readyReplicas
-      - description: Replicas that should be present in config
-        displayName: Replicas
-        path: replicas
       - description: StatefulSetRevision indicates target StatefulSet revision for
           every replica.
         displayName: Stateful Set Revision
@@ -454,7 +451,7 @@ spec:
     - v1
     containerPort: 443
     deploymentName: clickhouse-operator-controller-manager
-    failurePolicy: Fail
+    failurePolicy: Ignore
     generateName: mkeepercluster.kb.io
     rules:
     - apiGroups:
@@ -494,7 +491,7 @@ spec:
     - v1
     containerPort: 443
     deploymentName: clickhouse-operator-controller-manager
-    failurePolicy: Fail
+    failurePolicy: Ignore
     generateName: vkeepercluster.kb.io
     rules:
     - apiGroups:

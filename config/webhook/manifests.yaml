@@ -31,7 +31,7 @@ webhooks:
       name: webhook-service
       namespace: system
       path: /mutate-clickhouse-com-v1alpha1-keepercluster
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: mkeepercluster.kb.io
   rules:
   - apiGroups:
@@ -77,7 +77,7 @@ webhooks:
       name: webhook-service
       namespace: system
       path: /validate-clickhouse-com-v1alpha1-keepercluster
-  failurePolicy: Fail
+  failurePolicy: Ignore
   name: vkeepercluster.kb.io
   rules:
   - apiGroups:

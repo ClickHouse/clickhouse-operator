@@ -3713,11 +3713,6 @@ spec:
                                 description: ReadyReplicas Total number of replicas ready to server requests.
                                 format: int32
                                 type: integer
-                            replicas:
-                                description: Replicas that should be present in config
-                                items:
-                                    type: string
-                                type: array
                             statefulSetRevision:
                                 description: StatefulSetRevision indicates target StatefulSet revision for every replica.
                                 type: string

@@ -3887,11 +3887,6 @@ spec:
                   requests.
                 format: int32
                 type: integer
-              replicas:
-                description: Replicas that should be present in config
-                items:
-                  type: string
-                type: array
               statefulSetRevision:
                 description: StatefulSetRevision indicates target StatefulSet revision
                   for every replica.

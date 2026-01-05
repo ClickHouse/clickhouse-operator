@@ -122,9 +122,6 @@ spec:
       - description: ReadyReplicas Total number of replicas ready to server requests.
         displayName: Ready Replicas
         path: readyReplicas
-      - description: Replicas that should be present in config
-        displayName: Replicas
-        path: replicas
       - description: StatefulSetRevision indicates target StatefulSet revision for
           every replica.
         displayName: Stateful Set Revision

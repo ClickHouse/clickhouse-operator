@@ -30,8 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-keepercluster,mutating=true,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=mkeepercluster.kb.io,admissionReviewVersions=v1
-// +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-keepercluster,mutating=false,failurePolicy=fail,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=vkeepercluster.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-clickhouse-com-v1alpha1-keepercluster,mutating=true,failurePolicy=ignore,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=mkeepercluster.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-clickhouse-com-v1alpha1-keepercluster,mutating=false,failurePolicy=ignore,sideEffects=None,groups=clickhouse.com,resources=keeperclusters,verbs=create;update,versions=v1alpha1,name=vkeepercluster.kb.io,admissionReviewVersions=v1
 
 type KeeperClusterWebhook struct {
 	Log util.Logger
