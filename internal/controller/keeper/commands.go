@@ -6,9 +6,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"maps"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -45,7 +43,7 @@ type dialer interface {
 	DialContext(ctx context.Context, network, address string) (net.Conn, error)
 }
 
-func getConnections(ctx context.Context, log util.Logger, hostnamesByID map[string]string, tlsRequired bool) (Connections, []error) {
+func getConnection(ctx context.Context, hostname string, tlsRequired bool) (net.Conn, error) {
 	var d dialer = &net.Dialer{}
 	port := PortNative
 	if tlsRequired {
@@ -59,25 +57,10 @@ func getConnections(ctx context.Context, log util.Logger, hostnamesByID map[stri
 		port = PortNativeSecure
 	}
 
-	result := Connections{}
-	var connErrs []error
-	for id, host := range hostnamesByID {
-		conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", host, port))
-		if err != nil {
-			connErrs = append(connErrs, fmt.Errorf("connect to %s: %w", host, err))
-			continue
-		}
-		result[id] = conn
-	}
-
-	if len(connErrs) > 0 && len(result) > 0 {
-		log.Debug(fmt.Sprintf("open keeper connections, opened: %d, expected: %d", len(result), len(hostnamesByID)))
-	}
-
-	return result, connErrs
+	return d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", hostname, port))
 }
 
-func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus, error) {
+func queryKeeper(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus, error) {
 	log.Debug(fmt.Sprintf("querying keeper pod: %s", conn.RemoteAddr().String()))
 	if dl, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(dl); err != nil {
@@ -134,36 +117,23 @@ func queryPod(ctx context.Context, log util.Logger, conn net.Conn) (ServerStatus
 	return result, nil
 }
 
-func queryAllPods(ctx context.Context, log util.Logger, connections Connections) map[string]ServerStatus {
-	execResult := util.ExecuteParallel(slices.Collect(maps.Keys(connections)), func(id string) (string, ServerStatus, error) {
-		resp, err := queryPod(ctx, log.With("replica_id", id), connections[id])
-		return id, resp, err
-	})
-	log.Debug("all keeper pods have responded")
-
-	result := map[string]ServerStatus{}
-	for id, res := range execResult {
-		if res.Err != nil {
-			log.Info("failed to query keeper pod", "error", res.Err, "replica_id", id)
-			continue
+func getServerStatus(ctx context.Context, log util.Logger, hostname string, tlsRequired bool) ServerStatus {
+	conn, err := getConnection(ctx, hostname, tlsRequired)
+	if err != nil {
+		log.Info("failed to get keeper connection", "error", err)
+		return ServerStatus{}
+	}
+	defer func(conn net.Conn) {
+		if err := conn.Close(); err != nil {
+			log.Warn("failed to close connection", "error", err)
 		}
+	}(conn)
 
-		result[id] = res.Result
+	status, err := queryKeeper(ctx, log, conn)
+	if err != nil {
+		log.Info("failed to query keeper pod", "error", err)
+		return ServerStatus{}
 	}
 
-	return result
-}
-
-func getServersStates(ctx context.Context, log util.Logger, hostnamesByID map[string]string, tlsRequired bool) map[string]ServerStatus {
-	connections, errs := getConnections(ctx, log, hostnamesByID, tlsRequired)
-	for _, err := range errs {
-		log.Info("error getting keeper connection", "error", err)
-	}
-
-	if len(connections) == 0 {
-		return nil
-	}
-
-	defer connections.Close()
-	return queryAllPods(ctx, log, connections)
+	return status
 }

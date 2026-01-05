@@ -63,7 +63,7 @@ func TestServerRevision(t *testing.T) {
 func TestExtraConfig(t *testing.T) {
 	cr := &v1.KeeperCluster{}
 
-	baseConfigYAML, err := generateConfigForSingleReplica(cr, nil, "1")
+	baseConfigYAML, err := generateConfigForSingleReplica(cr, nil, 1)
 	require.NoError(t, err)
 	var baseConfig confMap
 	err = yaml.Unmarshal([]byte(baseConfigYAML), &baseConfig)
@@ -76,7 +76,7 @@ func TestExtraConfig(t *testing.T) {
 					"quorum_reads": true,
 				},
 			},
-		}, "1")
+		}, 1)
 		require.NoError(t, err)
 		var config confMap
 		err = yaml.Unmarshal([]byte(configYAML), &config)
@@ -93,7 +93,7 @@ func TestExtraConfig(t *testing.T) {
 					"compress_logs": true,
 				},
 			},
-		}, "1")
+		}, 1)
 		require.NoError(t, err)
 		var config confMap
 		err = yaml.Unmarshal([]byte(configYAML), &config)

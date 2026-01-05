@@ -202,68 +202,71 @@ type ClickHouseCluster struct {
 	Status ClickHouseClusterStatus `json:"status,omitempty"`
 }
 
-type ReplicaID struct {
+type ClickHouseReplicaID struct {
 	ShardID int32
 	Index   int32
 }
 
-func IDFromLabels(labels map[string]string) (ReplicaID, error) {
+func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, error) {
 	shardIDStr, ok := labels[util.LabelClickHouseShardID]
 	if !ok {
-		return ReplicaID{}, fmt.Errorf("missing shard ID label")
+		return ClickHouseReplicaID{}, fmt.Errorf("missing shard ID label")
 	}
 
 	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
 	if err != nil {
-		return ReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
 	}
 
 	replicaIDStr, ok := labels[util.LabelClickHouseReplicaID]
 	if !ok {
-		return ReplicaID{}, fmt.Errorf("missing replica ID label")
+		return ClickHouseReplicaID{}, fmt.Errorf("missing replica ID label")
 	}
 
 	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
 	if err != nil {
-		return ReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
 	}
 
-	return ReplicaID{
+	return ClickHouseReplicaID{
 		ShardID: int32(shardID),
 		Index:   int32(index),
 	}, nil
 }
 
-func IDFromHostname(v *ClickHouseCluster, hostname string) (ReplicaID, error) {
+func IDFromHostname(v *ClickHouseCluster, hostname string) (ClickHouseReplicaID, error) {
+	if !strings.HasPrefix(hostname, v.SpecificName()+"-") || !strings.HasSuffix(hostname, "-0") {
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q", hostname)
+	}
 	idParts := hostname[len(v.SpecificName())+1 : len(hostname)-2] // leave only {shard}-{index}
 	parts := strings.Split(idParts, "-")
 	if len(parts) != 2 {
-		return ReplicaID{}, fmt.Errorf("invalid hostname %q, expected format: <name>-<shard>-<index>-0", hostname)
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q, expected format: <name>-<shard>-<index>-0", hostname)
 	}
 
 	shardID, err := strconv.ParseInt(parts[0], 10, 32)
 	if err != nil {
-		return ReplicaID{}, fmt.Errorf("invalid shard ID %q in hostname %q: %w", parts[0], hostname, err)
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q in hostname %q: %w", parts[0], hostname, err)
 	}
 
 	index, err := strconv.ParseInt(parts[1], 10, 32)
 	if err != nil {
-		return ReplicaID{}, fmt.Errorf("invalid index %q in hostname %q: %w", parts[1], hostname, err)
+		return ClickHouseReplicaID{}, fmt.Errorf("invalid index %q in hostname %q: %w", parts[1], hostname, err)
 	}
 
-	return ReplicaID{
+	return ClickHouseReplicaID{
 		ShardID: int32(shardID),
 		Index:   int32(index),
 	}, nil
 }
 
-var _ logr.Marshaler = ReplicaID{}
+var _ logr.Marshaler = ClickHouseReplicaID{}
 
-func (id ReplicaID) MarshalLog() any {
+func (id ClickHouseReplicaID) MarshalLog() any {
 	return id.String()
 }
 
-func (id ReplicaID) String() string {
+func (id ClickHouseReplicaID) String() string {
 	return fmt.Sprintf("(%d:%d)", id.ShardID, id.Index)
 }
 
@@ -300,11 +303,11 @@ func (v *ClickHouseCluster) Replicas() int32 {
 	return *v.Spec.Replicas
 }
 
-func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ReplicaID] {
-	return func(yield func(ReplicaID) bool) {
+func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
+	return func(yield func(ClickHouseReplicaID) bool) {
 		for shard := range v.Shards() {
 			for index := range v.Replicas() {
-				if !yield(ReplicaID{ShardID: shard, Index: index}) {
+				if !yield(ClickHouseReplicaID{ShardID: shard, Index: index}) {
 					return
 				}
 			}
@@ -324,15 +327,15 @@ func (v *ClickHouseCluster) SecretName() string {
 	return v.SpecificName()
 }
 
-func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ReplicaID) string {
+func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ClickHouseReplicaID) string {
 	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
-func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ReplicaID) string {
+func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) string {
 	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
-func (v *ClickHouseCluster) HostnameById(id ReplicaID) string {
+func (v *ClickHouseCluster) HostnameById(id ClickHouseReplicaID) string {
 	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
 	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace)
 }

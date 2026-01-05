@@ -17,7 +17,7 @@ func TestConfigGeneratorValidYAML(t *testing.T) {
 	RegisterFailHandler(g.Fail)
 
 	ctx := reconcileContext{
-		ReconcileContextBase: controller.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]{
+		ReconcileContextBase: controller.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]{
 			Cluster: &v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -44,7 +44,7 @@ func TestConfigGeneratorValidYAML(t *testing.T) {
 	for _, generator := range generators {
 		t.Run(generator.Filename(), func(t *testing.T) {
 			Expect(generator.Exists(&ctx)).To(BeTrue())
-			data, err := generator.Generate(&ctx, v1.ReplicaID{})
+			data, err := generator.Generate(&ctx, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
 			obj := map[any]any{}
 			Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())

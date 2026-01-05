@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -125,11 +126,6 @@ type KeeperClusterStatus struct {
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// Replicas that should be present in config
-	// TODO probably can be tracked by rereading quorum config.
-	// +optional
-	// +operator-sdk:csv:customresourcedefinitions:type=status
-	Replicas []string `json:"replicas"`
 	// ReadyReplicas Total number of replicas ready to server requests.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
@@ -175,6 +171,22 @@ type KeeperCluster struct {
 	Status KeeperClusterStatus `json:"status,omitempty"`
 }
 
+type KeeperReplicaID int32
+
+func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error) {
+	idStr, ok := labels[util.LabelKeeperReplicaID]
+	if !ok {
+		return 0, fmt.Errorf("missing replica ID label")
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid replica ID %q: %w", id, err)
+	}
+
+	return KeeperReplicaID(id), nil
+}
+
 func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: v.Namespace,
@@ -217,35 +229,26 @@ func (v *KeeperCluster) QuorumConfigMapName() string {
 	return fmt.Sprintf("%s-quorum-%s-%d", v.SpecificName(), KeeperConfigMapNameSuffix, latestKeeperQuorumConfigMapVersion)
 }
 
-func (v *KeeperCluster) ConfigMapNameByReplicaID(replicaID string) string {
-	return fmt.Sprintf("%s-%s-%s-v%d", v.SpecificName(), replicaID, KeeperConfigMapNameSuffix, latestKeeperConfigMapVersion)
+func (v *KeeperCluster) ConfigMapNameByReplicaID(replicaID KeeperReplicaID) string {
+	return fmt.Sprintf("%s-%d-%s-v%d", v.SpecificName(), replicaID, KeeperConfigMapNameSuffix, latestKeeperConfigMapVersion)
 }
 
-func (v *KeeperCluster) StatefulSetNameByReplicaID(replicaID string) string {
-	return fmt.Sprintf("%s-%s", v.SpecificName(), replicaID)
+func (v *KeeperCluster) StatefulSetNameByReplicaID(replicaID KeeperReplicaID) string {
+	return fmt.Sprintf("%s-%d", v.SpecificName(), replicaID)
 }
 
-func (v *KeeperCluster) HostnameById(replicaID string) string {
+func (v *KeeperCluster) HostnameById(replicaID KeeperReplicaID) string {
 	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
 	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(replicaID), v.HeadlessServiceName(), v.Namespace)
 }
 
 func (v *KeeperCluster) Hostnames() []string {
-	hostnames := make([]string, 0, len(v.Status.Replicas))
-	for _, id := range v.Status.Replicas {
+	hostnames := make([]string, 0, v.Replicas())
+	for id := range KeeperReplicaID(v.Replicas()) {
 		hostnames = append(hostnames, v.HostnameById(id))
 	}
 
 	return hostnames
-}
-
-func (v *KeeperCluster) HostnamesByID() map[string]string {
-	hostnameByID := map[string]string{}
-	for _, id := range v.Status.Replicas {
-		hostnameByID[id] = v.HostnameById(id)
-	}
-
-	return hostnameByID
 }
 
 // +kubebuilder:object:root=true

@@ -83,7 +83,7 @@ func (cmd *Commander) Close() {
 	cmd.conns.Clear()
 }
 
-func (cmd *Commander) Ping(ctx context.Context, id v1.ReplicaID) error {
+func (cmd *Commander) Ping(ctx context.Context, id v1.ClickHouseReplicaID) error {
 	conn, err := cmd.getConn(id)
 	if err != nil {
 		return fmt.Errorf("failed to get connection for replica %v: %w", id, err)
@@ -92,7 +92,7 @@ func (cmd *Commander) Ping(ctx context.Context, id v1.ReplicaID) error {
 	return conn.Ping(ctx)
 }
 
-func (cmd *Commander) Databases(ctx context.Context, id v1.ReplicaID) (map[string]DatabaseDescriptor, error) {
+func (cmd *Commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]DatabaseDescriptor, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection for replica %v: %w", id, err)
@@ -118,7 +118,7 @@ func (cmd *Commander) Databases(ctx context.Context, id v1.ReplicaID) (map[strin
 	return databases, nil
 }
 
-func (cmd *Commander) CreateDatabases(ctx context.Context, id v1.ReplicaID, databases map[string]DatabaseDescriptor) error {
+func (cmd *Commander) CreateDatabases(ctx context.Context, id v1.ClickHouseReplicaID, databases map[string]DatabaseDescriptor) error {
 	conn, err := cmd.getConn(id)
 	if err != nil {
 		return fmt.Errorf("failed to get connection for replica %v: %w", id, err)
@@ -141,7 +141,7 @@ func (cmd *Commander) CreateDatabases(ctx context.Context, id v1.ReplicaID, data
 }
 
 // EnsureDefaultDatabaseEngine ensures that the default database engine is set to the Selected one.
-func (cmd *Commander) EnsureDefaultDatabaseEngine(ctx context.Context, log util.Logger, cluster *v1.ClickHouseCluster, id v1.ReplicaID) error {
+func (cmd *Commander) EnsureDefaultDatabaseEngine(ctx context.Context, log util.Logger, cluster *v1.ClickHouseCluster, id v1.ClickHouseReplicaID) error {
 	log = log.With("replica_id", id)
 
 	conn, err := cmd.getConn(id)
@@ -185,15 +185,15 @@ func (cmd *Commander) EnsureDefaultDatabaseEngine(ctx context.Context, log util.
 }
 
 func (cmd *Commander) SyncShard(ctx context.Context, log util.Logger, shardID int32) error {
-	replicasToSync := make([]v1.ReplicaID, 0, cmd.cluster.Replicas())
+	replicasToSync := make([]v1.ClickHouseReplicaID, 0, cmd.cluster.Replicas())
 	for i := int32(0); i < cmd.cluster.Replicas(); i++ {
-		replicasToSync = append(replicasToSync, v1.ReplicaID{
+		replicasToSync = append(replicasToSync, v1.ClickHouseReplicaID{
 			ShardID: shardID,
 			Index:   i,
 		})
 	}
 
-	results := util.ExecuteParallel(replicasToSync, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
+	results := util.ExecuteParallel(replicasToSync, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
 		errs := cmd.SyncReplica(ctx, log.With("replica_id", id), id)
 		if len(errs) > 0 {
 			return id, struct{}{}, fmt.Errorf("sync replica %v: %w", id, errors.Join(errs...))
@@ -210,7 +210,7 @@ func (cmd *Commander) SyncShard(ctx context.Context, log util.Logger, shardID in
 	return errors.Join(errs...)
 }
 
-func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.ReplicaID) (errs []error) {
+func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.ClickHouseReplicaID) (errs []error) {
 	databases, err := cmd.Databases(ctx, id)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("get databases for replica %v: %w", id, err))
@@ -264,8 +264,8 @@ func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.Re
 }
 
 // CleanupDatabaseReplicas removes stale replicated database replicas, skipping unsync ones.
-func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ReplicaID]struct{}) (bool, error) {
-	var anyID v1.ReplicaID
+func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ClickHouseReplicaID]struct{}) (bool, error) {
+	var anyID v1.ClickHouseReplicaID
 	for id := range cmd.cluster.ReplicaIDs() {
 		anyID = id
 	}
@@ -287,7 +287,7 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 	succeed := 0
 	for rows.Next() {
 		var database string
-		var toDrop v1.ReplicaID
+		var toDrop v1.ClickHouseReplicaID
 		var isActive bool
 		var hostname string
 		total++
@@ -331,7 +331,7 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 	return total == succeed, nil
 }
 
-func (cmd *Commander) getConn(id v1.ReplicaID) (clickhouse.Conn, error) {
+func (cmd *Commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
 	if conn, ok := cmd.conns.Load(id); ok {
 		return conn.(clickhouse.Conn), nil
 	}

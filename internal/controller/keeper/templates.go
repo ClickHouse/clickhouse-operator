@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dario.cat/mergo"
@@ -108,8 +109,9 @@ type ServerConfig struct {
 	Port     uint16 `yaml:"port"`
 }
 
-func TemplateQuorumConfig(cr *v1.KeeperCluster) (*corev1.ConfigMap, error) {
-	quorumConfig := generateQuorumConfig(cr)
+func TemplateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
+	quorumConfig := generateQuorumConfig(ctx)
+	cr := ctx.Cluster
 	revision, err := util.DeepHashObject(quorumConfig)
 	if err != nil {
 		return nil, fmt.Errorf("hash quorum config: %w", err)
@@ -151,12 +153,15 @@ func TemplateQuorumConfig(cr *v1.KeeperCluster) (*corev1.ConfigMap, error) {
 	return configmap, nil
 }
 
-func generateQuorumConfig(cr *v1.KeeperCluster) QuorumConfig {
-	hostnamesByID := cr.HostnamesByID()
+func generateQuorumConfig(ctx *reconcileContext) QuorumConfig {
+	hostnamesByID := map[v1.KeeperReplicaID]string{}
+	for id := range ctx.ReplicaState {
+		hostnamesByID[id] = ctx.Cluster.HostnameById(id)
+	}
 	quorumConfig := make(QuorumConfig, 0, len(hostnamesByID))
 	for id, hostname := range hostnamesByID {
 		quorumConfig = append(quorumConfig, ServerConfig{
-			ID:       id,
+			ID:       strconv.FormatInt(int64(id), 10),
 			Hostname: hostname,
 			Port:     PortInterserver,
 		})
@@ -195,7 +200,7 @@ type KeeperServer struct {
 }
 
 func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
-	config, err := generateConfigForSingleReplica(cr, extraConfig, "template")
+	config, err := generateConfigForSingleReplica(cr, extraConfig, 0)
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
@@ -209,7 +214,7 @@ func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) 
 }
 
 func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
-	sts, err := TemplateStatefulSet(cr, "template")
+	sts, err := TemplateStatefulSet(cr, 0)
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
@@ -222,7 +227,7 @@ func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID string) (*corev1.ConfigMap, error) {
+func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
 	config, err := generateConfigForSingleReplica(cr, extraConfig, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("generate configmap for replica %q: %w", replicaID, err)
@@ -234,12 +239,9 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.ConfigMapNameByReplicaID(replicaID),
-			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey:          cr.SpecificName(),
-				util.LabelKeeperReplicaID: replicaID,
-			}),
+			Name:        cr.ConfigMapNameByReplicaID(replicaID),
+			Namespace:   cr.Namespace,
+			Labels:      util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID)),
 			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
@@ -248,7 +250,7 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 	}, nil
 }
 
-func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.StatefulSet, error) {
+func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
 	volumes, volumeMounts, err := buildVolumes(cr, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("build volumes for StatefulSet: %w", err)
@@ -406,10 +408,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				util.LabelAppKey:          cr.SpecificName(),
-				util.LabelKeeperReplicaID: replicaID,
-			},
+			MatchLabels: replicaLabels(cr, replicaID),
 		},
 		ServiceName:         cr.HeadlessServiceName(),
 		PodManagementPolicy: appsv1.ParallelPodManagement,
@@ -421,12 +420,10 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: cr.SpecificName(),
-				Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-					util.LabelAppKey:          cr.SpecificName(),
-					util.LabelRoleKey:         util.LabelKeeperValue,
-					util.LabelAppK8sKey:       util.LabelKeeperValue,
-					util.LabelInstanceK8sKey:  cr.SpecificName(),
-					util.LabelKeeperReplicaID: replicaID,
+				Labels: util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+					util.LabelRoleKey:        util.LabelKeeperValue,
+					util.LabelAppK8sKey:      util.LabelKeeperValue,
+					util.LabelInstanceK8sKey: cr.SpecificName(),
 				}),
 				Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
@@ -453,11 +450,9 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.StatefulSetNameByReplicaID(replicaID),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey:          cr.SpecificName(),
-				util.LabelAppK8sKey:       util.LabelKeeperValue,
-				util.LabelInstanceK8sKey:  cr.SpecificName(),
-				util.LabelKeeperReplicaID: replicaID,
+			Labels: util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+				util.LabelAppK8sKey:      util.LabelKeeperValue,
+				util.LabelInstanceK8sKey: cr.SpecificName(),
 			}),
 			Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
 				util.AnnotationStatefulSetVersion: BreakingStatefulSetVersion.String(),
@@ -467,7 +462,14 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID string) (*appsv1.Statef
 	}, nil
 }
 
-func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID string) (string, error) {
+func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]string {
+	return map[string]string{
+		util.LabelAppKey:          cr.SpecificName(),
+		util.LabelKeeperReplicaID: strconv.FormatInt(int64(id), 10),
+	}
+}
+
+func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (string, error) {
 	config := Config{
 		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
@@ -475,7 +477,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),
 		KeeperServer: KeeperServer{
 			TCPPort:             PortNative,
-			ServerID:            replicaID,
+			ServerID:            strconv.FormatInt(int64(replicaID), 10),
 			StoragePath:         BaseDataPath,
 			DigestEnabled:       true,
 			LogStoragePath:      StorageLogPath,
@@ -532,7 +534,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 	return string(yamlConfig), nil
 }
 
-func buildVolumes(cr *v1.KeeperCluster, replicaID string) ([]corev1.Volume, []corev1.VolumeMount, error) {
+func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      internal.QuorumConfigVolumeName,

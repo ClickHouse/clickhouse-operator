@@ -23,11 +23,12 @@ import (
 func TestUpdateReplica(t *testing.T) {
 	r, ctx := setupReconciler(t)
 
-	replicaID := "1"
+	var replicaID v1.KeeperReplicaID = 1
 	configMapName := ctx.Cluster.ConfigMapNameByReplicaID(replicaID)
 	stsName := ctx.Cluster.StatefulSetNameByReplicaID(replicaID)
 
 	// Create resources
+	ctx.SetReplica(1, replicaState{})
 	result, err := r.reconcileReplicaResources(r.Logger, &ctx)
 	require.NoError(t, err)
 	require.False(t, result.IsZero())
@@ -106,11 +107,10 @@ func setupReconciler(t *testing.T) (*ClusterReconciler, reconcileContext) {
 		Status: v1.KeeperClusterStatus{
 			ConfigurationRevision: "config-v1",
 			StatefulSetRevision:   "sts-v1",
-			Replicas:              []string{"1"},
 		},
 	}
 	ctx.Context = t.Context()
-	ctx.ReplicaState = map[string]replicaState{}
+	ctx.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
 
 	return reconciler, ctx
 }

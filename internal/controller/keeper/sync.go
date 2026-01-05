@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	chctrl "github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/google/go-cmp/cmp"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -46,7 +48,7 @@ func (r replicaState) Ready(ctx *reconcileContext) bool {
 	}
 
 	stsReady := r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
-	if len(ctx.Cluster.Status.Replicas) == 1 {
+	if len(ctx.ReplicaState) == 1 {
 		return stsReady && r.Status.ServerState == ModeStandalone
 	}
 
@@ -94,7 +96,7 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 }
 
 type reconcileContext struct {
-	chctrl.ReconcileContextBase[*v1.KeeperCluster, string, replicaState]
+	chctrl.ReconcileContextBase[*v1.KeeperCluster, v1.KeeperReplicaID, replicaState]
 
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	ExtraConfig map[string]any
@@ -106,10 +108,10 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 	log.Info("Enter Keeper Reconcile", "spec", cr.Spec, "status", cr.Status)
 
 	recCtx := reconcileContext{
-		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.KeeperCluster, string, replicaState]{
+		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.KeeperCluster, v1.KeeperReplicaID, replicaState]{
 			Cluster:      cr,
 			Context:      ctx,
-			ReplicaState: map[string]replicaState{},
+			ReplicaState: map[v1.KeeperReplicaID]replicaState{},
 		},
 
 		ExtraConfig: map[string]any{},
@@ -228,40 +230,65 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 		return nil, nil
 	}
 
-	hostnamesByID := map[string]string{}
+	listOpts := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
 
-	for _, id := range ctx.Cluster.Status.Replicas {
-		var replicaSts appsv1.StatefulSet
-		if err := r.Get(ctx.Context, types.NamespacedName{
-			Namespace: ctx.Cluster.Namespace,
-			Name:      ctx.Cluster.StatefulSetNameByReplicaID(id),
-		}, &replicaSts); err != nil {
-			if !k8serrors.IsNotFound(err) {
-				return &ctrl.Result{}, fmt.Errorf("get replicas %q sts: %w", id, err)
-			}
+	var statefulSets appsv1.StatefulSetList
+	if err := r.List(ctx.Context, &statefulSets, listOpts); err != nil {
+		return nil, fmt.Errorf("list StatefulSets: %w", err)
+	}
 
-			log.Debug("StatefulSet not found", "replica_id", id, "statefuleset", ctx.Cluster.StatefulSetNameByReplicaID(id))
-		} else {
-			hostnamesByID[id] = ctx.Cluster.HostnameById(id)
-			isError, err := chctrl.CheckPodError(ctx.Context, log, r.Client, &replicaSts)
-			if err != nil {
-				return &ctrl.Result{}, fmt.Errorf("get replica %q error state: %w", id, err)
-			}
+	tlsRequired := ctx.Cluster.Spec.Settings.TLS.Required
+	execResults := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.KeeperReplicaID, replicaState, error) {
+		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
+		if err != nil {
+			log.Error(err, "get replica ID from StatefulSet labels", "stateful_set", sts.Name)
+			return -1, replicaState{}, err
+		}
 
-			ctx.SetReplica(id, replicaState{
-				Error:       isError,
-				StatefulSet: &replicaSts,
-			})
+		hasError, err := chctrl.CheckPodError(ctx.Context, log, r.Client, &sts)
+		if err != nil {
+			log.Warn("failed to check replica pod error", "stateful_set", sts.Name, "error", err)
+			hasError = true
+		}
+
+		status := getServerStatus(ctx.Context, log.With("replica_id", id), ctx.Cluster.HostnameById(id), tlsRequired)
+
+		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
+		return id, replicaState{
+			StatefulSet: &sts,
+			Error:       hasError,
+			Status:      status,
+		}, nil
+	})
+	for id, res := range execResults {
+		if res.Err != nil {
+			log.Info("failed to load replica state", "error", res.Err, "replica_id", id)
+			continue
+		}
+
+		if exists := ctx.SetReplica(id, res.Result); exists {
+			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
+				"replica_id", id, "statefulset", res.Result.StatefulSet)
 		}
 	}
 
-	checkCtx, cancel := context.WithTimeout(ctx.Context, StatusRequestTimeout)
-	defer cancel()
+	// If relpica existed before we need to mark it active as quorum expects it.
+	if len(ctx.ReplicaState) > 0 && len(ctx.ReplicaState) < int(ctx.Cluster.Replicas()) {
+		quorumReplicas, err := r.loadQuorumReplicas(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load quorum replicas: %w", err)
+		}
 
-	for id, state := range getServersStates(checkCtx, log, hostnamesByID, ctx.Cluster.Spec.Settings.TLS.Required) {
-		replica := ctx.Replica(id)
-		replica.Status = state
-		ctx.SetReplica(id, replica)
+		for id := range quorumReplicas {
+			if _, exists := ctx.ReplicaState[id]; !exists {
+				log.Info("adding missing replica from quorum config", "replica_id", id)
+				ctx.SetReplica(id, replicaState{
+					Error:       false,
+					StatefulSet: nil,
+					Status:      ServerStatus{},
+				})
+			}
+		}
 	}
 
 	return nil, nil
@@ -269,40 +296,38 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 
 func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	requestedReplicas := int(ctx.Cluster.Replicas())
+	activeReplicas := len(ctx.ReplicaState)
 
 	// New cluster creation, creates all replicas.
-	if requestedReplicas > 0 && len(ctx.Cluster.Status.Replicas) == 0 {
+	if requestedReplicas > 0 && activeReplicas == 0 {
 		log.Debug("creating all replicas")
-		for i := range requestedReplicas {
-			id := strconv.Itoa(i + 1)
+		for id := range v1.KeeperReplicaID(requestedReplicas) { //nolint:gosec
 			log.Info("creating new replica", "replica_id", id)
-			ctx.Cluster.Status.Replicas = append(ctx.Cluster.Status.Replicas, id)
+			ctx.SetReplica(id, replicaState{})
 		}
 
 		return &ctrl.Result{}, nil
 	}
 
 	// Scale to zero replica count could be applied without checks.
-	if requestedReplicas == 0 && len(ctx.Cluster.Status.Replicas) > 0 {
-		log.Debug("deleting all replicas", "replicas", ctx.Cluster.Status.Replicas)
-		ctx.Cluster.Status.Replicas = nil
+	if requestedReplicas == 0 && activeReplicas > 0 {
+		log.Debug("deleting all replicas", "replicas", slices.Collect(maps.Keys(ctx.ReplicaState)))
+		ctx.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
 		return &ctrl.Result{}, nil
 	}
 
-	if requestedReplicas == len(ctx.Cluster.Status.Replicas) {
+	if requestedReplicas == activeReplicas {
 		return nil, nil
 	}
 
 	// For running cluster, allow quorum membership changes only in stable state.
 	leaderMode := ModeLeader
-	if len(ctx.Cluster.Status.Replicas) == 1 {
+	if activeReplicas == 1 {
 		leaderMode = ModeStandalone
 	}
 
 	hasLeader := false
-	for _, id := range ctx.Cluster.Status.Replicas {
-		replica := ctx.Replica(id)
-
+	for id, replica := range ctx.ReplicaState {
 		if replica.HasConfigMapDiff(ctx) {
 			log.Info("replica configurationRevision is stale, delaying quorum membership changes", "replica_id", id)
 			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
@@ -323,11 +348,11 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 
 			hasLeader = true
 			// Wait for deleted replicas to leave the quorum.
-			if replica.Status.Followers > len(ctx.Cluster.Status.Replicas)-1 {
-				log.Info(fmt.Sprintf("leader has more followers than expected: %d > %d, delaying quorum membership changes", replica.Status.Followers, len(ctx.Cluster.Status.Replicas)-1), "replica_id", id)
+			if replica.Status.Followers > activeReplicas-1 {
+				log.Info(fmt.Sprintf("leader has more followers than expected: %d > %d, delaying quorum membership changes", replica.Status.Followers, activeReplicas-1), "replica_id", id)
 				return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-			} else if replica.Status.Followers < len(ctx.Cluster.Status.Replicas)-1 {
-				log.Info(fmt.Sprintf("leader has less followers than expected: %d < %d, delaying quorum membership changes", replica.Status.Followers, len(ctx.Cluster.Status.Replicas)-1), "replica_id", id)
+			} else if replica.Status.Followers < activeReplicas-1 {
+				log.Info(fmt.Sprintf("leader has less followers than expected: %d < %d, delaying quorum membership changes", replica.Status.Followers, activeReplicas-1), "replica_id", id)
 				return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 			}
 		}
@@ -338,32 +363,31 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 	}
 
 	// Add single replica in quorum, allocating the first free id.
-	if len(ctx.Cluster.Status.Replicas) < requestedReplicas {
-		for i := 1; ; i++ {
-			id := strconv.Itoa(i)
-			if !slices.Contains(ctx.Cluster.Status.Replicas, id) {
+	if activeReplicas < requestedReplicas {
+		for id := v1.KeeperReplicaID(1); ; id++ {
+			if _, ok := ctx.ReplicaState[id]; !ok {
 				log.Info("creating new replica", "replica_id", id)
-				ctx.Cluster.Status.Replicas = append(ctx.Cluster.Status.Replicas, id)
+				ctx.SetReplica(id, replicaState{})
 				return nil, nil
 			}
 		}
 	}
 
 	// Remove single replica from the quorum. Prefer bigger id.
-	if len(ctx.Cluster.Status.Replicas) > requestedReplicas {
-		chosenIndex := -1
-		for i, id := range ctx.Cluster.Status.Replicas {
-			if chosenIndex == -1 || ctx.Cluster.Status.Replicas[chosenIndex] < id {
-				chosenIndex = i
+	if activeReplicas > requestedReplicas {
+		chosenIndex := v1.KeeperReplicaID(-1)
+		for id := range ctx.ReplicaState {
+			if chosenIndex == -1 || chosenIndex < id {
+				chosenIndex = id
 			}
 		}
 
 		if chosenIndex == -1 {
-			log.Warn(fmt.Sprintf("no replica in cluster, but requested scale down: %d < %d", requestedReplicas, len(ctx.Cluster.Status.Replicas)))
+			log.Warn(fmt.Sprintf("no replica in cluster, but requested scale down: %d < %d", requestedReplicas, activeReplicas))
 		}
 
-		log.Info("deleting replica", "replica_id", ctx.Cluster.Status.Replicas[chosenIndex])
-		ctx.Cluster.Status.Replicas = slices.Delete(ctx.Cluster.Status.Replicas, chosenIndex, chosenIndex+1)
+		log.Info("deleting replica", "replica_id", chosenIndex)
+		delete(ctx.ReplicaState, chosenIndex)
 		return nil, nil
 	}
 
@@ -381,7 +405,7 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 		return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
 	}
 
-	configMap, err := TemplateQuorumConfig(ctx.Cluster)
+	configMap, err := TemplateQuorumConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("template quorum config: %w", err)
 	}
@@ -399,10 +423,10 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 // NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
 func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	highestStage := chctrl.StageUpToDate
-	var replicasInStatus []string
+	var replicasInStatus []v1.KeeperReplicaID
 
-	for _, id := range ctx.Cluster.Status.Replicas {
-		stage := ctx.Replica(id).UpdateStage(ctx)
+	for id, state := range ctx.ReplicaState {
+		stage := state.UpdateStage(ctx)
 		if stage == highestStage {
 			replicasInStatus = append(replicasInStatus, id)
 			continue
@@ -410,7 +434,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 
 		if stage > highestStage {
 			highestStage = stage
-			replicasInStatus = []string{id}
+			replicasInStatus = []v1.KeeperReplicaID{id}
 		}
 	}
 
@@ -432,8 +456,8 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 				chosenReplica = id
 			}
 		}
-		log.Info(fmt.Sprintf("updating chosen replica %s with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
-		replicasInStatus = []string{chosenReplica}
+		log.Info(fmt.Sprintf("updating chosen replica %d with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
+		replicasInStatus = []v1.KeeperReplicaID{chosenReplica}
 	case chctrl.StageNotExists, chctrl.StageError:
 		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
 	}
@@ -462,8 +486,13 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			continue
 		}
 
-		replicaID := configMap.Labels[util.LabelKeeperReplicaID]
-		if !slices.Contains(ctx.Cluster.Status.Replicas, replicaID) {
+		id, err := v1.KeeperReplicaIDFromLabels(configMap.Labels)
+		if err != nil {
+			log.Warn("parse ConfigMap replica ID", "configmap", configMap.Name, "err", err)
+			continue
+		}
+
+		if _, ok := ctx.ReplicaState[id]; ok {
 			log.Info("deleting stale ConfigMap", "configmap", configMap.Name)
 			if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 				return r.Delete(ctx.Context, &configMap)
@@ -479,8 +508,13 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	for _, sts := range statefulSets.Items {
-		replicaID := sts.Labels[util.LabelKeeperReplicaID]
-		if !slices.Contains(ctx.Cluster.Status.Replicas, replicaID) {
+		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
+		if err != nil {
+			log.Warn("parse StatefulSet replica ID", "sts", sts.Name, "err", err)
+			continue
+		}
+
+		if _, ok := ctx.ReplicaState[id]; ok {
 			log.Info("deleting stale StatefulSet", "statefuleset", sts.Name)
 			if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 				return r.Delete(ctx.Context, &sts)
@@ -494,15 +528,13 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 }
 
 func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	var errorReplicas []string
-	var notReadyReplicas []string
-	var notUpdatedReplicas []string
-	replicasByMode := map[string][]string{}
+	var errorReplicas []v1.KeeperReplicaID
+	var notReadyReplicas []v1.KeeperReplicaID
+	var notUpdatedReplicas []v1.KeeperReplicaID
+	replicasByMode := map[string][]v1.KeeperReplicaID{}
 
 	ctx.Cluster.Status.ReadyReplicas = 0
-	for _, id := range ctx.Cluster.Status.Replicas {
-		replica := ctx.Replica(id)
-
+	for id, replica := range ctx.ReplicaState {
 		if replica.Error {
 			errorReplicas = append(errorReplicas, id)
 		}
@@ -543,7 +575,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		ctx.SetCondition(log, v1.KeeperConditionTypeConfigurationInSync, metav1.ConditionTrue, v1.KeeperConditionReasonUpToDate, "")
 	}
 
-	exists := len(ctx.Cluster.Status.Replicas)
+	exists := len(ctx.ReplicaState)
 	expected := int(ctx.Cluster.Replicas())
 
 	if exists < expected {
@@ -617,7 +649,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	return &ctrl.Result{}, nil
 }
 
-func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, replicaID string) (*ctrl.Result, error) {
+func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, replicaID v1.KeeperReplicaID) (*ctrl.Result, error) {
 	log = log.With("replica_id", replicaID)
 	log.Info("updating replica")
 
@@ -703,6 +735,36 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	}
 
 	return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+}
+
+func (r *ClusterReconciler) loadQuorumReplicas(ctx *reconcileContext) (map[v1.KeeperReplicaID]struct{}, error) {
+	configMap := corev1.ConfigMap{}
+	err := r.Get(
+		ctx.Context,
+		types.NamespacedName{Namespace: ctx.Cluster.Namespace, Name: ctx.Cluster.QuorumConfigMapName()},
+		&configMap,
+	)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return map[v1.KeeperReplicaID]struct{}{}, nil
+		}
+		return nil, fmt.Errorf("get quorum configmap: %w", err)
+	}
+
+	var config QuorumConfig
+	if err := yaml.Unmarshal([]byte(configMap.Data[QuorumConfigFileName]), &config); err != nil {
+		return nil, fmt.Errorf("unmarshal quorum config: %w", err)
+	}
+	replicas := map[v1.KeeperReplicaID]struct{}{}
+	for _, member := range config {
+		id, err := strconv.ParseInt(member.ID, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("parse replica ID %q: %w", member.ID, err)
+		}
+		replicas[v1.KeeperReplicaID(id)] = struct{}{}
+	}
+
+	return replicas, nil
 }
 
 func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext) error {

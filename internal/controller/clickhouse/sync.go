@@ -30,7 +30,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func compareReplicaID(a, b v1.ReplicaID) int {
+func compareReplicaID(a, b v1.ClickHouseReplicaID) int {
 	if res := cmp.Compare(a.ShardID, b.ShardID); res != 0 {
 		return res
 	}
@@ -102,7 +102,7 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 }
 
 type reconcileContext struct {
-	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]
+	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]
 
 	// Should be populated after reconcileClusterRevisions.
 	keeper v1.KeeperCluster
@@ -120,10 +120,10 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	log.Info("Enter ClickHouse Reconcile", "spec", cr.Spec, "status", cr.Status)
 
 	recCtx := reconcileContext{
-		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ReplicaID, replicaState]{
+		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]{
 			Cluster:      cr,
 			Context:      ctx,
-			ReplicaState: map[v1.ReplicaID]replicaState{},
+			ReplicaState: map[v1.ClickHouseReplicaID]replicaState{},
 		},
 	}
 	defer func() {
@@ -319,12 +319,11 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 		return nil, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	// TODO add timeout here or global reconcile timeout.
-	execResults := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ReplicaID, replicaState, error) {
-		id, err := v1.IDFromLabels(sts.Labels)
+	execResults := util.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, replicaState, error) {
+		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
 		if err != nil {
 			log.Error(err, "failed to get replica ID from StatefulSet labels", "stateful_set", sts.Name)
-			return v1.ReplicaID{}, replicaState{}, err
+			return v1.ClickHouseReplicaID{}, replicaState{}, err
 		}
 
 		hasError, err := chctrl.CheckPodError(ctx.Context, log, r.Client, &sts)
@@ -345,7 +344,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 			Pinged:      pingErr == nil,
 		}, nil
 	})
-	states := map[v1.ReplicaID]replicaState{}
+	states := map[v1.ClickHouseReplicaID]replicaState{}
 	for id, res := range execResults {
 		if res.Err != nil {
 			log.Info("failed to load replica state", "error", res.Err, "replica_id", id)
@@ -371,7 +370,7 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 // NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
 func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	highestStage := chctrl.StageUpToDate
-	var replicasInStatus []v1.ReplicaID
+	var replicasInStatus []v1.ClickHouseReplicaID
 
 	for id := range ctx.Cluster.ReplicaIDs() {
 		stage := ctx.Replica(id).UpdateStage(ctx)
@@ -382,7 +381,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 
 		if stage > highestStage {
 			highestStage = stage
-			replicasInStatus = []v1.ReplicaID{id}
+			replicasInStatus = []v1.ClickHouseReplicaID{id}
 		}
 	}
 
@@ -405,7 +404,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 			}
 		}
 		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
-		replicasInStatus = []v1.ReplicaID{chosenReplica}
+		replicasInStatus = []v1.ClickHouseReplicaID{chosenReplica}
 	case chctrl.StageNotExists, chctrl.StageError:
 		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
 	}
@@ -428,7 +427,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		return &ctrl.Result{}, nil
 	}
 
-	var readyReplicas []v1.ReplicaID
+	var readyReplicas []v1.ClickHouseReplicaID
 	for id, replica := range ctx.ReplicaState {
 		if replica.Ready() {
 			readyReplicas = append(readyReplicas, id)
@@ -441,7 +440,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 	}
 
 	hasNotSynced := false
-	replicaDatabases := util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, map[string]DatabaseDescriptor, error) {
+	replicaDatabases := util.ExecuteParallel(readyReplicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]DatabaseDescriptor, error) {
 		if err := ctx.commander.EnsureDefaultDatabaseEngine(ctx.Context, log, ctx.Cluster, id); err != nil {
 			log.Info("failed to ensure default database engine for replica", "replica", id, "error", err)
 			hasNotSynced = true
@@ -459,7 +458,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 		databases = util.MergeMaps(databases, replDBs.Result)
 	}
 
-	_ = util.ExecuteParallel(readyReplicas, func(id v1.ReplicaID) (v1.ReplicaID, struct{}, error) {
+	_ = util.ExecuteParallel(readyReplicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
 		if len(databases) == len(replicaDatabases[id].Result) {
 			log.Debug("replica is in sync", "replica_id", id)
 			return id, struct{}{}, nil
@@ -502,7 +501,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	for _, configMap := range configMaps.Items {
-		id, err := v1.IDFromLabels(configMap.Labels)
+		id, err := v1.ClickHouseIDFromLabels(configMap.Labels)
 		if err != nil {
 			log.Warn("failed to get replica ID from ConfigMap labels", "configmap", configMap.Name, "error", err)
 			continue
@@ -526,7 +525,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	for _, sts := range statefulSets.Items {
-		id, err := v1.IDFromLabels(sts.Labels)
+		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
 		if err != nil {
 			log.Warn("failed to get replica ID from ConfigMap labels", "statefulset", sts.Name, "error", err)
 			continue
@@ -553,20 +552,20 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		return shardID, struct{}{}, nil
 	})
 
-	runningStaleReplicas := map[v1.ReplicaID]struct{}{}
+	runningStaleReplicas := map[v1.ClickHouseReplicaID]struct{}{}
 	for shardID, replicas := range replicasToRemove {
 		if shardID < ctx.Cluster.Shards() {
 			if shardsInSync[shardID].Err != nil {
 				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
 				for index := range replicas {
-					runningStaleReplicas[v1.ReplicaID{ShardID: shardID, Index: index}] = struct{}{}
+					runningStaleReplicas[v1.ClickHouseReplicaID{ShardID: shardID, Index: index}] = struct{}{}
 				}
 				continue
 			}
 		}
 
 		for index, res := range replicas {
-			id := v1.ReplicaID{ShardID: shardID, Index: index}
+			id := v1.ClickHouseReplicaID{ShardID: shardID, Index: index}
 			if res.sts != nil {
 				log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
 				if err := r.Delete(ctx.Context, res.sts); err != nil {
@@ -603,16 +602,16 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 }
 
 func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
-	var errorReplicas []v1.ReplicaID
-	var notReadyReplicas []v1.ReplicaID
-	var notUpdatedReplicas []v1.ReplicaID
+	var errorReplicas []v1.ClickHouseReplicaID
+	var notReadyReplicas []v1.ClickHouseReplicaID
+	var notUpdatedReplicas []v1.ClickHouseReplicaID
 	var notReadyShards []int32
 
 	ctx.Cluster.Status.ReadyReplicas = 0
 	for shard := range ctx.Cluster.Shards() {
 		hasReady := false
 		for index := range ctx.Cluster.Replicas() {
-			id := v1.ReplicaID{ShardID: shard, Index: index}
+			id := v1.ClickHouseReplicaID{ShardID: shard, Index: index}
 			replica := ctx.Replica(id)
 
 			if replica.Error {
@@ -715,7 +714,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	return &ctrl.Result{}, nil
 }
 
-func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, id v1.ReplicaID) (*ctrl.Result, error) {
+func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, id v1.ClickHouseReplicaID) (*ctrl.Result, error) {
 	log = log.With("replica_id", id)
 	log.Info("updating replica")
 
@@ -812,7 +811,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
 }
 
-func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileContext, id v1.ReplicaID) error {
+func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileContext, id v1.ClickHouseReplicaID) error {
 	var pvcs corev1.PersistentVolumeClaimList
 	req := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
 	for k, v := range labelsFromID(id) {

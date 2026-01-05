@@ -22,7 +22,7 @@ func TestBuildVolumes(t *testing.T) {
 			},
 			Spec: v1.ClickHouseClusterSpec{},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
+		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(3))
 		Expect(mounts).To(HaveLen(5))
@@ -47,7 +47,7 @@ func TestBuildVolumes(t *testing.T) {
 				},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
+		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(4))
 		Expect(mounts).To(HaveLen(6))
@@ -82,7 +82,7 @@ func TestBuildVolumes(t *testing.T) {
 				},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
+		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(4))
 		Expect(mounts).To(HaveLen(6))
@@ -117,7 +117,7 @@ func TestBuildVolumes(t *testing.T) {
 				},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
+		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(3))
 		Expect(mounts).To(HaveLen(5))
@@ -160,7 +160,7 @@ func TestBuildVolumes(t *testing.T) {
 				},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ReplicaID{})
+		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(4))
 		Expect(mounts).To(HaveLen(6))

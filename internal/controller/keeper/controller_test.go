@@ -205,7 +205,7 @@ var _ = Describe("KeeperCluster Controller", func() {
 			var configmap corev1.ConfigMap
 			Expect(suite.Client.Get(suite.Context, types.NamespacedName{
 				Namespace: cr.Namespace,
-				Name:      cr.ConfigMapNameByReplicaID("1")}, &configmap)).To(Succeed())
+				Name:      cr.ConfigMapNameByReplicaID(1)}, &configmap)).To(Succeed())
 
 			Expect(configmap.Data).To(HaveKey(ConfigFileName))
 			var config confMap

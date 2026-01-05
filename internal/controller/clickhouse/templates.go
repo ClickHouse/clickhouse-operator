@@ -135,7 +135,7 @@ func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bo
 }
 
 func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
-	config, err := generateConfigForSingleReplica(ctx, v1.ReplicaID{})
+	config, err := generateConfigForSingleReplica(ctx, v1.ClickHouseReplicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
@@ -149,7 +149,7 @@ func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
 }
 
 func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
-	sts, err := TemplateStatefulSet(ctx, v1.ReplicaID{})
+	sts, err := TemplateStatefulSet(ctx, v1.ClickHouseReplicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
@@ -162,7 +162,7 @@ func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(ctx *reconcileContext, id v1.ReplicaID) (*corev1.ConfigMap, error) {
+func TemplateConfigMap(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*corev1.ConfigMap, error) {
 	configData, err := generateConfigForSingleReplica(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate config for replica %v: %w", id, err)
@@ -185,7 +185,7 @@ func TemplateConfigMap(ctx *reconcileContext, id v1.ReplicaID) (*corev1.ConfigMa
 	}, nil
 }
 
-func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.StatefulSet, error) {
+func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*appsv1.StatefulSet, error) {
 	volumes, volumeMounts, err := buildVolumes(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("build volumes: %w", err)
@@ -470,14 +470,14 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ReplicaID) (*appsv1.Statef
 	}, nil
 }
 
-func labelsFromID(id v1.ReplicaID) map[string]string {
+func labelsFromID(id v1.ClickHouseReplicaID) map[string]string {
 	return map[string]string{
 		util.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
 		util.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
 	}
 }
 
-func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ReplicaID) (map[string]string, error) {
+func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ClickHouseReplicaID) (map[string]string, error) {
 	configFiles := map[string]string{}
 	for _, generator := range generators {
 		if !generator.Exists(ctx) {
@@ -558,7 +558,7 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 	return protocols
 }
 
-func buildVolumes(ctx *reconcileContext, id v1.ReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
+func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      internal.PersistentVolumeName,
