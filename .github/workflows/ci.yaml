@@ -59,7 +59,7 @@ jobs:
         run: make bundle-build
 
       - name: Load image into Kind cluster
-        run: kind load docker-image clickhouse.com/clickhouse-operator-bundle:v0.0.1 --name test-bundle
+        run: kind load docker-image ghcr.io/clickhouse/clickhouse-operator-bundle:v0.0.1 --name test-bundle
 
       - name: Run scorecard tests
         run: make scorecard
