@@ -1,25 +1,64 @@
-# clickhouse-operator
-// TODO(user): Add simple overview of use/purpose
+# ClickHouse-Operator
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.
+It provides declarative cluster management through custom resources, enabling users to easily create highly-available ClickHouse deployments.
+The operator handles the full lifecycle of ClickHouse clusters including scaling, upgrades, and configuration management.
+
+## Features
+
+- **ClickHouse Cluster Management**: Create and manage ClickHouse clusters
+- **ClickHouse Keeper Integration**: Built-in support for ClickHouse Keeper clusters for distributed coordination
+- **Storage Provisioning**: Customizable persistent volume claims with storage class selection
+- **High Availability**: Fault tolerant installations for ClickHouse and Keeper clusters
+- **Security**: Built-in security features TLS/SSL support for secure cluster communication
+- **Monitoring**: Prometheus metrics integration for observability
 
 ## Getting Started
 
 ### Prerequisites
-- go version v1.22.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- go version v1.25.0+
+- docker version 17.03+
+- kubectl version v1.33.0+
+- Access to a Kubernetes v1.33.0+ cluster
 
-### To Deploy on the cluster
+### Quick Start
+
+For users who want to quickly try the operator:
+
+1. Install the CRDs and operator (Requires cert-manager to issue webhook certificates):
+   1. Using pre-built manifests:
+   ```sh
+   kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/<release>/clickhouse-operator.yaml
+   ```
+    2. Using helm chart
+    ```sh
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system
+    ```
+
+2. Deploy a sample cluster:
+```sh
+kubectl apply -f https://raw.githubusercontent.com/ClickHouse/clickhouse-operator/refs/heads/main/examples/minimal.yaml
+```
+
+3. Verify the deployment:
+```sh
+kubectl get clickhouseclusters
+kubectl get keeperclusters
+kubectl get pods
+```
+
+### Deploy from the sources
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/clickhouse-operator:tag
+make docker-build docker-push IMAGE_REPO=<some-registry>
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
+**NOTE:** This image ought to be pushed to the personal registry you specified.
 And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
@@ -32,28 +71,30 @@ make install
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/clickhouse-operator:tag
+make deploy IMAGE_REPO=<some-registry>
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+## Examples
+
+The `examples/` directory contains various ClickHouse cluster configurations:
+
+- **minimal.yaml**: Basic ClickHouse cluster with Keeper (2 replicas, 1 shard)
+- **cluster_with_ssl.yaml**: ClickHouse cluster with TLS/SSL enabled. Requires
+- **aws_eks_gp3.yaml**: Configuration for AWS EKS with gp3 storage
+- **gcp_gke_ssd.yaml**: Configuration for GCP GKE with ssd storage
+- **custom_configuration.yaml**: ClickHouse cluster with configuration overrides
+- **prometheus_secure_metrics_scraper.yaml**: Configuration for secure operator metrics scraping. Requires prometheus operator and enabled secure metrics endpoint
+
+To deploy any example:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -f examples/<example-file>.yaml
 ```
-
->**NOTE**: Ensure that the samples has default values to test it out.
 
 ### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
 **Delete the APIs(CRDs) from the cluster:**
 
 ```sh
@@ -66,49 +107,25 @@ make uninstall
 make undeploy
 ```
 
-## Project Distribution
+## Documentation
 
-Following are the steps to build the installer and distribute this project to users.
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/clickhouse-operator:tag
-```
-
-NOTE: The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without
-its dependencies.
-
-2. Using the installer
-
-Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/clickhouse-operator/<tag or branch>/dist/install.yaml
-```
+For more detailed information, see the [documentation](./docs/README.md):
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+We welcome contributions to the ClickHouse Operator project! Here's how you can help:
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+- **Bug Reports**: Open an issue describing the bug and steps to reproduce
+- **Feature Requests**: Submit an issue with your feature proposal and use case
+- **Pull Requests**: Fork the repository, make your changes, and submit a PR
+- **Documentation**: Help improve documentation and examples
+- **Testing**: Test the operator in different environments and report issues
 
-## License
+Before contributing, please ensure:
+- All tests pass: `make test`
+- Code follows Go conventions and passes linting: `make lint`
+- Commits are well-documented
 
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+## Useful Links
+* [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+* [ClickHouse Documentation](https://clickhouse.com/docs) 

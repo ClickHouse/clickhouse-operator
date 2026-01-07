@@ -61,8 +61,6 @@ type ClickHouseClusterSpec struct {
 	// Configuration parameters for ClickHouse server.
 	// +optional
 	Settings ClickHouseConfig `json:"settings,omitempty"`
-
-	// TODO RBAC
 }
 
 func (s *ClickHouseClusterSpec) WithDefaults() {
