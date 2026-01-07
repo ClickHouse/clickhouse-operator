@@ -404,3 +404,18 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+##@ Documentation
+
+.PHONY: docs-lint-vale
+docs-lint-vale: ## Run Vale linter on documentation
+	@command -v vale >/dev/null 2>&1 || { echo "Vale is required but not installed. https://vale.sh/docs/install"; exit 1; }
+	vale --config='.vale.ini' README.md docs
+
+.PHONY: docs-link-check
+docs-link-check: ## Run markdown-link-check on documentation
+	@command -v markdown-link-check >/dev/null 2>&1 || { echo "markdown-link-check is required but not installed. npm install -g markdown-link-check"; exit 1; }
+	markdown-link-check -c docs/.markdown-link-check.json README.md docs
+
+.PHONY: docs-lint
+docs-lint: docs-lint-vale docs-link-check ## Run all documentation linters

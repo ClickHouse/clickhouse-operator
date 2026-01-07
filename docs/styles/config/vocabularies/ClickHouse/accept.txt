@@ -1,0 +1,8 @@
+kubectl
+hostname
+CRDs
+namespace
+uncomment
+PVCs
+Tolerations
+plaintext

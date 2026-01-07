@@ -20,14 +20,14 @@ The operator handles the full lifecycle of ClickHouse clusters including scaling
 ### Prerequisites
 - go version v1.25.0+
 - docker version 17.03+
-- kubectl version v1.33.0+
+- `kubectl` version v1.33.0+
 - Access to a Kubernetes v1.33.0+ cluster
 
 ### Quick Start
 
 For users who want to quickly try the operator:
 
-1. Install the CRDs and operator (Requires cert-manager to issue webhook certificates):
+1. Install the Custom Resource Definitions(CRD) and operator (Requires cert-manager to issue webhook certificates):
    1. Using pre-built manifests:
    ```sh
    kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/<release>/clickhouse-operator.yaml
@@ -62,7 +62,7 @@ make docker-build docker-push IMAGE_REPO=<some-registry>
 And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
-**Install the CRDs into the cluster:**
+**Install the Custom Resource Definitions(CRD) into the cluster:**
 
 ```sh
 make install
@@ -84,9 +84,9 @@ The `examples/` directory contains various ClickHouse cluster configurations:
 - **minimal.yaml**: Basic ClickHouse cluster with Keeper (2 replicas, 1 shard)
 - **cluster_with_ssl.yaml**: ClickHouse cluster with TLS/SSL enabled. Requires
 - **aws_eks_gp3.yaml**: Configuration for AWS EKS with gp3 storage
-- **gcp_gke_ssd.yaml**: Configuration for GCP GKE with ssd storage
+- **gcp_gke_ssd.yaml**: Configuration for GCP GKE with SSD storage
 - **custom_configuration.yaml**: ClickHouse cluster with configuration overrides
-- **prometheus_secure_metrics_scraper.yaml**: Configuration for secure operator metrics scraping. Requires prometheus operator and enabled secure metrics endpoint
+- **prometheus_secure_metrics_scraper.yaml**: Configuration for secure operator metrics scraping. Requires Prometheus operator and enabled secure metrics endpoint
 
 To deploy any example:
 
@@ -127,5 +127,5 @@ Before contributing, please ensure:
 - Commits are well-documented
 
 ## Useful Links
-* [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+* [`Kubebuilder` Documentation](https://book.kubebuilder.io/introduction.html)
 * [ClickHouse Documentation](https://clickhouse.com/docs) 

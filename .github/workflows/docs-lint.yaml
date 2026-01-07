@@ -1,0 +1,24 @@
+name: Documentation Lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  vale:
+    name: vale-linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: errata-ai/vale-action@v2.1.1
+        with:
+          fail_on_error: 'true'
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: tcort/github-action-markdown-link-check@v1
+        with:
+          config-file: docs/markdown-link-check.json

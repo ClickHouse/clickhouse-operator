@@ -4,7 +4,7 @@
 
 Choose your preferred installation method:
 
-- [Kubectl Installation](./installation/kubectl.md) - Install using kubectl/kustomize
+- [Manifests Installation](./installation/kubectl.md) - Install using kubectl/kustomize
 - [Helm Installation](./installation/helm.md) - Install using Helm charts
 - [Operator Lifecycle Manager (OLM) Installation](./installation/olm.md) - Install using OLM
 

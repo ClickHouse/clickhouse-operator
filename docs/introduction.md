@@ -9,7 +9,7 @@ This document provides an overview of key concepts and usage patterns for the Cl
 - [Coordination](#coordination)
 - [Schema Replication](#schema-replication)
 - [Storage Management](#storage-management)
-- [Key Features](#key-features)
+- [Default configuration Highlights](#default-configuration-highlights)
 
 ## What is the ClickHouse Operator
 

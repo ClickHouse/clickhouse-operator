@@ -121,7 +121,7 @@ spec:
       <your-topology-spread-constraints-here>
 ```
 
-### See [Api Reference](./api_reference.md#PodTemplateSpec) for all supported Pod template options.
+### See [API Reference](./api_reference.md#PodTemplateSpec) for all supported Pod template options.
 
 ## Container Configuration
 
@@ -181,10 +181,10 @@ spec:
       subPath: custom.xml
 ```
 
-**NOTE:** It is allowed to specify multiple volume mounts to the same mountPath.
+**NOTE:** It is allowed to specify multiple volume mounts to the same `mountPath`.
 Operator will create projected volume with all specified mounts.
 
-### See [Api Reference](./api_reference.md#ContainerTemplateSpec) for all supported Container template options.
+### See [API Reference](./api_reference.md#ContainerTemplateSpec) for all supported Container template options.
 
 ## TLS/SSL Configuration
 
@@ -267,7 +267,7 @@ spec:
         key: default_password
 ```
 
-### Custom Users via config
+### Custom Users in configuration
 
 Configure additional users in configuration files.
 
