@@ -57,7 +57,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2026-01-05T19:01:45Z"
+    createdAt: "2026-01-07T14:49:32Z"
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
@@ -322,7 +322,7 @@ spec:
               - args:
                 - --leader-elect
                 - --health-probe-bind-address=:8081
-                - --webhook-cert-path=/tmp/k8s-server/serving-certs
+                - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
                 - --metrics-bind-address=:8080
                 - --metrics-secure=false
                 command:
@@ -330,7 +330,7 @@ spec:
                 env:
                 - name: ENABLE_WEBHOOKS
                   value: "true"
-                image: clickhouse.com/clickhouse-operator:v0.0.1
+                image: ghcr.io/clickhouse/clickhouse-operator:v0.0.1
                 livenessProbe:
                   httpGet:
                     path: /healthz

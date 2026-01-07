@@ -4,5 +4,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
 - name: controller
-  newName: clickhouse.com/clickhouse-operator
+  newName: ghcr.io/clickhouse/clickhouse-operator
   newTag: v0.0.1

@@ -5,7 +5,7 @@
 - op: add
   path: /spec/template/spec/containers/0/volumeMounts/-
   value:
-    mountPath: /tmp/k8s-server/serving-certs
+    mountPath: /tmp/k8s-webhook-server/serving-certs
     name: serving-certs
     readOnly: true
 

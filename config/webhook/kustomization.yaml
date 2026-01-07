@@ -13,7 +13,7 @@ patches:
       # Add the --webhook-cert-path argument for configuring the webhook certificate path
       - op: add
         path: /spec/template/spec/containers/0/args/-
-        value: --webhook-cert-path=/tmp/k8s-server/serving-certs
+        value: --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
 
       # Add the port configuration for the webhook server
       - op: add
