@@ -24,7 +24,7 @@ helm version
 
 ## Install the Operator
 
-**NOTE:**  By default Helm chart deploys ClickHouse Operator with webhooks enable and requires cert-manager installed.
+**NOTE:**  By default Helm chart deploys ClickHouse Operator with webhooks enabled and requires cert-manager installed.
 
 ### From OCI Helm Repository
 
