@@ -164,7 +164,7 @@ Add custom environment variables:
 spec:
   containerTemplate:
     env:
-    - name: CUSOM_ENV_VAR
+    - name: CUSTOM_ENV_VAR
       value: "1"
 ```
 
@@ -388,7 +388,7 @@ metadata:
   name: default-user-password
 data:
   # secret-password
-  password: "..." # sha256 hex of the passowrd
+  password: "..." # sha256 hex of the password
 ---
 apiVersion: clickhouse.com/v1alpha1
 kind: ClickHouseCluster

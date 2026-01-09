@@ -298,7 +298,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		// Default capabilities given to ClickHouse keeper.
-		// For more informtaion, See https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/policy/container-capabilities/
+		// For more information, see https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/policy/container-capabilities/
 		// IPC_LOCK
 		// •  Lock memory (mlock(2), mlockall(2), mmap(2), shmctl(2));
 		// •  Allocate memory using huge pages (memfd_create(2), mmap(2), shmctl(2)).

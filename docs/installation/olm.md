@@ -85,7 +85,7 @@ kubectl delete subscription clickhouse-operator -n clickhouse-operator-system
 # Find all associated resources
 kubectl get operator clickhouse-operator.clickhouse-operator-system -o=jsonpath="{.status.components.refs}" | jq 'map({kind, name})'
 # Delete associated resources (CRDs, Deployments, etc.)
-kubectl delete <resoruce> <name> [-n <namespace>]  # Repeat for each resource found
+kubectl delete <resource> <name> [-n <namespace>]  # Repeat for each resource found
 
 # Delete the OperatorGroup (optional):
 kubectl delete operatorgroup clickhouse-operator-group -n clickhouse-operator-system

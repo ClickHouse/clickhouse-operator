@@ -50,7 +50,7 @@ func getConnection(ctx context.Context, hostname string, tlsRequired bool) (net.
 		d = &tls.Dialer{
 			NetDialer: &net.Dialer{},
 			Config: &tls.Config{
-				//nolint:gosec // User manged certificate may be outdated or issued for other hostnames.
+				//nolint:gosec // User managed certificate may be outdated or issued for other hostnames.
 				InsecureSkipVerify: true,
 			},
 		}
