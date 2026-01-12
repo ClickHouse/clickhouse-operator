@@ -55,7 +55,15 @@ func (w *ClickHouseClusterWebhook) ValidateCreate(ctx context.Context, obj runti
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
 func (w *ClickHouseClusterWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	return w.validateImpl(newObj.(*chv1.ClickHouseCluster))
+	oldCluster := oldObj.(*chv1.ClickHouseCluster)
+	newCluster := newObj.(*chv1.ClickHouseCluster)
+
+	warns, err := w.validateImpl(newCluster)
+	if *oldCluster.Spec.Shards > *newCluster.Spec.Shards {
+		warns = append(warns, "Decreasing the number of shards is a destructive operation. It removes shards with all their data.")
+	}
+
+	return warns, err
 }
 
 func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Object) (admission.Warnings, error) {

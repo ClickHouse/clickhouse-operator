@@ -1,25 +1,3 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: sample-extra-config
-data:
-  reader.yaml: |
-    users:
-      reader:
-        password:
-          - '@from_env': READER_PASSWORD
-        profile: default
-        grants:
-          - query: "GRANT SELECT ON *.*"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: reader-password
-data:
-  # secret-password
-  password: "c2VjcmV0LXBhc3N3b3Jk"
----
 apiVersion: clickhouse.com/v1alpha1
 kind: KeeperCluster
 metadata:
@@ -44,22 +22,15 @@ spec:
       - ReadWriteOnce
     resources:
       requests:
-        storage: 1Gi
+        storage: 2Gi
   keeperClusterRef:
     name: sample
-  podTemplate:
-    volumes:
-      - name: reader-user
-        configMap:
-          name: sample-extra-config
-  containerTemplate:
-    env:
-      - name: READER_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: reader-password
-            key: password
-    volumeMounts:
-      - mountPath: /etc/clickhouse-server/users.d/
-        name: reader-user
-        readOnly: true
+  settings:
+    extraUsersConfig:
+      users:
+        reader:
+          # sha256 of "secret_password"
+          password_sha256_hex: "8e67dd1355714239acde098b6f1cf906bde45be6db826dc2caca7536e07ae844"
+          profile: default
+          grants:
+            - query: "GRANT SELECT ON *.*"

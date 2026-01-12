@@ -26,9 +26,12 @@ func TestConfigGeneratorValidYAML(t *testing.T) {
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: ptr.To[int32](3),
 					Shards:   ptr.To[int32](2),
-					Settings: v1.ClickHouseConfig{
+					Settings: v1.ClickHouseSettings{
 						ExtraConfig: runtime.RawExtension{
 							Raw: []byte(`{"test": "value"}`),
+						},
+						ExtraUsersConfig: runtime.RawExtension{
+							Raw: []byte(`{}`),
 						},
 					},
 				},

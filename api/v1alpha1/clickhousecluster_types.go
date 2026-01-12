@@ -60,7 +60,7 @@ type ClickHouseClusterSpec struct {
 
 	// Configuration parameters for ClickHouse server.
 	// +optional
-	Settings ClickHouseConfig `json:"settings,omitempty"`
+	Settings ClickHouseSettings `json:"settings,omitempty"`
 }
 
 func (s *ClickHouseClusterSpec) WithDefaults() {
@@ -83,7 +83,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 				},
 			},
 		},
-		Settings: ClickHouseConfig{
+		Settings: ClickHouseSettings{
 			Logger: LoggerConfig{
 				LogToFile: true,
 				Level:     "trace",
@@ -102,7 +102,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 	}
 }
 
-type ClickHouseConfig struct {
+type ClickHouseSettings struct {
 	// Reference to the Secret key, which contains password for the user 'default'.
 	// +optional
 	DefaultUserPassword *DefaultPasswordSelector `json:"defaultUserPassword,omitempty"`
@@ -126,6 +126,12 @@ type ClickHouseConfig struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	ExtraConfig runtime.RawExtension `json:"extraConfig,omitempty"`
+
+	// Additional ClickHouse users configuration that will be merged with the default one.
+	// +nullable
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraUsersConfig runtime.RawExtension `json:"extraUsersConfig,omitempty"`
 }
 
 // ClickHouseClusterStatus defines the observed state of ClickHouseCluster.

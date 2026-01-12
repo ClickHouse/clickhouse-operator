@@ -343,8 +343,42 @@ Add custom ClickHouse configuration using `extraConfig`:
 spec:
   settings:
     extraConfig:
-      background_pool_size": 20
+      background_pool_size: 20
 ```
+
+#### Useful links:
+* [YAML configuration examples](https://clickhouse.com/docs/operations/configuration-files#example-1)
+* [All server settings](https://clickhouse.com/docs/operations/server-configuration-parameters/settings)
+
+### Embedded Extra Users Configuration
+
+You can also specify additional ClickHouse users configuration using `extraUsersConfig`. This is useful for defining users, profiles, quotas, and grants directly in the cluster specification.
+
+```yaml
+spec:
+  settings:
+    extraUsersConfig:
+      users:
+        analyst:
+          password:
+            - '@from_env': ANALYST_PASSWORD
+          profile: "readonly"
+          quota: "default"
+      profiles:
+        readonly:
+          readonly: 1
+          max_memory_usage: 10000000000
+      quotas:
+        default:
+          interval:
+            duration: 3600
+            queries: 1000
+            errors: 100
+```
+
+**Note**: The `extraUsersConfig` is stored in k8s ConfigMap object. Avoid plain text secrets there.
+
+#### See [documentation](https://clickhouse.com/docs/operations/settings/settings-users) for all supported ClickHouse users configuration options.
 
 ### Configuration Example
 

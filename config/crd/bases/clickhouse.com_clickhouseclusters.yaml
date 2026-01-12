@@ -3791,6 +3791,12 @@ spec:
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+                  extraUsersConfig:
+                    description: Additional ClickHouse users configuration that will
+                      be merged with the default one.
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
                   logger:
                     description: Optionally you can lower the logger level or disable
                       logging to file at all.

@@ -90,7 +90,21 @@ func init() {
 		})
 	}
 
-	generators = append(generators, &extraConfigGenerator{})
+	generators = append(generators,
+		&extraConfigGenerator{
+			Name:          ExtraConfigFileName,
+			ConfigSubPath: ConfigDPath,
+			Getter: func(ctx *reconcileContext) []byte {
+				return ctx.Cluster.Spec.Settings.ExtraConfig.Raw
+			},
+		},
+		&extraConfigGenerator{
+			Name:          ExtraUsersConfigFileName,
+			ConfigSubPath: UsersDPath,
+			Getter: func(ctx *reconcileContext) []byte {
+				return ctx.Cluster.Spec.Settings.ExtraUsersConfig.Raw
+			},
+		})
 }
 
 type ConfigGenerator interface {
@@ -325,22 +339,26 @@ func clientConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.
 	return builder.String(), nil
 }
 
-type extraConfigGenerator struct{}
+type extraConfigGenerator struct {
+	Name          string
+	ConfigSubPath string
+	Getter        func(ctx *reconcileContext) []byte
+}
 
 func (g *extraConfigGenerator) Filename() string {
-	return ExtraConfigFileName
+	return g.Name
 }
 
 func (g *extraConfigGenerator) Path() string {
-	return path.Join(ConfigPath, ConfigDPath)
+	return path.Join(ConfigPath, g.ConfigSubPath)
 }
 
 func (g *extraConfigGenerator) ConfigKey() string {
-	return ExtraConfigFileName
+	return g.Name
 }
 
 func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {
-	return len(ctx.Cluster.Spec.Settings.ExtraConfig.Raw) > 0
+	return len(g.Getter(ctx)) > 0
 }
 
 func (g *extraConfigGenerator) Generate(ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
@@ -348,5 +366,5 @@ func (g *extraConfigGenerator) Generate(ctx *reconcileContext, _ v1.ClickHouseRe
 		return "", fmt.Errorf("extra config generator called, but no extra config provided")
 	}
 
-	return string(ctx.Cluster.Spec.Settings.ExtraConfig.Raw), nil
+	return string(g.Getter(ctx)), nil
 }

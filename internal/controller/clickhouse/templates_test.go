@@ -37,7 +37,7 @@ func TestBuildVolumes(t *testing.T) {
 				Name: "test",
 			},
 			Spec: v1.ClickHouseClusterSpec{
-				Settings: v1.ClickHouseConfig{
+				Settings: v1.ClickHouseSettings{
 					TLS: v1.ClusterTLSSpec{
 						Enabled: true,
 						ServerCertSecret: &corev1.LocalObjectReference{
@@ -132,7 +132,7 @@ func TestBuildVolumes(t *testing.T) {
 				Name: "test",
 			},
 			Spec: v1.ClickHouseClusterSpec{
-				Settings: v1.ClickHouseConfig{
+				Settings: v1.ClickHouseSettings{
 					TLS: v1.ClusterTLSSpec{
 						Enabled: true,
 						ServerCertSecret: &corev1.LocalObjectReference{

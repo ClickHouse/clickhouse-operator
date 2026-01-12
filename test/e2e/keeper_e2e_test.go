@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"time"
 
@@ -49,7 +50,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(&cr, time.Minute)
+		WaitKeeperUpdatedAndReady(&cr, time.Minute, false)
 		KeeperRWChecks(&cr, &checks)
 
 		By("updating cluster CR")
@@ -58,7 +59,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(&cr, 3*time.Minute)
+		WaitKeeperUpdatedAndReady(&cr, 3*time.Minute, true)
 		KeeperRWChecks(&cr, &checks)
 	},
 		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
@@ -99,17 +100,16 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(&cr, 2*time.Minute)
+		WaitKeeperUpdatedAndReady(&cr, 2*time.Minute, false)
 		KeeperRWChecks(&cr, &checks)
 
-		// TODO ensure updates one-by-one
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(&cr, 5*time.Minute)
+		WaitKeeperUpdatedAndReady(&cr, 5*time.Minute, true)
 		KeeperRWChecks(&cr, &checks)
 	},
 		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
@@ -200,14 +200,14 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("creating secure keeper cluster CR")
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
-			WaitKeeperUpdatedAndReady(&cr, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(&cr, 2*time.Minute, false)
 			KeeperRWChecks(&cr, ptr.To(0))
 		})
 	})
 })
 
-func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
@@ -224,6 +224,10 @@ func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration) {
 			if cond.Status != metav1.ConditionTrue {
 				return false
 			}
+		}
+
+		if isUpdate {
+			CheckKeeperUpdateOrder(ctx, cluster)
 		}
 
 		return true
@@ -249,5 +253,58 @@ func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
 	By("reading all test data")
 	for i := range *checksDone {
 		ExpectWithOffset(1, client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
+	}
+}
+
+// Validates that updates are applied in the correct order and for single replica at a time.
+// Allows to the single replica to be in updating state (not ready but updated).
+// Which id must be between the latest not updated and earliest updated replicas.
+func CheckKeeperUpdateOrder(ctx context.Context, cluster v1.KeeperCluster) {
+	var pods corev1.PodList
+	err := k8sClient.List(ctx, &pods, util.AppRequirements(cluster.Namespace, cluster.SpecificName()))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+	maxNotUpdated := v1.KeeperReplicaID(-1)
+	minUpdated := v1.KeeperReplicaID(math.MaxInt32)
+	updatingReplica := v1.KeeperReplicaID(-1)
+	for _, pod := range pods.Items {
+		replicaID, err := v1.KeeperReplicaIDFromLabels(pod.Labels)
+		Expect(err).NotTo(HaveOccurred())
+
+		ready := CheckPodReady(&pod)
+		updated := CheckReplicaUpdated(
+			ctx,
+			cluster.ConfigMapNameByReplicaID(replicaID),
+			cluster.Status.ConfigurationRevision,
+			cluster.StatefulSetNameByReplicaID(replicaID),
+			cluster.Status.StatefulSetRevision,
+		)
+
+		switch {
+		// Replica waiting for update
+		case !updated && ready:
+			maxNotUpdated = max(maxNotUpdated, replicaID)
+		// Broken before update
+		case !updated:
+			Fail(fmt.Sprintf("pod %q is broken before update", pod.Name))
+		// Not ready after update, allow one
+		case !ready:
+			Expect(updatingReplica).To(Equal(v1.KeeperReplicaID(-1)),
+				"more than one replica is updating: %d and %d", updatingReplica, replicaID)
+			updatingReplica = replicaID
+		// Successfully updated replica
+		default:
+			minUpdated = min(minUpdated, replicaID)
+		}
+	}
+
+	formatErr := func(r1 v1.KeeperReplicaID, r2 v1.KeeperReplicaID) string {
+		return fmt.Sprintf("replica %d updated before replica %d", r1, r2)
+	}
+
+	Expect(maxNotUpdated < minUpdated).To(BeTrue(), formatErr(minUpdated, maxNotUpdated))
+	if updatingReplica != -1 {
+		Expect(maxNotUpdated < updatingReplica).To(BeTrue(), formatErr(updatingReplica, maxNotUpdated))
+		Expect(updatingReplica < minUpdated).To(BeTrue(), formatErr(minUpdated, updatingReplica))
 	}
 }

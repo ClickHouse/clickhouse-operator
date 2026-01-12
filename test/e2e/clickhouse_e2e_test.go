@@ -3,7 +3,9 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"math"
 	"math/rand/v2"
+	"strconv"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -45,7 +47,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
-			WaitKeeperUpdatedAndReady(&keeper, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(&keeper, 2*time.Minute, false)
 		})
 
 		AfterEach(func() {
@@ -80,7 +82,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				By("deleting cluster CR")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 			})
-			WaitClickHouseUpdatedAndReady(&cr, time.Minute)
+			WaitClickHouseUpdatedAndReady(&cr, time.Minute, false)
 			ClickHouseRWChecks(&cr, &checks)
 
 			By("updating cluster CR")
@@ -89,13 +91,13 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			cr.Spec = specUpdate
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-			WaitClickHouseUpdatedAndReady(&cr, 3*time.Minute)
+			WaitClickHouseUpdatedAndReady(&cr, 3*time.Minute, true)
 			ClickHouseRWChecks(&cr, &checks)
 		},
-			Entry("update log level", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseConfig{
+			Entry("update log level", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
 				Logger: v1.LoggerConfig{Level: "warning"},
 			}}),
-			Entry("update server settings", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseConfig{
+			Entry("update server settings", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
 				ExtraConfig: runtime.RawExtension{Raw: []byte(`{"background_pool_size": 20}`)},
 			}}),
 			Entry("upgrade version", v1.ClickHouseClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
@@ -131,23 +133,22 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				By("deleting cluster CR")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 			})
-			WaitClickHouseUpdatedAndReady(&cr, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(&cr, 2*time.Minute, false)
 			ClickHouseRWChecks(&cr, &checks)
 
-			// TODO ensure updates one-by-one
 			By("updating cluster CR")
 			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 			Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 			cr.Spec = specUpdate
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-			WaitClickHouseUpdatedAndReady(&cr, 5*time.Minute)
+			WaitClickHouseUpdatedAndReady(&cr, 5*time.Minute, true)
 			ClickHouseRWChecks(&cr, &checks)
 		},
-			Entry("update log level", 3, v1.ClickHouseClusterSpec{Settings: v1.ClickHouseConfig{
+			Entry("update log level", 3, v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
 				Logger: v1.LoggerConfig{Level: "warning"},
 			}}),
-			Entry("update server settings", 3, v1.ClickHouseClusterSpec{Settings: v1.ClickHouseConfig{
+			Entry("update server settings", 3, v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
 				ExtraConfig: runtime.RawExtension{Raw: []byte(`{"background_pool_size": 20}`)},
 			}}),
 			Entry("upgrade version", 3, v1.ClickHouseClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
@@ -232,7 +233,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						},
 					},
 					DataVolumeClaimSpec: defaultStorage,
-					Settings: v1.ClickHouseConfig{
+					Settings: v1.ClickHouseSettings{
 						TLS: v1.ClusterTLSSpec{
 							Enabled:  true,
 							Required: true,
@@ -278,7 +279,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func() {
 				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
 			})
-			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute, false)
 		})
 
 		It("should use server cert ca bundle to connect to the keeper", func() {
@@ -290,7 +291,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
 
-			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute, false)
 			ClickHouseRWChecks(cr, ptr.To(0))
 		})
 
@@ -308,13 +309,14 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
 
-			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute, false)
 			ClickHouseRWChecks(cr, ptr.To(0))
 		})
 	})
 
 	Describe("default and management users works", Ordered, func() {
 		password := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
+		passwordSha := util.Sha256Hash([]byte(password))
 		secret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
@@ -361,13 +363,16 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					},
 				},
 				DataVolumeClaimSpec: defaultStorage,
-				Settings: v1.ClickHouseConfig{
+				Settings: v1.ClickHouseSettings{
 					DefaultUserPassword: &v1.DefaultPasswordSelector{
 						PasswordType: "password_sha256_hex",
 						Secret: &v1.SecretKeySelector{
 							Name: secret.Name,
 							Key:  "password",
 						},
+					},
+					ExtraUsersConfig: runtime.RawExtension{
+						Raw: []byte(fmt.Sprintf(`{"users": {"custom": {"password_sha256_hex": "%s"}}}`, passwordSha)),
 					},
 				},
 			},
@@ -393,8 +398,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func() {
 				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
-			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
-			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute, false)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute, false)
 		})
 
 		It("should be accessible with default user credentials", func() {
@@ -411,6 +416,13 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			ClickHouseRWChecks(cr, &checks, clickhouse.Auth{
 				Username: chctrl.OperatorManagementUsername,
 				Password: string(managementSecret.Data[chctrl.SecretKeyManagementPassword]),
+			})
+		})
+
+		It("should be accessible with custom user credentials", func() {
+			ClickHouseRWChecks(cr, &checks, clickhouse.Auth{
+				Username: "custom",
+				Password: password,
 			})
 		})
 	})
@@ -529,8 +541,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
 			})
 
-			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute)
-			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(keeperCR, 2*time.Minute, false)
+			WaitClickHouseUpdatedAndReady(cr, 2*time.Minute, false)
 
 			By("checking custom user access works")
 			ClickHouseRWChecks(cr, &checks, auth)
@@ -601,7 +613,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		It("should create keeper with default affinity settings", func() {
 			By("creating keeper cluster")
 			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
-			WaitKeeperUpdatedAndReady(&keeper, 2*time.Minute)
+			WaitKeeperUpdatedAndReady(&keeper, 2*time.Minute, false)
 
 			By("checking keeper pod affinity")
 			var pods corev1.PodList
@@ -622,7 +634,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		It("should create ClickHouse with default affinity settings", func() {
 			By("creating clickhouse cluster")
 			Expect(k8sClient.Create(ctx, &cluster)).To(Succeed())
-			WaitClickHouseUpdatedAndReady(&cluster, 2*time.Minute)
+			WaitClickHouseUpdatedAndReady(&cluster, 2*time.Minute, false)
 
 			By("checking clickhouse pod affinity")
 			var pods corev1.PodList
@@ -657,8 +669,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 	})
 })
 
-func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Duration, isUpdate bool) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
@@ -676,6 +688,12 @@ func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Durati
 			}
 		}
 
+		if isUpdate {
+			for shardID := int32(0); shardID < cluster.Shards(); shardID++ {
+				CheckClickHouseUpdateOrder(ctx, cluster, shardID)
+			}
+		}
+
 		return true
 	}, timeout).Should(BeTrue())
 	// Needed for replica deletion to not forward deleting pods.
@@ -688,14 +706,7 @@ func WaitClickHouseUpdatedAndReady(cr *v1.ClickHouseCluster, timeout time.Durati
 		ExpectWithOffset(2, k8sClient.List(ctx, &pods, client.InNamespace(testNamespace),
 			client.MatchingLabels{util.LabelAppKey: cr.SpecificName()})).To(Succeed())
 		for _, pod := range pods.Items {
-			ready := false
-			for _, cond := range pod.Status.Conditions {
-				if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-					ready = true
-					break
-				}
-			}
-			if !ready {
+			if !CheckPodReady(&pod) {
 				return false
 			}
 		}
@@ -727,5 +738,60 @@ func ClickHouseRWChecks(cr *v1.ClickHouseCluster, checksDone *int, auth ...click
 	By("reading all test data")
 	for i := range *checksDone {
 		ExpectWithOffset(1, chClient.CheckRead(ctx, i)).To(Succeed(), "check read %d failed", i)
+	}
+}
+
+// Validates that updates are applied in the correct order and for single replica at a time.
+// Allows to the single replica to be in updating state (not ready but updated).
+// Which id must be between the latest not updated and earliest updated replicas.
+func CheckClickHouseUpdateOrder(ctx context.Context, cluster v1.ClickHouseCluster, shard int32) {
+	var pods corev1.PodList
+	Expect(k8sClient.List(ctx, &pods, util.AppRequirements(cluster.Namespace, cluster.SpecificName()),
+		client.MatchingLabels{util.LabelClickHouseShardID: strconv.FormatInt(int64(shard), 10)})).To(Succeed())
+
+	maxNotUpdated := int32(-1)
+	minUpdated := int32(math.MaxInt32)
+	updatingReplica := int32(-1)
+	for _, pod := range pods.Items {
+		replicaID, err := v1.ClickHouseIDFromLabels(pod.Labels)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(replicaID.ShardID).To(Equal(shard))
+
+		ready := CheckPodReady(&pod)
+		updated := CheckReplicaUpdated(
+			ctx,
+			cluster.ConfigMapNameByReplicaID(replicaID),
+			cluster.Status.ConfigurationRevision,
+			cluster.StatefulSetNameByReplicaID(replicaID),
+			cluster.Status.StatefulSetRevision,
+		)
+
+		switch {
+		// Replica waiting for update
+		case !updated && ready:
+			maxNotUpdated = max(maxNotUpdated, replicaID.Index)
+		// Broken before update
+		case !updated:
+			Fail(fmt.Sprintf("pod %q is broken before update", pod.Name))
+		// Not ready after update, allow one
+		case !ready:
+			Expect(updatingReplica).To(Equal(int32(-1)),
+				"shard %d more than one replica is updating: %d and %d",
+				shard, updatingReplica, replicaID)
+			updatingReplica = replicaID.Index
+		// Successfully updated replica
+		default:
+			minUpdated = min(minUpdated, replicaID.Index)
+		}
+	}
+
+	formatErr := func(r1 int32, r2 int32) string {
+		return fmt.Sprintf("shard %d, replica %d updated before replica %d", shard, r1, r2)
+	}
+
+	Expect(maxNotUpdated < minUpdated).To(BeTrue(), formatErr(minUpdated, maxNotUpdated))
+	if updatingReplica != -1 {
+		Expect(maxNotUpdated < updatingReplica).To(BeTrue(), formatErr(updatingReplica, maxNotUpdated))
+		Expect(updatingReplica < minUpdated).To(BeTrue(), formatErr(minUpdated, updatingReplica))
 	}
 }

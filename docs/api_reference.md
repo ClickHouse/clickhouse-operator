@@ -80,13 +80,14 @@ spec:
 
 ClickHouse configuration parameters.
 
-| Field                 | Type                       | Required | Default      | Description                                                 |
-|-----------------------|----------------------------|----------|--------------|-------------------------------------------------------------|
-| `defaultUserPassword` | `*DefaultPasswordSelector` | No       | -            | Password for the 'default' user from a Secret or ConfigMap. |
-| `logger`              | `LoggerConfig`             | No       | See defaults | Logger configuration.                                       |
-| `tls`                 | `ClusterTLSSpec`           | No       | -            | TLS settings for ClickHouse.                                |
-| `enableDatabaseSync`  | `bool`                     | No       | `true`       | Enable synchronization of databases to new replicas.        |
-| `extraConfig`         | `runtime.RawExtension`     | No       | -            | Additional ClickHouse configuration (merged with defaults). |
+| Field                 | Type                       | Required | Default      | Description                                                       |
+|-----------------------|----------------------------|----------|--------------|-------------------------------------------------------------------|
+| `defaultUserPassword` | `*DefaultPasswordSelector` | No       | -            | Password for the 'default' user from a Secret or ConfigMap.       |
+| `logger`              | `LoggerConfig`             | No       | See defaults | Logger configuration.                                             |
+| `tls`                 | `ClusterTLSSpec`           | No       | -            | TLS settings for ClickHouse.                                      |
+| `enableDatabaseSync`  | `bool`                     | No       | `true`       | Enable synchronization of databases to new replicas.              |
+| `extraConfig`         | `runtime.RawExtension`     | No       | -            | Additional ClickHouse configuration (merged with defaults).       |
+| `extraUsersConfig`    | `runtime.RawExtension`     | No       | -            | Additional ClickHouse users configuration (merged with defaults). |
 
 ### ClickHouseClusterStatus
 

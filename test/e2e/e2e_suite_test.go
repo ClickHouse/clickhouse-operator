@@ -11,12 +11,15 @@ import (
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/util"
 	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -88,7 +91,7 @@ var _ = BeforeSuite(func() {
 	var controllerPodName string
 
 	// projectimage stores the name of the image used in the example
-	var projectimage = "clickhouse.com/clickhouse-operator:v0.0.1"
+	var projectimage = "ghcr.io/clickhouse/clickhouse-operator:v0.0.1"
 
 	By("building the manager(Operator) image")
 	cmd = exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
@@ -187,3 +190,36 @@ var _ = AfterSuite(func() {
 	cmd = exec.Command("kubectl", "delete", "ns", testNamespace)
 	_, _ = utils.Run(cmd)
 })
+
+func CheckPodReady(pod *corev1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+
+	return false
+}
+
+func CheckReplicaUpdated(ctx context.Context, cfgName string, cfgRev string, stsName string, stsRev string) bool {
+	var configmap corev1.ConfigMap
+	if err := k8sClient.Get(ctx, types.NamespacedName{
+		Namespace: testNamespace,
+		Name:      cfgName,
+	}, &configmap); err != nil {
+		return false
+	}
+
+	if util.GetSpecHashFromObject(&configmap) != cfgRev {
+		return false
+	}
+
+	var sts appsv1.StatefulSet
+	if err := k8sClient.Get(ctx, types.NamespacedName{
+		Namespace: testNamespace,
+		Name:      stsName,
+	}, &sts); err != nil {
+		return false
+	}
+	return util.GetSpecHashFromObject(&sts) == stsRev
+}

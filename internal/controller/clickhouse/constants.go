@@ -19,13 +19,15 @@ const (
 	PortPrometheusScrape = 9363
 	PortInterserver      = 9009
 
-	ConfigPath           = "/etc/clickhouse-server/"
-	ConfigDPath          = "config.d"
-	ConfigFileName       = "config.yaml"
-	UsersFileName        = "users.yaml"
-	ExtraConfigFileName  = "99-extra-config.yaml"
-	ClientConfigPath     = "/etc/clickhouse-client/"
-	ClientConfigFileName = "config.yaml"
+	ConfigPath               = "/etc/clickhouse-server/"
+	ConfigDPath              = "config.d"
+	ConfigFileName           = "config.yaml"
+	UsersDPath               = "users.d"
+	UsersFileName            = "users.yaml"
+	ExtraConfigFileName      = "99-extra-config.yaml"
+	ExtraUsersConfigFileName = "99-extra-users-config.yaml"
+	ClientConfigPath         = "/etc/clickhouse-client/"
+	ClientConfigFileName     = "config.yaml"
 
 	TLSConfigPath       = "/etc/clickhouse-server/tls/"
 	CABundleFilename    = "ca-bundle.crt"

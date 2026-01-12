@@ -8,10 +8,6 @@ metadata:
           "apiVersion": "clickhouse.com/v1alpha1",
           "kind": "ClickHouseCluster",
           "metadata": {
-            "labels": {
-              "app.kubernetes.io/managed-by": "kustomize",
-              "app.kubernetes.io/name": "clickhouse-operator"
-            },
             "name": "sample"
           },
           "spec": {
@@ -35,10 +31,6 @@ metadata:
           "apiVersion": "clickhouse.com/v1alpha1",
           "kind": "KeeperCluster",
           "metadata": {
-            "labels": {
-              "app.kubernetes.io/managed-by": "kustomize",
-              "app.kubernetes.io/name": "clickhouse-operator"
-            },
             "name": "sample"
           },
           "spec": {
@@ -57,7 +49,7 @@ metadata:
         }
       ]
     capabilities: Full Lifecycle
-    createdAt: "2026-01-07T14:49:32Z"
+    createdAt: "2026-01-12T17:39:58Z"
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: clickhouse-operator.v0.0.1
