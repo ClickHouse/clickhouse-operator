@@ -777,7 +777,7 @@ func CheckClickHouseUpdateOrder(ctx context.Context, cluster v1.ClickHouseCluste
 		case !ready:
 			Expect(updatingReplica).To(Equal(int32(-1)),
 				"shard %d more than one replica is updating: %d and %d",
-				shard, updatingReplica, replicaID)
+				shard, updatingReplica, replicaID.Index)
 			updatingReplica = replicaID.Index
 		// Successfully updated replica
 		default:
