@@ -6,17 +6,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-type ConditionType string
-type ConditionReason string
-
-const (
-	// ConditionTypeSpecValid indicates that the Custom Resource passes validation.
-	ConditionTypeSpecValid ConditionType = "SpecValid"
-
-	ConditionReasonSpecInvalid ConditionReason = "SpecInvalid"
-	ConditionReasonSpecValid   ConditionReason = "SpecValid"
-)
-
 type ContainerImage struct {
 	// Container image registry name
 	// Example: docker.io/clickhouse/clickhouse

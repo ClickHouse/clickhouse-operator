@@ -6,17 +6,19 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/clickhouse-operator/internal/util"
 	"github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/util"
 )
 
 type ReplicaUpdateStage int
@@ -95,16 +97,30 @@ func diffFilter(specFields []string) cmp.Option {
 	}, cmp.Ignore())
 }
 
-func ReconcileResource(ctx context.Context, log util.Logger, cli client.Client, scheme *k8sruntime.Scheme, controller metav1.Object, resource client.Object, specFields ...string) (bool, error) {
+type Controller interface {
+	GetClient() client.Client
+	GetScheme() *k8sruntime.Scheme
+	GetRecorder() record.EventRecorder
+}
+
+func reconcileResource(
+	ctx context.Context,
+	log util.Logger,
+	controller Controller,
+	owner client.Object,
+	resource client.Object,
+	specFields []string,
+) (bool, error) {
+	cli := controller.GetClient()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 	log = log.With(kind, resource.GetName())
 
-	if err := ctrl.SetControllerReference(controller, resource, scheme); err != nil {
+	if err := ctrl.SetControllerReference(owner, resource, controller.GetScheme()); err != nil {
 		return false, err
 	}
 
 	if len(specFields) == 0 {
-		specFields = []string{"Spec"}
+		return false, fmt.Errorf("%s specFields is empty", kind)
 	}
 
 	resourceHash, err := util.DeepHashResource(resource, specFields)
@@ -124,12 +140,7 @@ func ReconcileResource(ctx context.Context, log util.Logger, cli client.Client, 
 		}
 
 		log.Info("resource not found, creating")
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			return cli.Create(ctx, resource)
-		}); err != nil {
-			return false, fmt.Errorf("create %s:%s: %w", kind, resource.GetName(), err)
-		}
-		return true, nil
+		return true, Create(ctx, controller, owner, resource)
 	}
 
 	if util.GetSpecHashFromObject(foundResource) == resourceHash {
@@ -150,11 +161,83 @@ func ReconcileResource(ctx context.Context, log util.Logger, cli client.Client, 
 		field.Set(reflect.ValueOf(resource).Elem().FieldByName(fieldName))
 	}
 
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return cli.Update(ctx, foundResource)
-	}); err != nil {
-		return false, fmt.Errorf("update %s:%s: %w", kind, resource.GetName(), err)
+	return true, Update(ctx, controller, owner, foundResource)
+}
+
+func ReconcileService(
+	ctx context.Context,
+	log util.Logger,
+	controller Controller,
+	owner client.Object,
+	service *corev1.Service,
+) (bool, error) {
+	return reconcileResource(ctx, log, controller, owner, service, []string{"Spec"})
+}
+
+func ReconcilePodDisruptionBudget(
+	ctx context.Context,
+	log util.Logger,
+	controller Controller,
+	owner client.Object,
+	pdb *policyv1.PodDisruptionBudget,
+) (bool, error) {
+	return reconcileResource(ctx, log, controller, owner, pdb, []string{"Spec"})
+}
+
+func ReconcileConfigMap(
+	ctx context.Context,
+	log util.Logger,
+	controller Controller,
+	owner client.Object,
+	configMap *corev1.ConfigMap,
+) (bool, error) {
+	return reconcileResource(ctx, log, controller, owner, configMap, []string{"Data", "BinaryData"})
+}
+
+func Create(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
+	recorder := controller.GetRecorder()
+	kind := resource.GetObjectKind().GroupVersionKind().Kind
+	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
+
+	if err := controller.GetClient().Create(ctx, resource); err != nil {
+		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedCreate,
+			"Create %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		return fmt.Errorf("create %s:%s: %w", kind, resource.GetName(), err)
 	}
 
-	return true, nil
+	return nil
+}
+
+func Update(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
+	recorder := controller.GetRecorder()
+	kind := resource.GetObjectKind().GroupVersionKind().Kind
+	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
+
+	if err := controller.GetClient().Update(ctx, resource); err != nil {
+		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedUpdate,
+			"Update %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		return fmt.Errorf("update %s:%s: %w", kind, resource.GetName(), err)
+	}
+
+	return nil
+}
+
+func Delete(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
+	recorder := controller.GetRecorder()
+	kind := resource.GetObjectKind().GroupVersionKind().Kind
+	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
+
+	if err := controller.GetClient().Delete(ctx, resource); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+
+		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedDelete,
+			"Delete %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		return fmt.Errorf("delete %s:%s: %w", kind, resource.GetName(), err)
+	}
+
+	recorder.Eventf(owner, corev1.EventTypeNormal, v1.EventReasonSuccessfulDelete,
+		"Delete %s %s in %s %s", kind, resource.GetName(), clusterKind, owner.GetName())
+	return nil
 }

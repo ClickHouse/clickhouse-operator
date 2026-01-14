@@ -166,12 +166,15 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 
 			var unknownConditions []metav1.Condition
 			for _, cond := range v1.AllClickHouseConditionTypes {
-				unknownConditions = append(unknownConditions, recCtx.NewCondition(cond, metav1.ConditionUnknown, v1.ClickHouseConditionReasonStepFailed, errMsg))
+				unknownConditions = append(unknownConditions, recCtx.NewCondition(cond, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg))
 			}
-			meta.SetStatusCondition(&unknownConditions, recCtx.NewCondition(v1.ClickHouseConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ClickHouseConditionReasonStepFailed, errMsg))
+			meta.SetStatusCondition(&unknownConditions, recCtx.NewCondition(v1.ConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ConditionReasonStepFailed, errMsg))
 			recCtx.SetConditions(log, unknownConditions)
 
-			return ctrl.Result{RequeueAfter: keeper.RequeueOnErrorTimeout}, r.upsertStatus(log, &recCtx)
+			if updateErr := r.upsertStatus(log, &recCtx); updateErr != nil {
+				log.Error(updateErr, "failed to update status")
+			}
+			return ctrl.Result{}, err
 		}
 
 		if !stepResult.IsZero() {
@@ -182,7 +185,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 		stepLog.Debug("reconcile step completed")
 	}
 
-	recCtx.SetCondition(log, v1.ClickHouseConditionTypeReconcileSucceeded, metav1.ConditionTrue, v1.ClickHouseConditionReasonReconcileFinished, "Reconcile succeeded")
+	recCtx.SetCondition(log, v1.ConditionTypeReconcileSucceeded, metav1.ConditionTrue, v1.ConditionReasonReconcileFinished, "Reconcile succeeded")
 	log.Info("reconciliation loop end", "result", result)
 
 	if err := r.upsertStatus(log, &recCtx); err != nil {
@@ -194,14 +197,14 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 
 func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	service := TemplateHeadlessService(ctx.Cluster)
-	if _, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, service); err != nil {
-		return &ctrl.Result{}, fmt.Errorf("reconcile service resource: %w", err)
+	if _, err := chctrl.ReconcileService(ctx.Context, log, r, ctx.Cluster, service); err != nil {
+		return nil, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	for shard := range ctx.Cluster.Shards() {
 		pdb := TemplatePodDisruptionBudget(ctx.Cluster, shard)
-		if _, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, pdb); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
+		if _, err := chctrl.ReconcilePodDisruptionBudget(ctx.Context, log, r, ctx.Cluster, pdb); err != nil {
+			return nil, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
 		}
 	}
 
@@ -219,11 +222,8 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 
 		if shardID >= int(ctx.Cluster.Shards()) {
 			log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
-			if err := r.Delete(ctx.Context, &pdb); err != nil {
-				if !k8serrors.IsNotFound(err) {
-					return nil, fmt.Errorf("delete PodDisruptionBudget %s: %w", pdb.Name, err)
-				}
-				log.Warn("PodDisruptionBudget already deleted", "pdb", pdb.Name)
+			if err := chctrl.Delete(ctx.Context, r, ctx.Cluster, &pdb); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -233,24 +233,24 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 		Name:      ctx.Cluster.SecretName(),
 	}, &ctx.secret)
 	if getErr != nil && !k8serrors.IsNotFound(getErr) {
-		return &ctrl.Result{}, fmt.Errorf("get ClickHouse cluster secret %q: %w", ctx.Cluster.SecretName(), getErr)
+		return nil, fmt.Errorf("get ClickHouse cluster secret %q: %w", ctx.Cluster.SecretName(), getErr)
 	}
-	secretsUpdated, err := TemplateClusterSecrets(ctx.Cluster, &ctx.secret)
+	isSecretUpdated, err := TemplateClusterSecrets(ctx.Cluster, &ctx.secret)
 	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("template cluster secrets: %w", err)
+		return nil, fmt.Errorf("template cluster secrets: %w", err)
 	}
 	if err := ctrl.SetControllerReference(ctx.Cluster, &ctx.secret, r.Scheme); err != nil {
-		return &ctrl.Result{}, fmt.Errorf("set controller reference for cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		return nil, fmt.Errorf("set controller reference for cluster secret %q: %w", ctx.Cluster.SecretName(), err)
 	}
 
 	if getErr != nil {
 		log.Info("cluster secret not found, creating", "secret", ctx.Cluster.SecretName())
-		if err = r.Create(ctx.Context, &ctx.secret); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("create cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+		if err := chctrl.Create(ctx.Context, r, ctx.Cluster, &ctx.secret); err != nil {
+			return nil, fmt.Errorf("create cluster secret: %w", err)
 		}
-	} else if secretsUpdated {
-		if err := r.Update(ctx.Context, &ctx.secret); err != nil {
-			return &ctrl.Result{}, fmt.Errorf("update cluster secret %q: %w", ctx.Cluster.SecretName(), err)
+	} else if isSecretUpdated {
+		if err = chctrl.Update(ctx.Context, r, ctx.Cluster, &ctx.secret); err != nil {
+			return nil, fmt.Errorf("update cluster secret: %w", err)
 		}
 	} else {
 		log.Debug("cluster secret is up to date")
@@ -268,7 +268,7 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 
 	updateRevision, err := util.DeepHashObject(ctx.Cluster.Spec)
 	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("get current spec revision: %w", err)
+		return nil, fmt.Errorf("get current spec revision: %w", err)
 	}
 	if updateRevision != ctx.Cluster.Status.UpdateRevision {
 		ctx.Cluster.Status.UpdateRevision = updateRevision
@@ -282,7 +282,7 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 		return nil, fmt.Errorf("get keeper cluster: %w", err)
 	}
 
-	if cond := meta.FindStatusCondition(ctx.keeper.Status.Conditions, string(v1.KeeperConditionTypeReady)); cond == nil || cond.Status != metav1.ConditionTrue {
+	if cond := meta.FindStatusCondition(ctx.keeper.Status.Conditions, string(v1.ConditionTypeReady)); cond == nil || cond.Status != metav1.ConditionTrue {
 		if cond == nil {
 			log.Warn("keeper cluster is not ready")
 		} else {
@@ -292,7 +292,7 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 
 	configRevision, err := GetConfigurationRevision(ctx)
 	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("get configuration revision: %w", err)
+		return nil, fmt.Errorf("get configuration revision: %w", err)
 	}
 	if configRevision != ctx.Cluster.Status.ConfigurationRevision {
 		ctx.Cluster.Status.ConfigurationRevision = configRevision
@@ -301,7 +301,7 @@ func (r *ClusterReconciler) reconcileClusterRevisions(log util.Logger, ctx *reco
 
 	stsRevision, err := GetStatefulSetRevision(ctx)
 	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("get StatefulSet revision: %w", err)
+		return nil, fmt.Errorf("get StatefulSet revision: %w", err)
 	}
 	if stsRevision != ctx.Cluster.Status.StatefulSetRevision {
 		ctx.Cluster.Status.StatefulSetRevision = stsRevision
@@ -424,7 +424,7 @@ func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reco
 func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	if !ctx.Cluster.Spec.Settings.EnableDatabaseSync {
 		log.Info("database sync is disabled, skipping")
-		return &ctrl.Result{}, nil
+		return nil, nil
 	}
 
 	var readyReplicas []v1.ClickHouseReplicaID
@@ -436,7 +436,7 @@ func (r *ClusterReconciler) reconcileReplicateSchema(log util.Logger, ctx *recon
 
 	if readyReplicas == nil {
 		log.Info("no ready replicas to replicate schema, skipping")
-		return &ctrl.Result{}, nil
+		return nil, nil
 	}
 
 	hasNotSynced := false
@@ -568,22 +568,15 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 			id := v1.ClickHouseReplicaID{ShardID: shardID, Index: index}
 			if res.sts != nil {
 				log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
-				if err := r.Delete(ctx.Context, res.sts); err != nil {
-					if !k8serrors.IsNotFound(err) {
-						return nil, fmt.Errorf("delete StatefulSet %s: %w", res.sts.Name, err)
-					}
-					log.Warn("StatefulSet already deleted", "statefulset", res.sts.Name)
+				if err := chctrl.Delete(ctx.Context, r, ctx.Cluster, res.sts); err != nil {
+					return nil, err
 				}
 			}
 
 			if res.cfg != nil {
 				log.Info("removing replica configmap", "replica_id", id, "configmap", res.cfg.Name)
-				if err := r.Delete(ctx.Context, res.cfg); err != nil {
-					if !k8serrors.IsNotFound(err) {
-						return nil, fmt.Errorf("delete ConfigMap %s: %w", res.cfg.Name, err)
-
-					}
-					log.Warn("ConfigMap already deleted", "configmap", res.cfg.Name)
+				if err := chctrl.Delete(ctx.Context, r, ctx.Cluster, res.cfg); err != nil {
+					return nil, err
 				}
 			}
 		}
@@ -638,36 +631,36 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	if len(errorReplicas) > 0 {
 		slices.SortFunc(errorReplicas, compareReplicaID)
 		message := fmt.Sprintf("Replicas has startup errors: %v", errorReplicas)
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeReplicaStartupSucceeded, metav1.ConditionFalse, v1.ClickHouseConditionReasonReplicaError, message)
+		ctx.SetCondition(log, v1.ConditionTypeReplicaStartupSucceeded, metav1.ConditionFalse, v1.ConditionReasonReplicaError, message)
 	} else {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeReplicaStartupSucceeded, metav1.ConditionTrue, v1.ClickHouseConditionReasonReplicasRunning, "")
+		ctx.SetCondition(log, v1.ConditionTypeReplicaStartupSucceeded, metav1.ConditionTrue, v1.ConditionReasonReplicasRunning, "")
 	}
 
 	if len(notReadyReplicas) > 0 {
 		slices.SortFunc(notReadyReplicas, compareReplicaID)
 		message := fmt.Sprintf("Not ready replicas: %v", notReadyReplicas)
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeHealthy, metav1.ConditionFalse, v1.ClickHouseConditionReasonReplicasNotReady, message)
+		ctx.SetCondition(log, v1.ConditionTypeHealthy, metav1.ConditionFalse, v1.ConditionReasonReplicasNotReady, message)
 	} else {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeHealthy, metav1.ConditionTrue, v1.ClickHouseConditionReasonReplicasReady, "")
+		ctx.SetCondition(log, v1.ConditionTypeHealthy, metav1.ConditionTrue, v1.ConditionReasonReplicasReady, "")
 	}
 
 	if len(notUpdatedReplicas) > 0 {
 		slices.SortFunc(notUpdatedReplicas, compareReplicaID)
 		message := fmt.Sprintf("Replicas has pending updates: %v", notUpdatedReplicas)
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeConfigurationInSync, metav1.ConditionFalse, v1.ClickHouseConditionReasonConfigurationChanged, message)
+		ctx.SetCondition(log, v1.ConditionTypeConfigurationInSync, metav1.ConditionFalse, v1.ConditionReasonConfigurationChanged, message)
 	} else {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeConfigurationInSync, metav1.ConditionTrue, v1.ClickHouseConditionReasonUpToDate, "")
+		ctx.SetCondition(log, v1.ConditionTypeConfigurationInSync, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "")
 	}
 
 	exists := len(ctx.ReplicaState)
 	expected := int(ctx.Cluster.Replicas() * ctx.Cluster.Shards())
 
 	if exists < expected {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingUp, "Cluster has less replicas than requested")
+		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingUp, "Cluster has less replicas than requested")
 	} else if exists > expected {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ClickHouseConditionReasonScalingDown, "Cluster has more replicas than requested")
+		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingDown, "Cluster has more replicas than requested")
 	} else {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ClickHouseConditionReasonUpToDate, "")
+		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "")
 	}
 
 	if len(notUpdatedReplicas) == 0 && exists == expected {
@@ -675,11 +668,11 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	}
 
 	if len(notReadyShards) == 0 {
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeReady, metav1.ConditionTrue, v1.ClickHouseConditionAllShardsReady, "All shards are ready")
+		ctx.SetCondition(log, v1.ConditionTypeReady, metav1.ConditionTrue, v1.ClickHouseConditionAllShardsReady, "All shards are ready")
 	} else {
 		slices.Sort(notReadyShards)
 		message := fmt.Sprintf("Some shards are not ready: %v", notReadyShards)
-		ctx.SetCondition(log, v1.ClickHouseConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message)
+		ctx.SetCondition(log, v1.ConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message)
 	}
 
 	{
@@ -711,7 +704,7 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		}
 	}
 
-	return &ctrl.Result{}, nil
+	return nil, nil
 }
 
 func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext, id v1.ClickHouseReplicaID) (*ctrl.Result, error) {
@@ -723,7 +716,7 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		return nil, fmt.Errorf("template replica %s ConfigMap: %w", id, err)
 	}
 
-	configChanged, err := chctrl.ReconcileResource(ctx.Context, log, r.Client, r.Scheme, ctx.Cluster, configMap, "Data", "BinaryData")
+	configChanged, err := chctrl.ReconcileConfigMap(ctx.Context, log, r, ctx.Cluster, configMap)
 	if err != nil {
 		return nil, fmt.Errorf("update replica %s ConfigMap: %w", id, err)
 	}
@@ -742,23 +735,19 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 		util.AddObjectConfigHash(statefulSet, ctx.Cluster.Status.ConfigurationRevision)
 		util.AddHashWithKeyToAnnotations(statefulSet, util.AnnotationSpecHash, ctx.Cluster.Status.StatefulSetRevision)
 
-		err = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			return r.Create(ctx.Context, statefulSet)
-		})
-
-		if err != nil {
-			return nil, fmt.Errorf("create replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
+		if err := chctrl.Create(ctx.Context, r, ctx.Cluster, statefulSet); err != nil {
+			return nil, err
 		}
 
-		return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
+		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
 	// Check if the StatefulSet is outdated and needs to be recreated
 	v, err := semver.Parse(replica.StatefulSet.Annotations[util.AnnotationStatefulSetVersion])
 	if err != nil || keeper.BreakingStatefulSetVersion.GT(v) {
 		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, keeper.BreakingStatefulSetVersion))
-		if err := r.Delete(ctx.Context, replica.StatefulSet); err != nil {
-			return nil, fmt.Errorf("delete StatefulSet: %w", err)
+		if err := chctrl.Delete(ctx.Context, r, ctx.Cluster, replica.StatefulSet); err != nil {
+			return nil, err
 		}
 
 		return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
@@ -802,13 +791,11 @@ func (r *ClusterReconciler) updateReplica(log util.Logger, ctx *reconcileContext
 	replica.StatefulSet.Annotations = util.MergeMaps(replica.StatefulSet.Annotations, statefulSet.Annotations)
 	replica.StatefulSet.Labels = util.MergeMaps(replica.StatefulSet.Labels, statefulSet.Labels)
 	util.AddHashWithKeyToAnnotations(replica.StatefulSet, util.AnnotationSpecHash, ctx.Cluster.Status.StatefulSetRevision)
-	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		return r.Update(ctx.Context, replica.StatefulSet)
-	}); err != nil {
-		return nil, fmt.Errorf("update replica %s StatefulSet %q: %w", id, statefulSet.Name, err)
+	if err := chctrl.Update(ctx.Context, r, ctx.Cluster, replica.StatefulSet); err != nil {
+		return nil, err
 	}
 
-	return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
+	return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 }
 
 func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileContext, id v1.ClickHouseReplicaID) error {
@@ -847,7 +834,7 @@ func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileCont
 	}
 	log.Info("updating replica PVC", "pvc", pvcs.Items[0].Name, "diff", gcmp.Diff(pvcs.Items[0].Spec, targetSpec))
 	pvcs.Items[0].Spec = *targetSpec
-	if err := r.Update(ctx.Context, &pvcs.Items[0]); err != nil {
+	if err := chctrl.Update(ctx.Context, r, ctx.Cluster, &pvcs.Items[0]); err != nil {
 		return fmt.Errorf("update replica PVC %q: %w", id, err)
 	}
 
