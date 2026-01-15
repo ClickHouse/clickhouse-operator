@@ -16,13 +16,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var suite testutil.TestSuit
-var reconciler reconcile.Reconciler
+var reconciler *ClusterReconciler
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -36,8 +36,9 @@ var _ = BeforeSuite(func() {
 		Client: suite.Client,
 		Scheme: scheme.Scheme,
 
-		Reader: suite.Client,
-		Logger: suite.Log.Named("clickhouse"),
+		Reader:   suite.Client,
+		Logger:   suite.Log.Named("clickhouse"),
+		Recorder: record.NewFakeRecorder(128),
 	}
 })
 
@@ -85,11 +86,15 @@ var _ = Describe("ClickHouseCluster Controller", func() {
 			Expect(suite.Client.Create(suite.Context, keeper)).To(Succeed())
 			Expect(suite.Client.Get(suite.Context, keeper.NamespacedName(), keeper)).To(Succeed())
 			meta.SetStatusCondition(&keeper.Status.Conditions, metav1.Condition{
-				Type:   string(v1.KeeperConditionTypeReady),
+				Type:   string(v1.ConditionTypeReady),
 				Status: metav1.ConditionTrue,
 				Reason: string(v1.KeeperConditionReasonStandaloneReady),
 			})
 			Expect(suite.Client.Status().Update(suite.Context, keeper)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			testutil.EnsureNoEvents(reconciler.Recorder.(*record.FakeRecorder).Events)
 		})
 
 		It("should create ClickHouse cluster", func() {

@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
-	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -20,6 +17,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller"
+	"github.com/clickhouse-operator/internal/util"
+	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 // ClusterReconciler reconciles a KeeperCluster object.
@@ -32,6 +34,8 @@ type ClusterReconciler struct {
 	Logger   util.Logger
 }
 
+var _ controller.Controller = &ClusterReconciler{}
+
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters/finalizers,verbs=update
@@ -40,6 +44,7 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -87,25 +92,37 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return r.Sync(ctx, logger, cluster)
 }
 
+func (r *ClusterReconciler) GetClient() client.Client {
+	return r.Client
+}
+
+func (r *ClusterReconciler) GetScheme() *runtime.Scheme {
+	return r.Scheme
+}
+
+func (r *ClusterReconciler) GetRecorder() record.EventRecorder {
+	return r.Recorder
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
 	namedLogger := log.Named("keeper")
 
-	controller := &ClusterReconciler{
+	keeperController := &ClusterReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("clickhouse.KeeperCluster"),
+		Recorder: mgr.GetEventRecorderFor("keeper-controller"),
 		Reader:   mgr.GetAPIReader(),
 		Logger:   namedLogger,
 	}
 
-	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
-		WithEventFilter(predicate.ResourceVersionChangedPredicate{})
-
-	return controllerBuilder.Complete(controller)
+		Owns(&corev1.Pod{}).
+		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
+		Complete(keeperController)
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/gomega"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -38,12 +38,14 @@ func TestApplyDefault(t *testing.T) {
 	}
 
 	t.Run("all default values", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		source := SampleStruct{}
-		require.NoError(t, ApplyDefault(&source, allSet))
-		require.Equal(t, source, allSet)
+		Expect(ApplyDefault(&source, allSet)).To(Succeed())
+		Expect(source).To(Equal(allSet))
 	})
 
 	t.Run("nothing to update", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		source := allSet
 		defaults := SampleStruct{
 			String: "another",
@@ -52,11 +54,12 @@ func TestApplyDefault(t *testing.T) {
 				Number: 77,
 			},
 		}
-		require.NoError(t, ApplyDefault(&source, defaults))
-		require.Equal(t, source, allSet)
+		Expect(ApplyDefault(&source, defaults)).To(Succeed())
+		Expect(source).To(Equal(allSet))
 	})
 
 	t.Run("update several", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		source := allSet
 		defaults := allSet
 
@@ -64,56 +67,62 @@ func TestApplyDefault(t *testing.T) {
 		source.Struct.Number = 100
 		source.Map[7] = "custom"
 
-		require.NoError(t, ApplyDefault(&source, defaults))
-		require.Equal(t, source.String, allSet.String)
-		require.Equal(t, source.Struct.Number, 100)
-		require.Equal(t, source.Map[7], "custom")
+		Expect(ApplyDefault(&source, defaults)).To(Succeed())
+		Expect(source.String).To(Equal(allSet.String))
+		Expect(source.Struct.Number).To(Equal(100))
+		Expect(source.Map[7]).To(Equal("custom"))
 	})
 }
 
 func TestUpdateResult(t *testing.T) {
 	t.Run("update empty", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ctrl.Result{}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
-		require.Equal(t, update.RequeueAfter, result.RequeueAfter)
+		Expect(result.RequeueAfter).To(Equal(update.RequeueAfter))
 	})
 
 	t.Run("do not update with empty", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, nil)
-		require.Equal(t, ctrl.Result{RequeueAfter: time.Second}, result)
+		Expect(result).To(Equal(ctrl.Result{RequeueAfter: time.Second}))
 	})
 
 	t.Run("update to closer", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ctrl.Result{RequeueAfter: time.Minute}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
-		require.Equal(t, time.Second, result.RequeueAfter)
+		Expect(result.RequeueAfter).To(Equal(time.Second))
 	})
 
 	t.Run("already better", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ctrl.Result{RequeueAfter: time.Second}
 		update := ctrl.Result{RequeueAfter: time.Minute}
 		UpdateResult(&result, &update)
-		require.Equal(t, time.Second, result.RequeueAfter)
+		Expect(result.RequeueAfter).To(Equal(time.Second))
 	})
 }
 
 func TestExecuteParallel(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
 				return item, item * 2, nil
 			})
-		require.Equal(t, map[int]executionResult[int, int]{
+		Expect(result).To(Equal(map[int]executionResult[int, int]{
 			1: {Result: 2},
 			2: {Result: 4},
 			3: {Result: 6},
-		}, result)
+		}))
 	})
 	t.Run("some errors", func(t *testing.T) {
+		RegisterFailHandler(NewWithT(t).Fail)
 		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
@@ -122,10 +131,10 @@ func TestExecuteParallel(t *testing.T) {
 				}
 				return item, item * 2, nil
 			})
-		require.Equal(t, map[int]executionResult[int, int]{
+		Expect(result).To(Equal(map[int]executionResult[int, int]{
 			1: {Result: 2},
 			2: {Err: fmt.Errorf("failed")},
 			3: {Result: 6},
-		}, result)
+		}))
 	})
 }

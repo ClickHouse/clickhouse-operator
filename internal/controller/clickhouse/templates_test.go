@@ -14,8 +14,7 @@ func TestBuildVolumes(t *testing.T) {
 	ctx := reconcileContext{}
 
 	t.Run("EmptyCluster", func(t *testing.T) {
-		g := NewWithT(t)
-		RegisterFailHandler(g.Fail)
+		RegisterFailHandler(NewWithT(t).Fail)
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -30,8 +29,7 @@ func TestBuildVolumes(t *testing.T) {
 	})
 
 	t.Run("TLSCluster", func(t *testing.T) {
-		g := NewWithT(t)
-		RegisterFailHandler(g.Fail)
+		RegisterFailHandler(NewWithT(t).Fail)
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -55,8 +53,7 @@ func TestBuildVolumes(t *testing.T) {
 	})
 
 	t.Run("ExtraMount", func(t *testing.T) {
-		g := NewWithT(t)
-		RegisterFailHandler(g.Fail)
+		RegisterFailHandler(NewWithT(t).Fail)
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -90,8 +87,7 @@ func TestBuildVolumes(t *testing.T) {
 	})
 
 	t.Run("ExtraMountCollide", func(t *testing.T) {
-		g := NewWithT(t)
-		RegisterFailHandler(g.Fail)
+		RegisterFailHandler(NewWithT(t).Fail)
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -125,8 +121,7 @@ func TestBuildVolumes(t *testing.T) {
 	})
 
 	t.Run("TLSExtraMountCollide", func(t *testing.T) {
-		g := NewWithT(t)
-		RegisterFailHandler(g.Fail)
+		RegisterFailHandler(NewWithT(t).Fail)
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -173,14 +168,14 @@ func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
 		internal.PersistentVolumeName: {},
 	}
 	for _, volume := range volumes {
-		Expect(volumeMap).NotTo(HaveKey(volume.Name))
+		ExpectWithOffset(1, volumeMap).NotTo(HaveKey(volume.Name))
 		volumeMap[volume.Name] = struct{}{}
 	}
 
 	mountPaths := map[string]struct{}{}
 	for _, mount := range mounts {
-		Expect(mountPaths).NotTo(HaveKey(mount.MountPath))
+		ExpectWithOffset(1, mountPaths).NotTo(HaveKey(mount.MountPath))
 		mountPaths[mount.MountPath] = struct{}{}
-		Expect(volumeMap).To(HaveKey(mount.Name), "Mount %s is not in volumes", mount.Name)
+		ExpectWithOffset(1, volumeMap).To(HaveKey(mount.Name), "Mount %s is not in volumes", mount.Name)
 	}
 }

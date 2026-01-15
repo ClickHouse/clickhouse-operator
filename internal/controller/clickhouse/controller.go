@@ -5,10 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/clickhouse-operator/internal/util"
-	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -24,6 +20,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller"
+	"github.com/clickhouse-operator/internal/controller/keeper"
+	"github.com/clickhouse-operator/internal/util"
+	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 // ClusterReconciler reconciles a ClickHouseCluster object.
@@ -35,6 +37,8 @@ type ClusterReconciler struct {
 	Reader   client.Reader // Used to bypass the cache.
 	Logger   util.Logger
 }
+
+var _ controller.Controller = &ClusterReconciler{}
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters/status,verbs=get;update;patch
@@ -88,32 +92,44 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	return r.Sync(ctx, logger, cluster)
 }
 
+func (r *ClusterReconciler) GetClient() client.Client {
+	return r.Client
+}
+
+func (r *ClusterReconciler) GetScheme() *runtime.Scheme {
+	return r.Scheme
+}
+
+func (r *ClusterReconciler) GetRecorder() record.EventRecorder {
+	return r.Recorder
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
 	namedLogger := log.Named("clickhouse")
 
-	controller := &ClusterReconciler{
+	clickhouseController := &ClusterReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("clickhouse.ClickHouseCluster"),
+		Recorder: mgr.GetEventRecorderFor("clickhouse-controller"),
 		Reader:   mgr.GetAPIReader(),
 		Logger:   namedLogger,
 	}
 
-	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.ClickHouseCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Watches(
 			&v1.KeeperCluster{},
-			handler.EnqueueRequestsFromMapFunc(controller.clickHouseClustersForKeeper),
+			handler.EnqueueRequestsFromMapFunc(clickhouseController.clickHouseClustersForKeeper),
 		).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
-		WithEventFilter(predicate.ResourceVersionChangedPredicate{})
-
-	return controllerBuilder.Complete(controller)
+		Owns(&corev1.Pod{}).
+		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
+		Complete(clickhouseController)
 }
 
 func (r *ClusterReconciler) clickHouseClustersForKeeper(ctx context.Context, obj client.Object) []reconcile.Request {

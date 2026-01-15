@@ -9,8 +9,8 @@ import (
 
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/go-logr/zapr"
-	"github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
+	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
+	. "github.com/onsi/gomega"    //nolint:golint,revive,staticcheck
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -33,7 +33,7 @@ type TestSuit struct {
 
 func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 	var suite TestSuit
-	logger := zap.NewRaw(zap.WriteTo(ginkgo.GinkgoWriter), zap.UseDevMode(true))
+	logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 	logf.SetLogger(zapr.NewLogger(logger))
 	suite.Log = util.NewZapLogger(logger)
 
@@ -41,10 +41,10 @@ func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 
 	var err error
 	err = addToScheme(scheme.Scheme)
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	// +kubebuilder:scaffold:scheme
 
-	ginkgo.By("bootstrapping test environment")
+	By("bootstrapping test environment")
 	suite.TestEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -62,12 +62,12 @@ func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 
 	// cfg is defined in this file globally.
 	suite.Cfg, err = suite.TestEnv.Start()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	gomega.Expect(suite.Cfg).NotTo(gomega.BeNil())
+	Expect(err).NotTo(HaveOccurred())
+	Expect(suite.Cfg).NotTo(BeNil())
 
 	suite.Client, err = client.New(suite.Cfg, client.Options{Scheme: scheme.Scheme})
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
-	gomega.Expect(suite.Client).NotTo(gomega.BeNil())
+	Expect(err).NotTo(HaveOccurred())
+	Expect(suite.Client).NotTo(BeNil())
 
 	return suite
 }
@@ -78,12 +78,12 @@ func ReconcileStatefulSets[T interface {
 	listOpts := util.AppRequirements("", cr.SpecificName())
 
 	var stsList appsv1.StatefulSetList
-	gomega.ExpectWithOffset(1, suite.Client.List(suite.Context, &stsList, listOpts)).To(gomega.Succeed())
+	ExpectWithOffset(1, suite.Client.List(suite.Context, &stsList, listOpts)).To(Succeed())
 	for _, sts := range stsList.Items {
 		sts.Status.ObservedGeneration = sts.Generation
 		sts.Status.UpdateRevision = sts.Status.CurrentRevision
 
-		gomega.ExpectWithOffset(1, suite.Client.Status().Update(suite.Context, &sts)).To(gomega.Succeed())
+		ExpectWithOffset(1, suite.Client.Status().Update(suite.Context, &sts)).To(Succeed())
 	}
 }
 
@@ -108,4 +108,15 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
+}
+
+func EnsureNoEvents(events chan string) {
+	By("ensure all events read")
+	var event string
+	select {
+	case event = <-events:
+		Fail(fmt.Sprintf("Expected no more events, but got: %s", event))
+	default:
+		return
+	}
 }
