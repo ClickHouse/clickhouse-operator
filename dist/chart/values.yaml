@@ -63,9 +63,16 @@ metrics:
 
 # Cert-manager integration for TLS certificates.
 # Required for webhook certificates and secure metrics endpoint certificates.
-# Requires cert-manager to be installed in the cluster.
 certManager:
+  # Enable cert-manager issue certificates for the controller.
   enable: true
+  # Install cert-manager chart as a dependency.
+  install: true
+
+# Values overrides for the cert-manager chart
+cert-manager:
+  crds:
+    enabled: true
 
 # Webhook server configuration
 webhook:

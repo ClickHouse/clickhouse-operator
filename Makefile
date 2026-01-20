@@ -168,8 +168,12 @@ generate-helmchart-ci: generate-helmchart ## Generate helm charts and reset some
 	git checkout dist/chart/templates/monitoring/
 	git checkout dist/chart/templates/webhook/
 
+.PHONY: build-helmchart-dependencies
+build-helmchart-dependencies: ## Build helm chart dependencies
+	helm dependency build dist/chart
+
 .PHONY: package-helmchart
-package-helmchart: ## Package helm chart. It will be saved as clickhouse-operator-helm-$(VERSION).tgz
+package-helmchart: build-helmchart-dependencies ## Package helm chart. It will be saved as clickhouse-operator-helm-$(VERSION).tgz
 	helm package --version ${VERSION} --app-version v${VERSION} dist/chart
 
 .PHONY: push-helmchart
