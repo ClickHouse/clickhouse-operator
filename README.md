@@ -4,8 +4,8 @@
 [![Apache 2.0 License](https://img.shields.io/badge/license-Apache%202.0-blueviolet?style=for-the-badge)](https://www.apache.org/licenses/LICENSE-2.0)
 
 <picture>
-    <source media="(prefers-color-scheme: light)" srcset="./docs/static/logo_black.svg">
-    <img align="left" width="300" style="margin-right: 20px;" src="./docs/static/logo_yellow.svg" alt="The ClickHouse Operator logo.">
+    <source media="(prefers-color-scheme: light)" srcset="https://clickhouse.com/docs/img/clickhouse-operator-logo-black.svg">
+    <img align="left" width="300" style="margin-right: 20px;" src="https://clickhouse.com/docs/img/clickhouse-operator-logo.svg" alt="The ClickHouse Operator logo.">
 </picture>
 
 ### ClickHouse Operator
