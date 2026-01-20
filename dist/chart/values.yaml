@@ -67,7 +67,7 @@ certManager:
   # Enable cert-manager issue certificates for the controller.
   enable: true
   # Install cert-manager chart as a dependency.
-  install: true
+  install: false
 
 # Values overrides for the cert-manager chart
 cert-manager:

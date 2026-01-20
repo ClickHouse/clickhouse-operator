@@ -25,6 +25,9 @@ helm version
 ## Install the Operator
 
 **NOTE:**  By default Helm chart deploys ClickHouse Operator with webhooks enabled and requires cert-manager installed.
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
+```
 
 ### From OCI Helm Repository
 
@@ -48,7 +51,7 @@ Install a specific operator version
 Clone the repository and install from the local chart:
 
 ```bash
-git clone https://github.com/<org>/clickhouse-operator.git
+git clone https://github.com/ClickHouse/clickhouse-operator.git
 cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
