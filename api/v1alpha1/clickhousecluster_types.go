@@ -1,12 +1,12 @@
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"strconv"
 	"strings"
 
-	"github.com/clickhouse-operator/internal/util"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -14,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
@@ -63,9 +65,11 @@ type ClickHouseClusterSpec struct {
 	Settings ClickHouseSettings `json:"settings,omitempty"`
 }
 
+// WithDefaults sets default values for ClickHouseClusterSpec fields.
 func (s *ClickHouseClusterSpec) WithDefaults() {
 	defaultSpec := ClickHouseClusterSpec{
-		Replicas: ptr.To[int32](3),
+		Replicas: ptr.To[int32](DefaultClickHouseReplicaCount),
+		Shards:   ptr.To[int32](DefaulClickHouseShardCount),
 		ContainerTemplate: ContainerTemplateSpec{
 			Image: ContainerImage{
 				Repository: DefaultClickHouseContainerRepository,
@@ -88,12 +92,12 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 				LogToFile: true,
 				Level:     "trace",
 				Size:      "1000M",
-				Count:     50,
+				Count:     DefaultMaxLogFiles,
 			},
 		},
 	}
 
-	if err := util.ApplyDefault(s, defaultSpec); err != nil {
+	if err := controllerutil.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
 	}
 
@@ -102,6 +106,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 	}
 }
 
+// ClickHouseSettings defines ClickHouse server settings options.
 type ClickHouseSettings struct {
 	// Reference to the Secret key, which contains password for the user 'default'.
 	// +optional
@@ -160,7 +165,7 @@ type ClickHouseClusterStatus struct {
 	// UpdateRevision indicates latest requested ClickHouseCluster spec revision.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	UpdateRevision string `json:"updateRevision,omitempty"`
-	// ObservedGeneration indicates lastest generation observed by controller.
+	// ObservedGeneration indicates latest generation observed by controller.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
@@ -190,15 +195,18 @@ type ClickHouseCluster struct {
 	Status ClickHouseClusterStatus `json:"status,omitempty"`
 }
 
+// ClickHouseReplicaID identifies a ClickHouse replica within the cluster.
+// +kubebuilder:object:generate=false
 type ClickHouseReplicaID struct {
 	ShardID int32
 	Index   int32
 }
 
+// ClickHouseIDFromLabels extracts ClickHouseReplicaID from given labels map.
 func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, error) {
-	shardIDStr, ok := labels[util.LabelClickHouseShardID]
+	shardIDStr, ok := labels[controllerutil.LabelClickHouseShardID]
 	if !ok {
-		return ClickHouseReplicaID{}, fmt.Errorf("missing shard ID label")
+		return ClickHouseReplicaID{}, errors.New("missing shard ID label")
 	}
 
 	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
@@ -206,9 +214,9 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
 	}
 
-	replicaIDStr, ok := labels[util.LabelClickHouseReplicaID]
+	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
 	if !ok {
-		return ClickHouseReplicaID{}, fmt.Errorf("missing replica ID label")
+		return ClickHouseReplicaID{}, errors.New("missing replica ID label")
 	}
 
 	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
@@ -222,11 +230,14 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 	}, nil
 }
 
+// IDFromHostname extracts ClickHouseReplicaID from given hostname.
 func IDFromHostname(v *ClickHouseCluster, hostname string) (ClickHouseReplicaID, error) {
 	if !strings.HasPrefix(hostname, v.SpecificName()+"-") || !strings.HasSuffix(hostname, "-0") {
 		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q", hostname)
 	}
+
 	idParts := hostname[len(v.SpecificName())+1 : len(hostname)-2] // leave only {shard}-{index}
+
 	parts := strings.Split(idParts, "-")
 	if len(parts) != 2 {
 		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q, expected format: <name>-<shard>-<index>-0", hostname)
@@ -250,6 +261,7 @@ func IDFromHostname(v *ClickHouseCluster, hostname string) (ClickHouseReplicaID,
 
 var _ logr.Marshaler = ClickHouseReplicaID{}
 
+// MarshalLog implements logr.Marshaler interface for pretty printing in logs.
 func (id ClickHouseReplicaID) MarshalLog() any {
 	return id.String()
 }
@@ -258,6 +270,7 @@ func (id ClickHouseReplicaID) String() string {
 	return fmt.Sprintf("(%d:%d)", id.ShardID, id.Index)
 }
 
+// NamespacedName returns NamespacedName for the ClickHouseCluster.
 func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: v.Namespace,
@@ -265,36 +278,40 @@ func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+// GetStatus returns pointer to ClickHouseClusterStatus.
 func (v *ClickHouseCluster) GetStatus() *ClickHouseClusterStatus {
 	return &v.Status
 }
 
+// Conditions returns pointer to the conditions slice.
 func (v *ClickHouseCluster) Conditions() *[]metav1.Condition {
 	return &v.Status.Conditions
 }
 
+// SpecificName returns cluster name with resource suffix. Used to generate resource names.
 func (v *ClickHouseCluster) SpecificName() string {
-	return fmt.Sprintf("%s-clickhouse", v.GetName())
+	return v.GetName() + "-clickhouse"
 }
 
+// Shards returns requested number of shards in the ClickHouseCluster.
 func (v *ClickHouseCluster) Shards() int32 {
 	if v.Spec.Shards == nil {
-		// In case of absence, value must be populated by default, if it's nil then some wrong logic in controller erased it.
-		panic(".spec.shards is nil, this is a bug")
+		return DefaulClickHouseShardCount
 	}
 
 	return *v.Spec.Shards
 }
 
+// Replicas returns requested number of replicas in each shard of the ClickHouseCluster.
 func (v *ClickHouseCluster) Replicas() int32 {
 	if v.Spec.Replicas == nil {
-		// In case of absence, value must be populated by default, if it's nil then some wrong logic in controller erased it.
-		panic(".spec.replicas is nil, this is a bug")
+		return DefaultClickHouseReplicaCount
 	}
 
 	return *v.Spec.Replicas
 }
 
+// ReplicaIDs returns sequence of ClickHouseReplicaID for every replica in the ClickHouseCluster.
 func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
 	return func(yield func(ClickHouseReplicaID) bool) {
 		for shard := range v.Shards() {
@@ -307,27 +324,33 @@ func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
 	}
 }
 
+// HeadlessServiceName returns name of the headless service for the ClickHouseCluster.
 func (v *ClickHouseCluster) HeadlessServiceName() string {
-	return fmt.Sprintf("%s-headless", v.SpecificName())
+	return v.SpecificName() + "-headless"
 }
 
+// PodDisruptionBudgetNameByShard returns name of the PodDisruptionBudget for the specific shard.
 func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
 	return fmt.Sprintf("%s-%d", v.SpecificName(), shard)
 }
 
+// SecretName returns name of the Secret with operator generated values.
 func (v *ClickHouseCluster) SecretName() string {
 	return v.SpecificName()
 }
 
+// ConfigMapNameByReplicaID returns name of the ConfigMap for the specific replica.
 func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ClickHouseReplicaID) string {
 	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
+// StatefulSetNameByReplicaID returns name of the StatefulSet for the specific replica.
 func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) string {
 	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
 }
 
-func (v *ClickHouseCluster) HostnameById(id ClickHouseReplicaID) string {
+// HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
+func (v *ClickHouseCluster) HostnameByID(id ClickHouseReplicaID) string {
 	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
 	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace)
 }
@@ -338,7 +361,8 @@ func (v *ClickHouseCluster) HostnameById(id ClickHouseReplicaID) string {
 type ClickHouseClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ClickHouseCluster `json:"items"`
+
+	Items []ClickHouseCluster `json:"items"`
 }
 
 func init() {

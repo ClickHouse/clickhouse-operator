@@ -1,18 +1,21 @@
 package v1alpha1
 
 import (
-	chv1 "github.com/clickhouse-operator/api/v1alpha1"
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	chv1 "github.com/clickhouse-operator/api/v1alpha1"
 )
 
 var _ = Describe("KeeperCluster Webhook", func() {
 
 	Context("When creating KeeperCluster under Defaulting Webhook", func() {
-		It("Should fill in the default value if a required field is empty", func() {
+		It("Should fill in the default value if a required field is empty", func(ctx context.Context) {
 			By("Setting the default value")
 
 			keeperCluster := &chv1.KeeperCluster{
@@ -41,7 +44,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			},
 		}
 
-		It("Should check TLS enabled if required", func() {
+		It("Should check TLS enabled if required", func(ctx context.Context) {
 			By("Rejecting wrong settings")
 			keeperCluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled:  false,
@@ -53,7 +56,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			Expect(err.Error()).To(ContainSubstring("TLS cannot be required"))
 		})
 
-		It("Should check certificate passed if TLS enabled", func() {
+		It("Should check certificate passed if TLS enabled", func(ctx context.Context) {
 			By("Rejecting wrong settings")
 			keeperCluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled: true,
@@ -64,7 +67,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			Expect(err.Error()).To(ContainSubstring("serverCertSecret must be specified"))
 		})
 
-		It("Should check that all volumes from volume mounts are exists", func() {
+		It("Should check that all volumes from volume mounts are exists", func(ctx context.Context) {
 			cluster := keeperCluster.DeepCopy()
 
 			cluster.Spec.ContainerTemplate.VolumeMounts = []corev1.VolumeMount{{

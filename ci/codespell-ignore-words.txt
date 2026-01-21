@@ -1,0 +1,8 @@
+# Go constants
+UpToDate
+NotIn
+notin
+
+# Ginkgo functions
+AfterAll
+BeforeAll

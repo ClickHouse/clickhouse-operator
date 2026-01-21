@@ -3897,7 +3897,7 @@ spec:
                   spec revision.
                 type: string
               observedGeneration:
-                description: ObservedGeneration indicates lastest generation observed
+                description: ObservedGeneration indicates latest generation observed
                   by controller.
                 format: int64
                 type: integer

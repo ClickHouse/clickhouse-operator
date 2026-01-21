@@ -6,7 +6,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func ValidateCustomVolumeMounts(volumes []corev1.Volume, VolumeMounts []corev1.VolumeMount, reservedVolumeNames []string) []error {
+// ValidateCustomVolumeMounts validates that the provided volume mounts correspond to defined volumes and
+// do not use any reserved volume names. It returns a slice of errors for any validation issues found.
+func ValidateCustomVolumeMounts(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount, reservedVolumeNames []string) []error {
 	var errs []error
 
 	definedVolumes := make(map[string]corev1.Volume, len(volumes))
@@ -20,7 +22,7 @@ func ValidateCustomVolumeMounts(volumes []corev1.Volume, VolumeMounts []corev1.V
 		definedVolumes[volume.Name] = volume
 	}
 
-	for _, volumeMount := range VolumeMounts {
+	for _, volumeMount := range volumeMounts {
 		if _, ok := definedVolumes[volumeMount.Name]; !ok {
 			err := fmt.Errorf("the volume mount '%s' is invalid because the volume is not defined", volumeMount.Name)
 			errs = append(errs, err)

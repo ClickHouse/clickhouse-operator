@@ -1,11 +1,9 @@
 package clickhouse
 
 import (
+	"context"
 	"testing"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/testutil"
-	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -19,6 +17,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controller/testutil"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 func TestControllers(t *testing.T) {
@@ -30,6 +32,7 @@ func TestControllers(t *testing.T) {
 var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
+		recorder     *record.FakeRecorder
 		reconciler   *ClusterReconciler
 		keeperName   = "keeper"
 		services     corev1.ServiceList
@@ -56,13 +59,14 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}
 	)
 
-	BeforeAll(func() {
+	BeforeAll(func(ctx context.Context) {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
+		recorder = record.NewFakeRecorder(128)
 		reconciler = &ClusterReconciler{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("clickhouse"),
-			Recorder: record.NewFakeRecorder(128),
+			Recorder: recorder,
 		}
 
 		keeper := &v1.KeeperCluster{
@@ -71,57 +75,56 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 				Namespace: "default",
 			},
 		}
-		Expect(suite.Client.Create(suite.Context, keeper)).To(Succeed())
-		Expect(suite.Client.Get(suite.Context, keeper.NamespacedName(), keeper)).To(Succeed())
+		Expect(suite.Client.Create(ctx, keeper)).To(Succeed())
+		Expect(suite.Client.Get(ctx, keeper.NamespacedName(), keeper)).To(Succeed())
 		meta.SetStatusCondition(&keeper.Status.Conditions, metav1.Condition{
 			Type:   string(v1.ConditionTypeReady),
 			Status: metav1.ConditionTrue,
 			Reason: string(v1.KeeperConditionReasonStandaloneReady),
 		})
-		Expect(suite.Client.Status().Update(suite.Context, keeper)).To(Succeed())
+		Expect(suite.Client.Status().Update(ctx, keeper)).To(Succeed())
 	})
 
 	AfterAll(func() {
 		By("tearing down the test environment")
-		suite.Cancel()
 		err := suite.TestEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		testutil.EnsureNoEvents(reconciler.Recorder.(*record.FakeRecorder).Events)
+		testutil.EnsureNoEvents(recorder.Events)
 	})
 
-	It("should create ClickHouse cluster", func() {
+	It("should create ClickHouse cluster", func(ctx context.Context) {
 		By("by creating standalone resource CR")
-		Expect(suite.Client.Create(suite.Context, cr)).To(Succeed())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+		Expect(suite.Client.Create(ctx, cr)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 	})
 
-	It("should successfully create all resources of the new cluster", func() {
+	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
-		listOpts := util.AppRequirements(cr.Namespace, cr.SpecificName())
+		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
 
-		Expect(suite.Client.List(suite.Context, &services, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &services, listOpts)).To(Succeed())
 		Expect(services.Items).To(HaveLen(1))
 
-		Expect(suite.Client.List(suite.Context, &pdbs, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(HaveLen(2))
 
-		Expect(suite.Client.List(suite.Context, &secrets, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &secrets, listOpts)).To(Succeed())
 		Expect(secrets.Items).To(HaveLen(1))
 
-		Expect(suite.Client.List(suite.Context, &configs, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &configs, listOpts)).To(Succeed())
 		Expect(configs.Items).To(HaveLen(4))
 
-		Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(4))
 
-		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ClusterNotReady": 1,
 		})
 	})
@@ -195,7 +198,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	})
 
 	It("should generate all secret values", func() {
-		for key := range SecretsToGenerate {
+		for key := range secretsToGenerate {
 			Expect(secrets.Items[0].Data).To(HaveKey(key))
 			Expect(secrets.Items[0].Data[key]).To(Not(BeEmpty()))
 		}
@@ -210,20 +213,20 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}
 	})
 
-	It("should delete unneeded secrets and generate missing", func() {
+	It("should delete unneeded secrets and generate missing", func(ctx context.Context) {
 		secret := secrets.Items[0]
 		secret.Data["invalid-key"] = []byte("invalid-value")
 		delete(secrets.Items[0].Data, SecretKeyManagementPassword)
 		By("Changing secret data")
-		Expect(suite.Client.Update(suite.Context, &secret)).To(Succeed())
+		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
 
 		By("reconciling the cluster")
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 		By("checking that secret is updated")
-		Expect(suite.Client.Get(suite.Context, types.NamespacedName{
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
 			Name:      secret.Name,
 			Namespace: secret.Namespace,
 		}, &secret)).To(Succeed())
@@ -233,13 +236,13 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(secret.Data[SecretKeyManagementPassword]).NotTo(BeEmpty())
 	})
 
-	It("should reflect configuration changes in revisions", func() {
+	It("should reflect configuration changes in revisions", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
 		updatedCR.Spec.Settings.Logger.Level = "warning"
-		Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))

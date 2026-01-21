@@ -1,5 +1,6 @@
 package v1alpha1
 
+// EventReason represents the reason for an event.
 type EventReason = string
 
 // Event reasons for owned resources lifecycle events.

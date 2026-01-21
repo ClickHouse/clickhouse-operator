@@ -1,23 +1,27 @@
-package utils
+package testutil
 
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	chcontrol "github.com/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/onsi/ginkgo/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	chcontrol "github.com/clickhouse-operator/internal/controller/clickhouse"
 )
 
+// ClickHouseClient is a ClickHouse client for testing ClickHouse clusters. Forwards ports to ClickHouse pods.
 type ClickHouseClient struct {
 	cluster *ForwardedCluster
 	clients map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
 
+// NewClickHouseClient creates a new ClickHouseClient connected to the specified ClickHouseCluster.
 func NewClickHouseClient(
 	ctx context.Context,
 	config *rest.Config,
@@ -33,13 +37,16 @@ func NewClickHouseClient(
 	if err != nil {
 		return nil, fmt.Errorf("forwarding ch nodes failed: %w", err)
 	}
+
 	created := false
 	clients := map[v1.ClickHouseReplicaID]clickhouse.Conn{}
+
 	defer func() {
 		if !created {
 			for _, client := range clients {
 				_ = client.Close()
 			}
+
 			cluster.Close()
 		}
 	}()
@@ -49,13 +56,14 @@ func NewClickHouseClient(
 			Database: "default",
 			Username: "default",
 		},
-		Debugf: func(format string, args ...interface{}) {
+		Debugf: func(format string, args ...any) {
 			ginkgo.GinkgoWriter.Printf(format, args...)
 		},
 	}
 	if len(auth) > 0 {
 		opts.Auth = auth[0]
 	}
+
 	if cr.Spec.Settings.TLS.Enabled {
 		opts.TLS = &tls.Config{
 			//nolint:gosec // Test certs are self-signed, so we skip verification.
@@ -70,6 +78,7 @@ func NewClickHouseClient(
 		}
 
 		opts.Addr = []string{addr}
+
 		conn, err := clickhouse.Open(&opts)
 		if err != nil {
 			return nil, fmt.Errorf("connect node %s: %w", pod.Name, err)
@@ -79,12 +88,14 @@ func NewClickHouseClient(
 	}
 
 	created = true
+
 	return &ClickHouseClient{
 		cluster: cluster,
 		clients: clients,
 	}, err
 }
 
+// Close closes the ClickHouseClient and releases all resources.
 func (c *ClickHouseClient) Close() {
 	for _, client := range c.clients {
 		_ = client.Close()
@@ -93,6 +104,7 @@ func (c *ClickHouseClient) Close() {
 	c.cluster.Close()
 }
 
+// CreateDatabase creates the test database on the ClickHouse cluster.
 func (c *ClickHouseClient) CreateDatabase(ctx context.Context) error {
 	// Query only one random node.
 	for _, client := range c.clients {
@@ -105,14 +117,15 @@ func (c *ClickHouseClient) CreateDatabase(ctx context.Context) error {
 		return nil
 	}
 
-	return fmt.Errorf("no cluster nodes available")
+	return errors.New("no cluster nodes available")
 }
 
+// CheckWrite writes test data to the ClickHouse cluster.
 func (c *ClickHouseClient) CheckWrite(ctx context.Context, order int) error {
 	tableName := fmt.Sprintf("e2e_test.e2e_test_%d", order)
 
 	if len(c.clients) == 0 {
-		return fmt.Errorf("no cluster nodes available")
+		return errors.New("no cluster nodes available")
 	}
 
 	for id, client := range c.clients {
@@ -120,6 +133,7 @@ func (c *ClickHouseClient) CheckWrite(ctx context.Context, order int) error {
 			"Engine=ReplicatedMergeTree() ORDER BY id", tableName)); err != nil {
 			return fmt.Errorf("create table on %v: %w", id, err)
 		}
+
 		break
 	}
 
@@ -136,9 +150,11 @@ func (c *ClickHouseClient) CheckWrite(ctx context.Context, order int) error {
 
 		writtenShards[id.ShardID] = struct{}{}
 	}
+
 	return nil
 }
 
+// CheckRead reads and verifies test data from the ClickHouse cluster.
 func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 	tableName := fmt.Sprintf("e2e_test.e2e_test_%d", order)
 
@@ -147,28 +163,32 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 		err := retry.OnError(retry.DefaultBackoff, func(error) bool {
 			return true
 		}, func() error {
-			return client.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s", tableName))
+			return client.Exec(ctx, "SYSTEM SYNC REPLICA "+tableName)
 		})
 		if err != nil {
 			return fmt.Errorf("sync replica on %v: %w", id, err)
 		}
 
 		err = func() error {
-			rows, err := client.Query(ctx, fmt.Sprintf("SELECT * FROM %s ORDER BY id", tableName))
+			rows, err := client.Query(ctx, fmt.Sprintf("SELECT id, val FROM %s ORDER BY id", tableName))
 			if err != nil {
 				return fmt.Errorf("query test data on %v: %w", id, err)
 			}
+
 			defer func() {
 				_ = rows.Close()
 			}()
 
 			for i := range 10 {
 				if !rows.Next() {
-					return fmt.Errorf("expected 10 rows, got less")
+					return errors.New("expected 10 rows, got less")
 				}
 
-				var id int64
-				var val string
+				var (
+					id  int64
+					val string
+				)
+
 				if err := rows.Scan(&id, &val); err != nil {
 					return fmt.Errorf("scan row %d: %w", i, err)
 				}
@@ -192,9 +212,11 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 	return nil
 }
 
+// QueryRow executes a query on one of the ClickHouse cluster nodes.
+// Scans the result into the provided result variable.
 func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result any) error {
 	if len(c.clients) == 0 {
-		return fmt.Errorf("no cluster nodes available")
+		return errors.New("no cluster nodes available")
 	}
 
 	// Query only one random node.
@@ -211,6 +233,7 @@ func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result an
 		if !rows.Next() {
 			return fmt.Errorf("no rows returned for query: %s", query)
 		}
+
 		if err := rows.Scan(result); err != nil {
 			return fmt.Errorf("scan row: %w", err)
 		}
@@ -218,12 +241,14 @@ func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result an
 		return nil
 	}
 
-	return fmt.Errorf("no cluster nodes available")
+	return errors.New("no cluster nodes available")
 }
 
+// CheckDefaultDatabasesReplicated checks that the default database has Replicated engine on all cluster nodes.
 func (c *ClickHouseClient) CheckDefaultDatabasesReplicated(ctx context.Context) error {
 	for id, client := range c.clients {
 		var isReplicated bool
+
 		query := "SELECT engine='Replicated' FROM system.databases WHERE name='default'"
 		if err := client.QueryRow(ctx, query).Scan(&isReplicated); err != nil {
 			return fmt.Errorf("query default database engine on %v: %w", id, err)

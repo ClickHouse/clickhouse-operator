@@ -10,7 +10,7 @@ import (
 
 	"github.com/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -50,14 +50,17 @@ func main() {
 }
 
 func run() error {
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var tlsOpts []func(*tls.Config)
+	var (
+		metricsAddr                                      string
+		metricsCertPath, metricsCertName, metricsCertKey string
+		webhookCertPath, webhookCertName, webhookCertKey string
+		enableLeaderElection                             bool
+		probeAddr                                        string
+		secureMetrics                                    bool
+		enableHTTP2                                      bool
+		tlsOpts                                          []func(*tls.Config)
+	)
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -75,6 +78,7 @@ func run() error {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -86,6 +90,7 @@ func run() error {
 
 	disableHTTP2 := func(c *tls.Config) {
 		setupLog.Info("disabling http/2")
+
 		c.NextProtos = []string{"http/1.1"}
 	}
 
@@ -140,20 +145,22 @@ func run() error {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
 
-	zapLogger := util.NewZapLogger(logger)
+	zapLogger := controllerutil.NewLogger(logger)
 
 	if err = keeper.SetupWithManager(mgr, zapLogger); err != nil {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
+
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = whchv1.SetupKeeperWebhookWithManager(mgr, zapLogger); err != nil {
 			return fmt.Errorf("unable to setup KeeperCluster webhook: %w", err)
 		}
 	}
+
 	if err = clickhouse.SetupWithManager(mgr, zapLogger); err != nil {
 		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}
-	// nolint:goconst
+	//golint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = whchv1.SetupClickHouseWebhookWithManager(mgr, zapLogger); err != nil {
 			return fmt.Errorf("unable to setup ClickHouseCluster webhook: %w", err)
@@ -164,11 +171,13 @@ func run() error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to setup healthz checker: %w", err)
 	}
+
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to setup readyz checker: %w", err)
 	}
 
 	setupLog.Info("starting manager")
+
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}

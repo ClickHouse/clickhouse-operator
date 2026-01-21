@@ -9,15 +9,16 @@ import (
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	mcertv1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
-	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controllerutil"
+	"github.com/clickhouse-operator/test/testutil"
 )
 
 const (
@@ -26,7 +27,7 @@ const (
 )
 
 var _ = Describe("Keeper controller", Label("keeper"), func() {
-	DescribeTable("standalone keeper updates", func(specUpdate v1.KeeperClusterSpec) {
+	DescribeTable("standalone keeper updates", func(ctx context.Context, specUpdate v1.KeeperClusterSpec) {
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
@@ -46,26 +47,26 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		DeferCleanup(func() {
+		DeferCleanup(func(ctx context.Context) {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(&cr, time.Minute, false)
-		KeeperRWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(ctx, &cr, time.Minute, false)
+		KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
-		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
+		Expect(controllerutil.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(&cr, 3*time.Minute, true)
-		KeeperRWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(ctx, &cr, 3*time.Minute, true)
+		KeeperRWChecks(ctx, &cr, &checks)
 	},
-		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			Logger: v1.LoggerConfig{Level: "warning"},
 		}}),
-		Entry("update coordination settings", v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+		Entry("update coordination settings", v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			ExtraConfig: runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`,
 			)},
@@ -76,7 +77,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		Entry("scale up to 3 replicas", v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
 	)
 
-	DescribeTable("keeper cluster updates", func(baseReplicas int, specUpdate v1.KeeperClusterSpec) {
+	DescribeTable("keeper cluster updates", func(ctx context.Context, baseReplicas int, specUpdate v1.KeeperClusterSpec) {
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
@@ -96,26 +97,26 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 
 		By("creating cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		DeferCleanup(func() {
+		DeferCleanup(func(ctx context.Context) {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(&cr, 2*time.Minute, false)
-		KeeperRWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+		KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
-		Expect(util.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
+		Expect(controllerutil.ApplyDefault(&specUpdate, cr.Spec)).To(Succeed())
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(&cr, 5*time.Minute, true)
-		KeeperRWChecks(&cr, &checks)
+		WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
+		KeeperRWChecks(ctx, &cr, &checks)
 	},
-		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			Logger: v1.LoggerConfig{Level: "warning"},
 		}}),
-		Entry("update coordination settings", 3, v1.KeeperClusterSpec{Settings: v1.KeeperConfig{
+		Entry("update coordination settings", 3, v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			ExtraConfig: runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`,
 			)},
@@ -144,7 +145,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 					},
 				},
 				DataVolumeClaimSpec: defaultStorage,
-				Settings: v1.KeeperConfig{
+				Settings: v1.KeeperSettings{
 					TLS: v1.ClusterTLSSpec{
 						Enabled:  true,
 						Required: true,
@@ -186,8 +187,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			},
 		}
 
-		It("should create secure cluster", func() {
-			DeferCleanup(func() {
+		It("should create secure cluster", func(ctx context.Context) {
+			DeferCleanup(func(ctx context.Context) {
 				By("deleting all resources")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, cert)).To(Succeed())
@@ -200,13 +201,13 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("creating secure keeper cluster CR")
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
-			WaitKeeperUpdatedAndReady(&cr, 2*time.Minute, false)
-			KeeperRWChecks(&cr, ptr.To(0))
+			WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			KeeperRWChecks(ctx, &cr, ptr.To(0))
 		})
 	})
 })
 
-func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
+func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -214,6 +215,7 @@ func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration, isUp
 	EventuallyWithOffset(1, func() bool {
 		var cluster v1.KeeperCluster
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
+
 		if cluster.Generation != cluster.Status.ObservedGeneration ||
 			cluster.Status.CurrentRevision != cluster.Status.UpdateRevision ||
 			cluster.Status.ReadyReplicas != cluster.Replicas() {
@@ -235,15 +237,17 @@ func WaitKeeperUpdatedAndReady(cr *v1.KeeperCluster, timeout time.Duration, isUp
 	// Needed for replica deletion to not forward deleting pods.
 	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
 	count := int(cr.Replicas())
-	ExpectWithOffset(1, utils.WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)).To(Succeed())
+	ExpectWithOffset(1, testutil.WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)).To(Succeed())
 }
 
-func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
+func KeeperRWChecks(ctx context.Context, cr *v1.KeeperCluster, checksDone *int) {
 	ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
 	By("connecting to cluster")
-	client, err := utils.NewKeeperClient(ctx, config, cr)
+
+	client, err := testutil.NewKeeperClient(ctx, config, cr)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
 	defer client.Close()
 
 	By("writing new test data")
@@ -251,6 +255,7 @@ func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
 	*checksDone++
 
 	By("reading all test data")
+
 	for i := range *checksDone {
 		ExpectWithOffset(1, client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
 	}
@@ -261,11 +266,13 @@ func KeeperRWChecks(cr *v1.KeeperCluster, checksDone *int) {
 // Which id must be between the latest not updated and earliest updated replicas.
 func CheckKeeperUpdateOrder(ctx context.Context, cluster v1.KeeperCluster) {
 	var pods corev1.PodList
-	err := k8sClient.List(ctx, &pods, util.AppRequirements(cluster.Namespace, cluster.SpecificName()))
+
+	err := k8sClient.List(ctx, &pods, controllerutil.AppRequirements(cluster.Namespace, cluster.SpecificName()))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
 	maxNotUpdated := v1.KeeperReplicaID(-1)
 	minUpdated := v1.KeeperReplicaID(math.MaxInt32)
+
 	updatingReplica := v1.KeeperReplicaID(-1)
 	for _, pod := range pods.Items {
 		replicaID, err := v1.KeeperReplicaIDFromLabels(pod.Labels)
@@ -303,6 +310,7 @@ func CheckKeeperUpdateOrder(ctx context.Context, cluster v1.KeeperCluster) {
 	}
 
 	Expect(maxNotUpdated < minUpdated).To(BeTrue(), formatErr(minUpdated, maxNotUpdated))
+
 	if updatingReplica != -1 {
 		Expect(maxNotUpdated < updatingReplica).To(BeTrue(), formatErr(updatingReplica, maxNotUpdated))
 		Expect(updatingReplica < minUpdated).To(BeTrue(), formatErr(minUpdated, updatingReplica))

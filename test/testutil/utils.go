@@ -1,7 +1,8 @@
-package utils
+package testutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,9 +13,8 @@ import (
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"github.com/clickhouse-operator/internal/util"
-	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
-	. "github.com/onsi/gomega"    //nolint:golint,revive,staticcheck
+	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
+	. "github.com/onsi/gomega"    //nolint:staticcheck
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -22,6 +22,8 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 const (
@@ -38,9 +40,9 @@ func warnError(err error) {
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
-func InstallPrometheusOperator() error {
+func InstallPrometheusOperator(ctx context.Context) error {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "create", "-f", url)
+	cmd := exec.CommandContext(ctx, "kubectl", "create", "-f", url)
 	_, err := Run(cmd)
 	return err
 }
@@ -57,51 +59,57 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
 	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return output, fmt.Errorf("%s failed with error: (%v) %s", command, err, string(output))
+		return output, fmt.Errorf("%s failed with error: (%w) %s", command, err, string(output))
 	}
 
 	return output, nil
 }
 
 // UninstallPrometheusOperator uninstalls the prometheus.
-func UninstallPrometheusOperator() {
+func UninstallPrometheusOperator(ctx context.Context) {
 	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.Command("kubectl", "delete", "-f", url)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
 	}
 }
 
 // InstallCertManager installs the cert manager bundle.
-func InstallCertManager() error {
+func InstallCertManager(ctx context.Context) error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	cmd := exec.Command("kubectl", "apply", "-f", url)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
 	// was re-installed after uninstalling on a cluster.
-	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
+	cmd = exec.CommandContext(ctx, "kubectl", "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
 		"--timeout", "5m",
 	)
 
 	_, err := Run(cmd)
+
 	return err
 }
 
 // LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
-func LoadImageToKindClusterWithName(name string) error {
+func LoadImageToKindClusterWithName(ctx context.Context, name string) error {
 	cluster := "kind"
 	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
 		cluster = v
 	}
+
 	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.Command("kind", kindOptions...)
+	cmd := exec.CommandContext(ctx, "kind", kindOptions...)
 	_, err := Run(cmd)
+
 	return err
 }
 
@@ -109,6 +117,7 @@ func LoadImageToKindClusterWithName(name string) error {
 // according to line breakers, and ignores the empty elements in it.
 func GetNonEmptyLines(output string) []string {
 	var res []string
+
 	elements := strings.Split(output, "\n")
 	for _, element := range elements {
 		if element != "" {
@@ -123,32 +132,47 @@ func GetNonEmptyLines(output string) []string {
 func GetProjectDir() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
-		return wd, err
+		return wd, fmt.Errorf("get project dir: %w", err)
 	}
-	wd = strings.ReplaceAll(wd, "/test/e2e", "")
-	return wd, nil
+
+	return strings.ReplaceAll(wd, "/test/e2e", ""), nil
 }
 
+// GetFreePort returns a free port from the OS.
 func GetFreePort() (int, error) {
 	a, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("resolve localhost: %w", err)
 	}
 
 	l, err := net.ListenTCP("tcp", a)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("listen any port: %w", err)
 	}
-	return l.Addr().(*net.TCPAddr).Port, l.Close()
+
+	defer func() {
+		if err := l.Close(); err != nil {
+			GinkgoWriter.Printf("warning: close listener: %v\n", err)
+		}
+	}()
+
+	addr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("unexpected addr type: %T", l.Addr())
+	}
+
+	return addr.Port, nil
 }
 
+// WaitReplicaCount waits until the number of pods with the given app label.
 func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) error {
 	var pods corev1.PodList
 	for {
 		if err := k8sClient.List(ctx, &pods,
-			client.InNamespace(namespace), client.MatchingLabels{util.LabelAppKey: app}); err != nil {
+			client.InNamespace(namespace), client.MatchingLabels{controllerutil.LabelAppKey: app}); err != nil {
 			return fmt.Errorf("list app=%s pods failed: %w", app, err)
 		}
+
 		if len(pods.Items) == replicas {
 			return nil
 		}
@@ -162,11 +186,13 @@ func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, a
 	}
 }
 
+// ForwardedCluster represents a set of port-forwarded pods.
 type ForwardedCluster struct {
 	PodToAddr map[*corev1.Pod]string
 	cancel    context.CancelFunc
 }
 
+// NewForwardedCluster creates a new ForwardedCluster by port-forwarding all pods with the given app label.
 func NewForwardedCluster(ctx context.Context, config *rest.Config,
 	namespace, app string, port uint16,
 ) (*ForwardedCluster, error) {
@@ -183,6 +209,7 @@ func NewForwardedCluster(ctx context.Context, config *rest.Config,
 	return cluster, nil
 }
 
+// Close stops all port-forwarding.
 func (c *ForwardedCluster) Close() {
 	c.cancel()
 }
@@ -196,7 +223,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 	}
 
 	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", util.LabelAppKey, app),
+		LabelSelector: fmt.Sprintf("%s=%s", controllerutil.LabelAppKey, app),
 	})
 	if err != nil {
 		return fmt.Errorf("list app %s pods failed: %w", app, err)
@@ -226,6 +253,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 
 		readyCh := make(chan struct{})
 		portforwardErr := make(chan error)
+
 		forwarder, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", port, servicePort)},
 			ctx.Done(), readyCh, GinkgoWriter, GinkgoWriter,
 		)
@@ -242,7 +270,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while waiting for port-forwarding to be ready")
+			return errors.New("context cancelled while waiting for port-forwarding to be ready")
 		case err := <-portforwardErr:
 			c.cancel()
 			return fmt.Errorf("port-forwarding error: %w", err)
@@ -255,9 +283,10 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 	return nil
 }
 
+// CapturePodLogs streams the logs of the given pod to the GinkgoWriter until the context is cancelled.
 func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod string) error {
 	if ctx.Done() == nil {
-		return fmt.Errorf("context is not cancellable")
+		return errors.New("context is not cancellable")
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
@@ -276,7 +305,8 @@ func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod str
 		}()
 
 		buffer := make([]byte, 4096)
-		c := 0
+
+		var c int
 		for {
 			for c, err = res.Read(buffer); err == nil && c > 0; c, err = res.Read(buffer) {
 				GinkgoWriter.Printf(string(buffer[:c]))
@@ -299,6 +329,7 @@ func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod str
 	return nil
 }
 
+// SetupCA sets up a self-signed CA issuer and a CA certificate in the given namespace.
 func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suffix uint32) {
 	ssIssuer := certv1.ClusterIssuer{
 		ObjectMeta: metav1.ObjectMeta{
@@ -311,6 +342,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 			},
 		},
 	}
+
 	By("creating self-signed issuer")
 	Expect(k8sClient.Create(ctx, &ssIssuer)).To(Succeed())
 	DeferCleanup(func() {
@@ -334,6 +366,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 			SecretName: fmt.Sprintf("ca-cert-%d", suffix),
 		},
 	}
+
 	By("creating CA cert")
 	Expect(k8sClient.Create(ctx, &caCert)).To(Succeed())
 	DeferCleanup(func() {
@@ -355,6 +388,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 			},
 		},
 	}
+
 	By("creating Issuer")
 	Expect(k8sClient.Create(ctx, &issuer)).To(Succeed())
 	DeferCleanup(func() {

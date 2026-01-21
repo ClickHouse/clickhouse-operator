@@ -1,6 +1,9 @@
 package v1alpha1
 
+// ConditionType represents the type of condition.
 type ConditionType string
+
+// ConditionReason represents the reason for a condition's Status.
 type ConditionReason string
 
 // Common condition types and reasons for all resources.
@@ -72,6 +75,7 @@ const (
 )
 
 var (
+	// AllClickHouseConditionTypes lists all ClickHouseCluster condition types.
 	AllClickHouseConditionTypes = []ConditionType{
 		ConditionTypeSpecValid,
 		ConditionTypeReconcileSucceeded,
@@ -83,6 +87,7 @@ var (
 		ClickHouseConditionTypeSchemaInSync,
 	}
 
+	// AllKeeperConditionTypes lists all KeeperCluster condition types.
 	AllKeeperConditionTypes = []ConditionType{
 		ConditionTypeSpecValid,
 		ConditionTypeReconcileSucceeded,
@@ -91,5 +96,6 @@ var (
 		ConditionTypeClusterSizeAligned,
 		ConditionTypeConfigurationInSync,
 		ConditionTypeReady,
+		KeeperConditionTypeScaleAllowed,
 	}
 )

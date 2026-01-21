@@ -55,5 +55,5 @@ spec:
   serviceAccountName: prometheus-service-account
   serviceMonitorSelector:
     matchLabels:
-      # This is a matcher to ServiceMonitor created by helmchart or manfiests if enabled
+      # This is a matcher to ServiceMonitor created by helmchart or manifests if enabled
       control-plane: clickhouse-operator

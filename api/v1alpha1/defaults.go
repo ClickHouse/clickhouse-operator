@@ -10,6 +10,8 @@ const (
 	DefaultKeeperMemoryLimit   = "1Gi"
 	DefaultKeeperMemoryRequest = "256Mi"
 
+	DefaultKeeperReplicaCount = 3
+
 	DefaultClickHouseContainerRepository = "docker.io/clickhouse/clickhouse-server"
 	DefaultClickHouseContainerTag        = "latest"
 	DefaultClickHouseContainerPolicy     = "IfNotPresent"
@@ -18,4 +20,9 @@ const (
 	DefaultClickHouseCPURequest    = "250m"
 	DefaultClickHouseMemoryLimit   = "1Gi"
 	DefaultClickHouseMemoryRequest = "256Mi"
+
+	DefaulClickHouseShardCount    = 1
+	DefaultClickHouseReplicaCount = 3
+
+	DefaultMaxLogFiles = 50
 )

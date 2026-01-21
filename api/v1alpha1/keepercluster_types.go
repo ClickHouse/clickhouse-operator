@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -11,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 // KeeperClusterSpec defines the desired state of KeeperCluster.
@@ -47,12 +48,13 @@ type KeeperClusterSpec struct {
 
 	// Configuration parameters for ClickHouse Keeper server.
 	// +optional
-	Settings KeeperConfig `json:"settings,omitempty"`
+	Settings KeeperSettings `json:"settings,omitempty"`
 }
 
+// WithDefaults sets default values for KeeperClusterSpec fields.
 func (s *KeeperClusterSpec) WithDefaults() {
 	defaultSpec := KeeperClusterSpec{
-		Replicas: ptr.To[int32](3),
+		Replicas: ptr.To[int32](DefaultKeeperReplicaCount),
 		ContainerTemplate: ContainerTemplateSpec{
 			Image: ContainerImage{
 				Repository: DefaultKeeperContainerRepository,
@@ -70,22 +72,23 @@ func (s *KeeperClusterSpec) WithDefaults() {
 				},
 			},
 		},
-		Settings: KeeperConfig{
+		Settings: KeeperSettings{
 			Logger: LoggerConfig{
 				LogToFile: true,
 				Level:     "trace",
 				Size:      "1000M",
-				Count:     50,
+				Count:     DefaultMaxLogFiles,
 			},
 		},
 	}
 
-	if err := util.ApplyDefault(s, defaultSpec); err != nil {
+	if err := controllerutil.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
 	}
 }
 
-type KeeperConfig struct {
+// KeeperSettings defines ClickHouse Keeper server configuration.
+type KeeperSettings struct {
 	// Optionally you can lower the logger level or disable logging to file at all.
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
@@ -127,7 +130,7 @@ type KeeperClusterStatus struct {
 	// CurrentRevision indicates latest requested KeeperCluster spec revision.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	UpdateRevision string `json:"updateRevision,omitempty"`
-	// ObservedGeneration indicates lastest generation observed by controller.
+	// ObservedGeneration indicates latest generation observed by controller.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
@@ -155,12 +158,14 @@ type KeeperCluster struct {
 	Status KeeperClusterStatus `json:"status,omitempty"`
 }
 
+// KeeperReplicaID represents ClickHouse Keeper replica ID. Used for naming resources and RAFT configuration.
 type KeeperReplicaID int32
 
+// KeeperReplicaIDFromLabels extracts KeeperReplicaID from given labels map.
 func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error) {
-	idStr, ok := labels[util.LabelKeeperReplicaID]
+	idStr, ok := labels[controllerutil.LabelKeeperReplicaID]
 	if !ok {
-		return 0, fmt.Errorf("missing replica ID label")
+		return 0, errors.New("missing replica ID label")
 	}
 
 	id, err := strconv.ParseInt(idStr, 10, 32)
@@ -171,6 +176,7 @@ func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error
 	return KeeperReplicaID(id), nil
 }
 
+// NamespacedName returns NamespacedName for the KeeperCluster.
 func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Namespace: v.Namespace,
@@ -178,22 +184,25 @@ func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+// GetStatus returns pointer to the KeeperClusterStatus.
 func (v *KeeperCluster) GetStatus() *KeeperClusterStatus {
 	return &v.Status
 }
 
+// Conditions returns pointer to the conditions slice.
 func (v *KeeperCluster) Conditions() *[]metav1.Condition {
 	return &v.Status.Conditions
 }
 
+// SpecificName returns cluster name with resource suffix. Used to generate resource names.
 func (v *KeeperCluster) SpecificName() string {
-	return fmt.Sprintf("%s-keeper", v.GetName())
+	return v.GetName() + "-keeper"
 }
 
+// Replicas returns requested number of replicas in the cluster.
 func (v *KeeperCluster) Replicas() int32 {
 	if v.Spec.Replicas == nil {
-		// In case of absence, value must be populated by default, if it's nil then some wrong logic in controller erased it.
-		panic(".spec.replicas is nil, this is a bug")
+		return DefaultKeeperReplicaCount
 	}
 
 	return *v.Spec.Replicas
@@ -205,35 +214,42 @@ const (
 	latestKeeperQuorumConfigMapVersion = 1
 )
 
+// HeadlessServiceName returns headless service name for the Keeper cluster.
 func (v *KeeperCluster) HeadlessServiceName() string {
-	return fmt.Sprintf("%s-headless", v.SpecificName())
+	return v.SpecificName() + "-headless"
 }
 
+// PodDisruptionBudgetName returns PodDisruptionBudget name for the Keeper cluster.
 func (v *KeeperCluster) PodDisruptionBudgetName() string {
 	return v.SpecificName()
 }
 
+// QuorumConfigMapName returns ConfigMap name mounted in every replica.
 func (v *KeeperCluster) QuorumConfigMapName() string {
 	return fmt.Sprintf("%s-quorum-%s-%d", v.SpecificName(), KeeperConfigMapNameSuffix, latestKeeperQuorumConfigMapVersion)
 }
 
+// ConfigMapNameByReplicaID returns ConfigMap name for given replica ID.
 func (v *KeeperCluster) ConfigMapNameByReplicaID(replicaID KeeperReplicaID) string {
 	return fmt.Sprintf("%s-%d-%s-v%d", v.SpecificName(), replicaID, KeeperConfigMapNameSuffix, latestKeeperConfigMapVersion)
 }
 
+// StatefulSetNameByReplicaID returns StatefulSet name for given replica ID.
 func (v *KeeperCluster) StatefulSetNameByReplicaID(replicaID KeeperReplicaID) string {
 	return fmt.Sprintf("%s-%d", v.SpecificName(), replicaID)
 }
 
-func (v *KeeperCluster) HostnameById(replicaID KeeperReplicaID) string {
+// HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
+func (v *KeeperCluster) HostnameByID(replicaID KeeperReplicaID) string {
 	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
 	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(replicaID), v.HeadlessServiceName(), v.Namespace)
 }
 
+// Hostnames returns list of domain names for all replicas to access within Kubernetes cluster.
 func (v *KeeperCluster) Hostnames() []string {
 	hostnames := make([]string, 0, v.Replicas())
 	for id := range KeeperReplicaID(v.Replicas()) {
-		hostnames = append(hostnames, v.HostnameById(id))
+		hostnames = append(hostnames, v.HostnameByID(id))
 	}
 
 	return hostnames
@@ -245,7 +261,8 @@ func (v *KeeperCluster) Hostnames() []string {
 type KeeperClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []KeeperCluster `json:"items"`
+
+	Items []KeeperCluster `json:"items"`
 }
 
 func init() {

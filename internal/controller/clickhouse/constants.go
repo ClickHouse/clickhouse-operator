@@ -1,15 +1,10 @@
 package clickhouse
 
 import (
-	"time"
-
 	"github.com/blang/semver/v4"
 )
 
 const (
-	RequeueOnRefreshTimeout = time.Second * 1
-	RequeueOnErrorTimeout   = time.Second * 5
-
 	PortManagement   = 9001
 	PortNative       = 9000
 	PortNativeSecure = 9440
@@ -60,9 +55,8 @@ const (
 )
 
 var (
-	BreakingStatefulSetVersion, _       = semver.Parse("0.0.1")
-	TLSFileMode                   int32 = 0444
-	SecretsToGenerate                   = map[string]string{
+	breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
+	secretsToGenerate             = map[string]string{
 		SecretKeyInterserverPassword: "%s",
 		SecretKeyManagementPassword:  "%s",
 		SecretKeyKeeperIdentity:      "clickhouse:%s",

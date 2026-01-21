@@ -10,12 +10,14 @@ const (
 )
 
 var (
+	// ReservedClickHouseVolumeNames list of reserved volume names for ClickHouse pods.
 	ReservedClickHouseVolumeNames = []string{
 		PersistentVolumeName,
 		TLSVolumeName,
 		CustomCAVolumeName,
 	}
 
+	// ReservedKeeperVolumeNames list of reserved volume names for ClickHouse Keeper pods.
 	ReservedKeeperVolumeNames = []string{
 		QuorumConfigVolumeName,
 		PersistentVolumeName,

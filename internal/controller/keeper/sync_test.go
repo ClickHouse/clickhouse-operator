@@ -4,8 +4,6 @@ import (
 	"context"
 	"reflect"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -19,27 +17,30 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	util "github.com/clickhouse-operator/internal/controllerutil"
 )
 
 var _ = Describe("UpdateReplica", Ordered, func() {
 	var (
 		cancelEvents context.CancelFunc
 		r            *ClusterReconciler
-		ctx          reconcileContext
+		recCtx       reconcileContext
 		replicaID    v1.KeeperReplicaID = 1
 		cfgKey       types.NamespacedName
 		stsKey       types.NamespacedName
 	)
 
 	BeforeAll(func() {
-		r, ctx, cancelEvents = setupReconciler()
+		r, recCtx, cancelEvents = setupReconciler()
 		cfgKey = types.NamespacedName{
-			Namespace: ctx.Cluster.Namespace,
-			Name:      ctx.Cluster.ConfigMapNameByReplicaID(replicaID),
+			Namespace: recCtx.Cluster.Namespace,
+			Name:      recCtx.Cluster.ConfigMapNameByReplicaID(replicaID),
 		}
 		stsKey = types.NamespacedName{
-			Namespace: ctx.Cluster.Namespace,
-			Name:      ctx.Cluster.StatefulSetNameByReplicaID(replicaID),
+			Namespace: recCtx.Cluster.Namespace,
+			Name:      recCtx.Cluster.StatefulSetNameByReplicaID(replicaID),
 		}
 	})
 
@@ -47,65 +48,70 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		cancelEvents()
 	})
 
-	It("should create replica resources", func() {
-		ctx.SetReplica(1, replicaState{})
-		result, err := r.reconcileReplicaResources(r.Logger, &ctx)
+	It("should create replica resources", func(ctx context.Context) {
+		recCtx.SetReplica(1, replicaState{})
+		result, err := r.reconcileReplicaResources(ctx, r.Logger, &recCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
 
-		configMap := mustGet[*corev1.ConfigMap](r.Client, cfgKey)
-		sts := mustGet[*appsv1.StatefulSet](r.Client, stsKey)
+		configMap := mustGet[*corev1.ConfigMap](ctx, r.Client, cfgKey)
+		sts := mustGet[*appsv1.StatefulSet](ctx, r.Client, stsKey)
 		Expect(configMap).ToNot(BeNil())
 		Expect(sts).ToNot(BeNil())
-		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(ctx.Cluster.Status.ConfigurationRevision))
-		Expect(util.GetSpecHashFromObject(sts)).To(BeEquivalentTo(ctx.Cluster.Status.StatefulSetRevision))
+		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(recCtx.Cluster.Status.ConfigurationRevision))
+		Expect(util.GetSpecHashFromObject(sts)).To(BeEquivalentTo(recCtx.Cluster.Status.StatefulSetRevision))
 	})
 
-	It("should do nothing if no changes", func() {
-		sts := mustGet[*appsv1.StatefulSet](r.Client, stsKey)
+	It("should do nothing if no changes", func(ctx context.Context) {
+		sts := mustGet[*appsv1.StatefulSet](ctx, r.Client, stsKey)
 		sts.Status.ObservedGeneration = sts.Generation
 		sts.Status.ReadyReplicas = 1
-		ctx.ReplicaState[replicaID] = replicaState{
+		recCtx.ReplicaState[replicaID] = replicaState{
 			Error:       false,
 			StatefulSet: sts,
-			Status: ServerStatus{
+			Status: serverStatus{
 				ServerState: ModeStandalone,
 			},
 		}
-		result, err := r.reconcileReplicaResources(r.Logger, &ctx)
+		result, err := r.reconcileReplicaResources(ctx, r.Logger, &recCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeTrue())
 	})
 
-	It("should update resources on spec changes", func() {
-		ctx.Cluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
-		ctx.Cluster.Spec.ContainerTemplate.Image.Tag = "latest"
-		ctx.Cluster.Status.StatefulSetRevision = "sts-v2"
-		result, err := r.reconcileReplicaResources(r.Logger, &ctx)
+	It("should update resources on spec changes", func(ctx context.Context) {
+		recCtx.Cluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
+		recCtx.Cluster.Spec.ContainerTemplate.Image.Tag = "latest"
+		recCtx.Cluster.Status.StatefulSetRevision = "sts-v2"
+		result, err := r.reconcileReplicaResources(ctx, r.Logger, &recCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
-		sts := mustGet[*appsv1.StatefulSet](r.Client, stsKey)
+		sts := mustGet[*appsv1.StatefulSet](ctx, r.Client, stsKey)
 		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("custom-keeper:latest"))
 	})
 
-	It("should restart server on config changes", func() {
-		sts := mustGet[*appsv1.StatefulSet](r.Client, stsKey)
+	It("should restart server on config changes", func(ctx context.Context) {
+		sts := mustGet[*appsv1.StatefulSet](ctx, r.Client, stsKey)
 		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).To(BeEmpty())
-		ctx.Cluster.Spec.Settings.Logger.Level = "info"
-		ctx.Cluster.Status.ConfigurationRevision = "cfg-v2"
-		result, err := r.reconcileReplicaResources(r.Logger, &ctx)
+		recCtx.Cluster.Spec.Settings.Logger.Level = "info"
+		recCtx.Cluster.Status.ConfigurationRevision = "cfg-v2"
+		result, err := r.reconcileReplicaResources(ctx, r.Logger, &recCtx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
-		sts = mustGet[*appsv1.StatefulSet](r.Client, stsKey)
+		sts = mustGet[*appsv1.StatefulSet](ctx, r.Client, stsKey)
 		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).ToNot(BeEmpty())
 	})
 })
 
-func mustGet[T client.Object](c client.Client, key types.NamespacedName) T {
+func mustGet[T client.Object](ctx context.Context, c client.Client, key types.NamespacedName) T {
 	var result T
-	result = reflect.New(reflect.TypeOf(result).Elem()).Interface().(T)
 
-	ExpectWithOffset(1, c.Get(context.TODO(), key, result)).To(Succeed())
+	result, ok := reflect.New(reflect.TypeOf(result).Elem()).Interface().(T)
+	if !ok {
+		panic("unexpected type created")
+	}
+
+	ExpectWithOffset(1, c.Get(ctx, key, result)).To(Succeed())
+
 	return result
 }
 
@@ -116,15 +122,16 @@ func setupReconciler() (*ClusterReconciler, reconcileContext, context.CancelFunc
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-	reconciler := &ClusterReconciler{
+	eventRecorder := record.NewFakeRecorder(32)
+	clusterReconciler := &ClusterReconciler{
 		Scheme:   scheme,
 		Client:   fakeClient,
-		Logger:   util.NewZapLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))),
-		Recorder: record.NewFakeRecorder(32),
+		Logger:   util.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))),
+		Recorder: eventRecorder,
 	}
 
-	ctx := reconcileContext{}
-	ctx.Cluster = &v1.KeeperCluster{
+	recCtx := reconcileContext{}
+	recCtx.Cluster = &v1.KeeperCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
 			Name:      "test",
@@ -138,18 +145,18 @@ func setupReconciler() (*ClusterReconciler, reconcileContext, context.CancelFunc
 		},
 	}
 	eventContext, cancel := context.WithCancel(context.Background())
-	ctx.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
+	recCtx.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
 
 	// Drain events
 	go func() {
 		for {
 			select {
-			case <-reconciler.Recorder.(*record.FakeRecorder).Events:
+			case <-eventRecorder.Events:
 			case <-eventContext.Done():
 				return
 			}
 		}
 	}()
 
-	return reconciler, ctx, cancel
+	return clusterReconciler, recCtx, cancel
 }

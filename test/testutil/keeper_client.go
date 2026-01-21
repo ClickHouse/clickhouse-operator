@@ -1,4 +1,4 @@
-package utils
+package testutil
 
 import (
 	"context"
@@ -9,11 +9,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-zookeeper/zk"
+	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
+	"k8s.io/client-go/rest"
+
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/go-zookeeper/zk"
-	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
-	"k8s.io/client-go/rest"
 )
 
 const (
@@ -27,11 +28,13 @@ func (l zkLogger) Printf(s string, args ...any) {
 	GinkgoWriter.Printf(s+"\n", args...)
 }
 
+// KeeperClient is a ZooKeeper client for testing Keeper clusters. Forwards ports to Keeper pods.
 type KeeperClient struct {
 	cluster *ForwardedCluster
 	client  *zk.Conn
 }
 
+// NewKeeperClient creates a new KeeperClient connected to the specified KeeperCluster.
 func NewKeeperClient(ctx context.Context, config *rest.Config, cr *v1.KeeperCluster) (*KeeperClient, error) {
 	var port uint16 = keeper.PortNative
 	if cr.Spec.Settings.TLS.Enabled {
@@ -44,18 +47,19 @@ func NewKeeperClient(ctx context.Context, config *rest.Config, cr *v1.KeeperClus
 	}
 
 	var dialer zk.Dialer = func(network, address string, timeout time.Duration) (net.Conn, error) {
-		if !cr.Spec.Settings.TLS.Required {
-			return net.DialTimeout(network, address, timeout)
-		}
-
 		timeCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
+
+		if !cr.Spec.Settings.TLS.Required {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+
 		//nolint:gosec // Test certs are self-signed, so we skip verification.
-		dial := tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true}}
-		return dial.DialContext(timeCtx, network, address)
+		return (&tls.Dialer{Config: &tls.Config{InsecureSkipVerify: true}}).DialContext(timeCtx, network, address)
 	}
 
 	keeperAddrs := slices.Collect(maps.Values(cluster.PodToAddr))
+
 	conn, _, err := zk.Connect(keeperAddrs, 5*time.Second, zk.WithLogger(zkLogger{}), zk.WithDialer(dialer))
 	if err != nil {
 		cluster.Close()
@@ -68,17 +72,20 @@ func NewKeeperClient(ctx context.Context, config *rest.Config, cr *v1.KeeperClus
 	}, nil
 }
 
+// Close closes the KeeperClient and releases all resources.
 func (c *KeeperClient) Close() {
 	c.client.Close()
 	c.cluster.Close()
 }
 
+// CheckWrite writes test data to the Keeper cluster.
 func (c *KeeperClient) CheckWrite(order int) error {
 	for i := range 10 {
 		path := fmt.Sprintf(keeperTestDataKey, order, i)
 		if _, err := c.client.Create(path, []byte(fmt.Sprintf(keeperTestDataVal, i)), 0, nil); err != nil {
 			return fmt.Errorf("creating test data failed: %w", err)
 		}
+
 		if _, err := c.client.Sync(path); err != nil {
 			return fmt.Errorf("sync test data failed: %w", err)
 		}
@@ -87,6 +94,7 @@ func (c *KeeperClient) CheckWrite(order int) error {
 	return nil
 }
 
+// CheckRead reads and verifies test data from the Keeper cluster.
 func (c *KeeperClient) CheckRead(order int) error {
 	for i := range 10 {
 		data, _, err := c.client.Get(fmt.Sprintf(keeperTestDataKey, order, i))

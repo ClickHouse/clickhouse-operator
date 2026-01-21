@@ -6,17 +6,18 @@ import (
 	"reflect"
 	"time"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
 	gcmp "github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
-type ClusterObject[Status any] interface {
+type clusterObject[Status any] interface {
 	client.Object
 	GetGeneration() int64
 	Conditions() *[]metav1.Condition
@@ -24,25 +25,29 @@ type ClusterObject[Status any] interface {
 	GetStatus() *Status
 }
 
-type ReconcileContextBase[S any, T ClusterObject[S], ReplicaKey comparable, ReplicaState any] struct {
+// ReconcileContextBase provides a base context for reconciling a cluster object.
+// It provides common methods for reconciling.
+type ReconcileContextBase[S any, T clusterObject[S], ReplicaID comparable, ReplicaState any] struct {
 	Cluster T
-	Context context.Context
 
 	// Should be populated by reconcileActiveReplicaStatus.
-	ReplicaState map[ReplicaKey]ReplicaState
+	ReplicaState map[ReplicaID]ReplicaState
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) Replica(key K) S {
-	return c.ReplicaState[key]
+// Replica returns the state of the replica with the given ID.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) Replica(id ReplicaID) S {
+	return c.ReplicaState[id]
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) SetReplica(key K, state S) bool {
-	_, exists := c.ReplicaState[key]
-	c.ReplicaState[key] = state
+// SetReplica sets the state of the replica with the given ID.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) SetReplica(id ReplicaID, state S) bool {
+	_, exists := c.ReplicaState[id]
+	c.ReplicaState[id] = state
 	return exists
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) NewCondition(
+// NewCondition creates a new condition with the given parameters.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) NewCondition(
 	condType v1.ConditionType,
 	status metav1.ConditionStatus,
 	reason v1.ConditionReason,
@@ -57,8 +62,9 @@ func (c *ReconcileContextBase[Status, T, K, S]) NewCondition(
 	}
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) SetConditions(
-	log util.Logger,
+// SetConditions sets the given conditions in the CRD status conditions.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) SetConditions(
+	log controllerutil.Logger,
 	conditions []metav1.Condition,
 ) bool {
 	clusterCond := c.Cluster.Conditions()
@@ -70,6 +76,7 @@ func (c *ReconcileContextBase[Status, T, K, S]) SetConditions(
 	for _, condition := range conditions {
 		if setStatusCondition(clusterCond, condition) {
 			log.Debug("condition changed", "condition", condition.Type, "condition_value", condition.Status)
+
 			hasChanges = true
 		}
 	}
@@ -77,8 +84,9 @@ func (c *ReconcileContextBase[Status, T, K, S]) SetConditions(
 	return hasChanges
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) SetCondition(
-	log util.Logger,
+// SetCondition sets a single condition in the CRD status conditions.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) SetCondition(
+	log controllerutil.Logger,
 	condType v1.ConditionType,
 	status metav1.ConditionStatus,
 	reason v1.ConditionReason,
@@ -89,19 +97,20 @@ func (c *ReconcileContextBase[Status, T, K, S]) SetCondition(
 
 // UpsertCondition upserts the given condition into the CRD status conditions.
 // Returns true if the condition was changed. Useful to precise detect if condition transition happened.
-func (c *ReconcileContextBase[Status, T, K, S]) UpsertCondition(
-	controller Controller,
-	log util.Logger,
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) UpsertCondition(
+	ctx context.Context,
+	log controllerutil.Logger,
+	controller controller,
 	condition metav1.Condition,
 ) (bool, error) {
 	changed := false
-	crdInstance := c.Cluster.DeepCopyObject().(ClusterObject[Status])
+	crdInstance := c.Cluster.DeepCopyObject().(clusterObject[Status]) //nolint:forcetypeassert // safe cast
 	setStatusCondition(c.Cluster.Conditions(), condition)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cli := controller.GetClient()
-		if err := cli.Get(c.Context, c.Cluster.NamespacedName(), crdInstance); err != nil {
-			return err
+		if err := cli.Get(ctx, c.Cluster.NamespacedName(), crdInstance); err != nil {
+			return fmt.Errorf("upsert condition %s: get resource %s: %w", condition.Type, c.Cluster.GetName(), err)
 		}
 
 		if changed = setStatusCondition(crdInstance.Conditions(), condition); !changed {
@@ -109,24 +118,28 @@ func (c *ReconcileContextBase[Status, T, K, S]) UpsertCondition(
 			return nil
 		}
 
-		return cli.Status().Update(c.Context, crdInstance)
+		return cli.Status().Update(ctx, crdInstance)
 	})
+	if err != nil {
+		return false, fmt.Errorf("upsert condition %s: %w", condition.Type, err)
+	}
 
-	return changed, err
+	return changed, nil
 }
 
 // UpsertConditionAndSendEvent upserts the given condition into the CRD status conditions.
 // Sends an event if the condition was changed.
-func (c *ReconcileContextBase[Status, T, K, S]) UpsertConditionAndSendEvent(
-	controller Controller,
-	log util.Logger,
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) UpsertConditionAndSendEvent(
+	ctx context.Context,
+	log controllerutil.Logger,
+	controller controller,
 	condition metav1.Condition,
 	eventType string,
 	eventReason v1.EventReason,
 	eventMessageFormat string,
 	eventMessageArgs ...any,
 ) (bool, error) {
-	changed, err := c.UpsertCondition(controller, log, condition)
+	changed, err := c.UpsertCondition(ctx, log, controller, condition)
 	if err != nil {
 		return false, err
 	}
@@ -139,23 +152,37 @@ func (c *ReconcileContextBase[Status, T, K, S]) UpsertConditionAndSendEvent(
 	return false, nil
 }
 
-func (c *ReconcileContextBase[Status, T, K, S]) UpsertStatus(controller Controller, log util.Logger) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+// UpsertStatus upserts the current status of the cluster into the CRD status.
+func (c *ReconcileContextBase[Status, T, ReplicaID, S]) UpsertStatus(
+	ctx context.Context,
+	log controllerutil.Logger,
+	controller controller,
+) error {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		cli := controller.GetClient()
-		crdInstance := c.Cluster.DeepCopyObject().(ClusterObject[Status])
-		if err := cli.Get(c.Context, c.Cluster.NamespacedName(), crdInstance); err != nil {
-			return err
+
+		crdInstance := c.Cluster.DeepCopyObject().(clusterObject[Status]) //nolint:forcetypeassert // safe cast
+		if err := cli.Get(ctx, c.Cluster.NamespacedName(), crdInstance); err != nil {
+			return fmt.Errorf("upsert status: get resource %s: %w", c.Cluster.GetName(), err)
 		}
+
 		preStatus := crdInstance.GetStatus()
 
 		if reflect.DeepEqual(*preStatus, *c.Cluster.GetStatus()) {
 			log.Info("statuses are equal, nothing to do")
 			return nil
 		}
-		log.Debug(fmt.Sprintf("status difference:\n%s", gcmp.Diff(*preStatus, *c.Cluster.GetStatus())))
+
+		log.Debug("status difference:\n" + gcmp.Diff(*preStatus, *c.Cluster.GetStatus()))
 		*crdInstance.GetStatus() = *c.Cluster.GetStatus()
-		return cli.Status().Update(c.Context, crdInstance)
+
+		return cli.Status().Update(ctx, crdInstance)
 	})
+	if err != nil {
+		return fmt.Errorf("upsert status: %w", err)
+	}
+
+	return nil
 }
 
 // SetStatusCondition sets the given condition in conditions and returns true if the condition was changed.
@@ -164,6 +191,7 @@ func setStatusCondition(conditions *[]metav1.Condition, newCondition metav1.Cond
 	if conditions == nil {
 		return false
 	}
+
 	existingCondition := meta.FindStatusCondition(*conditions, newCondition.Type)
 	if existingCondition == nil {
 		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
@@ -179,5 +207,6 @@ func setStatusCondition(conditions *[]metav1.Condition, newCondition metav1.Cond
 	}
 
 	*existingCondition = newCondition
+
 	return changed
 }

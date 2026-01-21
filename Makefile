@@ -143,8 +143,9 @@ test-clickhouse-e2e: ## Run clickhouse e2e tests.
 	go test ./test/e2e/ --ginkgo.label-filter clickhouse -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: golangci-lint codespell ## Run golangci-lint linter and codespell
 	$(GOLANGCI_LINT) run
+	$(CODESPELL) --config ci/.codespellrc
 
 .PHONY: golangci-fmt
 golangci-fmt: golangci-lint ## Run golangci-lint fmt
@@ -274,13 +275,15 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
+CODESPELL ?= $(LOCALBIN)/codespell
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
 ENVTEST_VERSION ?= release-0.22
-GOLANGCI_LINT_VERSION ?= v2.4.0
+GOLANGCI_LINT_VERSION ?= v2.8.0
 KUBEBUILDER_VERSION ?= v4.11.0
+CODESPELL_VERSION ?= 2.4.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -309,6 +312,18 @@ $(KUBEBUILDER): $(LOCALBIN)
 		echo "Downloading kubebuilder $(KUBEBUILDER_VERSION)" ;\
 		curl -L -o ${KUBEBUILDER} "https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$(shell go env GOOS)_$(shell go env GOARCH)" ;\
 		chmod +x $(KUBEBUILDER) ;\
+	}
+
+.PHONY: codespell
+codespell: $(CODESPELL) ## Install codespell locally if necessary.
+$(CODESPELL): $(LOCALBIN)
+	@test -f $(CODESPELL) || { \
+		echo "Installing codespell $(CODESPELL_VERSION)" ;\
+		python3 -m pip install --target=$(LOCALBIN)/codespell-deps codespell==$(CODESPELL_VERSION) ;\
+		echo '#!/bin/bash' > $(CODESPELL) ;\
+		echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(CODESPELL) ;\
+		echo 'PYTHONPATH="$$DIR/codespell-deps" "$$DIR/codespell-deps/bin/codespell" "$$@"' >> $(CODESPELL) ;\
+		chmod +x $(CODESPELL) ;\
 	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist

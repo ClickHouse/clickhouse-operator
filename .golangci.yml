@@ -27,16 +27,106 @@ linters:
     - copyloopvar
     - godot
     - gosec
+    - nolintlint
+    - errname
+    - errorlint
+    - nilerr
+    - gocritic
+    - bodyclose
+    - exhaustive
+    - usestdlibvars
+    - wastedassign
+    - reassign
+    - thelper
+    - containedctx
+    - decorder
+    - dogsled
+    - dupword
+    - durationcheck
+    - embeddedstructfieldcheck
+    - errchkjson
+    - exptostd
+    - fatcontext
+    - forbidigo
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - godoclint
+    - godox
+    - gomoddirectives
+    - gosmopolitan
+    - grouper
+    - iface
+    - importas
+    - intrange
+    - iotamixing
+    - ireturn
+    - loggercheck
+    - makezero
+    - mirror
+    - mnd
+    - musttag
+    - nakedret
+    - noctx
+    - nosprintfhostport
+    - perfsprint
+    - predeclared
+    - promlinter
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sloglint
+    - sqlclosecheck
+    - tagalign
+    - unqueryvet
+    - unused
+    - usetesting
+    - whitespace
+    - wrapcheck
+    - wsl_v5
   settings:
     revive:
+      enable-default-rules: true
       rules:
-        - name: comment-spacings
+        - name: exported
+          severity: warning
+          disabled: false
+          arguments:
+            - "disable-checks-on-constants"
+        - name: dot-imports
+          severity: warning
+          disabled: false
+          exclude: [ "" ]
+          arguments:
+            - allowed-packages:
+              - "github.com/onsi/ginkgo/v2"
+              - "github.com/onsi/gomega"
+        - name: package-comments
+          disabled: true
     gosec:
       excludes:
         - G204
     godot:
       exclude:
         - "^ *\\+operator-sdk:"
+    ireturn:
+      allow:
+        - error
+        - empty
+        - stdlib
+        - generic
+        - Option$
+        - github.com\/ClickHouse\/clickhouse-go/v2\.Conn
+        - k8s.io
+    wsl_v5:
+      allow-whole-block: true
+      branch-max-lines: 4
+      case-max-lines: 4
+    mnd:
+      ignored-numbers: [ '2' ]
+      ignored-files:
+        - test/.*\.go
+        - internal/controller/testutil/.*\.go
   exclusions:
     generated: lax
     rules:
@@ -59,7 +149,12 @@ formatters:
     goimports:
       # Put imports beginning with prefix after 3rd-party packages.
       local-prefixes:
-       - clickhouse.com/
+       - github.com/clickhouse-operator
+    gofmt:
+      simplify: true
+      rewrite-rules:
+        -   pattern: 'interface{}'
+            replacement: 'any'
   exclusions:
     generated: lax
     paths:

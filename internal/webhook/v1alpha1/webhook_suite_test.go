@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clickhouse-operator/internal/util"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/clickhouse-operator/internal/controllerutil"
+
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -33,12 +33,10 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	ctx       context.Context
-	cancel    context.CancelFunc
-	k8sClient client.Client
-	cfg       *rest.Config
-	testEnv   *envtest.Environment
-	warnings  []string
+	cancelManager context.CancelFunc
+	k8sClient     client.Client
+	testEnv       *envtest.Environment
+	warnings      []string
 )
 
 func TestAPIs(t *testing.T) {
@@ -50,12 +48,9 @@ func TestAPIs(t *testing.T) {
 var _ = BeforeSuite(func() {
 	logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 	logf.SetLogger(zapr.NewLogger(logger))
-	zapLogger := util.NewZapLogger(logger)
-	ctx, cancel = context.WithCancel(context.TODO())
+	zapLogger := controllerutil.NewLogger(logger)
 
-	var err error
-	err = clickhousecomv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(clickhousecomv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 
@@ -75,7 +70,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	// cfg is defined in this file globally.
-	cfg, err = testEnv.Start()
+	cfg, err := testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 	cfg.WarningHandler = &warningsHandler{
@@ -108,8 +103,9 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		defer GinkgoRecover()
-		err = mgr.Start(ctx)
-		Expect(err).NotTo(HaveOccurred())
+		var mgrCtx context.Context
+		mgrCtx, cancelManager = context.WithCancel(context.Background())
+		Expect(mgr.Start(mgrCtx)).To(Succeed())
 	}()
 
 	// wait for the webhook server to get ready.
@@ -119,7 +115,7 @@ var _ = BeforeSuite(func() {
 		//nolint:gosec // Test certs no need to be verified.
 		conn, err := tls.DialWithDialer(dialer, "tcp", addrPort, &tls.Config{InsecureSkipVerify: true})
 		if err != nil {
-			return err
+			return fmt.Errorf("dial webhook: %w", err)
 		}
 
 		return conn.Close()
@@ -128,7 +124,7 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	cancel()
+	cancelManager()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
@@ -147,16 +143,19 @@ var _ = BeforeEach(func() {
 // properly set up, run 'make setup-envtest' beforehand.
 func getFirstFoundEnvTestBinaryDir() string {
 	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
+
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
 		logf.Log.Error(err, "Failed to read directory", "path", basePath)
 		return ""
 	}
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			return filepath.Join(basePath, entry.Name())
 		}
 	}
+
 	return ""
 }
 
@@ -170,5 +169,5 @@ func (h *warningsHandler) HandleWarningHeader(code int, agent string, text strin
 	}
 
 	warnings = append(warnings, text)
-	h.l.HandleWarningHeaderWithContext(ctx, code, agent, text)
+	h.l.HandleWarningHeaderWithContext(context.Background(), code, agent, text)
 }

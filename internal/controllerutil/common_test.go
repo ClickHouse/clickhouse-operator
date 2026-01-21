@@ -1,7 +1,7 @@
-package util
+package controllerutil
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -79,7 +79,7 @@ var _ = Describe("ApplyDefault", func() {
 })
 
 var _ = Describe("UpdateResult", func() {
-	It("should assing to empty", func() {
+	It("should assign to empty", func() {
 		result := ctrl.Result{}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
@@ -114,7 +114,7 @@ var _ = Describe("ExecuteParallel", func() {
 			func(item int) (int, int, error) {
 				return item, item * 2, nil
 			})
-		Expect(result).To(Equal(map[int]executionResult[int, int]{
+		Expect(result).To(Equal(map[int]ExecutionResult[int, int]{
 			1: {Result: 2},
 			2: {Result: 4},
 			3: {Result: 6},
@@ -126,13 +126,13 @@ var _ = Describe("ExecuteParallel", func() {
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
 				if item%2 == 0 {
-					return item, 0, fmt.Errorf("failed")
+					return item, 0, errors.New("failed")
 				}
 				return item, item * 2, nil
 			})
-		Expect(result).To(Equal(map[int]executionResult[int, int]{
+		Expect(result).To(Equal(map[int]ExecutionResult[int, int]{
 			1: {Result: 2},
-			2: {Err: fmt.Errorf("failed")},
+			2: {Err: errors.New("failed")},
 			3: {Result: 6},
 		}))
 	})

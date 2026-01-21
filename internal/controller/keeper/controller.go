@@ -3,7 +3,6 @@ package keeper
 import (
 	"context"
 	"fmt"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,21 +18,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 // ClusterReconciler reconciles a KeeperCluster object.
 type ClusterReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 
+	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
-	Logger   util.Logger
+	Logger   controllerutil.Logger
 }
-
-var _ controller.Controller = &ClusterReconciler{}
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters/status,verbs=get;update;patch
@@ -58,15 +54,17 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 
 		r.Logger.Error(err, "failed to Get keeper cluster")
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
+
+		return ctrl.Result{}, fmt.Errorf("get KeeperCluster %s: %w", req.String(), err)
 	}
 
 	logger := r.Logger.WithContext(ctx, cluster)
 	wh := webhookv1.KeeperClusterWebhook{Log: logger}
 
 	if err := wh.Default(ctx, cluster); err != nil {
-		return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, fmt.Errorf("fill defaults before reconcile: %w", err)
+		return ctrl.Result{}, fmt.Errorf("fill defaults before reconcile: %w", err)
 	}
+
 	if _, err := wh.ValidateCreate(ctx, cluster); err != nil {
 		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
 			Type:               string(v1.ConditionTypeSpecValid),
@@ -75,36 +73,41 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			Message:            err.Error(),
 			ObservedGeneration: cluster.GetGeneration(),
 		})
+
 		if err := r.Status().Update(ctx, cluster); err != nil {
-			return ctrl.Result{RequeueAfter: RequeueOnErrorTimeout}, fmt.Errorf("update keeper cluster status: %w", err)
+			return ctrl.Result{}, fmt.Errorf("update keeper cluster status: %w", err)
 		}
+
 		return ctrl.Result{}, nil
-	} else {
-		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-			Type:               string(v1.ConditionTypeSpecValid),
-			Status:             metav1.ConditionTrue,
-			Reason:             string(v1.ConditionReasonSpecValid),
-			ObservedGeneration: cluster.GetGeneration(),
-		})
 	}
 
-	return r.Sync(ctx, logger, cluster)
+	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		Type:               string(v1.ConditionTypeSpecValid),
+		Status:             metav1.ConditionTrue,
+		Reason:             string(v1.ConditionReasonSpecValid),
+		ObservedGeneration: cluster.GetGeneration(),
+	})
+
+	return r.sync(ctx, logger, cluster)
 }
 
+// GetClient returns the K8S Client.
 func (r *ClusterReconciler) GetClient() client.Client {
 	return r.Client
 }
 
+// GetScheme returns initialized with the Cluster Scheme.
 func (r *ClusterReconciler) GetScheme() *runtime.Scheme {
 	return r.Scheme
 }
 
+// GetRecorder returns the KeeperCluster EventRecorder.
 func (r *ClusterReconciler) GetRecorder() record.EventRecorder {
 	return r.Recorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterReconciler{
@@ -114,7 +117,7 @@ func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
 		Logger:   namedLogger,
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	err := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
@@ -123,4 +126,9 @@ func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
 		Owns(&corev1.Pod{}).
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(keeperController)
+	if err != nil {
+		return fmt.Errorf("setup Keeper controller: %w", err)
+	}
+
+	return nil
 }

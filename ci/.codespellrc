@@ -1,0 +1,6 @@
+[codespell]
+# Comma-separated list of files to skip
+skip = *.svg,*.sum,*.tgz,go.sum,dist/chart/charts,bin,.git
+
+# File containing words to ignore (one per line)
+ignore-words = ci/codespell-ignore-words.txt

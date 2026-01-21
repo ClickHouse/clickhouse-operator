@@ -1,18 +1,19 @@
 package clickhouse
 
 import (
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
 )
 
 var _ = Describe("ConfigGenerator", func() {
 	ctx := reconcileContext{
-		ReconcileContextBase: ReconcileContextBase{
+		reconcileContextBase: reconcileContextBase{
 			Cluster: &v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
@@ -44,6 +45,7 @@ var _ = Describe("ConfigGenerator", func() {
 			Expect(generator.Exists(&ctx)).To(BeTrue())
 			data, err := generator.Generate(&ctx, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
+
 			obj := map[any]any{}
 			Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())
 		})

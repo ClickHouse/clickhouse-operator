@@ -14,13 +14,14 @@ import (
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
+// ReplicaUpdateStage represents the stage of updating a ClickHouse replica. Used in reconciliation process.
 type ReplicaUpdateStage int
 
 const (
@@ -49,9 +50,11 @@ func (s ReplicaUpdateStage) String() string {
 
 var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"}
 
-func CheckPodError(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (bool, error) {
+// CheckPodError checks if the pod of the given StatefulSet have permanent errors preventing it from starting.
+func CheckPodError(ctx context.Context, log controllerutil.Logger, client client.Client, sts *appsv1.StatefulSet) (bool, error) {
 	var pod corev1.Pod
-	podName := fmt.Sprintf("%s-0", sts.Name)
+
+	podName := sts.Name + "-0"
 
 	if err := client.Get(ctx, types.NamespacedName{
 		Namespace: sts.Namespace,
@@ -62,6 +65,7 @@ func CheckPodError(ctx context.Context, log util.Logger, client client.Client, s
 		}
 
 		log.Info("pod is not exists", "pod", podName, "stateful_set", sts.Name)
+
 		return false, nil
 	}
 
@@ -69,6 +73,7 @@ func CheckPodError(ctx context.Context, log util.Logger, client client.Client, s
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.State.Waiting != nil && slices.Contains(podErrorStatuses, status.State.Waiting.Reason) {
 			log.Info("pod in error state", "pod", podName, "reason", status.State.Waiting.Reason)
+
 			isError = true
 			break
 		}
@@ -97,7 +102,7 @@ func diffFilter(specFields []string) cmp.Option {
 	}, cmp.Ignore())
 }
 
-type Controller interface {
+type controller interface {
 	GetClient() client.Client
 	GetScheme() *k8sruntime.Scheme
 	GetRecorder() record.EventRecorder
@@ -105,139 +110,152 @@ type Controller interface {
 
 func reconcileResource(
 	ctx context.Context,
-	log util.Logger,
-	controller Controller,
+	log controllerutil.Logger,
+	ctrl controller,
 	owner client.Object,
 	resource client.Object,
 	specFields []string,
 ) (bool, error) {
-	cli := controller.GetClient()
+	cli := ctrl.GetClient()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 	log = log.With(kind, resource.GetName())
 
-	if err := ctrl.SetControllerReference(owner, resource, controller.GetScheme()); err != nil {
-		return false, err
+	if err := ctrlruntime.SetControllerReference(owner, resource, ctrl.GetScheme()); err != nil {
+		return false, fmt.Errorf("set %s/%s ctrl reference: %w", kind, resource.GetName(), err)
 	}
 
 	if len(specFields) == 0 {
 		return false, fmt.Errorf("%s specFields is empty", kind)
 	}
 
-	resourceHash, err := util.DeepHashResource(resource, specFields)
+	resourceHash, err := controllerutil.DeepHashResource(resource, specFields)
 	if err != nil {
-		return false, fmt.Errorf("deep hash %s:%s: %w", kind, resource.GetName(), err)
+		return false, fmt.Errorf("deep hash %s/%s: %w", kind, resource.GetName(), err)
 	}
-	util.AddHashWithKeyToAnnotations(resource, util.AnnotationSpecHash, resourceHash)
 
-	foundResource := resource.DeepCopyObject().(client.Object)
+	controllerutil.AddHashWithKeyToAnnotations(resource, controllerutil.AnnotationSpecHash, resourceHash)
+
+	foundResource := resource.DeepCopyObject().(client.Object) //nolint:forcetypeassert // safe cast
+
 	err = cli.Get(ctx, types.NamespacedName{
 		Namespace: resource.GetNamespace(),
 		Name:      resource.GetName(),
 	}, foundResource)
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {
-			return false, fmt.Errorf("get %s:%s: %w", kind, resource.GetName(), err)
+			return false, fmt.Errorf("get %s/%s: %w", kind, resource.GetName(), err)
 		}
 
 		log.Info("resource not found, creating")
-		return true, Create(ctx, controller, owner, resource)
+
+		return true, Create(ctx, ctrl, owner, resource)
 	}
 
-	if util.GetSpecHashFromObject(foundResource) == resourceHash {
+	if controllerutil.GetSpecHashFromObject(foundResource) == resourceHash {
 		log.Debug("resource is up to date")
 		return false, nil
 	}
 
-	log.Debug(fmt.Sprintf("resource changed, diff: %s", cmp.Diff(foundResource, resource, diffFilter(specFields))))
+	log.Debug("resource changed, diff: " + cmp.Diff(foundResource, resource, diffFilter(specFields)))
 
 	foundResource.SetAnnotations(resource.GetAnnotations())
 	foundResource.SetLabels(resource.GetLabels())
+
 	for _, fieldName := range specFields {
 		field := reflect.ValueOf(foundResource).Elem().FieldByName(fieldName)
 		if !field.IsValid() || !field.CanSet() {
-			panic(fmt.Sprintf("invalid data field  %s", fieldName))
+			panic("invalid data field  " + fieldName)
 		}
 
 		field.Set(reflect.ValueOf(resource).Elem().FieldByName(fieldName))
 	}
 
-	return true, Update(ctx, controller, owner, foundResource)
+	return true, Update(ctx, ctrl, owner, foundResource)
 }
 
+// ReconcileService reconciles a Kubernetes Service resource.
 func ReconcileService(
 	ctx context.Context,
-	log util.Logger,
-	controller Controller,
+	log controllerutil.Logger,
+	ctrl controller,
 	owner client.Object,
 	service *corev1.Service,
 ) (bool, error) {
-	return reconcileResource(ctx, log, controller, owner, service, []string{"Spec"})
+	return reconcileResource(ctx, log, ctrl, owner, service, []string{"Spec"})
 }
 
+// ReconcilePodDisruptionBudget reconciles a Kubernetes PodDisruptionBudget resource.
 func ReconcilePodDisruptionBudget(
 	ctx context.Context,
-	log util.Logger,
-	controller Controller,
+	log controllerutil.Logger,
+	ctrl controller,
 	owner client.Object,
 	pdb *policyv1.PodDisruptionBudget,
 ) (bool, error) {
-	return reconcileResource(ctx, log, controller, owner, pdb, []string{"Spec"})
+	return reconcileResource(ctx, log, ctrl, owner, pdb, []string{"Spec"})
 }
 
+// ReconcileConfigMap reconciles a Kubernetes ConfigMap resource.
 func ReconcileConfigMap(
 	ctx context.Context,
-	log util.Logger,
-	controller Controller,
+	log controllerutil.Logger,
+	ctrl controller,
 	owner client.Object,
 	configMap *corev1.ConfigMap,
 ) (bool, error) {
-	return reconcileResource(ctx, log, controller, owner, configMap, []string{"Data", "BinaryData"})
+	return reconcileResource(ctx, log, ctrl, owner, configMap, []string{"Data", "BinaryData"})
 }
 
-func Create(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
-	recorder := controller.GetRecorder()
+// Create creates the given Kubernetes resource and emits events on failure.
+func Create(ctx context.Context, ctrl controller, owner client.Object, resource client.Object) error {
+	recorder := ctrl.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
-	if err := controller.GetClient().Create(ctx, resource); err != nil {
-		if util.ShouldEmitEvent(err) {
+	if err := ctrl.GetClient().Create(ctx, resource); err != nil {
+		if controllerutil.ShouldEmitEvent(err) {
 			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedCreate,
 				"Create %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
-		return fmt.Errorf("create %s:%s: %w", kind, resource.GetName(), err)
+
+		return fmt.Errorf("create %s/%s: %w", kind, resource.GetName(), err)
 	}
 
 	return nil
 }
 
-func Update(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
-	recorder := controller.GetRecorder()
+// Update updates the given Kubernetes resource and emits events on failure.
+func Update(ctx context.Context, ctrl controller, owner client.Object, resource client.Object) error {
+	recorder := ctrl.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
-	if err := controller.GetClient().Update(ctx, resource); err != nil {
-		if util.ShouldEmitEvent(err) {
+	if err := ctrl.GetClient().Update(ctx, resource); err != nil {
+		if controllerutil.ShouldEmitEvent(err) {
 			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedUpdate,
 				"Update %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
-		return fmt.Errorf("update %s:%s: %w", kind, resource.GetName(), err)
+
+		return fmt.Errorf("update %s/%s: %w", kind, resource.GetName(), err)
 	}
 
 	return nil
 }
 
-func Delete(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
-	recorder := controller.GetRecorder()
+// Delete deletes the given Kubernetes resource and emits events on failure.
+func Delete(ctx context.Context, ctrl controller, owner client.Object, resource client.Object) error {
+	recorder := ctrl.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
-	if err := controller.GetClient().Delete(ctx, resource); err != nil {
+	if err := ctrl.GetClient().Delete(ctx, resource); err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
-		if util.ShouldEmitEvent(err) {
+		if controllerutil.ShouldEmitEvent(err) {
 			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedDelete,
 				"Delete %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
-		return fmt.Errorf("delete %s:%s: %w", kind, resource.GetName(), err)
+
+		return fmt.Errorf("delete %s/%s: %w", kind, resource.GetName(), err)
 	}
 
 	return nil

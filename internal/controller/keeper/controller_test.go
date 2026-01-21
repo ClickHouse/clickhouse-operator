@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,7 +20,7 @@ import (
 
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller/testutil"
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 func TestControllers(t *testing.T) {
@@ -31,6 +32,7 @@ func TestControllers(t *testing.T) {
 var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
+		recorder     *record.FakeRecorder
 		reconciler   *ClusterReconciler
 		services     corev1.ServiceList
 		pdbs         policyv1.PodDisruptionBudgetList
@@ -55,52 +57,52 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
+		recorder = record.NewFakeRecorder(128)
 		reconciler = &ClusterReconciler{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("keeper"),
-			Recorder: record.NewFakeRecorder(128),
+			Recorder: recorder,
 		}
 	})
 
 	AfterAll(func() {
 		By("tearing down the test environment")
-		suite.Cancel()
 		err := suite.TestEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		testutil.EnsureNoEvents(reconciler.Recorder.(*record.FakeRecorder).Events)
+		testutil.EnsureNoEvents(recorder.Events)
 	})
 
-	It("should create standalone cluster", func() {
+	It("should create standalone cluster", func(ctx context.Context) {
 		By("by creating standalone resource CR")
-		Expect(suite.Client.Create(suite.Context, cr)).To(Succeed())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+		Expect(suite.Client.Create(ctx, cr)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 	})
 
-	It("should successfully create all resources of the new cluster", func() {
+	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
-		listOpts := util.AppRequirements(cr.Namespace, cr.SpecificName())
+		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
 
-		Expect(suite.Client.List(suite.Context, &services, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &services, listOpts)).To(Succeed())
 		Expect(services.Items).To(HaveLen(1))
 
-		Expect(suite.Client.List(suite.Context, &pdbs, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(HaveLen(1))
 
-		Expect(suite.Client.List(suite.Context, &configs, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &configs, listOpts)).To(Succeed())
 		Expect(configs.Items).To(HaveLen(2))
 
-		Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
+		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(1))
 
-		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ReplicaCreated":  1,
 			"ClusterNotReady": 1,
 		})
@@ -163,34 +165,34 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		}
 	})
 
-	It("should reflect configuration changes in revisions", func() {
+	It("should reflect configuration changes in revisions", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
 		updatedCR.Spec.Settings.Logger.Level = "warning"
-		Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
 		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
 
-		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+		testutil.AssertEvents(recorder.Events, map[string]int{
 			"HorizontalScaleBlocked": 1,
 		})
 	})
 
-	It("should merge extra config in configmap", func() {
+	It("should merge extra config in configmap", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
-		testutil.ReconcileStatefulSets(updatedCR, suite)
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
 		updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
-		Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
@@ -198,13 +200,14 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
 
 		var configmap corev1.ConfigMap
-		Expect(suite.Client.Get(suite.Context, types.NamespacedName{
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
 			Namespace: cr.Namespace,
 			Name:      cr.ConfigMapNameByReplicaID(0)}, &configmap)).To(Succeed())
 
 		Expect(configmap.Data).To(HaveKey(ConfigFileName))
 		var config confMap
 		Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
+		//nolint:forcetypeassert
 		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
 	})
 })

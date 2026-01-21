@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -10,9 +11,6 @@ import (
 	"time"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/util"
-	"github.com/clickhouse-operator/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,6 +25,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal/controllerutil"
+	"github.com/clickhouse-operator/test/testutil"
 )
 
 const (
@@ -34,31 +36,32 @@ const (
 	testNamespace = "clickhouse-operator-test"
 )
 
-var ctx context.Context
-var cancel context.CancelFunc
-var k8sClient client.Client
-var config *rest.Config
-var defaultStorage = corev1.PersistentVolumeClaimSpec{
-	AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-	Resources: corev1.VolumeResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceStorage: resource.MustParse("1Gi"),
+var (
+	cancelLogs     context.CancelFunc
+	k8sClient      client.Client
+	config         *rest.Config
+	defaultStorage = corev1.PersistentVolumeClaimSpec{
+		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		Resources: corev1.VolumeResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse("1Gi"),
+			},
 		},
-	},
-}
+	}
+)
 
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting clickhouse-operator suite\n")
+
 	RunSpecs(t, "e2e suite")
 }
 
-var _ = BeforeSuite(func() {
+var _ = BeforeSuite(func(ctx context.Context) {
 	var err error
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	ctx, cancel = context.WithCancel(context.Background())
 
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
 	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
@@ -75,18 +78,18 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	By("installing the cert-manager")
-	Expect(utils.InstallCertManager()).To(Succeed())
+	Expect(testutil.InstallCertManager(ctx)).To(Succeed())
 
 	// By("installing prometheus operator")
 	// Expect(utils.InstallPrometheusOperator()).To(Succeed())
 
 	By("creating manager namespace")
 	cmd := exec.Command("kubectl", "create", "ns", namespace)
-	_, _ = utils.Run(cmd)
+	_, _ = testutil.Run(cmd)
 
 	By("creating test namespace")
 	cmd = exec.Command("kubectl", "create", "ns", testNamespace)
-	_, _ = utils.Run(cmd)
+	_, _ = testutil.Run(cmd)
 
 	var controllerPodName string
 
@@ -94,20 +97,24 @@ var _ = BeforeSuite(func() {
 	var projectimage = "ghcr.io/clickhouse/clickhouse-operator:v0.0.1"
 
 	By("building the manager(Operator) image")
-	cmd = exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
-	_, err = utils.Run(cmd)
+	cmd = exec.Command("make", "docker-build", "IMG="+projectimage)
+	_, err = testutil.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("loading the the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectimage)
+	By("loading the manager(Operator) image on Kind")
+	err = testutil.LoadImageToKindClusterWithName(ctx, projectimage)
 	Expect(err).NotTo(HaveOccurred())
 
 	// In kind cert-manager root CA may not be injected at this moment.
 	By("deploying the controller-manager")
 	Eventually(func() error {
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))
-		_, err = utils.Run(cmd)
-		return err
+		cmd = exec.Command("make", "deploy", "IMG="+projectimage)
+		_, err = testutil.Run(cmd)
+		if err != nil {
+			return fmt.Errorf("deploy controller-manager: %w", err)
+		}
+
+		return nil
 	}, 2*time.Minute, time.Second).Should(Succeed())
 
 	cmd = exec.Command("kubectl", "wait", "deployment.apps/clickhouse-operator-controller-manager",
@@ -115,7 +122,7 @@ var _ = BeforeSuite(func() {
 		"--namespace", namespace,
 		"--timeout", "5m",
 	)
-	_, err = utils.Run(cmd)
+	_, err = testutil.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("validating that the controller-manager pod is running as expected")
@@ -130,22 +137,24 @@ var _ = BeforeSuite(func() {
 			"-n", namespace,
 		)
 
-		podOutput, err := utils.Run(cmd)
+		podOutput, err := testutil.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
-		podNames := utils.GetNonEmptyLines(string(podOutput))
+		podNames := testutil.GetNonEmptyLines(string(podOutput))
 		if len(podNames) != 1 {
 			return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
 		}
 		controllerPodName = podNames[0]
 		Expect(controllerPodName).Should(ContainSubstring("controller-manager"))
-		Expect(utils.CapturePodLogs(ctx, config, namespace, controllerPodName)).To(Succeed())
+		logsCtx, cancel := context.WithCancel(context.Background())
+		cancelLogs = cancel
+		Expect(testutil.CapturePodLogs(logsCtx, config, namespace, controllerPodName)).To(Succeed())
 
 		// Validate pod status
 		cmd = exec.Command("kubectl", "get",
 			"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
 			"-n", namespace,
 		)
-		status, err := utils.Run(cmd)
+		status, err := testutil.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 		if string(status) != "Running" {
 			return fmt.Errorf("controller pod in %s status", status)
@@ -156,7 +165,7 @@ var _ = BeforeSuite(func() {
 
 	// Ensure webhook is accepting admission requests by issuing a dry-run create that must be rejected
 	By("waiting for webhook to accept admission requests")
-	Eventually(func() error {
+	Eventually(func(ctx context.Context) error {
 		cr := &clickhousecomv1alpha1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: testNamespace,
@@ -167,28 +176,26 @@ var _ = BeforeSuite(func() {
 		// Use dry-run so nothing is persisted
 		err := k8sClient.Create(ctx, cr, &client.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 		if err == nil {
-			return fmt.Errorf("unexpected success creating object, webhook not engaged yet")
+			return errors.New("unexpected success creating object, webhook not engaged yet")
 		}
 		if !strings.Contains(err.Error(), "spec.keeperClusterRef") {
-			return fmt.Errorf("webhook not ready or different error: %v", err)
+			return fmt.Errorf("webhook not ready or different error: %w", err)
 		}
 		return nil
-	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+	}, 2*time.Minute, 2*time.Second).WithContext(ctx).Should(Succeed())
 })
 
-var _ = AfterSuite(func() {
-	cancel()
+var _ = AfterSuite(func(ctx context.Context) {
+	cancelLogs()
 
 	// By("uninstalling the Prometheus manager bundle")
 	// utils.UninstallPrometheusOperator()
 
 	By("removing manager namespace")
-	cmd := exec.Command("kubectl", "delete", "ns", namespace)
-	_, _ = utils.Run(cmd)
+	_, _ = testutil.Run(exec.CommandContext(ctx, "kubectl", "delete", "ns", namespace))
 
 	By("removing test namespace")
-	cmd = exec.Command("kubectl", "delete", "ns", testNamespace)
-	_, _ = utils.Run(cmd)
+	_, _ = testutil.Run(exec.CommandContext(ctx, "kubectl", "delete", "ns", testNamespace))
 })
 
 func CheckPodReady(pod *corev1.Pod) bool {
@@ -210,7 +217,7 @@ func CheckReplicaUpdated(ctx context.Context, cfgName string, cfgRev string, sts
 		return false
 	}
 
-	if util.GetSpecHashFromObject(&configmap) != cfgRev {
+	if controllerutil.GetSpecHashFromObject(&configmap) != cfgRev {
 		return false
 	}
 
@@ -221,5 +228,6 @@ func CheckReplicaUpdated(ctx context.Context, cfgName string, cfgRev string, sts
 	}, &sts); err != nil {
 		return false
 	}
-	return util.GetSpecHashFromObject(&sts) == stsRev
+
+	return controllerutil.GetSpecHashFromObject(&sts) == stsRev
 }

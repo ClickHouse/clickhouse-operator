@@ -64,7 +64,7 @@ spec:
           revision.
         displayName: Current Revision
         path: currentRevision
-      - description: ObservedGeneration indicates lastest generation observed by controller.
+      - description: ObservedGeneration indicates latest generation observed by controller.
         displayName: Observed Generation
         path: observedGeneration
       - description: ReadyReplicas Total number of replicas ready to server requests.
@@ -121,7 +121,7 @@ spec:
       - description: CurrentRevision indicates latest applied KeeperCluster spec revision.
         displayName: Current Revision
         path: currentRevision
-      - description: ObservedGeneration indicates lastest generation observed by controller.
+      - description: ObservedGeneration indicates latest generation observed by controller.
         displayName: Observed Generation
         path: observedGeneration
       - description: ReadyReplicas Total number of replicas ready to server requests.

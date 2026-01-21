@@ -9,7 +9,7 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal"
 	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/util"
+	"github.com/clickhouse-operator/internal/controllerutil"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,8 +19,9 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
+func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 	protocols := buildProtocols(cr)
+
 	ports := make([]corev1.ServicePort, 0, len(protocols))
 	for name, protocol := range protocols {
 		if protocol.Port == 0 {
@@ -35,7 +36,7 @@ func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		})
 	}
 
-	util.SortKey(ports, func(port corev1.ServicePort) string {
+	controllerutil.SortKey(ports, func(port corev1.ServicePort) string {
 		return port.Name
 	})
 
@@ -47,10 +48,10 @@ func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.HeadlessServiceName(),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey: cr.SpecificName(),
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
@@ -58,13 +59,13 @@ func TemplateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 			// This has to be true to acquire quorum
 			PublishNotReadyAddresses: true,
 			Selector: map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+				controllerutil.LabelAppKey: cr.SpecificName(),
 			},
 		},
 	}
 }
 
-func TemplatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *policyv1.PodDisruptionBudget {
+func templatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *policyv1.PodDisruptionBudget {
 	minAvailable := intstr.FromInt32(1)
 
 	return &policyv1.PodDisruptionBudget{
@@ -75,40 +76,40 @@ func TemplatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.PodDisruptionBudgetNameByShard(shardID),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey:            cr.SpecificName(),
-				util.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey:            cr.SpecificName(),
+				controllerutil.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MinAvailable: &minAvailable,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:            cr.SpecificName(),
-					util.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
+					controllerutil.LabelAppKey:            cr.SpecificName(),
+					controllerutil.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
 				},
 			},
 		},
 	}
 }
 
-func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bool, error) {
+func templateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) bool {
 	secret.Name = cr.SecretName()
 	secret.Namespace = cr.Namespace
 	secret.Type = corev1.SecretTypeOpaque
 
 	changed := false
 
-	labels := util.MergeMaps(cr.Spec.Labels, map[string]string{
-		util.LabelAppKey: cr.SpecificName(),
+	labels := controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+		controllerutil.LabelAppKey: cr.SpecificName(),
 	})
 	if !maps.Equal(labels, secret.Labels) {
 		changed = true
 		secret.Labels = labels
 	}
 
-	annotations := util.MergeMaps(cr.Spec.Annotations)
+	annotations := controllerutil.MergeMaps(cr.Spec.Annotations)
 	if !maps.Equal(annotations, secret.Annotations) {
 		changed = true
 		secret.Annotations = annotations
@@ -118,29 +119,32 @@ func TemplateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) (bo
 		changed = true
 		secret.Data = map[string][]byte{}
 	}
-	for key, template := range SecretsToGenerate {
+
+	for key, template := range secretsToGenerate {
 		if _, ok := secret.Data[key]; !ok {
 			changed = true
-			secret.Data[key] = []byte(fmt.Sprintf(template, util.GeneratePassword()))
+			secret.Data[key] = []byte(fmt.Sprintf(template, controllerutil.GeneratePassword()))
 		}
 	}
+
 	for key := range secret.Data {
-		if _, ok := SecretsToGenerate[key]; !ok {
+		if _, ok := secretsToGenerate[key]; !ok {
 			changed = true
+
 			delete(secret.Data, key)
 		}
 	}
 
-	return changed, nil
+	return changed
 }
 
-func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
+func getConfigurationRevision(ctx *reconcileContext) (string, error) {
 	config, err := generateConfigForSingleReplica(ctx, v1.ClickHouseReplicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
 
-	hash, err := util.DeepHashObject(config)
+	hash, err := controllerutil.DeepHashObject(config)
 	if err != nil {
 		return "", fmt.Errorf("hash template configuration: %w", err)
 	}
@@ -148,13 +152,13 @@ func GetConfigurationRevision(ctx *reconcileContext) (string, error) {
 	return hash, nil
 }
 
-func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
-	sts, err := TemplateStatefulSet(ctx, v1.ClickHouseReplicaID{})
+func getStatefulSetRevision(ctx *reconcileContext) (string, error) {
+	sts, err := templateStatefulSet(ctx, v1.ClickHouseReplicaID{})
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
 
-	hash, err := util.DeepHashObject(sts)
+	hash, err := controllerutil.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
 	}
@@ -162,7 +166,7 @@ func GetStatefulSetRevision(ctx *reconcileContext) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*corev1.ConfigMap, error) {
+func templateConfigMap(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*corev1.ConfigMap, error) {
 	configData, err := generateConfigForSingleReplica(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate config for replica %v: %w", id, err)
@@ -176,8 +180,8 @@ func TemplateConfigMap(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*corev
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ctx.Cluster.ConfigMapNameByReplicaID(id),
 			Namespace: ctx.Cluster.Namespace,
-			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
-				util.LabelAppKey: ctx.Cluster.SpecificName(),
+			Labels: controllerutil.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
+				controllerutil.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
 			Annotations: ctx.Cluster.Spec.Annotations,
 		},
@@ -185,19 +189,34 @@ func TemplateConfigMap(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*corev
 	}, nil
 }
 
-func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*appsv1.StatefulSet, error) {
+func templateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*appsv1.StatefulSet, error) {
 	volumes, volumeMounts, err := buildVolumes(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("build volumes: %w", err)
 	}
 
 	protocols := buildProtocols(ctx.Cluster)
+
 	var readyCheck string
 	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
 		readyCheck = fmt.Sprintf("wget -qO- http://127.0.0.1:%d | grep -o Ok.", PortHTTP)
 	} else {
 		readyCheck = fmt.Sprintf("wget --ca-certificate=%s -qO- https://%s:%d | grep -o Ok.",
-			path.Join(TLSConfigPath, CABundleFilename), ctx.Cluster.HostnameById(id), PortHTTPSecure)
+			path.Join(TLSConfigPath, CABundleFilename), ctx.Cluster.HostnameByID(id), PortHTTPSecure)
+	}
+
+	livenessProbe := controller.DefaultProbeSettings
+	livenessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &corev1.ExecAction{
+			Command: []string{"/usr/bin/clickhouse", "client", "-q", "SELECT 'liveness'"},
+		},
+	}
+
+	readinessProbe := controller.DefaultProbeSettings
+	readinessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &corev1.ExecAction{
+			Command: []string{"/bin/bash", "-c", readyCheck},
+		},
 	}
 
 	container := corev1.Container{
@@ -249,30 +268,9 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 				ContainerPort: PortInterserver,
 			},
 		},
-		VolumeMounts: volumeMounts,
-		// TODO do not restart if liveness probe fails?
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{"/usr/bin/clickhouse", "client", "-q", "SELECT 'liveness'"},
-				},
-			},
-			TimeoutSeconds:   10,
-			PeriodSeconds:    1,
-			SuccessThreshold: 1,
-			FailureThreshold: 15,
-		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{"/bin/bash", "-c", readyCheck},
-				},
-			},
-			TimeoutSeconds:   10,
-			PeriodSeconds:    1,
-			SuccessThreshold: 1,
-			FailureThreshold: 15,
-		},
+		VolumeMounts:             volumeMounts,
+		LivenessProbe:            &livenessProbe,
+		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		SecurityContext: &corev1.SecurityContext{
@@ -287,19 +285,24 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 		if protocol.Port == 0 {
 			continue
 		}
+
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
 			Name:          name,
 			ContainerPort: int32(protocol.Port),
 		})
 	}
-	util.SortKey(container.Ports, func(port corev1.ContainerPort) string {
+
+	controllerutil.SortKey(container.Ports, func(port corev1.ContainerPort) string {
 		return port.Name
 	})
 
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword != nil {
-		var secretRef *corev1.SecretKeySelector
-		var configMapRef *corev1.ConfigMapKeySelector
+		var (
+			secretRef    *corev1.SecretKeySelector
+			configMapRef *corev1.ConfigMapKeySelector
+		)
+
 		if ctx.Cluster.Spec.Settings.DefaultUserPassword.Secret != nil {
 			secretRef = &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{
@@ -308,6 +311,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 				Key: ctx.Cluster.Spec.Settings.DefaultUserPassword.Secret.Key,
 			}
 		}
+
 		if ctx.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap != nil {
 			configMapRef = &corev1.ConfigMapKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{
@@ -347,9 +351,11 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 		if serverPodSpec.Affinity == nil {
 			serverPodSpec.Affinity = &corev1.Affinity{}
 		}
+
 		if serverPodSpec.Affinity.PodAntiAffinity == nil {
 			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 		}
+
 		if serverPodSpec.Affinity.PodAffinity == nil {
 			serverPodSpec.Affinity.PodAffinity = &corev1.PodAffinity{}
 		}
@@ -359,23 +365,23 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 			TopologyKey: *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:            ctx.Cluster.SpecificName(),
-					util.LabelRoleKey:           util.LabelClickHouseValue,
-					util.LabelClickHouseShardID: shardID,
+					controllerutil.LabelAppKey:            ctx.Cluster.SpecificName(),
+					controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+					controllerutil.LabelClickHouseShardID: shardID,
 				},
 			},
 		})
 		serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution, corev1.WeightedPodAffinityTerm{
-			Weight: 100,
 			PodAffinityTerm: corev1.PodAffinityTerm{
 				TopologyKey: *ctx.Cluster.Spec.PodTemplate.TopologyZoneKey,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						util.LabelAppKey:  ctx.keeper.SpecificName(),
-						util.LabelRoleKey: util.LabelKeeperValue,
+						controllerutil.LabelAppKey:  ctx.keeper.SpecificName(),
+						controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
 					},
 				},
 			},
+			Weight: 1,
 		})
 		serverPodSpec.TopologySpreadConstraints = append(serverPodSpec.TopologySpreadConstraints, corev1.TopologySpreadConstraint{
 			MaxSkew:           1,
@@ -383,9 +389,9 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 			WhenUnsatisfiable: corev1.DoNotSchedule,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:            ctx.Cluster.SpecificName(),
-					util.LabelRoleKey:           util.LabelClickHouseValue,
-					util.LabelClickHouseShardID: shardID,
+					controllerutil.LabelAppKey:            ctx.Cluster.SpecificName(),
+					controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+					controllerutil.LabelClickHouseShardID: shardID,
 				},
 			},
 		})
@@ -395,6 +401,7 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 		if serverPodSpec.Affinity == nil {
 			serverPodSpec.Affinity = &corev1.Affinity{}
 		}
+
 		if serverPodSpec.Affinity.PodAntiAffinity == nil {
 			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 		}
@@ -403,8 +410,8 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 			TopologyKey: *ctx.Cluster.Spec.PodTemplate.NodeHostnameKey,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:  ctx.Cluster.SpecificName(),
-					util.LabelRoleKey: util.LabelClickHouseValue,
+					controllerutil.LabelAppKey:  ctx.Cluster.SpecificName(),
+					controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
 				},
 			},
 		})
@@ -412,8 +419,8 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: util.MergeMaps(labelsFromID(id), map[string]string{
-				util.LabelAppKey: ctx.Cluster.SpecificName(),
+			MatchLabels: controllerutil.MergeMaps(labelsFromID(id), map[string]string{
+				controllerutil.LabelAppKey: ctx.Cluster.SpecificName(),
 			}),
 		},
 		ServiceName:         ctx.Cluster.HeadlessServiceName(),
@@ -426,13 +433,13 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: ctx.Cluster.SpecificName(),
-				Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
-					util.LabelAppKey:         ctx.Cluster.SpecificName(),
-					util.LabelRoleKey:        util.LabelClickHouseValue,
-					util.LabelAppK8sKey:      util.LabelClickHouseValue,
-					util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
+				Labels: controllerutil.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
+					controllerutil.LabelAppKey:         ctx.Cluster.SpecificName(),
+					controllerutil.LabelRoleKey:        controllerutil.LabelClickHouseValue,
+					controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
+					controllerutil.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
 				}),
-				Annotations: util.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
+				Annotations: controllerutil.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
@@ -457,13 +464,13 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ctx.Cluster.StatefulSetNameByReplicaID(id),
 			Namespace: ctx.Cluster.Namespace,
-			Labels: util.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
-				util.LabelAppKey:         ctx.Cluster.SpecificName(),
-				util.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
-				util.LabelAppK8sKey:      util.LabelClickHouseValue,
+			Labels: controllerutil.MergeMaps(ctx.Cluster.Spec.Labels, labelsFromID(id), map[string]string{
+				controllerutil.LabelAppKey:         ctx.Cluster.SpecificName(),
+				controllerutil.LabelInstanceK8sKey: ctx.Cluster.SpecificName(),
+				controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
 			}),
-			Annotations: util.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
-				util.AnnotationStatefulSetVersion: BreakingStatefulSetVersion.String(),
+			Annotations: controllerutil.MergeMaps(ctx.Cluster.Spec.Annotations, map[string]string{
+				controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
 			}),
 		},
 		Spec: spec,
@@ -472,8 +479,8 @@ func TemplateStatefulSet(ctx *reconcileContext, id v1.ClickHouseReplicaID) (*app
 
 func labelsFromID(id v1.ClickHouseReplicaID) map[string]string {
 	return map[string]string{
-		util.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
-		util.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
+		controllerutil.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
+		controllerutil.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
 	}
 }
 
@@ -486,7 +493,7 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ClickHouseRepli
 
 		data, err := generator.Generate(ctx, id)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("generate config file %s: %w", generator.Path(), err)
 		}
 
 		configFiles[generator.ConfigKey()] = data
@@ -495,15 +502,15 @@ func generateConfigForSingleReplica(ctx *reconcileContext, id v1.ClickHouseRepli
 	return configFiles, nil
 }
 
-type Protocol struct {
+type protocol struct {
 	Type        string `yaml:"type"`
 	Port        uint16 `yaml:"port,omitempty"`
 	Impl        string `yaml:"impl,omitempty"`
 	Description string `yaml:"description,omitempty"`
 }
 
-func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
-	protocols := map[string]Protocol{
+func buildProtocols(cr *v1.ClickHouseCluster) map[string]protocol {
+	protocols := map[string]protocol{
 		"interserver": {
 			Type:        "interserver",
 			Port:        PortInterserver,
@@ -528,12 +535,12 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 	}
 
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
-		protocols["http"] = Protocol{
+		protocols["http"] = protocol{
 			Type:        "http",
 			Port:        PortHTTP,
 			Description: "http",
 		}
-		protocols["tcp"] = Protocol{
+		protocols["tcp"] = protocol{
 			Type:        "tcp",
 			Port:        PortNative,
 			Description: "native protocol",
@@ -541,13 +548,13 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]Protocol {
 	}
 
 	if cr.Spec.Settings.TLS.Enabled {
-		protocols["tcp-secure"] = Protocol{
+		protocols["tcp-secure"] = protocol{
 			Type:        "tls",
 			Port:        PortNativeSecure,
 			Impl:        "tcp",
 			Description: "secure native protocol",
 		}
-		protocols["http-secure"] = Protocol{
+		protocols["http-secure"] = protocol{
 			Type:        "tls",
 			Port:        PortHTTPSecure,
 			Impl:        "http",
@@ -573,6 +580,7 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 	}
 
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
+
 	configVolumes := map[string]corev1.Volume{}
 	for _, generator := range generators {
 		if !generator.Exists(ctx) {
@@ -582,7 +590,7 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 		volume, ok := configVolumes[generator.Path()]
 		if !ok {
 			volume = corev1.Volume{
-				Name: util.PathToName(generator.Path()),
+				Name: controllerutil.PathToName(generator.Path()),
 				VolumeSource: corev1.VolumeSource{
 					ConfigMap: &corev1.ConfigMapVolumeSource{
 						DefaultMode: &defaultConfigMapMode,
@@ -605,9 +613,10 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 		})
 		configVolumes[generator.Path()] = volume
 	}
-	volumes := []corev1.Volume{}
+
+	var volumes []corev1.Volume
 	for _, volume := range configVolumes {
-		util.SortKey(volume.ConfigMap.Items, func(item corev1.KeyToPath) string {
+		controllerutil.SortKey(volume.ConfigMap.Items, func(item corev1.KeyToPath) string {
 			return item.Key
 		})
 		volumes = append(volumes, volume)
@@ -625,7 +634,7 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  ctx.Cluster.Spec.Settings.TLS.ServerCertSecret.Name,
-					DefaultMode: &TLSFileMode,
+					DefaultMode: ptr.To(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
 						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
@@ -648,7 +657,7 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  ctx.Cluster.Spec.Settings.TLS.CABundle.Name,
-					DefaultMode: &TLSFileMode,
+					DefaultMode: ptr.To(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
 						{Key: ctx.Cluster.Spec.Settings.TLS.CABundle.Key, Path: CustomCAFilename},
 					},
@@ -661,12 +670,16 @@ func buildVolumes(ctx *reconcileContext, id v1.ClickHouseReplicaID) ([]corev1.Vo
 	volumeMounts = append(volumeMounts, ctx.Cluster.Spec.ContainerTemplate.VolumeMounts...)
 
 	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
-	util.SortKey(volumes, func(volume corev1.Volume) string {
+	if err != nil {
+		return nil, nil, fmt.Errorf("project volumes: %w", err)
+	}
+
+	controllerutil.SortKey(volumes, func(volume corev1.Volume) string {
 		return volume.Name
 	})
-	util.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
+	controllerutil.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
 		return mount.MountPath
 	})
 
-	return volumes, volumeMounts, err
+	return volumes, volumeMounts, nil
 }

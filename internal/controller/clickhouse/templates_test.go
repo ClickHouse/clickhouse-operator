@@ -1,13 +1,14 @@
 package clickhouse
 
 import (
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 var _ = Describe("BuildVolumes", func() {
@@ -50,7 +51,7 @@ var _ = Describe("BuildVolumes", func() {
 		checkVolumeMounts(volumes, mounts)
 	})
 
-	It("should add valumes provided by user", func() {
+	It("should add volumes provided by user", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -116,7 +117,7 @@ var _ = Describe("BuildVolumes", func() {
 		checkVolumeMounts(volumes, mounts)
 
 		projectedVolumeFound := false
-		volumeName := util.PathToName("/etc/clickhouse-server/config.d/")
+		volumeName := controllerutil.PathToName("/etc/clickhouse-server/config.d/")
 		for _, volume := range volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())
@@ -168,7 +169,7 @@ var _ = Describe("BuildVolumes", func() {
 		checkVolumeMounts(volumes, mounts)
 
 		projectedVolumeFound := false
-		volumeName := util.PathToName("/etc/clickhouse-server/tls/")
+		volumeName := controllerutil.PathToName("/etc/clickhouse-server/tls/")
 		for _, volume := range volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())

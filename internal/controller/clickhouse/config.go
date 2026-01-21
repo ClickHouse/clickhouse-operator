@@ -2,16 +2,18 @@ package clickhouse
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
 	"text/template"
 
+	"gopkg.in/yaml.v2"
+
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/clickhouse-operator/internal/util"
-	"gopkg.in/yaml.v2"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
 var (
@@ -26,7 +28,7 @@ var (
 	//go:embed templates/client.yaml.tmpl
 	clientConfigTemplateStr string
 
-	generators []ConfigGenerator
+	generators []configGenerator
 )
 
 func init() {
@@ -66,10 +68,21 @@ func init() {
 				data, err := yaml.Marshal(v)
 				return string(data), err
 			},
-			"indent": func(val any, v any) (string, error) {
+			"indent": func(countRaw any, strRaw any) (string, error) {
+				count, ok := countRaw.(int)
+				if !ok {
+					return "", fmt.Errorf("indent: expected int for indentation value, got %T", countRaw)
+				}
+
+				str, ok := strRaw.(string)
+				if !ok {
+					return "", fmt.Errorf("indent: expected string for content value, got %T", strRaw)
+				}
+
 				builder := strings.Builder{}
-				indentation := strings.Repeat(" ", val.(int))
-				for _, line := range strings.Split(v.(string), "\n") {
+				indentation := strings.Repeat(" ", count)
+
+				for _, line := range strings.Split(str, "\n") {
 					if _, err := builder.WriteString(fmt.Sprintf("%s%s\n", indentation, line)); err != nil {
 						return "", fmt.Errorf("failed to write indented line: %w", err)
 					}
@@ -107,7 +120,7 @@ func init() {
 		})
 }
 
-type ConfigGenerator interface {
+type configGenerator interface {
 	Filename() string
 	Path() string
 	ConfigKey() string
@@ -131,7 +144,7 @@ func (g *templateConfigGenerator) Path() string {
 }
 
 func (g *templateConfigGenerator) ConfigKey() string {
-	return util.PathToName(path.Join(g.path, g.filename))
+	return controllerutil.PathToName(path.Join(g.path, g.filename))
 }
 
 func (g *templateConfigGenerator) Exists(*reconcileContext) bool {
@@ -234,7 +247,7 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.C
 
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
-		return "", err
+		return "", fmt.Errorf("template base config: %w", err)
 	}
 
 	return builder.String(), nil
@@ -245,7 +258,7 @@ type networkConfigParams struct {
 	InterserverHTTPUser           string
 	InterserverHTTPPasswordEnvVar string
 	ManagementPort                uint16
-	Protocols                     map[string]Protocol
+	Protocols                     map[string]protocol
 }
 
 func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
@@ -263,7 +276,7 @@ func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1
 
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
-		return "", err
+		return "", fmt.Errorf("template network config: %w", err)
 	}
 
 	return builder.String(), nil
@@ -272,7 +285,7 @@ func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1
 func logTablesConfigGenerator(tmpl *template.Template, _ *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, nil); err != nil {
-		return "", err
+		return "", fmt.Errorf("template log tables: %w", err)
 	}
 
 	return builder.String(), nil
@@ -288,6 +301,7 @@ type userConfigParams struct {
 
 func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
 	passEnv := EnvDefaultUserPassword
+
 	passType := ""
 	if ctx.Cluster.Spec.Settings.DefaultUserPassword == nil {
 		passEnv = ""
@@ -300,12 +314,12 @@ func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.Cl
 		DefaultUserType:          passType,
 		DefaultProfileName:       DefaultProfileName,
 		OperatorUserName:         OperatorManagementUsername,
-		OperatorUserPasswordHash: util.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
+		OperatorUserPasswordHash: controllerutil.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
 	}
 
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
-		return "", err
+		return "", fmt.Errorf("template user config: %w", err)
 	}
 
 	return builder.String(), nil
@@ -329,7 +343,7 @@ func clientConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.
 
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
-		return "", err
+		return "", fmt.Errorf("template client config: %w", err)
 	}
 
 	return builder.String(), nil
@@ -359,7 +373,7 @@ func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {
 
 func (g *extraConfigGenerator) Generate(ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
 	if !g.Exists(ctx) {
-		return "", fmt.Errorf("extra config generator called, but no extra config provided")
+		return "", errors.New("extra config generator called, but no extra config provided")
 	}
 
 	return string(g.Getter(ctx)), nil

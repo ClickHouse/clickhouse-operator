@@ -1,4 +1,4 @@
-package util
+package controllerutil
 
 import (
 	"fmt"
@@ -27,11 +27,13 @@ const (
 	LabelClickHouseValue = "clickhouse-server"
 )
 
+// AppRequirements returns ListOptions to list resources of the given app.
 func AppRequirements(namespace, app string) *client.ListOptions {
 	appReq, err := labels.NewRequirement(LabelAppKey, selection.Equals, []string{app})
 	if err != nil {
 		panic(fmt.Sprintf("make %q requirement to list: %s", LabelAppKey, err))
 	}
+
 	return &client.ListOptions{
 		Namespace:     namespace,
 		LabelSelector: labels.NewSelector().Add(*appReq),

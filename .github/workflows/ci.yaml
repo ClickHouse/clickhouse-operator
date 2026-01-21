@@ -24,6 +24,7 @@ jobs:
         with:
           go-version-file: 'go.mod'
           
+
       - name: Go Tidy
         run: go mod tidy && git diff --exit-code
 
@@ -36,7 +37,12 @@ jobs:
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.4.0
+          version: v2.8.0
+
+      - name: Lint with codespell
+        uses: codespell-project/actions-codespell@v2.2
+        with:
+          config: ci/.codespellrc
 
   bundle:
     runs-on: ubuntu-latest

@@ -8,10 +8,6 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/util"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +15,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	"github.com/clickhouse-operator/internal"
+	"github.com/clickhouse-operator/internal/controller"
+	"github.com/clickhouse-operator/internal/controllerutil"
 )
 
-func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
+func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	ports := []corev1.ServicePort{
 		{
 			Protocol:   corev1.ProtocolTCP,
@@ -57,10 +58,10 @@ func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.HeadlessServiceName(),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey: cr.SpecificName(),
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
@@ -68,13 +69,13 @@ func TemplateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 			// This has to be true to acquire quorum
 			PublishNotReadyAddresses: true,
 			Selector: map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+				controllerutil.LabelAppKey: cr.SpecificName(),
 			},
 		},
 	}
 }
 
-func TemplatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBudget {
+func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBudget {
 	maxUnavailable := intstr.FromInt32(cr.Replicas() / 2)
 
 	return &policyv1.PodDisruptionBudget{
@@ -85,34 +86,35 @@ func TemplatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.SpecificName(),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey: cr.SpecificName(),
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey: cr.SpecificName(),
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MaxUnavailable: &maxUnavailable,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey: cr.SpecificName(),
+					controllerutil.LabelAppKey: cr.SpecificName(),
 				},
 			},
 		},
 	}
 }
 
-type QuorumConfig []ServerConfig
+type quorumConfig []serverConfig
 
-type ServerConfig struct {
+type serverConfig struct {
 	ID       string `yaml:"id"`
 	Hostname string `yaml:"hostname"`
 	Port     uint16 `yaml:"port"`
 }
 
-func TemplateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
+func templateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
 	quorumConfig := generateQuorumConfig(ctx)
 	cr := ctx.Cluster
-	revision, err := util.DeepHashObject(quorumConfig)
+
+	revision, err := controllerutil.DeepHashObject(quorumConfig)
 	if err != nil {
 		return nil, fmt.Errorf("hash quorum config: %w", err)
 	}
@@ -138,9 +140,9 @@ func TemplateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.QuorumConfigMapName(),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, map[string]string{
-				util.LabelAppKey:          cr.SpecificName(),
-				util.LabelKeeperReplicaID: util.LabelKeeperAllReplicas,
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey:          cr.SpecificName(),
+				controllerutil.LabelKeeperReplicaID: controllerutil.LabelKeeperAllReplicas,
 			}),
 			Annotations: cr.Spec.Annotations,
 		},
@@ -149,45 +151,47 @@ func TemplateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
 		},
 	}
 
-	util.AddObjectConfigHash(configmap, revision)
+	controllerutil.AddObjectConfigHash(configmap, revision)
+
 	return configmap, nil
 }
 
-func generateQuorumConfig(ctx *reconcileContext) QuorumConfig {
+func generateQuorumConfig(ctx *reconcileContext) quorumConfig {
 	hostnamesByID := map[v1.KeeperReplicaID]string{}
 	for id := range ctx.ReplicaState {
-		hostnamesByID[id] = ctx.Cluster.HostnameById(id)
+		hostnamesByID[id] = ctx.Cluster.HostnameByID(id)
 	}
-	quorumConfig := make(QuorumConfig, 0, len(hostnamesByID))
+
+	quorumConfig := make(quorumConfig, 0, len(hostnamesByID))
 	for id, hostname := range hostnamesByID {
-		quorumConfig = append(quorumConfig, ServerConfig{
+		quorumConfig = append(quorumConfig, serverConfig{
 			ID:       strconv.FormatInt(int64(id), 10),
 			Hostname: hostname,
 			Port:     PortInterserver,
 		})
 	}
 
-	slices.SortFunc(quorumConfig, func(a, b ServerConfig) int {
+	slices.SortFunc(quorumConfig, func(a, b serverConfig) int {
 		return strings.Compare(a.ID, b.ID)
 	})
 
 	return quorumConfig
 }
 
-type Config struct {
+type config struct {
 	ListenHost   string                      `yaml:"listen_host"`
 	Path         string                      `yaml:"path"`
 	Logger       controller.LoggerConfig     `yaml:"logger"`
 	Prometheus   controller.PrometheusConfig `yaml:"prometheus"`
-	KeeperServer KeeperServer                `yaml:"keeper_server"`
+	KeeperServer keeperServer                `yaml:"keeper_server"`
 	OpenSSL      controller.OpenSSLConfig    `yaml:"openSSL"`
 }
 
-type HTTPControl struct {
+type httpControl struct {
 	Port uint16 `yaml:"port"`
 }
 
-type KeeperServer struct {
+type keeperServer struct {
 	TCPPort              uint16         `yaml:"tcp_port,omitempty"`
 	TCPPortSecure        uint16         `yaml:"tcp_port_secure,omitempty"`
 	ServerID             string         `yaml:"server_id"`
@@ -196,16 +200,16 @@ type KeeperServer struct {
 	LogStoragePath       string         `yaml:"log_storage_path"`
 	SnapshotStoragePath  string         `yaml:"snapshot_storage_path"`
 	CoordinationSettings map[string]any `yaml:"coordination_settings"`
-	HTTPControl          HTTPControl    `yaml:"http_control"`
+	HTTPControl          httpControl    `yaml:"http_control"`
 }
 
-func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
+func getConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
 	config, err := generateConfigForSingleReplica(cr, extraConfig, 0)
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
 
-	hash, err := util.DeepHashObject(config)
+	hash, err := controllerutil.DeepHashObject(config)
 	if err != nil {
 		return "", fmt.Errorf("hash template configuration: %w", err)
 	}
@@ -213,13 +217,13 @@ func GetConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) 
 	return hash, nil
 }
 
-func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
-	sts, err := TemplateStatefulSet(cr, 0)
+func getStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
+	sts, err := templateStatefulSet(cr, 0)
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
 
-	hash, err := util.DeepHashObject(sts)
+	hash, err := controllerutil.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)
 	}
@@ -227,7 +231,7 @@ func GetStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
+func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
 	config, err := generateConfigForSingleReplica(cr, extraConfig, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("generate configmap for replica %q: %w", replicaID, err)
@@ -241,7 +245,7 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        cr.ConfigMapNameByReplicaID(replicaID),
 			Namespace:   cr.Namespace,
-			Labels:      util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID)),
+			Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID)),
 			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
@@ -250,10 +254,21 @@ func TemplateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 	}, nil
 }
 
-func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
+func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
 	volumes, volumeMounts, err := buildVolumes(cr, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("build volumes for StatefulSet: %w", err)
+	}
+
+	readinessProbe := controller.DefaultProbeSettings
+	readinessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &corev1.ExecAction{
+			Command: []string{
+				"/bin/bash",
+				"-c",
+				fmt.Sprintf("wget -qO- http://127.0.0.1:%d/ready | grep -o '\"status\":\"ok\"'", PortHTTPControl),
+			},
+		},
 	}
 
 	keeperContainer := corev1.Container{
@@ -279,22 +294,8 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 				ContainerPort: PortPrometheusScrape,
 			},
 		},
-		VolumeMounts: volumeMounts,
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"/bin/bash",
-						"-c",
-						fmt.Sprintf("wget -qO- http://127.0.0.1:%d/ready | grep -o '\"status\":\"ok\"'", PortHTTPControl),
-					},
-				},
-			},
-			TimeoutSeconds:   10,
-			PeriodSeconds:    1,
-			SuccessThreshold: 1,
-			FailureThreshold: 15,
-		},
+		VolumeMounts:             volumeMounts,
+		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		// Default capabilities given to ClickHouse keeper.
@@ -360,6 +361,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		if keeperPodSpec.Affinity == nil {
 			keeperPodSpec.Affinity = &corev1.Affinity{}
 		}
+
 		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
 			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 		}
@@ -368,8 +370,8 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 			TopologyKey: *cr.Spec.PodTemplate.TopologyZoneKey,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:  cr.SpecificName(),
-					util.LabelRoleKey: util.LabelKeeperValue,
+					controllerutil.LabelAppKey:  cr.SpecificName(),
+					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
 				},
 			},
 		})
@@ -380,8 +382,8 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 			WhenUnsatisfiable: corev1.DoNotSchedule,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:  cr.SpecificName(),
-					util.LabelRoleKey: util.LabelKeeperValue,
+					controllerutil.LabelAppKey:  cr.SpecificName(),
+					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
 				},
 			},
 		})
@@ -391,6 +393,7 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		if keeperPodSpec.Affinity == nil {
 			keeperPodSpec.Affinity = &corev1.Affinity{}
 		}
+
 		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
 			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 		}
@@ -399,8 +402,8 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 			TopologyKey: *cr.Spec.PodTemplate.NodeHostnameKey,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					util.LabelAppKey:  cr.SpecificName(),
-					util.LabelRoleKey: util.LabelKeeperValue,
+					controllerutil.LabelAppKey:  cr.SpecificName(),
+					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
 				},
 			},
 		})
@@ -420,12 +423,12 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: cr.SpecificName(),
-				Labels: util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
-					util.LabelRoleKey:        util.LabelKeeperValue,
-					util.LabelAppK8sKey:      util.LabelKeeperValue,
-					util.LabelInstanceK8sKey: cr.SpecificName(),
+				Labels: controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+					controllerutil.LabelRoleKey:        controllerutil.LabelKeeperValue,
+					controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
+					controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
 				}),
-				Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
+				Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
@@ -450,12 +453,12 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.StatefulSetNameByReplicaID(replicaID),
 			Namespace: cr.Namespace,
-			Labels: util.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
-				util.LabelAppK8sKey:      util.LabelKeeperValue,
-				util.LabelInstanceK8sKey: cr.SpecificName(),
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+				controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
+				controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
 			}),
-			Annotations: util.MergeMaps(cr.Spec.Annotations, map[string]string{
-				util.AnnotationStatefulSetVersion: BreakingStatefulSetVersion.String(),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
+				controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
 			}),
 		},
 		Spec: spec,
@@ -464,18 +467,18 @@ func TemplateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 
 func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]string {
 	return map[string]string{
-		util.LabelAppKey:          cr.SpecificName(),
-		util.LabelKeeperReplicaID: strconv.FormatInt(int64(id), 10),
+		controllerutil.LabelAppKey:          cr.SpecificName(),
+		controllerutil.LabelKeeperReplicaID: strconv.FormatInt(int64(id), 10),
 	}
 }
 
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (string, error) {
-	config := Config{
+	config := config{
 		ListenHost: "0.0.0.0",
 		Path:       BaseDataPath,
 		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
 		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),
-		KeeperServer: KeeperServer{
+		KeeperServer: keeperServer{
 			TCPPort:             PortNative,
 			ServerID:            strconv.FormatInt(int64(replicaID), 10),
 			StoragePath:         BaseDataPath,
@@ -486,7 +489,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 				"raft_logs_level": "trace",
 				"compress_logs":   false,
 			},
-			HTTPControl: HTTPControl{
+			HTTPControl: httpControl{
 				Port: PortHTTPControl,
 			},
 		},
@@ -602,7 +605,7 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
-					DefaultMode: &TLSFileMode,
+					DefaultMode: ptr.To(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
 						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
@@ -617,12 +620,16 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.
 		append(volumes, cr.Spec.PodTemplate.Volumes...),
 		append(volumeMounts, cr.Spec.ContainerTemplate.VolumeMounts...),
 	)
-	util.SortKey(volumes, func(volume corev1.Volume) string {
+	if err != nil {
+		return nil, nil, fmt.Errorf("create projected volumes: %w", err)
+	}
+
+	controllerutil.SortKey(volumes, func(volume corev1.Volume) string {
 		return volume.Name
 	})
-	util.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
+	controllerutil.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
 		return mount.MountPath
 	})
 
-	return volumes, volumeMounts, err
+	return volumes, volumeMounts, nil
 }

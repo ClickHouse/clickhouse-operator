@@ -1,11 +1,13 @@
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 )
 
+// ContainerImage defines a container image with repository, tag, and hash.
 type ContainerImage struct {
 	// Container image registry name
 	// Example: docker.io/clickhouse/clickhouse
@@ -26,6 +28,7 @@ func (c *ContainerImage) String() string {
 	if c.Tag != "" {
 		return fmt.Sprintf("%s:%s", c.Repository, c.Tag)
 	}
+
 	if c.Hash != "" {
 		return fmt.Sprintf("%s:%s", c.Repository, c.Hash)
 	}
@@ -33,6 +36,7 @@ func (c *ContainerImage) String() string {
 	return c.Repository
 }
 
+// LoggerConfig defines logging configuration.
 type LoggerConfig struct {
 	// If false then disable all logging to file.
 	// +optional
@@ -60,6 +64,7 @@ type LoggerConfig struct {
 	Count int64 `json:"count,omitempty"`
 }
 
+// PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
 type PodTemplateSpec struct {
 	// Optional duration in seconds the pod needs to terminate gracefully. May be decreased in delete request.
 	// Value must be non-negative integer. The value zero indicates stop immediately via
@@ -81,7 +86,7 @@ type PodTemplateSpec struct {
 	// +listType=map
 	// +listMapKey=topologyKey
 	// +listMapKey=whenUnsatisfiable
-	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchMergeKey:"topologyKey" patchStrategy:"merge"`
 
 	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.
 	// If specified, these secrets will be passed to individual puller implementations for them to use.
@@ -91,7 +96,7 @@ type PodTemplateSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// NodeSelector is a selector which must be true for the pod to fit on a node.
 	// Selector which must match a node's labels for the pod to be scheduled on that node.
@@ -126,7 +131,7 @@ type PodTemplateSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	Volumes []corev1.Volume `json:"volumes,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	Volumes []corev1.Volume `json:"volumes,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// TopologyZoneKey is the key of node labels.
 	// Nodes that have a label with this key and identical values are considered to be in the same topology zone.
@@ -143,6 +148,7 @@ type PodTemplateSpec struct {
 	NodeHostnameKey *string `json:"nodeHostnameKey,omitempty"`
 }
 
+// ContainerTemplateSpec describes the container configuration overrides for the cluster's containers.
 type ContainerTemplateSpec struct {
 	// Image is the container image to be deployed.
 	Image ContainerImage `json:"image,omitempty"`
@@ -163,7 +169,7 @@ type ContainerTemplateSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=mountPath
-	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath"`
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty" patchMergeKey:"mountPath" patchStrategy:"merge"`
 
 	// Env is the list of environment variables to set in the container.
 	// +optional
@@ -171,10 +177,7 @@ type ContainerTemplateSpec struct {
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
-	Env []corev1.EnvVar `json:"env,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
-}
-
-type StatefulSetTemplateSpec struct {
+	Env []corev1.EnvVar `json:"env,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 }
 
 // ClusterTLSSpec defines cluster TLS configuration.
@@ -198,22 +201,24 @@ type ClusterTLSSpec struct {
 	CABundle *SecretKeySelector `json:"caBundle,omitempty"`
 }
 
+// Validate validates the ClusterTLSSpec configuration.
 func (s *ClusterTLSSpec) Validate() error {
 	if !s.Enabled {
 		if s.Required {
-			return fmt.Errorf("TLS cannot be required if it is not enabled")
+			return errors.New("TLS cannot be required if it is not enabled")
 		}
 
 		return nil
 	}
 
 	if s.ServerCertSecret == nil || s.ServerCertSecret.Name == "" {
-		return fmt.Errorf("serverCertSecret must be specified when TLS is enabled")
+		return errors.New("serverCertSecret must be specified when TLS is enabled")
 	}
 
 	return nil
 }
 
+// SecretKeySelector selects a key of a Secret.
 type SecretKeySelector struct {
 	// The name of the secret in the cluster's namespace to select from.
 	// +kubebuilder:validation:Required
@@ -223,6 +228,7 @@ type SecretKeySelector struct {
 	Key string `json:"key,omitempty"`
 }
 
+// ConfigMapKeySelector selects a key of a ConfigMap.
 type ConfigMapKeySelector struct {
 	// The name of the configMap in the cluster's namespace to select from.
 	// +kubebuilder:validation:Required
@@ -232,6 +238,7 @@ type ConfigMapKeySelector struct {
 	Key string `json:"key,omitempty"`
 }
 
+// DefaultPasswordSelector selects the source for the default user's password.
 type DefaultPasswordSelector struct {
 	// Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword
 	// +kubebuilder:default:=password
@@ -244,6 +251,7 @@ type DefaultPasswordSelector struct {
 	ConfigMap *ConfigMapKeySelector `json:"configMap,omitempty"`
 }
 
+// Validate validates the DefaultPasswordSelector configuration.
 func (s *DefaultPasswordSelector) Validate() error {
 	if s == nil {
 		return nil
@@ -251,20 +259,21 @@ func (s *DefaultPasswordSelector) Validate() error {
 
 	// Ensure exactly one source is specified
 	hasSecret := s.Secret != nil
+
 	hasConfigMap := s.ConfigMap != nil
 	if hasSecret == hasConfigMap { // both set or both nil
-		return fmt.Errorf("exactly one of secret or configMap must be specified")
+		return errors.New("exactly one of secret or configMap must be specified")
 	}
 
 	if hasSecret {
 		if s.Secret.Name == "" || s.Secret.Key == "" {
-			return fmt.Errorf("default user secret name and key must be specified when using secret")
+			return errors.New("default user secret name and key must be specified when using secret")
 		}
 	}
 
 	if hasConfigMap {
 		if s.ConfigMap.Name == "" || s.ConfigMap.Key == "" {
-			return fmt.Errorf("default user configMap name and key must be specified when using configMap")
+			return errors.New("default user configMap name and key must be specified when using configMap")
 		}
 	}
 

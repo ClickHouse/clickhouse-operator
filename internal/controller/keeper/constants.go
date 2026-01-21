@@ -1,16 +1,10 @@
 package keeper
 
 import (
-	"time"
-
 	"github.com/blang/semver/v4"
 )
 
 const (
-	RequeueOnRefreshTimeout = time.Second * 1
-	RequeueOnErrorTimeout   = time.Second * 5
-	StatusRequestTimeout    = time.Second * 10
-
 	PortNative           = 2181
 	PortNativeSecure     = 2281
 	PortPrometheusScrape = 9090
@@ -38,7 +32,4 @@ const (
 	DefaultRevisionHistory = 10
 )
 
-var (
-	BreakingStatefulSetVersion, _       = semver.Parse("0.0.1")
-	TLSFileMode                   int32 = 0444
-)
+var breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
