@@ -154,14 +154,14 @@ jobs:
           config: ci/kind-cluster.config
 
       - name: Install cert-manager via Helm
-        if: matrix.cert_manager_enabled == true
+        if: ${{matrix.features.cert_manager_enabled == true}}
         run: helm install cert-manager oci://quay.io/jetstack/charts/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
 
       - name: Build Helm Chart Dependencies
         run: make build-helmchart-dependencies
 
       - name: Wait for cert-manager to be ready
-        if: matrix.cert_manager_enabled == true
+        if: ${{matrix.features.cert_manager_enabled == true}}
         run: |
           kubectl wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager
           kubectl wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-cainjector
@@ -173,7 +173,7 @@ jobs:
           --set webhook.enable=${{ matrix.features.webhook_enabled }} \
           --set metrics.enable=${{ matrix.features.metrics_enabled }} \
           --set metrics.secure=${{ matrix.features.metrics_secure }} \
-          --set certManager.enable=$g{{ matrix.features.cert_manager_enabled }}
+          --set certManager.enable=${{ matrix.features.cert_manager_enabled }}
 
       - name: Check Helm release status
         run: helm status my-release --namespace clickhouse-operator-system

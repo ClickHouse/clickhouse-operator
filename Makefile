@@ -279,6 +279,7 @@ KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
 ENVTEST_VERSION ?= release-0.22
 GOLANGCI_LINT_VERSION ?= v2.4.0
+KUBEBUILDER_VERSION ?= v4.11.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -303,8 +304,11 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 .PHONY: kubebuilder
 kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
 $(KUBEBUILDER): $(LOCALBIN)
-	curl -L -o $(KUBEBUILDER) "https://go.kubebuilder.io/dl/latest/$(shell go env GOOS)/$(shell go env GOARCH)"
-	chmod +x $(KUBEBUILDER)
+	@test -f $(KUBEBUILDER) || { \
+		echo "Downloading kubebuilder $(KUBEBUILDER_VERSION)" ;\
+		curl -L -o ${KUBEBUILDER} "https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$(shell go env GOOS)_$(shell go env GOARCH)" ;\
+		chmod +x $(KUBEBUILDER) ;\
+	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
