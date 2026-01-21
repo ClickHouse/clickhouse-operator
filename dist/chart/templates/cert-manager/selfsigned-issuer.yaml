@@ -3,8 +3,11 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
     labels:
-      {{- include "chart.labels" . | nindent 6 }}
-    name: clickhouse-operator-issuer
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "selfsigned-issuer" "context" $) }}
     namespace: {{ .Release.Namespace }}
 spec:
     selfSigned: {}

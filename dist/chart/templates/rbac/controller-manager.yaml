@@ -3,6 +3,8 @@ kind: ServiceAccount
 metadata:
     labels:
         app.kubernetes.io/managed-by: {{ .Release.Service }}
-        app.kubernetes.io/name: clickhouse-operator
-    name: clickhouse-operator-controller-manager
+        app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
     namespace: {{ .Release.Namespace }}

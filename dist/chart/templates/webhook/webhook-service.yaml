@@ -3,8 +3,11 @@ apiVersion: v1
 kind: Service
 metadata:
     labels:
-      {{- include "chart.labels" . | nindent 6 }}
-    name: clickhouse-operator-webhook-service
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
     namespace: {{ .Release.Namespace }}
 spec:
     ports:
@@ -13,6 +16,6 @@ spec:
           protocol: TCP
           targetPort: {{ .Values.webhook.port }}
     selector:
-        app.kubernetes.io/name: clickhouse-operator
-        control-plane: {{ include "chart.name" . }}
+        app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+        control-plane: controller-manager
 {{- end }}

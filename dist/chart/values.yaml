@@ -1,88 +1,143 @@
+## String to partially override chart.fullname template (will maintain the release name)
+##
+# nameOverride: ""
+
+## String to fully override chart.fullname template
+##
+# fullnameOverride: ""
+
 # Configure the controller manager deployment
+##
 manager:
-  replicas: 1
-  container:
+    replicas: 1
+
     image:
-      repository: ghcr.io/clickhouse/clickhouse-operator/clickhouse-operator
-      tag: v0.0.1
-      pullPolicy: IfNotPresent
-    args: []
+        repository: ghcr.io/clickhouse/clickhouse-operator
+        tag: v0.0.1
+        pullPolicy: IfNotPresent
 
-  # Environment variables
-  env: []
+    ## Arguments
+    ##
+    args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
 
-  imagePullSecrets: []
+    ## Environment variables
+    ##
+    env: [ ]
 
-  # Pod-level security settings
-  podSecurityContext:
-    runAsNonRoot: true
-    seccompProfile:
-      type: RuntimeDefault
+    ## Image pull secrets
+    ##
+    imagePullSecrets: [ ]
 
-  # Container-level security settings
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
-    readOnlyRootFilesystem: true
+    ## Pod-level security settings
+    ##
+    podSecurityContext:
+        runAsNonRoot: true
+        seccompProfile:
+            type: RuntimeDefault
 
-  # Resource limits and requests
-  resources:
-    limits:
-      cpu: 500m
-      memory: 128Mi
-    requests:
-      cpu: 10m
-      memory: 64Mi
+    ## Container-level security settings
+    ##
+    securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+            drop:
+                - ALL
+        readOnlyRootFilesystem: true
 
-  terminationGracePeriodSeconds: 10
-  serviceAccountName: clickhouse-operator-controller-manager
+    ## Resource limits and requests
+    ##
+    resources:
+        limits:
+            cpu: 500m
+            memory: 128Mi
+        requests:
+            cpu: 10m
+            memory: 64Mi
 
-# Essential RBAC permissions (required for controller operation)
-# These include ServiceAccount, controller permissions, leader election, and metrics access
-# Note: Essential RBAC is always enabled as it's required for the controller to function
+    ## Manager pod's affinity
+    ##
+    affinity:
+        nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                    -   matchExpressions:
+                            -   key: kubernetes.io/arch
+                                operator: In
+                                values:
+                                    - amd64
+                                    - arm64
+                                    - ppc64le
+                                    - s390x
+                            -   key: kubernetes.io/os
+                                operator: In
+                                values:
+                                    - linux
 
-# Helper RBAC roles for managing custom resources
-# These provide convenient admin/editor/viewer roles for each CRD type
-# Useful for giving users different levels of access to your custom resources
+    ## Manager pod's node selector
+    ##
+    nodeSelector: { }
+
+    ## Manager pod's tolerations
+    ##
+    tolerations: [ ]
+
+    ## Manager pod's termination grace period seconds
+    ##
+    terminationGracePeriodSeconds: 10
+
+## Helper RBAC roles for managing custom resources
+##
 rbacHelpers:
-  enable: false  # Install convenience admin/editor/viewer roles for CRDs
+    # Install convenience admin/editor/viewer roles for CRDs
+    enable: false
 
-# Custom Resource Definitions
+## Custom Resource Definitions
+##
 crd:
-  enable: true  # Install CRDs with the chart
-  keep: true    # Keep CRDs when uninstalling
+    # Install CRDs with the chart
+    enable: true
+    # Keep CRDs when uninstalling
+    keep: true
 
-# Controller metrics endpoint.
-# Enable to expose /metrics endpoint with RBAC protection.
+## Controller metrics endpoint.
+## Enable to expose /metrics endpoint with RBAC protection.
+##
 metrics:
-  enable: true
-  secure: false # Enable to use Prometheus ServiceMonitor
-  port: 8080  # Metrics server port
+    enable: true
+    # Enable to use Prometheus ServiceMonitor
+    secure: false
+    # Metrics server port
+    port: 8080
 
-# Cert-manager integration for TLS certificates.
-# Required for webhook certificates and secure metrics endpoint certificates.
+## Cert-manager integration for TLS certificates.
+## Required for webhook certificates and metrics endpoint certificates.
+##
 certManager:
-  # Enable cert-manager issue certificates for the controller.
-  enable: true
-  # Install cert-manager chart as a dependency.
-  install: false
+    enable: true
+    # Install cert-manager chart as a subchart.
+    install: false
 
-# Values overrides for the cert-manager chart
+## cert-manager subchart values
+##
 cert-manager:
-  crds:
-    enabled: true
+    crds:
+        enabled: true
 
-# Webhook server configuration
+## Webhook server configuration
+##
 webhook:
-  enable: true
-  port: 9443  # Webhook server port
+    enable: true
+    # Webhook server port
+    port: 9443
 
-# Prometheus scraping settings
+## Prometheus ServiceMonitor for metrics scraping.
+## Requires prometheus-operator to be installed in the cluster.
+##
 prometheus:
-  # Add annotations to allow Prometheus service discovery scrape metrics.
-  scraping_annotations: false
-  # Enable Prometheus ServiceMonitor for metrics scraping.
-  # Requires prometheus-operator to be installed in the cluster.
-  service_monitor: false
+    # Add annotations to allow Prometheus service discovery scrape metrics.
+    scraping_annotations: false
+    # Enable Prometheus ServiceMonitor for metrics scraping.
+    # Requires prometheus-operator to be installed in the cluster.
+    service_monitor: false
