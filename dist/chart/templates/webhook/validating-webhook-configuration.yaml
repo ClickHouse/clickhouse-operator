@@ -2,19 +2,17 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
-    labels:
-      {{- include "chart.labels" . | nindent 6 }}
     annotations:
         {{- if .Values.certManager.enable }}
-        cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/clickhouse-operator-serving-cert
+        cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
         {{- end }}
-    name: clickhouse-operator-validating-webhook-configuration
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "validating-webhook-configuration" "context" $) }}
 webhooks:
     - admissionReviewVersions:
         - v1
       clientConfig:
         service:
-            name: clickhouse-operator-webhook-service
+            name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
             namespace: {{ .Release.Namespace }}
             path: /validate-clickhouse-com-v1alpha1-clickhousecluster
       failurePolicy: Ignore
@@ -34,7 +32,7 @@ webhooks:
         - v1
       clientConfig:
         service:
-            name: clickhouse-operator-webhook-service
+            name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
             namespace: {{ .Release.Namespace }}
             path: /validate-clickhouse-com-v1alpha1-keepercluster
       failurePolicy: Ignore

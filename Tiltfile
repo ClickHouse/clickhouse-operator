@@ -8,7 +8,7 @@ secure_clusters = True
 image_repo = "ghcr.io/clickhouse/clickhouse-operator"
 
 if enable_cert_manager:
-    deploy_cert_manager(version='v1.18.2')
+    deploy_cert_manager(version='v1.19.2')
 
 if enable_prometheus:
     prometheus_operator_url = "https://github.com/prometheus-operator/prometheus-operator/releases/download/v0.87.0/bundle.yaml"
@@ -61,11 +61,11 @@ docker_build_with_restart(
 
 if deploy_source == 'helm':
     k8s_yaml(
-        helm('dist/chart', set=[
+        helm('dist/chart', name='clickhouse-operator', set=[
             "manager.container.image.repository="+image_repo,
             "manager.container.image.label=latest",
-            "manager.securityContext=null",
-            "manager.manager.container.securityContext=null",
+            "manager.securityContext={}",
+            "manager.manager.container.securityContext={}",
         ]),
     )
 else:

@@ -2,13 +2,13 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-    name: clickhouse-operator-metrics-auth-rolebinding
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-auth-rolebinding" "context" $) }}
 roleRef:
     apiGroup: rbac.authorization.k8s.io
     kind: ClusterRole
-    name: clickhouse-operator-metrics-auth-role
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-auth-role" "context" $) }}
 subjects:
     - kind: ServiceAccount
-      name: clickhouse-operator-controller-manager
+      name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
       namespace: {{ .Release.Namespace }}
 {{- end }}

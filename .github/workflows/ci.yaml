@@ -32,6 +32,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.4.0
+
   bundle:
     runs-on: ubuntu-latest
     steps:
@@ -43,8 +44,8 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Check bundle generated
-        run: make bundle && git diff --ignore-matching-lines='.*createdAt:.*' --exit-code
+      - name: Generate bundle
+        run: make bundle
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
@@ -63,6 +64,7 @@ jobs:
 
       - name: Run scorecard tests
         run: make scorecard
+
   build_and_test:
     runs-on: ubuntu-latest
     steps:
@@ -88,48 +90,96 @@ jobs:
           go list ./... | grep -v /e2e
           make test-ci
 
-  helm:
+
+  helm-validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+
       - name: Check helmchart generated
-        run: make generate-helmchart-ci && git diff --exit-code
+        run: make generate-helmchart-ci && git diff --exit-code dist/chart/
+
       - name: Install Helm
         run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
       - name: Verify Helm installation
         run: helm version
+
+      - name: Build Helm Chart Dependencies
+        run: make build-helmchart-dependencies
+
       - name: Lint Helm Chart
         run: helm lint ./dist/chart
+
+  helm-test:
+    runs-on: ubuntu-latest
+    needs: [ helm-validate ]
+    strategy:
+      matrix:
+        features:
+          - webhook_enabled: false
+            metrics_enabled: false
+            metrics_secure: false
+            cert_manager_enabled: false
+          - webhook_enabled: true
+            metrics_enabled: true
+            metrics_secure: true
+            cert_manager_enabled: true
+          - webhook_enabled: true
+            metrics_enabled: true
+            metrics_secure: false
+            cert_manager_enabled: true
+          - webhook_enabled: false
+            metrics_enabled: true
+            metrics_secure: true
+            cert_manager_enabled: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Helm
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: helm-test
           version: ${{ env.kind-version }}
           config: ci/kind-cluster.config
+
       - name: Install cert-manager via Helm
-        run: |
-          helm repo add jetstack https://charts.jetstack.io
-          helm repo update
-          helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
+        if: ${{matrix.features.cert_manager_enabled == true}}
+        run: helm install cert-manager oci://quay.io/jetstack/charts/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
+
+      - name: Build Helm Chart Dependencies
+        run: make build-helmchart-dependencies
+
       - name: Wait for cert-manager to be ready
+        if: ${{matrix.features.cert_manager_enabled == true}}
         run: |
           kubectl wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager
           kubectl wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-cainjector
           kubectl wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-webhook
+
       - name: Install Helm chart for project
         run: |
-          helm install my-release ./dist/chart --create-namespace --namespace clickhouse-operator-system
+          helm install my-release ./dist/chart --create-namespace --namespace clickhouse-operator-system \
+          --set webhook.enable=${{ matrix.features.webhook_enabled }} \
+          --set metrics.enable=${{ matrix.features.metrics_enabled }} \
+          --set metrics.secure=${{ matrix.features.metrics_secure }} \
+          --set certManager.enable=${{ matrix.features.cert_manager_enabled }}
+
       - name: Check Helm release status
-        run: |
-          helm status my-release --namespace clickhouse-operator-system
+        run: helm status my-release --namespace clickhouse-operator-system
 
   e2e-test:
-    needs: [ lint, bundle, build_and_test, helm ]
+    needs: [ lint, bundle, build_and_test, helm-validate, helm-test ]
     strategy:
       matrix:
         scope: [ test-keeper-e2e, test-clickhouse-e2e ]

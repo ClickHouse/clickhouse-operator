@@ -8,8 +8,10 @@ bin/*
 Dockerfile.cross
 dist/chart/*.tgz
 dist/chart/index.yaml
+dist/chart/charts
 clickhouse-operator-helm-*.tgz
 clickhouse-operator_*.tar.gz
+bundle
 
 # Test binary, built with `go test -c`
 *.test

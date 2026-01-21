@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    name: clickhouse-operator-metrics-reader
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-reader" "context" $) }}
 rules:
     - nonResourceURLs:
         - /metrics

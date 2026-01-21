@@ -1,7 +1,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    name: clickhouse-operator-manager-role
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
     - apiGroups:
         - ""
