@@ -1,20 +1,19 @@
 package clickhouse
 
 import (
-	"testing"
-
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal"
+	"github.com/clickhouse-operator/internal/util"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestBuildVolumes(t *testing.T) {
+var _ = Describe("BuildVolumes", func() {
 	ctx := reconcileContext{}
 
-	t.Run("EmptyCluster", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should generate default volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -28,8 +27,7 @@ func TestBuildVolumes(t *testing.T) {
 		checkVolumeMounts(volumes, mounts)
 	})
 
-	t.Run("TLSCluster", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should generate mounts for TLS", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -52,8 +50,7 @@ func TestBuildVolumes(t *testing.T) {
 		checkVolumeMounts(volumes, mounts)
 	})
 
-	t.Run("ExtraMount", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should add valumes provided by user", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -86,8 +83,7 @@ func TestBuildVolumes(t *testing.T) {
 		checkVolumeMounts(volumes, mounts)
 	})
 
-	t.Run("ExtraMountCollide", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should project volumes with colliding path", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -118,10 +114,20 @@ func TestBuildVolumes(t *testing.T) {
 		Expect(volumes).To(HaveLen(3))
 		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
+
+		projectedVolumeFound := false
+		volumeName := util.PathToName("/etc/clickhouse-server/config.d/")
+		for _, volume := range volumes {
+			if volume.Name == volumeName {
+				Expect(volume.Projected).ToNot(BeNil())
+				projectedVolumeFound = true
+				break
+			}
+		}
+		Expect(projectedVolumeFound).To(BeTrue())
 	})
 
-	t.Run("TLSExtraMountCollide", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should project colliding TLS volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -150,7 +156,7 @@ func TestBuildVolumes(t *testing.T) {
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "my-extra-volume",
-						MountPath: "/etc/clickhouse-server/config.d/",
+						MountPath: "/etc/clickhouse-server/tls/",
 					}},
 				},
 			},
@@ -160,8 +166,19 @@ func TestBuildVolumes(t *testing.T) {
 		Expect(volumes).To(HaveLen(4))
 		Expect(mounts).To(HaveLen(6))
 		checkVolumeMounts(volumes, mounts)
+
+		projectedVolumeFound := false
+		volumeName := util.PathToName("/etc/clickhouse-server/tls/")
+		for _, volume := range volumes {
+			if volume.Name == volumeName {
+				Expect(volume.Projected).ToNot(BeNil())
+				projectedVolumeFound = true
+				break
+			}
+		}
+		Expect(projectedVolumeFound).To(BeTrue())
 	})
-}
+})
 
 func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
 	volumeMap := map[string]struct{}{

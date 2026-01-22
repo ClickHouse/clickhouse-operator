@@ -22,37 +22,21 @@ import (
 	"github.com/clickhouse-operator/internal/util"
 )
 
-var suite testutil.TestSuit
-var reconciler *ClusterReconciler
-
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecs(t, "Controller Suite")
+	RunSpecs(t, "Keeper Controller Suite")
 }
 
-var _ = BeforeSuite(func() {
-	suite = testutil.SetupEnvironment(v1.AddToScheme)
-	reconciler = &ClusterReconciler{
-		Client: suite.Client,
-		Scheme: scheme.Scheme,
-
-		Reader:   suite.Client,
-		Logger:   suite.Log.Named("keeper"),
-		Recorder: record.NewFakeRecorder(128),
-	}
-})
-
-var _ = AfterSuite(func() {
-	By("tearing down the test environment")
-	suite.Cancel()
-	err := suite.TestEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-})
-
-var _ = Describe("KeeperCluster Controller", func() {
-	Context("When reconciling standalone KeeperCluster resource", Ordered, func() {
-		cr := &v1.KeeperCluster{
+var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
+	var (
+		suite        testutil.TestSuit
+		reconciler   *ClusterReconciler
+		services     corev1.ServiceList
+		pdbs         policyv1.PodDisruptionBudgetList
+		configs      corev1.ConfigMapList
+		statefulsets appsv1.StatefulSetList
+		cr           = &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "standalone",
 				Namespace: "default",
@@ -67,139 +51,153 @@ var _ = Describe("KeeperCluster Controller", func() {
 				},
 			},
 		}
+	)
 
-		var services corev1.ServiceList
-		var pdbs policyv1.PodDisruptionBudgetList
-		var configs corev1.ConfigMapList
-		var statefulsets appsv1.StatefulSetList
+	BeforeAll(func() {
+		suite = testutil.SetupEnvironment(v1.AddToScheme)
+		reconciler = &ClusterReconciler{
+			Client: suite.Client,
+			Scheme: scheme.Scheme,
 
-		AfterEach(func() {
-			testutil.EnsureNoEvents(reconciler.Recorder.(*record.FakeRecorder).Events)
-		})
+			Reader:   suite.Client,
+			Logger:   suite.Log.Named("keeper"),
+			Recorder: record.NewFakeRecorder(128),
+		}
+	})
 
-		It("should create standalone cluster", func() {
-			By("by creating standalone resource CR")
-			Expect(suite.Client.Create(suite.Context, cr)).To(Succeed())
-			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
-		})
+	AfterAll(func() {
+		By("tearing down the test environment")
+		suite.Cancel()
+		err := suite.TestEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	})
 
-		It("should successfully create all resources of the new cluster", func() {
-			By("reconciling the created resource once")
-			_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+	AfterEach(func() {
+		testutil.EnsureNoEvents(reconciler.Recorder.(*record.FakeRecorder).Events)
+	})
 
-			listOpts := util.AppRequirements(cr.Namespace, cr.SpecificName())
+	It("should create standalone cluster", func() {
+		By("by creating standalone resource CR")
+		Expect(suite.Client.Create(suite.Context, cr)).To(Succeed())
+		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
+	})
 
-			Expect(suite.Client.List(suite.Context, &services, listOpts)).To(Succeed())
-			Expect(services.Items).To(HaveLen(1))
+	It("should successfully create all resources of the new cluster", func() {
+		By("reconciling the created resource once")
+		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), cr)).To(Succeed())
 
-			Expect(suite.Client.List(suite.Context, &pdbs, listOpts)).To(Succeed())
-			Expect(pdbs.Items).To(HaveLen(1))
+		listOpts := util.AppRequirements(cr.Namespace, cr.SpecificName())
 
-			Expect(suite.Client.List(suite.Context, &configs, listOpts)).To(Succeed())
-			Expect(configs.Items).To(HaveLen(2))
+		Expect(suite.Client.List(suite.Context, &services, listOpts)).To(Succeed())
+		Expect(services.Items).To(HaveLen(1))
 
-			Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
-			Expect(statefulsets.Items).To(HaveLen(1))
-		})
+		Expect(suite.Client.List(suite.Context, &pdbs, listOpts)).To(Succeed())
+		Expect(pdbs.Items).To(HaveLen(1))
 
-		It("should propagate meta attributes for every resource", func() {
-			expectedOwnerRef := metav1.OwnerReference{
-				Kind:               "KeeperCluster",
-				APIVersion:         "clickhouse.com/v1alpha1",
-				UID:                cr.UID,
-				Name:               cr.Name,
-				Controller:         ptr.To(true),
-				BlockOwnerDeletion: ptr.To(true),
+		Expect(suite.Client.List(suite.Context, &configs, listOpts)).To(Succeed())
+		Expect(configs.Items).To(HaveLen(2))
+
+		Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
+		Expect(statefulsets.Items).To(HaveLen(1))
+	})
+
+	It("should propagate meta attributes for every resource", func() {
+		expectedOwnerRef := metav1.OwnerReference{
+			Kind:               "KeeperCluster",
+			APIVersion:         "clickhouse.com/v1alpha1",
+			UID:                cr.UID,
+			Name:               cr.Name,
+			Controller:         ptr.To(true),
+			BlockOwnerDeletion: ptr.To(true),
+		}
+
+		By("setting meta attributes for service")
+		for _, service := range services.Items {
+			Expect(service.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+			for k, v := range cr.Spec.Labels {
+				Expect(service.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
-
-			By("setting meta attributes for service")
-			for _, service := range services.Items {
-				Expect(service.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
-				for k, v := range cr.Spec.Labels {
-					Expect(service.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
-				}
-				for k, v := range cr.Spec.Annotations {
-					Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
-				}
+			for k, v := range cr.Spec.Annotations {
+				Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
+		}
 
-			By("setting meta attributes for pod disruption budget")
-			for _, pdb := range pdbs.Items {
-				Expect(pdb.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
-				for k, v := range cr.Spec.Labels {
-					Expect(pdb.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
-				}
-				for k, v := range cr.Spec.Annotations {
-					Expect(pdb.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
-				}
+		By("setting meta attributes for pod disruption budget")
+		for _, pdb := range pdbs.Items {
+			Expect(pdb.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+			for k, v := range cr.Spec.Labels {
+				Expect(pdb.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
-
-			By("setting meta attributes for configs")
-			for _, config := range configs.Items {
-				Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
-				for k, v := range cr.Spec.Labels {
-					Expect(config.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
-				}
-				for k, v := range cr.Spec.Annotations {
-					Expect(config.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
-				}
+			for k, v := range cr.Spec.Annotations {
+				Expect(pdb.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
+		}
 
-			By("setting meta attributes for statefulsets")
-			for _, sts := range statefulsets.Items {
-				Expect(sts.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
-				for k, v := range cr.Spec.Labels {
-					Expect(sts.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
-					Expect(sts.Spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
-				}
-				for k, v := range cr.Spec.Annotations {
-					Expect(sts.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
-					Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
-				}
+		By("setting meta attributes for configs")
+		for _, config := range configs.Items {
+			Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+			for k, v := range cr.Spec.Labels {
+				Expect(config.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
-		})
+			for k, v := range cr.Spec.Annotations {
+				Expect(config.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+			}
+		}
 
-		It("should reflect configuration changes in revisions", func() {
-			updatedCR := cr.DeepCopy()
-			updatedCR.Spec.Settings.Logger.Level = "warning"
-			Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
-			_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		By("setting meta attributes for statefulsets")
+		for _, sts := range statefulsets.Items {
+			Expect(sts.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+			for k, v := range cr.Spec.Labels {
+				Expect(sts.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+				Expect(sts.Spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
+			}
+			for k, v := range cr.Spec.Annotations {
+				Expect(sts.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+				Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
+			}
+		}
+	})
 
-			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
-			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
-			Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
-			Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
-		})
+	It("should reflect configuration changes in revisions", func() {
+		updatedCR := cr.DeepCopy()
+		updatedCR.Spec.Settings.Logger.Level = "warning"
+		Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
+		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
 
-		It("should merge extra config in configmap", func() {
-			updatedCR := cr.DeepCopy()
-			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
-			testutil.ReconcileStatefulSets(updatedCR, suite)
-			updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
+		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
+		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
+		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
+		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+	})
+
+	It("should merge extra config in configmap", func() {
+		updatedCR := cr.DeepCopy()
+		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		testutil.ReconcileStatefulSets(updatedCR, suite)
+		updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
-			Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
-			_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
+		Expect(suite.Client.Update(suite.Context, updatedCR)).To(Succeed())
+		_, err := reconciler.Reconcile(suite.Context, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(suite.Context, cr.NamespacedName(), updatedCR)).To(Succeed())
 
-			Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
-			Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
-			Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
-			Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
+		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
+		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
+		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
 
-			var configmap corev1.ConfigMap
-			Expect(suite.Client.Get(suite.Context, types.NamespacedName{
-				Namespace: cr.Namespace,
-				Name:      cr.ConfigMapNameByReplicaID(0)}, &configmap)).To(Succeed())
+		var configmap corev1.ConfigMap
+		Expect(suite.Client.Get(suite.Context, types.NamespacedName{
+			Namespace: cr.Namespace,
+			Name:      cr.ConfigMapNameByReplicaID(0)}, &configmap)).To(Succeed())
 
-			Expect(configmap.Data).To(HaveKey(ConfigFileName))
-			var config confMap
-			Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
-			Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
-		})
+		Expect(configmap.Data).To(HaveKey(ConfigFileName))
+		var config confMap
+		Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
+		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
 	})
 })

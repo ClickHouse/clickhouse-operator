@@ -7,6 +7,12 @@ on:
 env:
   kind-version: 'v0.29.0'
 
+permissions:
+  contents: read
+  statuses: write
+  checks: write
+  pull-requests: write
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -90,6 +96,14 @@ jobs:
           go list ./... | grep -v /e2e
           make test-ci
 
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() }}
+        with:
+          name: Unit tests
+          badge-title: Unit tests
+          path: "**/report/*.xml"
+          reporter: java-junit
 
   helm-validate:
     runs-on: ubuntu-latest
@@ -209,3 +223,12 @@ jobs:
       - name: Run e2e tests
         run: |
           make ${{ matrix.scope }}
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() }}
+        with:
+          name: ${{ matrix.scope }}
+          badge-title: ${{ matrix.scope }}
+          path: "**/report/*.xml"
+          reporter: java-junit

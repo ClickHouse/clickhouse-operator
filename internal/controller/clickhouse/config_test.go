@@ -1,10 +1,9 @@
 package clickhouse
 
 import (
-	"testing"
-
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,10 +11,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func TestConfigGeneratorValidYAML(t *testing.T) {
-	g := NewWithT(t)
-	RegisterFailHandler(g.Fail)
-
+var _ = Describe("ConfigGenerator", func() {
 	ctx := reconcileContext{
 		ReconcileContextBase: controller.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]{
 			Cluster: &v1.ClickHouseCluster{
@@ -45,7 +41,7 @@ func TestConfigGeneratorValidYAML(t *testing.T) {
 	}
 
 	for _, generator := range generators {
-		t.Run(generator.Filename(), func(t *testing.T) {
+		It("should generate config: "+generator.Filename(), func() {
 			Expect(generator.Exists(&ctx)).To(BeTrue())
 			data, err := generator.Generate(&ctx, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
@@ -53,4 +49,4 @@ func TestConfigGeneratorValidYAML(t *testing.T) {
 			Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())
 		})
 	}
-}
+})

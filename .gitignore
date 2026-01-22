@@ -18,6 +18,8 @@ bundle
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+# Test reports
+**/report/*
 
 # Go workspace file
 go.work

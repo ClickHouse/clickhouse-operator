@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -23,12 +25,17 @@ type SampleStruct struct {
 	Struct  InternalStruct
 }
 
-func TestApplyDefault(t *testing.T) {
-	varForPointer := 42
+func TestUtils(t *testing.T) {
+	RegisterFailHandler(Fail)
+
+	RunSpecs(t, "Utils Suite")
+}
+
+var _ = Describe("ApplyDefault", func() {
 	allSet := SampleStruct{
 		String:  "default",
 		Number:  7,
-		Pointer: &varForPointer,
+		Pointer: ptr.To(42),
 		Array:   []int{1, 2, 3},
 		Map:     map[int]string{1: "a", 2: "b", 3: "c"},
 		Struct: InternalStruct{
@@ -37,15 +44,13 @@ func TestApplyDefault(t *testing.T) {
 		},
 	}
 
-	t.Run("all default values", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should default all fields", func() {
 		source := SampleStruct{}
 		Expect(ApplyDefault(&source, allSet)).To(Succeed())
 		Expect(source).To(Equal(allSet))
 	})
 
-	t.Run("nothing to update", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should update nothing", func() {
 		source := allSet
 		defaults := SampleStruct{
 			String: "another",
@@ -58,8 +63,7 @@ func TestApplyDefault(t *testing.T) {
 		Expect(source).To(Equal(allSet))
 	})
 
-	t.Run("update several", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should default empty fields", func() {
 		source := allSet
 		defaults := allSet
 
@@ -72,44 +76,39 @@ func TestApplyDefault(t *testing.T) {
 		Expect(source.Struct.Number).To(Equal(100))
 		Expect(source.Map[7]).To(Equal("custom"))
 	})
-}
+})
 
-func TestUpdateResult(t *testing.T) {
-	t.Run("update empty", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+var _ = Describe("UpdateResult", func() {
+	It("should assing to empty", func() {
 		result := ctrl.Result{}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
 		Expect(result.RequeueAfter).To(Equal(update.RequeueAfter))
 	})
 
-	t.Run("do not update with empty", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should ignore empty update", func() {
 		result := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, nil)
 		Expect(result).To(Equal(ctrl.Result{RequeueAfter: time.Second}))
 	})
 
-	t.Run("update to closer", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should update to sooner requeue", func() {
 		result := ctrl.Result{RequeueAfter: time.Minute}
 		update := ctrl.Result{RequeueAfter: time.Second}
 		UpdateResult(&result, &update)
 		Expect(result.RequeueAfter).To(Equal(time.Second))
 	})
 
-	t.Run("already better", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+	It("should keep sonner requeue", func() {
 		result := ctrl.Result{RequeueAfter: time.Second}
 		update := ctrl.Result{RequeueAfter: time.Minute}
 		UpdateResult(&result, &update)
 		Expect(result.RequeueAfter).To(Equal(time.Second))
 	})
-}
+})
 
-func TestExecuteParallel(t *testing.T) {
-	t.Run("happy path", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+var _ = Describe("ExecuteParallel", func() {
+	It("should execute all tasks", func() {
 		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
@@ -121,8 +120,8 @@ func TestExecuteParallel(t *testing.T) {
 			3: {Result: 6},
 		}))
 	})
-	t.Run("some errors", func(t *testing.T) {
-		RegisterFailHandler(NewWithT(t).Fail)
+
+	It("should report execution errors", func() {
 		result := ExecuteParallel(
 			[]int{1, 2, 3},
 			func(item int) (int, int, error) {
@@ -137,4 +136,4 @@ func TestExecuteParallel(t *testing.T) {
 			3: {Result: 6},
 		}))
 	})
-}
+})

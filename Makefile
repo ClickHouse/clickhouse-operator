@@ -121,25 +121,26 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e)
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) \
+	--ginkgo.v
 
 .PHONY: test-ci
 test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -v -count=1 -race -coverprofile cover.out
-
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) \
+	-v -count=1 -race -coverprofile cover.out --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e: ## Run all e2e tests.
-	go test ./test/e2e/ -v -ginkgo.v -test.timeout 30m
+	go test ./test/e2e/ -test.timeout 30m
 
 .PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-keeper-e2e: ## Run keeper e2e tests.
-	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter keeper -test.timeout 30m
+	go test ./test/e2e/ --ginkgo.label-filter keeper -test.timeout 30m --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-clickhouse-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-clickhouse-e2e: ## Run clickhouse e2e tests.
-	go test ./test/e2e/ -v -ginkgo.v --ginkgo.label-filter clickhouse -test.timeout 30m
+	go test ./test/e2e/ --ginkgo.label-filter clickhouse -test.timeout 30m --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
