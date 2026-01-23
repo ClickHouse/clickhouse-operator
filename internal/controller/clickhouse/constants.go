@@ -40,7 +40,6 @@ const (
 
 	DefaultClusterName       = "default"
 	KeeperPathUsers          = "/clickhouse/access"
-	KeeperPathDiscovery      = "/clickhouse/discovery/default"
 	KeeperPathUDF            = "/clickhouse/user_defined"
 	KeeperPathDistributedDDL = "/clickhouse/task_queue/ddl"
 

@@ -419,3 +419,4 @@ defaultUserPassword:
 | `ClusterSizeAligned`      | Cluster have the same amount of replicas as requested.                                         |
 | `ConfigurationInSync`     | Represents Configuration deployment state                                                      |
 | `Ready`                   | KeeperCluster is ready to serve client requests. Leader elected.                               |
+| `ScaleAllowed`            | Represents the operator's ability to add/remove a node in the quorum.                          |

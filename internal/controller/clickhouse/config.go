@@ -156,8 +156,6 @@ type baseConfigParams struct {
 
 	KeeperNodes               []keeperNode
 	KeeperIdentityEnv         string
-	ClusterDiscoveryPath      string
-	ShardID                   int32
 	DistributedDDLPath        string
 	DistributedDDLProfileName string
 	UsersXMLPath              string
@@ -225,8 +223,6 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.C
 
 		KeeperNodes:               keeperNodes,
 		KeeperIdentityEnv:         EnvKeeperIdentity,
-		ClusterDiscoveryPath:      KeeperPathDiscovery,
-		ShardID:                   id.ShardID,
 		DistributedDDLPath:        KeeperPathDistributedDDL,
 		DistributedDDLProfileName: DefaultProfileName,
 		UsersXMLPath:              UsersFileName,

@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/clickhouse-operator/internal/util"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive,staticcheck
 	. "github.com/onsi/gomega"    //nolint:golint,revive,staticcheck
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -112,11 +114,40 @@ func getFirstFoundEnvTestBinaryDir() string {
 
 func EnsureNoEvents(events chan string) {
 	By("ensure all events read")
-	var event string
-	select {
-	case event = <-events:
-		Fail(fmt.Sprintf("Expected no more events, but got: %s", event))
-	default:
-		return
+	var allEvents []string
+	for {
+		var event string
+		select {
+		case event = <-events:
+			allEvents = append(allEvents, event)
+		default:
+			if len(allEvents) > 0 {
+				Fail(fmt.Sprintf("Expected no more events, but got:\n\t%s", strings.Join(allEvents, "\n\t")), 1)
+			}
+			return
+		}
 	}
+}
+
+func AssertEvents(events chan string, expected map[string]int) {
+	By("update events should be recorded")
+	recordedEvents := map[string]int{}
+	func() {
+		for {
+			var event string
+			select {
+			case event = <-events:
+				var eventType string
+				var eventReason string
+				n, err := fmt.Sscanf(event, "%s %s ", &eventType, &eventReason)
+				ExpectWithOffset(1, err).To(Succeed(), "Failed to parse event: %s", event)
+				ExpectWithOffset(1, n).To(BeEquivalentTo(2))
+				ExpectWithOffset(1, eventType).To(Or(Equal(corev1.EventTypeNormal), Equal(corev1.EventTypeWarning)))
+				recordedEvents[eventReason]++
+			default:
+				return
+			}
+		}
+	}()
+	ExpectWithOffset(1, recordedEvents).To(BeEquivalentTo(expected))
 }

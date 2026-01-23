@@ -19,11 +19,6 @@ zookeeper:
   identity:
     "@from_env": {{ .KeeperIdentityEnv }}
 
-remote_servers:
-  default:
-    discovery:
-      path: {{ .ClusterDiscoveryPath }}
-      shard: {{ .ShardID}}
 distributed_ddl:
   path: {{ .DistributedDDLPath }}
   profile: {{ .DistributedDDLProfileName }}
@@ -39,5 +34,4 @@ openSSL:
 {{ yaml .OpenSSL | indent 2 }}
 
 {{- /* Special settings, required for default config */}}
-allow_experimental_cluster_discovery: true
 display_secrets_in_show_and_select: true

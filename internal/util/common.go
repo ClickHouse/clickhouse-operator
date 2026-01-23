@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/davecgh/go-spew/spew"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -238,4 +240,27 @@ func SortKey[T any, V cmp.Ordered](slice []T, key func(T) V) {
 	slices.SortFunc(slice, func(a, b T) int {
 		return cmp.Compare(key(a), key(b))
 	})
+}
+
+// ShouldEmitEvent returns whether an error should trigger an event emission.
+func ShouldEmitEvent(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var statusErr *k8serrors.StatusError
+	ok := errors.As(err, &statusErr)
+	if !ok {
+		return false
+	}
+
+	if k8serrors.IsForbidden(err) ||
+		k8serrors.IsUnauthorized(err) ||
+		k8serrors.IsInvalid(err) ||
+		k8serrors.IsBadRequest(err) ||
+		k8serrors.IsRequestEntityTooLargeError(err) {
+		return true
+	}
+
+	return false
 }

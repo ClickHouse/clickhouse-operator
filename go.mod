@@ -13,7 +13,7 @@ require (
 	github.com/go-zookeeper/zk v1.0.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/onsi/ginkgo/v2 v2.27.3
+	github.com/onsi/ginkgo/v2 v2.27.5
 	github.com/onsi/gomega v1.38.3
 	go.uber.org/zap v1.27.1
 	gopkg.in/yaml.v2 v2.4.0

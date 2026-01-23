@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -16,15 +15,14 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/clickhouse-operator/internal/controller"
 	"github.com/clickhouse-operator/internal/util"
-	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 type replicaState struct {
@@ -95,11 +93,15 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 	return chctrl.StageUpToDate
 }
 
+type ReconcileContextBase = chctrl.ReconcileContextBase[v1.KeeperClusterStatus, *v1.KeeperCluster, v1.KeeperReplicaID, replicaState]
+
 type reconcileContext struct {
-	chctrl.ReconcileContextBase[*v1.KeeperCluster, v1.KeeperReplicaID, replicaState]
+	ReconcileContextBase
 
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	ExtraConfig map[string]any
+	// Computed by reconcileActiveReplicaStatus
+	HorizontalScaleAllowed bool
 }
 
 type ReconcileFunc func(util.Logger, *reconcileContext) (*ctrl.Result, error)
@@ -108,7 +110,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 	log.Info("Enter Keeper Reconcile", "spec", cr.Spec, "status", cr.Status)
 
 	recCtx := reconcileContext{
-		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.KeeperCluster, v1.KeeperReplicaID, replicaState]{
+		ReconcileContextBase: ReconcileContextBase{
 			Cluster:      cr,
 			Context:      ctx,
 			ReplicaState: map[v1.KeeperReplicaID]replicaState{},
@@ -156,9 +158,10 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 				recCtx.NewCondition(v1.ConditionTypeReplicaStartupSucceeded, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				recCtx.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				recCtx.NewCondition(v1.ConditionTypeClusterSizeAligned, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
+				recCtx.NewCondition(v1.KeeperConditionTypeScaleAllowed, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 			})
 
-			if updateErr := r.upsertStatus(log, &recCtx); updateErr != nil {
+			if updateErr := recCtx.UpsertStatus(r, log); updateErr != nil {
 				log.Error(updateErr, "failed to update status")
 			}
 			return ctrl.Result{}, err
@@ -175,7 +178,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Ke
 	recCtx.SetCondition(log, v1.ConditionTypeReconcileSucceeded, metav1.ConditionTrue, v1.ConditionReasonReconcileFinished, "Reconcile succeeded")
 	log.Info("reconciliation loop end", "result", result)
 
-	if err := r.upsertStatus(log, &recCtx); err != nil {
+	if err := recCtx.UpsertStatus(r, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
 	}
 
@@ -294,6 +297,13 @@ func (r *ClusterReconciler) reconcileActiveReplicaStatus(log util.Logger, ctx *r
 		}
 	}
 
+	if err := r.checkHorizontalScalingAllowed(log, ctx); err != nil {
+		return nil, err
+	}
+	if !ctx.HorizontalScaleAllowed {
+		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	}
+
 	return nil, nil
 }
 
@@ -301,9 +311,25 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 	requestedReplicas := int(ctx.Cluster.Replicas())
 	activeReplicas := len(ctx.ReplicaState)
 
+	if activeReplicas == requestedReplicas {
+		if _, err := ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(
+				v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "",
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleCompleted,
+			"Cluster is scaled to the requested size: %d replicas", requestedReplicas,
+		); err != nil {
+			return nil, fmt.Errorf("update cluster size aligned condition: %w", err)
+		}
+
+		return nil, nil
+	}
+
 	// New cluster creation, creates all replicas.
 	if requestedReplicas > 0 && activeReplicas == 0 {
 		log.Debug("creating all replicas")
+		r.Recorder.Eventf(ctx.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaCreated,
+			"Initial cluster creation, creating %d replicas", requestedReplicas)
+		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "")
 		for id := range v1.KeeperReplicaID(requestedReplicas) { //nolint:gosec
 			log.Info("creating new replica", "replica_id", id)
 			ctx.SetReplica(id, replicaState{})
@@ -315,54 +341,41 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 	// Scale to zero replica count could be applied without checks.
 	if requestedReplicas == 0 && activeReplicas > 0 {
 		log.Debug("deleting all replicas", "replicas", slices.Collect(maps.Keys(ctx.ReplicaState)))
+		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "")
+		r.Recorder.Eventf(ctx.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted,
+			"Cluster scaled to 0 nodes, removing all %d replicas", len(ctx.ReplicaState))
 		ctx.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
 		return nil, nil
 	}
 
-	if requestedReplicas == activeReplicas {
-		return nil, nil
+	var err error
+	if activeReplicas < requestedReplicas {
+		_, err = ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(
+				v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingUp,
+				"Cluster has less replicas than requested",
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted,
+			"Cluster scale up is started: current replicas %d, requested %d",
+			activeReplicas, requestedReplicas,
+		)
+	} else {
+		_, err = ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(
+				v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingDown,
+				"Cluster has more replicas than requested",
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted,
+			"Cluster scale down is started: current replicas %d, requested %d",
+			activeReplicas, requestedReplicas,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update cluster size aligned condition: %w", err)
 	}
 
 	// For running cluster, allow quorum membership changes only in stable state.
-	leaderMode := ModeLeader
-	if activeReplicas == 1 {
-		leaderMode = ModeStandalone
-	}
-
-	hasLeader := false
-	for id, replica := range ctx.ReplicaState {
-		if replica.HasConfigMapDiff(ctx) {
-			log.Info("replica configurationRevision is stale, delaying quorum membership changes", "replica_id", id)
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-		}
-		if replica.HasStatefulSetDiff(ctx) {
-			log.Info("replica statefulSetRevision is stale, delaying quorum membership changes", "replica_id", id)
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-		}
-		if !replica.Ready(ctx) {
-			log.Info("replica is not Ready, delaying quorum membership changes", "replica_id", id)
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-		}
-		if replica.Status.ServerState == leaderMode {
-			if hasLeader {
-				log.Info("multiple leaders in cluster, delaying quorum membership changes", "replica_id", id)
-				return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-			}
-
-			hasLeader = true
-			// Wait for deleted replicas to leave the quorum.
-			if replica.Status.Followers > activeReplicas-1 {
-				log.Info(fmt.Sprintf("leader has more followers than expected: %d > %d, delaying quorum membership changes", replica.Status.Followers, activeReplicas-1), "replica_id", id)
-				return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-			} else if replica.Status.Followers < activeReplicas-1 {
-				log.Info(fmt.Sprintf("leader has less followers than expected: %d < %d, delaying quorum membership changes", replica.Status.Followers, activeReplicas-1), "replica_id", id)
-				return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-			}
-		}
-	}
-	if !hasLeader {
-		log.Info("no leader in cluster, delaying quorum membership changes")
-		return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	if !ctx.HorizontalScaleAllowed {
+		log.Info("Delaying horizontal scaling, cluster is not in stable state")
+		return &reconcile.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
 	// Add single replica in quorum, allocating the first free id.
@@ -370,6 +383,8 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 		for id := v1.KeeperReplicaID(1); ; id++ {
 			if _, ok := ctx.ReplicaState[id]; !ok {
 				log.Info("creating new replica", "replica_id", id)
+				r.Recorder.Eventf(ctx.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaCreated,
+					"Adding new replica %q to the cluster", ctx.Cluster.HostnameById(id))
 				ctx.SetReplica(id, replicaState{})
 				return nil, nil
 			}
@@ -390,6 +405,8 @@ func (r *ClusterReconciler) reconcileQuorumMembership(log util.Logger, ctx *reco
 		}
 
 		log.Info("deleting replica", "replica_id", chosenIndex)
+		r.Recorder.Eventf(ctx.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted,
+			"Deleting replica %q from the cluster", ctx.Cluster.HostnameById(chosenIndex))
 		delete(ctx.ReplicaState, chosenIndex)
 		return nil, nil
 	}
@@ -423,7 +440,7 @@ func (r *ClusterReconciler) reconcileCommonResources(log util.Logger, ctx *recon
 // reconcileReplicaResources performs update on replicas ConfigMap and StatefulSet.
 // If there are replicas that has no created StatefulSet, creates immediately.
 // If all replicas exists performs rolling upgrade, with the following order preferences:
-// NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
+// NotExists -> CrashLoop/ImagePullErr -> HasDiff -> Any.
 func (r *ClusterReconciler) reconcileReplicaResources(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
 	highestStage := chctrl.StageUpToDate
 	var replicasInStatus []v1.KeeperReplicaID
@@ -577,14 +594,6 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	exists := len(ctx.ReplicaState)
 	expected := int(ctx.Cluster.Replicas())
 
-	if exists < expected {
-		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingUp, "Cluster has less replicas than requested")
-	} else if exists > expected {
-		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingDown, "Cluster has more replicas than requested")
-	} else {
-		ctx.SetCondition(log, v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "")
-	}
-
 	if len(notUpdatedReplicas) == 0 && exists == expected {
 		ctx.Cluster.Status.CurrentRevision = ctx.Cluster.Status.UpdateRevision
 	}
@@ -592,6 +601,8 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 	var status metav1.ConditionStatus
 	var reason v1.ConditionReason
 	var message string
+	eventType := corev1.EventTypeWarning
+	eventReason := v1.EventReasonClusterNotReady
 
 	switch exists {
 	case 0:
@@ -602,6 +613,8 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		if len(replicasByMode[ModeStandalone]) == 1 {
 			status = metav1.ConditionTrue
 			reason = v1.KeeperConditionReasonStandaloneReady
+			eventType = corev1.EventTypeNormal
+			eventReason = v1.EventReasonClusterReady
 			message = "Standalone Keeper is ready"
 		} else {
 			status = metav1.ConditionFalse
@@ -629,20 +642,21 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		case len(replicasByMode[ModeFollower]) < requiredFollowersForQuorum:
 			status = metav1.ConditionFalse
 			reason = v1.KeeperConditionReasonNotEnoughFollowers
-			message = fmt.Sprintf("Not enough followers in cluster: %d, required: %d", len(replicasByMode[ModeFollower]), requiredFollowersForQuorum)
+			message = fmt.Sprintf("Not enough followers in cluster: %d/%d", len(replicasByMode[ModeFollower]), requiredFollowersForQuorum)
 		default:
 			status = metav1.ConditionTrue
 			reason = v1.KeeperConditionReasonClusterReady
+			eventType = corev1.EventTypeNormal
+			eventReason = v1.EventReasonClusterReady
 			message = "Cluster is ready"
 		}
 	}
 
-	ctx.SetCondition(log, v1.ConditionTypeReady, status, reason, message)
-
-	for _, condition := range ctx.Cluster.Status.Conditions {
-		if condition.Status != metav1.ConditionTrue {
-			return &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
-		}
+	if _, err := ctx.UpsertConditionAndSendEvent(r, log,
+		ctx.NewCondition(v1.ConditionTypeReady, status, reason, message),
+		eventType, eventReason, message,
+	); err != nil {
+		return nil, fmt.Errorf("update ready condition: %w", err)
 	}
 
 	return nil, nil
@@ -765,20 +779,82 @@ func (r *ClusterReconciler) loadQuorumReplicas(ctx *reconcileContext) (map[v1.Ke
 	return replicas, nil
 }
 
-func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		crdInstance := &v1.KeeperCluster{}
-		if err := r.Reader.Get(ctx.Context, ctx.Cluster.NamespacedName(), crdInstance); err != nil {
-			return err
-		}
-		preStatus := crdInstance.Status.DeepCopy()
+func (r *ClusterReconciler) checkHorizontalScalingAllowed(log util.Logger, ctx *reconcileContext) error {
+	var leader v1.KeeperReplicaID = -1
+	activeReplicas := len(ctx.ReplicaState)
+	leaderMode := ModeLeader
+	if activeReplicas == 1 {
+		leaderMode = ModeStandalone
+	}
 
-		if reflect.DeepEqual(*preStatus, ctx.Cluster.Status) {
-			log.Info("statuses are equal, nothing to do")
-			return nil
+	// Allow any scaling from 0 replicas
+	if activeReplicas == 0 {
+		ctx.HorizontalScaleAllowed = true
+		ctx.SetCondition(log, v1.KeeperConditionTypeScaleAllowed, metav1.ConditionTrue,
+			v1.KeeperConditionReasonReadyToScale, "")
+		return nil
+	}
+
+	scaleBlocked := func(conditionReason v1.ConditionReason, format string, formatArgs ...any) error {
+		ctx.HorizontalScaleAllowed = false
+		_, err := ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(
+				v1.KeeperConditionTypeScaleAllowed, metav1.ConditionFalse, conditionReason,
+				fmt.Sprintf(format, formatArgs...),
+			),
+			corev1.EventTypeWarning, v1.EventReasonHorizontalScaleBlocked, format, formatArgs...,
+		)
+		if err != nil {
+			return fmt.Errorf("update cluster scale blocked: %w", err)
 		}
-		log.Debug(fmt.Sprintf("status difference:\n%s", cmp.Diff(*preStatus, ctx.Cluster.Status)))
-		crdInstance.Status = ctx.Cluster.Status
-		return r.Status().Update(ctx.Context, crdInstance)
-	})
+		return nil
+	}
+
+	updatedReplicas := 0
+	readyReplicas := 0
+	for id, replica := range ctx.ReplicaState {
+		if !replica.HasConfigMapDiff(ctx) && !replica.HasStatefulSetDiff(ctx) {
+			updatedReplicas++
+		}
+		if replica.Ready(ctx) {
+			readyReplicas++
+		}
+		if replica.Status.ServerState == leaderMode {
+			if leader != -1 {
+				return scaleBlocked(v1.KeeperConditionReasonNoQuorum,
+					"Multiple leaders in the cluster: %q, %q", leader, id)
+			}
+
+			leader = id
+			// Wait for deleted replicas to leave the quorum.
+			if replica.Status.Followers > activeReplicas-1 {
+				return scaleBlocked(v1.KeeperConditionReasonWaitingFollowers,
+					"Leader has more followers than expected: %d/%d. "+
+						"Obsolete replica has not left the quorum yet", replica.Status.Followers, activeReplicas-1,
+				)
+			} else if replica.Status.Followers < activeReplicas-1 {
+				return scaleBlocked(v1.KeeperConditionReasonWaitingFollowers,
+					"Leader has less followers than expected: %d/%d. "+
+						"Some replicas unavailable or not joined the quorum yet",
+					replica.Status.Followers, activeReplicas-1,
+				)
+			}
+		}
+	}
+	if leader == -1 {
+		return scaleBlocked(v1.KeeperConditionReasonNoQuorum, "No leader in the cluster")
+	}
+	if updatedReplicas != activeReplicas {
+		return scaleBlocked(v1.KeeperConditionReasonReplicaHasPendingChanges,
+			"Waiting for %d/%d to be updated", updatedReplicas, activeReplicas)
+	}
+	if readyReplicas != activeReplicas {
+		return scaleBlocked(v1.KeeperConditionReasonReplicaNotReady,
+			"Waiting for %d/%d to be Ready", readyReplicas, activeReplicas)
+	}
+
+	ctx.HorizontalScaleAllowed = true
+	ctx.SetCondition(log, v1.KeeperConditionTypeScaleAllowed, metav1.ConditionTrue,
+		v1.KeeperConditionReasonReadyToScale, "")
+	return nil
 }

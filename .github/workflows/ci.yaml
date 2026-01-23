@@ -6,7 +6,6 @@ on:
     branches: [ main ]
 env:
   kind-version: 'v0.29.0'
-
 permissions:
   contents: read
   statuses: write
@@ -195,6 +194,7 @@ jobs:
   e2e-test:
     needs: [ lint, bundle, build_and_test, helm-validate, helm-test ]
     strategy:
+      fail-fast: false
       matrix:
         scope: [ test-keeper-e2e, test-clickhouse-e2e ]
     runs-on: [self-hosted, func-tester]

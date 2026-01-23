@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -13,7 +12,7 @@ import (
 
 var _ = Describe("ConfigGenerator", func() {
 	ctx := reconcileContext{
-		ReconcileContextBase: controller.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]{
+		ReconcileContextBase: ReconcileContextBase{
 			Cluster: &v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",

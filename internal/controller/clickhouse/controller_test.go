@@ -59,10 +59,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		reconciler = &ClusterReconciler{
-			Client: suite.Client,
-			Scheme: scheme.Scheme,
-
-			Reader:   suite.Client,
+			Client:   suite.Client,
+			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("clickhouse"),
 			Recorder: record.NewFakeRecorder(128),
 		}
@@ -122,6 +120,10 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(4))
+
+		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
 	})
 
 	It("should propagate meta attributes for every resource", func() {

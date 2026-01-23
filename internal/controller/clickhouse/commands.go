@@ -41,7 +41,9 @@ GROUP BY
 	database, shard_id, replica_id
 HAVING
 	shard_id >= ?
-	OR replica_id >= ?`
+	OR replica_id >= ?
+SETTINGS
+	skip_unavailable_shards=1`
 )
 
 type DatabaseDescriptor struct {
@@ -265,20 +267,21 @@ func (cmd *Commander) SyncReplica(ctx context.Context, log util.Logger, id v1.Cl
 }
 
 // CleanupDatabaseReplicas removes stale replicated database replicas, skipping unsync ones.
-func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ClickHouseReplicaID]struct{}) (bool, error) {
+func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logger, notInSync map[v1.ClickHouseReplicaID]struct{}) error {
 	var anyID v1.ClickHouseReplicaID
 	for id := range cmd.cluster.ReplicaIDs() {
 		anyID = id
+		break
 	}
 	log = log.With("replica_id", anyID)
 	conn, err := cmd.getConn(anyID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
+		return fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
 	}
 
 	rows, err := conn.Query(ctx, listStaleDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
 	if err != nil {
-		return false, fmt.Errorf("failed to query stale database replicas %v: %w", anyID, err)
+		return fmt.Errorf("failed to query stale database replicas %v: %w", anyID, err)
 	}
 	defer func() {
 		_ = rows.Close()
@@ -329,7 +332,11 @@ func (cmd *Commander) CleanupDatabaseReplicas(ctx context.Context, log util.Logg
 		succeed++
 	}
 
-	return total == succeed, nil
+	if total != succeed {
+		return fmt.Errorf("some stale replicas are not cleaned up: %d/%d", succeed, total)
+	}
+
+	return nil
 }
 
 func (cmd *Commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {

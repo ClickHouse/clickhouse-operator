@@ -35,7 +35,7 @@ const (
 var (
 	mapStatusText = map[ReplicaUpdateStage]string{
 		StageUpToDate:         "UpToDate",
-		StageHasDiff:          "StatefulSetDiff",
+		StageHasDiff:          "HasDiff",
 		StageNotReadyUpToDate: "NotReadyUpToDate",
 		StageUpdating:         "Updating",
 		StageError:            "Error",
@@ -197,11 +197,12 @@ func ReconcileConfigMap(
 func Create(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
 	recorder := controller.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
-	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
 
 	if err := controller.GetClient().Create(ctx, resource); err != nil {
-		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedCreate,
-			"Create %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		if util.ShouldEmitEvent(err) {
+			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedCreate,
+				"Create %s %s failed: %s", kind, resource.GetName(), err.Error())
+		}
 		return fmt.Errorf("create %s:%s: %w", kind, resource.GetName(), err)
 	}
 
@@ -211,11 +212,12 @@ func Create(ctx context.Context, controller Controller, owner client.Object, res
 func Update(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
 	recorder := controller.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
-	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
 
 	if err := controller.GetClient().Update(ctx, resource); err != nil {
-		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedUpdate,
-			"Update %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		if util.ShouldEmitEvent(err) {
+			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedUpdate,
+				"Update %s %s failed: %s", kind, resource.GetName(), err.Error())
+		}
 		return fmt.Errorf("update %s:%s: %w", kind, resource.GetName(), err)
 	}
 
@@ -225,19 +227,18 @@ func Update(ctx context.Context, controller Controller, owner client.Object, res
 func Delete(ctx context.Context, controller Controller, owner client.Object, resource client.Object) error {
 	recorder := controller.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
-	clusterKind := owner.GetObjectKind().GroupVersionKind().Kind
 
 	if err := controller.GetClient().Delete(ctx, resource); err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
-		recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedDelete,
-			"Delete %s %s in %s %s failed", kind, resource.GetName(), clusterKind, owner.GetName())
+		if util.ShouldEmitEvent(err) {
+			recorder.Eventf(owner, corev1.EventTypeWarning, v1.EventReasonFailedDelete,
+				"Delete %s %s failed: %s", kind, resource.GetName(), err.Error())
+		}
 		return fmt.Errorf("delete %s:%s: %w", kind, resource.GetName(), err)
 	}
 
-	recorder.Eventf(owner, corev1.EventTypeNormal, v1.EventReasonSuccessfulDelete,
-		"Delete %s %s in %s %s", kind, resource.GetName(), clusterKind, owner.GetName())
 	return nil
 }

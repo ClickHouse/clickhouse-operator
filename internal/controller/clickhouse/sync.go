@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -101,8 +99,10 @@ func (r replicaState) UpdateStage(ctx *reconcileContext) chctrl.ReplicaUpdateSta
 	return chctrl.StageUpToDate
 }
 
+type ReconcileContextBase = chctrl.ReconcileContextBase[v1.ClickHouseClusterStatus, *v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]
+
 type reconcileContext struct {
-	chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]
+	ReconcileContextBase
 
 	// Should be populated after reconcileClusterRevisions.
 	keeper v1.KeeperCluster
@@ -120,7 +120,12 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	log.Info("Enter ClickHouse Reconcile", "spec", cr.Spec, "status", cr.Status)
 
 	recCtx := reconcileContext{
-		ReconcileContextBase: chctrl.ReconcileContextBase[*v1.ClickHouseCluster, v1.ClickHouseReplicaID, replicaState]{
+		ReconcileContextBase: chctrl.ReconcileContextBase[
+			v1.ClickHouseClusterStatus,
+			*v1.ClickHouseCluster,
+			v1.ClickHouseReplicaID,
+			replicaState,
+		]{
 			Cluster:      cr,
 			Context:      ctx,
 			ReplicaState: map[v1.ClickHouseReplicaID]replicaState{},
@@ -171,7 +176,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 			meta.SetStatusCondition(&unknownConditions, recCtx.NewCondition(v1.ConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ConditionReasonStepFailed, errMsg))
 			recCtx.SetConditions(log, unknownConditions)
 
-			if updateErr := r.upsertStatus(log, &recCtx); updateErr != nil {
+			if updateErr := recCtx.UpsertStatus(r, log); updateErr != nil {
 				log.Error(updateErr, "failed to update status")
 			}
 			return ctrl.Result{}, err
@@ -188,7 +193,7 @@ func (r *ClusterReconciler) Sync(ctx context.Context, log util.Logger, cr *v1.Cl
 	recCtx.SetCondition(log, v1.ConditionTypeReconcileSucceeded, metav1.ConditionTrue, v1.ConditionReasonReconcileFinished, "Reconcile succeeded")
 	log.Info("reconciliation loop end", "result", result)
 
-	if err := r.upsertStatus(log, &recCtx); err != nil {
+	if err := recCtx.UpsertStatus(r, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
 	}
 
@@ -492,6 +497,7 @@ type replicaResources struct {
 }
 
 func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
+	var result *ctrl.Result
 	listOpts := util.AppRequirements(ctx.Cluster.Namespace, ctx.Cluster.SpecificName())
 	replicasToRemove := map[int32]map[int32]replicaResources{}
 
@@ -557,6 +563,7 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 		if shardID < ctx.Cluster.Shards() {
 			if shardsInSync[shardID].Err != nil {
 				log.Info("shard is not in sync, skipping replica deletion", "replicas", slices.Collect(maps.Keys(replicas)))
+				result = &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}
 				for index := range replicas {
 					runningStaleReplicas[v1.ClickHouseReplicaID{ShardID: shardID, Index: index}] = struct{}{}
 				}
@@ -583,15 +590,15 @@ func (r *ClusterReconciler) reconcileCleanUp(log util.Logger, ctx *reconcileCont
 	}
 
 	if ctx.Cluster.Spec.Settings.EnableDatabaseSync {
-		cleanedUp, err := ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas)
-		if err != nil {
+		if err := ctx.commander.CleanupDatabaseReplicas(ctx.Context, log, runningStaleReplicas); err != nil {
 			log.Warn("failed to cleanup database replicas", "error", err)
+			result = &ctrl.Result{RequeueAfter: RequeueOnRefreshTimeout}
 		} else {
-			ctx.staleReplicasCleanedUp = cleanedUp
+			ctx.staleReplicasCleanedUp = true
 		}
 	}
 
-	return nil, nil
+	return result, nil
 }
 
 func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileContext) (*ctrl.Result, error) {
@@ -667,12 +674,22 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		ctx.Cluster.Status.CurrentRevision = ctx.Cluster.Status.UpdateRevision
 	}
 
+	var err error
 	if len(notReadyShards) == 0 {
-		ctx.SetCondition(log, v1.ConditionTypeReady, metav1.ConditionTrue, v1.ClickHouseConditionAllShardsReady, "All shards are ready")
+		_, err = ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(v1.ConditionTypeReady, metav1.ConditionTrue, v1.ClickHouseConditionAllShardsReady, "All shards are ready"),
+			corev1.EventTypeNormal, v1.EventReasonClusterReady, "ClickHouse cluster is ready",
+		)
 	} else {
 		slices.Sort(notReadyShards)
-		message := fmt.Sprintf("Some shards are not ready: %v", notReadyShards)
-		ctx.SetCondition(log, v1.ConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message)
+		message := fmt.Sprintf("Not Ready shards: %v", notReadyShards)
+		_, err = ctx.UpsertConditionAndSendEvent(r, log,
+			ctx.NewCondition(v1.ConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message),
+			corev1.EventTypeWarning, v1.EventReasonClusterNotReady, message,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("update ready condition: %w", err)
 	}
 
 	{
@@ -696,12 +713,6 @@ func (r *ClusterReconciler) reconcileConditions(log util.Logger, ctx *reconcileC
 		}
 
 		ctx.SetCondition(log, v1.ClickHouseConditionTypeSchemaInSync, condType, condReason, condMessage)
-	}
-
-	for _, condition := range ctx.Cluster.Status.Conditions {
-		if condition.Status != metav1.ConditionTrue {
-			return &ctrl.Result{RequeueAfter: keeper.RequeueOnRefreshTimeout}, nil
-		}
 	}
 
 	return nil, nil
@@ -839,22 +850,4 @@ func (r *ClusterReconciler) updateReplicaPVC(log util.Logger, ctx *reconcileCont
 	}
 
 	return nil
-}
-
-func (r *ClusterReconciler) upsertStatus(log util.Logger, ctx *reconcileContext) error {
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		crdInstance := &v1.ClickHouseCluster{}
-		if err := r.Reader.Get(ctx.Context, ctx.Cluster.NamespacedName(), crdInstance); err != nil {
-			return err
-		}
-		preStatus := crdInstance.Status.DeepCopy()
-
-		if reflect.DeepEqual(*preStatus, ctx.Cluster.Status) {
-			log.Info("statuses are equal, nothing to do")
-			return nil
-		}
-		log.Debug(fmt.Sprintf("status difference:\n%s", gcmp.Diff(*preStatus, ctx.Cluster.Status)))
-		crdInstance.Status = ctx.Cluster.Status
-		return r.Status().Update(ctx.Context, crdInstance)
-	})
 }

@@ -30,7 +30,6 @@ type ClusterReconciler struct {
 	Scheme *runtime.Scheme
 
 	Recorder record.EventRecorder
-	Reader   client.Reader // Used to bypass the cache.
 	Logger   util.Logger
 }
 
@@ -112,7 +111,6 @@ func SetupWithManager(mgr ctrl.Manager, log util.Logger) error {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("keeper-controller"),
-		Reader:   mgr.GetAPIReader(),
 		Logger:   namedLogger,
 	}
 

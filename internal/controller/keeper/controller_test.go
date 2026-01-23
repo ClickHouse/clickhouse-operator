@@ -56,10 +56,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		reconciler = &ClusterReconciler{
-			Client: suite.Client,
-			Scheme: scheme.Scheme,
-
-			Reader:   suite.Client,
+			Client:   suite.Client,
+			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("keeper"),
 			Recorder: record.NewFakeRecorder(128),
 		}
@@ -101,6 +99,11 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 		Expect(suite.Client.List(suite.Context, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(1))
+
+		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+			"ReplicaCreated":  1,
+			"ClusterNotReady": 1,
+		})
 	})
 
 	It("should propagate meta attributes for every resource", func() {
@@ -172,6 +175,10 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
 		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+
+		testutil.AssertEvents(reconciler.Recorder.(*record.FakeRecorder).Events, map[string]int{
+			"HorizontalScaleBlocked": 1,
+		})
 	})
 
 	It("should merge extra config in configmap", func() {

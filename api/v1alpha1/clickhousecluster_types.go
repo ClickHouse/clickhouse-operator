@@ -265,6 +265,10 @@ func (v *ClickHouseCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+func (v *ClickHouseCluster) GetStatus() *ClickHouseClusterStatus {
+	return &v.Status
+}
+
 func (v *ClickHouseCluster) Conditions() *[]metav1.Condition {
 	return &v.Status.Conditions
 }

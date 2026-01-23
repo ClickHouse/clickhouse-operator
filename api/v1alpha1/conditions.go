@@ -46,6 +46,7 @@ const (
 	KeeperConditionReasonNotEnoughFollowers ConditionReason = "NotEnoughFollowers"
 )
 
+// ClickHouseCluster specific condition types and reasons.
 const (
 	// ClickHouseConditionTypeSchemaInSync indicates that databases were created on all new replicas and deleted
 	// replicas metadata was removed. This condition indicates that newly created replicas are ready to use or cluster
@@ -56,6 +57,18 @@ const (
 	ClickHouseConditionReplicasInSync       ConditionReason = "ReplicasInSync"
 	ClickHouseConditionDatabasesNotCreated  ConditionReason = "DatabasesNotCreated"
 	ClickHouseConditionReplicasNotCleanedUp ConditionReason = "ReplicasNotCleanedUp"
+)
+
+// KeeperCluster specific condition types and reasons.
+const (
+	// KeeperConditionTypeScaleAllowed indicates that cluster is ready to change quorum size.
+	KeeperConditionTypeScaleAllowed ConditionType = "ScaleAllowed"
+
+	KeeperConditionReasonReplicaHasPendingChanges ConditionReason = "ReplicaHasPendingChanges"
+	KeeperConditionReasonReplicaNotReady          ConditionReason = "ReplicaNotReady"
+	KeeperConditionReasonNoQuorum                 ConditionReason = "NoQuorum"
+	KeeperConditionReasonWaitingFollowers         ConditionReason = "WaitingFollowers"
+	KeeperConditionReasonReadyToScale             ConditionReason = "ReadyToScale"
 )
 
 var (

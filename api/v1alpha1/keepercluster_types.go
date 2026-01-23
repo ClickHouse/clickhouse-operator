@@ -178,6 +178,10 @@ func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	}
 }
 
+func (v *KeeperCluster) GetStatus() *KeeperClusterStatus {
+	return &v.Status
+}
+
 func (v *KeeperCluster) Conditions() *[]metav1.Condition {
 	return &v.Status.Conditions
 }
