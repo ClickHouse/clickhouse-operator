@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("BuildVolumes", func() {
-	ctx := reconcileContext{}
+	ctx := clickhouseReconciler{}
 
 	It("should generate default volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{

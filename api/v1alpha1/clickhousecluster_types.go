@@ -230,6 +230,14 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 	}, nil
 }
 
+// Labels returns labels that should be set for every resource related to the specified replica.
+func (id ClickHouseReplicaID) Labels() map[string]string {
+	return map[string]string{
+		controllerutil.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
+		controllerutil.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
+	}
+}
+
 // IDFromHostname extracts ClickHouseReplicaID from given hostname.
 func IDFromHostname(v *ClickHouseCluster, hostname string) (ClickHouseReplicaID, error) {
 	if !strings.HasPrefix(hostname, v.SpecificName()+"-") || !strings.HasSuffix(hostname, "-0") {

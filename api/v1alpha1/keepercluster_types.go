@@ -176,6 +176,13 @@ func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error
 	return KeeperReplicaID(id), nil
 }
 
+// Labels returns labels that should be set for every resource related to the specified replica.
+func (id KeeperReplicaID) Labels() map[string]string {
+	return map[string]string{
+		controllerutil.LabelKeeperReplicaID: strconv.FormatInt(int64(id), 10),
+	}
+}
+
 // NamespacedName returns NamespacedName for the KeeperCluster.
 func (v *KeeperCluster) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{

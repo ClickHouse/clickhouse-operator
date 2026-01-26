@@ -21,6 +21,7 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller/testutil"
 	"github.com/clickhouse-operator/internal/controllerutil"
+	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 func TestControllers(t *testing.T) {
@@ -33,7 +34,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
 		recorder     *record.FakeRecorder
-		reconciler   *ClusterReconciler
+		controller   *ClusterController
 		keeperName   = "keeper"
 		services     corev1.ServiceList
 		pdbs         policyv1.PodDisruptionBudgetList
@@ -62,11 +63,14 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	BeforeAll(func(ctx context.Context) {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		recorder = record.NewFakeRecorder(128)
-		reconciler = &ClusterReconciler{
+		controller = &ClusterController{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("clickhouse"),
 			Recorder: recorder,
+			Webhook: webhookv1.ClickHouseClusterWebhook{
+				Log: suite.Log.Named("clickhouse-webhook"),
+			},
 		}
 
 		keeper := &v1.KeeperCluster{
@@ -103,7 +107,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
@@ -221,7 +225,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
 
 		By("reconciling the cluster")
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
@@ -240,7 +244,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		updatedCR := cr.DeepCopy()
 		updatedCR.Spec.Settings.Logger.Level = "warning"
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 

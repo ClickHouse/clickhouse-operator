@@ -110,9 +110,9 @@ type serverConfig struct {
 	Port     uint16 `yaml:"port"`
 }
 
-func templateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
-	quorumConfig := generateQuorumConfig(ctx)
-	cr := ctx.Cluster
+func templateQuorumConfig(r *keeperReconciler) (*corev1.ConfigMap, error) {
+	quorumConfig := generateQuorumConfig(r)
+	cr := r.Cluster
 
 	revision, err := controllerutil.DeepHashObject(quorumConfig)
 	if err != nil {
@@ -156,10 +156,10 @@ func templateQuorumConfig(ctx *reconcileContext) (*corev1.ConfigMap, error) {
 	return configmap, nil
 }
 
-func generateQuorumConfig(ctx *reconcileContext) quorumConfig {
+func generateQuorumConfig(r *keeperReconciler) quorumConfig {
 	hostnamesByID := map[v1.KeeperReplicaID]string{}
-	for id := range ctx.ReplicaState {
-		hostnamesByID[id] = ctx.Cluster.HostnameByID(id)
+	for id := range r.ReplicaState {
+		hostnamesByID[id] = r.Cluster.HostnameByID(id)
 	}
 
 	quorumConfig := make(quorumConfig, 0, len(hostnamesByID))
@@ -466,10 +466,9 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 }
 
 func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]string {
-	return map[string]string{
-		controllerutil.LabelAppKey:          cr.SpecificName(),
-		controllerutil.LabelKeeperReplicaID: strconv.FormatInt(int64(id), 10),
-	}
+	labels := id.Labels()
+	labels[controllerutil.LabelAppKey] = cr.SpecificName()
+	return labels
 }
 
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (string, error) {

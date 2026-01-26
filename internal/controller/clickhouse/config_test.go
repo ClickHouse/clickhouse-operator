@@ -12,8 +12,8 @@ import (
 )
 
 var _ = Describe("ConfigGenerator", func() {
-	ctx := reconcileContext{
-		reconcileContextBase: reconcileContextBase{
+	ctx := clickhouseReconciler{
+		reconcilerBase: reconcilerBase{
 			Cluster: &v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",

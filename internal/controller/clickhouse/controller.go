@@ -20,18 +20,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	chctrl "github.com/clickhouse-operator/internal/controller"
+
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controllerutil"
 	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
-// ClusterReconciler reconciles a ClickHouseCluster object.
-type ClusterReconciler struct {
+// ClusterController reconciles a ClickHouseCluster object.
+type ClusterController struct {
 	client.Client
 
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
 	Logger   controllerutil.Logger
+	Webhook  webhookv1.ClickHouseClusterWebhook
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters,verbs=get;list;watch;create;update;patch;delete
@@ -42,29 +45,28 @@ type ClusterReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cluster := &v1.ClickHouseCluster{}
 
-	err := r.Get(ctx, req.NamespacedName, cluster)
+	err := cc.Get(ctx, req.NamespacedName, cluster)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.Logger.Info("clickhouse cluster not found")
+			cc.Logger.Info("clickhouse cluster not found")
 			return ctrl.Result{}, nil
 		}
 
-		r.Logger.Error(err, "failed to Get ClickHouse cluster")
+		cc.Logger.Error(err, "failed to Get ClickHouse cluster")
 
 		return ctrl.Result{}, fmt.Errorf("get ClickHouseCluster %s: %w", req.String(), err)
 	}
 
-	logger := r.Logger.WithContext(ctx, cluster)
-	wh := webhookv1.ClickHouseClusterWebhook{Log: logger}
+	logger := cc.Logger.WithContext(ctx, cluster)
 
-	if err := wh.Default(ctx, cluster); err != nil {
+	if err := cc.Webhook.Default(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("fill defaults before reconcile: %w", err)
 	}
 
-	if _, err := wh.ValidateCreate(ctx, cluster); err != nil {
+	if _, err := cc.Webhook.ValidateCreate(ctx, cluster); err != nil {
 		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
 			Type:               string(v1.ConditionTypeSpecValid),
 			Status:             metav1.ConditionFalse,
@@ -73,7 +75,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			ObservedGeneration: cluster.GetGeneration(),
 		})
 
-		if err := r.Status().Update(ctx, cluster); err != nil {
+		if err := cc.Status().Update(ctx, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update clickhouse cluster status: %w", err)
 		}
 
@@ -87,33 +89,43 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		ObservedGeneration: cluster.GetGeneration(),
 	})
 
-	return r.sync(ctx, logger, cluster)
+	reconciler := clickhouseReconciler{
+		reconcilerBase: chctrl.NewReconcilerBase[
+			v1.ClickHouseClusterStatus,
+			*v1.ClickHouseCluster,
+			v1.ClickHouseReplicaID,
+			replicaState,
+		](cc, cluster),
+	}
+
+	return reconciler.sync(ctx, logger)
 }
 
 // GetClient returns the K8S Client.
-func (r *ClusterReconciler) GetClient() client.Client {
-	return r.Client
+func (cc *ClusterController) GetClient() client.Client {
+	return cc.Client
 }
 
 // GetScheme returns initialized with the Cluster Scheme.
-func (r *ClusterReconciler) GetScheme() *runtime.Scheme {
-	return r.Scheme
+func (cc *ClusterController) GetScheme() *runtime.Scheme {
+	return cc.Scheme
 }
 
 // GetRecorder returns the KeeperCluster EventRecorder.
-func (r *ClusterReconciler) GetRecorder() record.EventRecorder {
-	return r.Recorder
+func (cc *ClusterController) GetRecorder() record.EventRecorder {
+	return cc.Recorder
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	namedLogger := log.Named("clickhouse")
 
-	clickhouseController := &ClusterReconciler{
+	clickhouseController := &ClusterController{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("clickhouse-controller"),
 		Logger:   namedLogger,
+		Webhook:  webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
 	}
 
 	err := ctrl.NewControllerManagedBy(mgr).
@@ -137,7 +149,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	return nil
 }
 
-func (r *ClusterReconciler) clickHouseClustersForKeeper(ctx context.Context, obj client.Object) []reconcile.Request {
+func (cc *ClusterController) clickHouseClustersForKeeper(ctx context.Context, obj client.Object) []reconcile.Request {
 	zk, ok := obj.(*v1.KeeperCluster)
 	if !ok {
 		panic(fmt.Errorf("expected v1.KeeperCluster but got a %T", obj))
@@ -145,7 +157,7 @@ func (r *ClusterReconciler) clickHouseClustersForKeeper(ctx context.Context, obj
 
 	// List all ClickHouseClusters that reference this KeeperCluster
 	var chList v1.ClickHouseClusterList
-	if err := r.List(ctx, &chList, client.InNamespace(zk.Namespace)); err != nil {
+	if err := cc.List(ctx, &chList, client.InNamespace(zk.Namespace)); err != nil {
 		return nil
 	}
 

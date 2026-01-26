@@ -107,15 +107,15 @@ func init() {
 		&extraConfigGenerator{
 			Name:          ExtraConfigFileName,
 			ConfigSubPath: ConfigDPath,
-			Getter: func(ctx *reconcileContext) []byte {
-				return ctx.Cluster.Spec.Settings.ExtraConfig.Raw
+			Getter: func(r *clickhouseReconciler) []byte {
+				return r.Cluster.Spec.Settings.ExtraConfig.Raw
 			},
 		},
 		&extraConfigGenerator{
 			Name:          ExtraUsersConfigFileName,
 			ConfigSubPath: UsersDPath,
-			Getter: func(ctx *reconcileContext) []byte {
-				return ctx.Cluster.Spec.Settings.ExtraUsersConfig.Raw
+			Getter: func(r *clickhouseReconciler) []byte {
+				return r.Cluster.Spec.Settings.ExtraUsersConfig.Raw
 			},
 		})
 }
@@ -124,8 +124,8 @@ type configGenerator interface {
 	Filename() string
 	Path() string
 	ConfigKey() string
-	Exists(ctx *reconcileContext) bool
-	Generate(ctx *reconcileContext, id v1.ClickHouseReplicaID) (string, error)
+	Exists(r *clickhouseReconciler) bool
+	Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
 }
 
 type templateConfigGenerator struct {
@@ -147,12 +147,12 @@ func (g *templateConfigGenerator) ConfigKey() string {
 	return controllerutil.PathToName(path.Join(g.path, g.filename))
 }
 
-func (g *templateConfigGenerator) Exists(*reconcileContext) bool {
+func (g *templateConfigGenerator) Exists(*clickhouseReconciler) bool {
 	return true
 }
 
-func (g *templateConfigGenerator) Generate(ctx *reconcileContext, id v1.ClickHouseReplicaID) (string, error) {
-	data, err := g.generator(g.template, ctx, id)
+func (g *templateConfigGenerator) Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+	data, err := g.generator(g.template, r, id)
 	if err != nil {
 		return "", fmt.Errorf("generate config %s: %w", g.filename, err)
 	}
@@ -160,7 +160,7 @@ func (g *templateConfigGenerator) Generate(ctx *reconcileContext, id v1.ClickHou
 	return data, nil
 }
 
-type configGeneratorFunc func(tmpl *template.Template, ctx *reconcileContext, id v1.ClickHouseReplicaID) (string, error)
+type configGeneratorFunc func(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
 
 type baseConfigParams struct {
 	Path   string
@@ -184,10 +184,10 @@ type keeperNode struct {
 	Secure bool
 }
 
-func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.ClickHouseReplicaID) (string, error) {
-	keeperNodes := make([]keeperNode, 0, ctx.keeper.Replicas())
-	for _, host := range ctx.keeper.Hostnames() {
-		if ctx.keeper.Spec.Settings.TLS.Enabled {
+func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
+	for _, host := range r.keeper.Hostnames() {
+		if r.keeper.Spec.Settings.TLS.Enabled {
 			keeperNodes = append(keeperNodes, keeperNode{
 				Host:   host,
 				Port:   keeper.PortNativeSecure,
@@ -202,7 +202,7 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.C
 	}
 
 	openSSL := controller.OpenSSLConfig{}
-	if ctx.Cluster.Spec.Settings.TLS.Enabled {
+	if r.Cluster.Spec.Settings.TLS.Enabled {
 		params := controller.OpenSSLParams{
 			CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
 			PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
@@ -218,7 +218,7 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.C
 		}
 	}
 
-	if ctx.Cluster.Spec.Settings.TLS.CABundle != nil {
+	if r.Cluster.Spec.Settings.TLS.CABundle != nil {
 		openSSL.Client.CAConfig = path.Join(TLSConfigPath, CustomCAFilename)
 		openSSL.Client.VerificationMode = "relaxed"
 		openSSL.Client.DisableProtocols = "sslv2,sslv3"
@@ -227,7 +227,7 @@ func baseConfigGenerator(tmpl *template.Template, ctx *reconcileContext, id v1.C
 
 	params := baseConfigParams{
 		Path: BaseDataPath,
-		Log:  controller.GenerateLoggerConfig(ctx.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
+		Log:  controller.GenerateLoggerConfig(r.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
 		Macros: map[string]any{
 			"cluster": DefaultClusterName,
 			"shard":   id.ShardID,
@@ -261,8 +261,8 @@ type networkConfigParams struct {
 	Protocols                     map[string]protocol
 }
 
-func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
-	protocols := buildProtocols(ctx.Cluster)
+func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+	protocols := buildProtocols(r.Cluster)
 	delete(protocols, "interserver")
 	delete(protocols, "management")
 
@@ -282,7 +282,7 @@ func networkConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1
 	return builder.String(), nil
 }
 
-func logTablesConfigGenerator(tmpl *template.Template, _ *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
+func logTablesConfigGenerator(tmpl *template.Template, _ *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, nil); err != nil {
 		return "", fmt.Errorf("template log tables: %w", err)
@@ -299,14 +299,14 @@ type userConfigParams struct {
 	OperatorUserPasswordHash string
 }
 
-func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
+func userConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	passEnv := EnvDefaultUserPassword
 
 	passType := ""
-	if ctx.Cluster.Spec.Settings.DefaultUserPassword == nil {
+	if r.Cluster.Spec.Settings.DefaultUserPassword == nil {
 		passEnv = ""
 	} else {
-		passType = ctx.Cluster.Spec.Settings.DefaultUserPassword.PasswordType
+		passType = r.Cluster.Spec.Settings.DefaultUserPassword.PasswordType
 	}
 
 	params := userConfigParams{
@@ -314,7 +314,7 @@ func userConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.Cl
 		DefaultUserType:          passType,
 		DefaultProfileName:       DefaultProfileName,
 		OperatorUserName:         OperatorManagementUsername,
-		OperatorUserPasswordHash: controllerutil.Sha256Hash(ctx.secret.Data[SecretKeyManagementPassword]),
+		OperatorUserPasswordHash: controllerutil.Sha256Hash(r.secret.Data[SecretKeyManagementPassword]),
 	}
 
 	builder := strings.Builder{}
@@ -330,9 +330,9 @@ type clientConfigParams struct {
 	DefaultUserPasswordEnv string
 }
 
-func clientConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
+func clientConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	passEnv := EnvDefaultUserPassword
-	if ctx.Cluster.Spec.Settings.DefaultUserPassword == nil {
+	if r.Cluster.Spec.Settings.DefaultUserPassword == nil {
 		passEnv = ""
 	}
 
@@ -352,7 +352,7 @@ func clientConfigGenerator(tmpl *template.Template, ctx *reconcileContext, _ v1.
 type extraConfigGenerator struct {
 	Name          string
 	ConfigSubPath string
-	Getter        func(ctx *reconcileContext) []byte
+	Getter        func(r *clickhouseReconciler) []byte
 }
 
 func (g *extraConfigGenerator) Filename() string {
@@ -367,14 +367,14 @@ func (g *extraConfigGenerator) ConfigKey() string {
 	return g.Name
 }
 
-func (g *extraConfigGenerator) Exists(ctx *reconcileContext) bool {
-	return len(g.Getter(ctx)) > 0
+func (g *extraConfigGenerator) Exists(r *clickhouseReconciler) bool {
+	return len(g.Getter(r)) > 0
 }
 
-func (g *extraConfigGenerator) Generate(ctx *reconcileContext, _ v1.ClickHouseReplicaID) (string, error) {
-	if !g.Exists(ctx) {
+func (g *extraConfigGenerator) Generate(r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+	if !g.Exists(r) {
 		return "", errors.New("extra config generator called, but no extra config provided")
 	}
 
-	return string(g.Getter(ctx)), nil
+	return string(g.Getter(r)), nil
 }

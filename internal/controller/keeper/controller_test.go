@@ -21,6 +21,7 @@ import (
 	v1 "github.com/clickhouse-operator/api/v1alpha1"
 	"github.com/clickhouse-operator/internal/controller/testutil"
 	"github.com/clickhouse-operator/internal/controllerutil"
+	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 func TestControllers(t *testing.T) {
@@ -33,7 +34,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
 		recorder     *record.FakeRecorder
-		reconciler   *ClusterReconciler
+		controller   *ClusterController
 		services     corev1.ServiceList
 		pdbs         policyv1.PodDisruptionBudgetList
 		configs      corev1.ConfigMapList
@@ -58,11 +59,14 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		recorder = record.NewFakeRecorder(128)
-		reconciler = &ClusterReconciler{
+		controller = &ClusterController{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
 			Logger:   suite.Log.Named("keeper"),
 			Recorder: recorder,
+			Webhook: webhookv1.KeeperClusterWebhook{
+				Log: suite.Log.Named("keeper-webhook"),
+			},
 		}
 	})
 
@@ -84,7 +88,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 
@@ -169,7 +173,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		updatedCR := cr.DeepCopy()
 		updatedCR.Spec.Settings.Logger.Level = "warning"
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
@@ -190,7 +194,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
-		_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 
