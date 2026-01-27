@@ -5,7 +5,7 @@
 
 <picture>
     <source media="(prefers-color-scheme: light)" srcset="https://clickhouse.com/docs/img/clickhouse-operator-logo-black.svg">
-    <img align="left" width="300" style="margin-right: 20px;" src="https://clickhouse.com/docs/img/clickhouse-operator-logo.svg" alt="The ClickHouse Operator logo.">
+    <img align="left" width="200" style="margin-right: 20px;" src="https://clickhouse.com/docs/img/clickhouse-operator-logo.svg" alt="The ClickHouse Operator logo.">
 </picture>
 
 ### ClickHouse Operator
@@ -13,14 +13,16 @@
 The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.
 It provides declarative cluster management through custom resources, enabling users to easily create highly-available ClickHouse deployments.
 
-The Operator handles the full lifecycle of ClickHouse clusters including scaling, upgrades, and configuration management.
+The Operator handles the full lifecycle of ClickHouse clusters, including scaling, upgrades, and configuration management.
+
+<br clear="left">
 
 ## Features
 
 - **ClickHouse Cluster Management**: Create and manage ClickHouse clusters
 - **ClickHouse Keeper Integration**: Built-in support for ClickHouse Keeper clusters for distributed coordination
 - **Storage Provisioning**: Customizable persistent volume claims with storage class selection
-- **High Availability**: Fault tolerant installations for ClickHouse and Keeper clusters
+- **High Availability**: Fault-tolerant installations for ClickHouse and Keeper clusters
 - **Security**: Built-in security features TLS/SSL support for secure cluster communication
 - **Monitoring**: Prometheus metrics integration for observability
 
@@ -31,34 +33,35 @@ The Operator handles the full lifecycle of ClickHouse clusters including scaling
 - docker version 17.03+
 - `kubectl` version v1.33.0+
 - Access to a Kubernetes v1.33.0+ cluster
+- cert-manager installed in the cluster (for webhook certificates)
 
 ### Quick Start
 
 For users who want to quickly try the operator:
 
 1. Install the Custom Resource Definitions(CRD) and operator (Requires cert-manager to issue webhook certificates):
-   1. Using pre-built manifests:
-   ```sh
-   kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/<release>/clickhouse-operator.yaml
-   ```
-    2. Using helm chart
-    ```sh
-    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
-       --create-namespace \
-       -n clickhouse-operator-system
-    ```
+   - Using pre-built manifests:
+     ```sh
+     kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/latest/clickhouse-operator.yaml
+     ```
+   - Using helm chart
+     ```sh
+     helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+        --create-namespace \
+        -n clickhouse-operator-system
+     ```
 
 2. Deploy a sample cluster:
-```sh
-kubectl apply -f https://raw.githubusercontent.com/ClickHouse/clickhouse-operator/refs/heads/main/examples/minimal.yaml
-```
+   ```sh
+   kubectl apply -f https://raw.githubusercontent.com/ClickHouse/clickhouse-operator/refs/heads/main/examples/minimal.yaml
+   ```
 
 3. Verify the deployment:
-```sh
-kubectl get clickhouseclusters
-kubectl get keeperclusters
-kubectl get pods
-```
+   ```sh
+   kubectl get clickhouseclusters
+   kubectl get keeperclusters
+   kubectl get pods
+   ```
 
 ### Deploy from the sources
 **Build and push your image to the location specified by `IMG`:**
@@ -118,7 +121,7 @@ make undeploy
 
 ## Documentation
 
-For more detailed information, see the [documentation](./docs/README.md):
+For more detailed information, see the [documentation](https://clickhouse.com/docs/clickhouse-operator/overview).
 
 ## Contributing
 
