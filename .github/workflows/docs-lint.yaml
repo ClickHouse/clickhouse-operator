@@ -21,4 +21,5 @@ jobs:
       - uses: actions/checkout@v6
       - uses: tcort/github-action-markdown-link-check@v1
         with:
-          config-file: docs/markdown-link-check.json
+          config-file: ci/.markdown-link-check.json
+          file-extension: '.md'

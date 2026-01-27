@@ -439,7 +439,7 @@ docs-lint-vale: ## Run Vale linter on documentation
 .PHONY: docs-link-check
 docs-link-check: ## Run markdown-link-check on documentation
 	@command -v markdown-link-check >/dev/null 2>&1 || { echo "markdown-link-check is required but not installed. npm install -g markdown-link-check"; exit 1; }
-	markdown-link-check -c docs/.markdown-link-check.json README.md docs
+	markdown-link-check -c ci/.markdown-link-check.json *.md docs
 
 .PHONY: docs-lint
 docs-lint: docs-lint-vale docs-link-check ## Run all documentation linters
