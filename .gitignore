@@ -12,6 +12,11 @@ dist/chart/charts
 clickhouse-operator-helm-*.tgz
 clickhouse-operator_*.tar.gz
 bundle
+*.Dockerfile.cross
+
+# Artidfacts for building OLM catalog
+catalog
+catalog.Dockerfile
 
 # Test binary, built with `go test -c`
 *.test

@@ -55,6 +55,7 @@ endif
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.42.0
+OPERATOR_MANAGER_VERSION ?= v1.62.0
 # Image URL to use all building/pushing image targets
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
@@ -397,17 +398,13 @@ ifeq (,$(shell which opm 2>/dev/null))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.23.0/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/${OPERATOR_MANAGER_VERSION}/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 else
 OPM = $(shell which opm)
 endif
 endif
-
-# A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
-# These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(BUNDLE_IMG)
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:$(FULL_VERSION)
@@ -417,12 +414,34 @@ ifneq ($(origin CATALOG_BASE_IMG), undefined)
 FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
 endif
 
-# Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
-# https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
+.PHONY: catalog-dockerfile
+catalog-dockerfile: opm ## Generate catalog Dockerfile
+	rm -f catalog.Dockerfile && $(OPM) generate dockerfile catalog
+
+.PHONY: catalog-template
+catalog-template: # Generate catalog template with all bundles from registry
+	./ci/generate-catalog-template.sh $(IMAGE_TAG_BASE)-bundle
+
+catalog-render: opm catalog-template ## Genermrate FBC catalog from template
+	$(OPM) alpha render-template catalog/clickhouse-operator-template.yaml > catalog/catalog.yaml
+	$(OPM) validate catalog
+
 .PHONY: catalog-build
-catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool docker --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+catalog-build: catalog-render catalog-dockerfile ## Build a catalog image using FBC
+	$(CONTAINER_TOOL) build -f catalog.Dockerfile -t $(CATALOG_IMG) .
+
+.PHONY: catalog-buildx
+catalog-buildx: catalog-render catalog-dockerfile ## Build and push catalog image for cross-platform support
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' catalog.Dockerfile > catalog.Dockerfile.cross
+	- $(CONTAINER_TOOL) buildx create --name clickhouse-operator-catalog-builder
+	$(CONTAINER_TOOL) buildx use clickhouse-operator-catalog-builder
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag $(CATALOG_IMG) -f catalog.Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx rm clickhouse-operator-catalog-builder
+	rm -f catalog.Dockerfile.cross
+
+.PHONY: catalog-push-latest
+catalog-push-latest:
+	$(CONTAINER_TOOL) buildx imagetools create -t $(IMAGE_TAG_BASE)-catalog:latest $(CATALOG_IMG)
 
 # Push the catalog image.
 .PHONY: catalog-push
