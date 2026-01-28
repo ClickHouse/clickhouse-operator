@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+permissions:
+  contents: read
+  statuses: write
+  checks: write
+  pull-requests: write
 
 jobs:
   vale:
@@ -15,6 +20,7 @@ jobs:
       - uses: errata-ai/vale-action@v2.1.1
         with:
           fail_on_error: 'true'
+
   markdown-link-check:
     runs-on: ubuntu-latest
     steps:
@@ -23,3 +29,56 @@ jobs:
         with:
           config-file: ci/.markdown-link-check.json
           file-extension: '.md'
+
+  ci-pending:
+    name: Set Documentation CI pending
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set status check to pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/statuses/${{ github.sha }} \
+            -f state=pending \
+            -f target_url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            -f description='Waiting for Docs CI workflow to complete' \
+            -f context='Documentation Mergeable Check'
+
+  ci-success:
+    name: Set CI Success Check
+    runs-on: ubuntu-latest
+    needs: [ ci-pending, vale, markdown-link-check ]
+    if: always()
+    steps:
+      - name: Determine CI status
+        id: status
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "state=failure" >> $GITHUB_OUTPUT
+            echo "description=One or more CI jobs failed or were cancelled" >> $GITHUB_OUTPUT
+            echo "One or more jobs failed or were cancelled"
+            exit 1
+          else
+            echo "state=success" >> $GITHUB_OUTPUT
+            echo "description=All CI jobs passed successfully" >> $GITHUB_OUTPUT
+            echo "All required jobs passed successfully"
+          fi
+
+      - name: Create commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/statuses/${{ github.sha }} \
+            -f state='${{ steps.status.outputs.state || 'error' }}' \
+            -f target_url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            -f description='${{ steps.status.outputs.description || 'Documentation CI workflow did not complete' }}' \
+            -f context='Documentation Mergeable Check'
