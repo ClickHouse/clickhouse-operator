@@ -170,7 +170,7 @@ spec:
   - email: operator@clickhouse.com
     name: ClickHouse Team
   maturity: alpha
-  minKubeVersion: 1.33.0
+  minKubeVersion: 1.30.0
   provider:
     name: ClickHouse Inc.
     url: https://clickhouse.com

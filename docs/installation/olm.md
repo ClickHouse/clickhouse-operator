@@ -11,7 +11,7 @@ This guide covers installing the ClickHouse Operator using Operator Lifecycle Ma
 
 ## Prerequisites
 
-- Kubernetes cluster version 1.33.0 or later
+- Kubernetes cluster version 1.30.0 or later
 - kubectl configured to access your cluster
 - Cluster admin permissions
 - Installed OLM (Operator Lifecycle Manager)

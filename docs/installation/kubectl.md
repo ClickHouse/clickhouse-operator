@@ -4,8 +4,8 @@ This guide covers installing the ClickHouse Operator using kubectl and manifest 
 
 ## Prerequisites
 
-- Kubernetes cluster v1.33.0 or later
-- kubectl v1.33.0 or later
+- Kubernetes cluster v1.30.0 or later
+- kubectl v1.30.0 or later
 - Cluster admin permissions
 
 ## Install from Release Manifests
