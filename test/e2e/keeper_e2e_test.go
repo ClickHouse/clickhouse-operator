@@ -16,9 +16,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controllerutil"
-	"github.com/clickhouse-operator/test/testutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
 const (

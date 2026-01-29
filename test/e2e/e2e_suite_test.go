@@ -26,9 +26,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controllerutil"
-	"github.com/clickhouse-operator/test/testutil"
+	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
 const (

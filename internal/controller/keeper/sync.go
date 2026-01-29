@@ -22,9 +22,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	chctrl "github.com/clickhouse-operator/internal/controller"
-	ctrlutil "github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
+	ctrlutil "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 type replicaState struct {

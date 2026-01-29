@@ -11,8 +11,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	chcontrol "github.com/clickhouse-operator/internal/controller/clickhouse"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chcontrol "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 )
 
 // ClickHouseClient is a ClickHouse client for testing ClickHouse clusters. Forwards ports to ClickHouse pods.

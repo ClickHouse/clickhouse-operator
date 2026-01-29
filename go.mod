@@ -1,4 +1,4 @@
-module github.com/clickhouse-operator
+module github.com/ClickHouse/clickhouse-operator
 
 go 1.25.0
 

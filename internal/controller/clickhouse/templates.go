@@ -6,10 +6,10 @@ import (
 	"path"
 	"strconv"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

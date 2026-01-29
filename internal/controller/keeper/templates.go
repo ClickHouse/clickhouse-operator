@@ -16,10 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {

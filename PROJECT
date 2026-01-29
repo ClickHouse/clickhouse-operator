@@ -12,7 +12,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: clickhouse-operator
-repo: github.com/clickhouse-operator
+repo: github.com/ClickHouse/clickhouse-operator
 resources:
 - api:
     crdVersion: v1
@@ -20,7 +20,7 @@ resources:
   controller: true
   domain: clickhouse.com
   kind: KeeperCluster
-  path: github.com/clickhouse-operator/api/v1alpha1
+  path: github.com/ClickHouse/clickhouse-operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true
@@ -32,7 +32,7 @@ resources:
   controller: true
   domain: clickhouse.com
   kind: ClickHouseCluster
-  path: github.com/clickhouse-operator/api/v1alpha1
+  path: github.com/ClickHouse/clickhouse-operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true

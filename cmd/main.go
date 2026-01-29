@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-logr/zapr"
 
-	"github.com/clickhouse-operator/internal/controller/clickhouse"
-	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -26,8 +26,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	clickhousecomv1alpha1 "github.com/clickhouse-operator/api/v1alpha1"
-	whchv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
+	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	whchv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

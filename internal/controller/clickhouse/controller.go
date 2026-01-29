@@ -20,11 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	chctrl "github.com/clickhouse-operator/internal/controller"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controllerutil"
-	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 // ClusterController reconciles a ClickHouseCluster object.

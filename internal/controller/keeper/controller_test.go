@@ -18,10 +18,10 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/testutil"
-	"github.com/clickhouse-operator/internal/controllerutil"
-	webhookv1 "github.com/clickhouse-operator/internal/webhook/v1alpha1"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
 func TestControllers(t *testing.T) {

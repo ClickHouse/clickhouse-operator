@@ -20,10 +20,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	chctrl "github.com/clickhouse-operator/internal/controller/clickhouse"
-	"github.com/clickhouse-operator/internal/controllerutil"
-	"github.com/clickhouse-operator/test/testutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
 const (

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 const (

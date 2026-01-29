@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	chv1 "github.com/clickhouse-operator/api/v1alpha1"
+	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
 var _ = Describe("ClickHouseCluster Webhook", func() {

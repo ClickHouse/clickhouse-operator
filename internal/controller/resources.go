@@ -17,8 +17,8 @@ import (
 	ctrlruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	util "github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // ReplicaUpdateStage represents the stage of updating a ClickHouse replica. Used in reconciliation process.

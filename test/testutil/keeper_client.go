@@ -13,8 +13,8 @@ import (
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
 	"k8s.io/client-go/rest"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller/keeper"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 )
 
 const (

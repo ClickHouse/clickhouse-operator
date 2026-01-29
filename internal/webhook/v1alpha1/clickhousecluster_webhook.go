@@ -10,10 +10,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 
-	chv1 "github.com/clickhouse-operator/api/v1alpha1"
+	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
 // SetupClickHouseWebhookWithManager registers the webhook for ClickHouseCluster in the manager.

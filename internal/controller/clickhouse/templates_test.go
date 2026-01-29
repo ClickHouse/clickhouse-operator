@@ -6,9 +6,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 var _ = Describe("BuildVolumes", func() {

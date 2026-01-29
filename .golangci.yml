@@ -149,7 +149,7 @@ formatters:
     goimports:
       # Put imports beginning with prefix after 3rd-party packages.
       local-prefixes:
-       - github.com/clickhouse-operator
+       - github.com/ClickHouse/clickhouse-operator
     gofmt:
       simplify: true
       rewrite-rules:

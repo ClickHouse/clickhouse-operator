@@ -10,10 +10,10 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal/controller"
-	"github.com/clickhouse-operator/internal/controller/keeper"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 var (

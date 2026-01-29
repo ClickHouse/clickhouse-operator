@@ -10,9 +10,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	chv1 "github.com/clickhouse-operator/api/v1alpha1"
-	"github.com/clickhouse-operator/internal"
-	"github.com/clickhouse-operator/internal/controllerutil"
+	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // KeeperClusterWebhook implements a validating and mutating webhook for KeeperCluster.

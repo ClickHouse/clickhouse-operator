@@ -11,8 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	util "github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // NewCondition creates a new condition with the given parameters.

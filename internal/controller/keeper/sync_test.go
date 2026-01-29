@@ -18,10 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/clickhouse-operator/internal/controller"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
-	util "github.com/clickhouse-operator/internal/controllerutil"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 var _ = Describe("UpdateReplica", Ordered, func() {

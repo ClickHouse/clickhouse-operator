@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
-	v1 "github.com/clickhouse-operator/api/v1alpha1"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
 var _ = Describe("ConfigGenerator", func() {
