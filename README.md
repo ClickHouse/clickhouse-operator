@@ -31,8 +31,8 @@ The Operator handles the full lifecycle of ClickHouse clusters, including scalin
 ### Prerequisites
 - go version v1.25.0+
 - docker version 17.03+
-- `kubectl` version v1.33.0+
-- Access to a Kubernetes v1.33.0+ cluster
+- `kubectl` version v1.30.0+
+- Access to a Kubernetes v1.30.0+ cluster
 - cert-manager installed in the cluster (for webhook certificates)
 
 ### Quick Start
