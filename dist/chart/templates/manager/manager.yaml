@@ -50,8 +50,8 @@ spec:
                 - name: manager
                   {{- $args := .Values.manager.args }}
                   {{- if .Values.metrics.enable }}
-                  {{-   $args = append $args (printf "--metrics-bind-address=%s" .Values.metrics.port) }}
-                  {{-   $args = append $args (printf "--metrics-secure=%s" .Values.metrics.secure) }}
+                  {{-   $args = append $args (printf "--metrics-bind-address=:%v" .Values.metrics.port) }}
+                  {{-   $args = append $args (printf "--metrics-secure=%t" .Values.metrics.secure) }}
                   {{- end }}
                   {{- if .Values.certManager.enable }}
                   {{-   $args = append $args "--webhook-cert-path=/tmp/k8s-server/serving-certs" }}
@@ -78,7 +78,7 @@ spec:
                       periodSeconds: 10
                   ports:
                       {{- if .Values.webhook.enable }}
-                      - containerPort: 9443
+                      - containerPort: {{ .Values.webhook.port }}
                         name: webhook-server
                         protocol: TCP
                       {{- end }}
@@ -91,7 +91,7 @@ spec:
                   securityContext: {{ toYaml .Values.manager.podSecurityContext | nindent 22 }}
                   {{- if .Values.certManager.enable }}
                   volumeMounts:
-                      - mountPath: /tmp/k8s-webhook-server/serving-certs
+                      - mountPath: /tmp/k8s-server/serving-certs
                         name: serving-certs
                         readOnly: true
                   {{- end }}

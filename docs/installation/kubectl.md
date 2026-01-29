@@ -15,7 +15,7 @@ This guide covers installing the ClickHouse Operator using kubectl and manifest 
 Install the operator and CRDs from the latest release:
 
 ```bash
-kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/<release>/clickhouse-operator.yaml
+kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
 ```
 
 This will:

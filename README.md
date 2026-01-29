@@ -42,7 +42,7 @@ For users who want to quickly try the operator:
 1. Install the Custom Resource Definitions(CRD) and operator (Requires cert-manager to issue webhook certificates):
    - Using pre-built manifests:
      ```sh
-     kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/latest/clickhouse-operator.yaml
+     kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
      ```
    - Using helm chart
      ```sh

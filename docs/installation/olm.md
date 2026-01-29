@@ -70,7 +70,7 @@ metadata:
   name: clickhouse-operator
   namespace: clickhouse-operator-system
 spec:
-  channel: stable
+  channel: stable-v0
   name: clickhouse-operator
   source: clickhouse-operator-catalog
   sourceNamespace: clickhouse-operator-system
