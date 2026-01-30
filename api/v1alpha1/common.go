@@ -30,7 +30,7 @@ func (c *ContainerImage) String() string {
 	}
 
 	if c.Hash != "" {
-		return fmt.Sprintf("%s:%s", c.Repository, c.Hash)
+		return fmt.Sprintf("%s@%s", c.Repository, c.Hash)
 	}
 
 	return c.Repository
