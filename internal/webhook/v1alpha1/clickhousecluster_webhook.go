@@ -80,7 +80,8 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldObj, new
 	}
 
 	warns, err := w.validateImpl(newCluster)
-	if *oldCluster.Spec.Shards > *newCluster.Spec.Shards {
+	if oldCluster.Spec.Shards != nil && newCluster.Spec.Shards != nil &&
+		*oldCluster.Spec.Shards > *newCluster.Spec.Shards {
 		warns = append(warns, "Decreasing the number of shards is a destructive operation. It removes shards with all their data.")
 	}
 
