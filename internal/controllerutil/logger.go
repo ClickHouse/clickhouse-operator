@@ -80,7 +80,7 @@ func (l Logger) toFields(args ...any) []zap.Field {
 	for i := 0; i < len(args); i += 2 {
 		key, ok := args[i].(string)
 		if !ok {
-			l.l.Fatal("non string key found", zap.Any("key", args[i*2]))
+			l.l.Fatal("non string key found", zap.Any("key", args[i]))
 			return nil
 		}
 
