@@ -239,55 +239,18 @@ jobs:
           path: "**/report/*.xml"
           reporter: java-junit
 
-  ci-pending:
-    name: Set CI Pending
+  ci-success-check:
+    name: All CI checks passed
     runs-on: ubuntu-latest
-    steps:
-      - name: Set status check to pending
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ github.sha }} \
-            -f state=pending \
-            -f target_url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-            -f description='Waiting for CI workflow to complete' \
-            -f context='Mergeable Check'
-
-  ci-success:
-    name: CI Success Check
-    runs-on: ubuntu-latest
-    needs: [ ci-pending, lint, bundle, build_and_test, helm-validate, helm-test, e2e-test ]
+    needs: [ lint, bundle, build_and_test, helm-validate, helm-test, e2e-test ]
     if: always()
     steps:
       - name: Determine CI status
         id: status
         run: |
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
-            echo "state=failure" >> $GITHUB_OUTPUT
-            echo "description=One or more CI jobs failed or were cancelled" >> $GITHUB_OUTPUT
-            echo "One or more jobs failed or were cancelled"
+            echo "One or more CI jobs failed or were cancelled"
             exit 1
           else
-            echo "state=success" >> $GITHUB_OUTPUT
-            echo "description=All CI jobs passed successfully" >> $GITHUB_OUTPUT
             echo "All required jobs passed successfully"
           fi
-
-      - name: Create commit status
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/statuses/${{ github.sha }} \
-            -f state='${{ steps.status.outputs.state || 'error' }}' \
-            -f target_url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
-            -f description='${{ steps.status.outputs.description || 'CI workflow did not complete' }}' \
-            -f context='Mergeable Check'
