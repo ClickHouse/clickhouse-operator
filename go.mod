@@ -6,7 +6,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
 	github.com/blang/semver/v4 v4.0.0
-	github.com/cert-manager/cert-manager v1.19.2
+	github.com/cert-manager/cert-manager v1.19.3
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
