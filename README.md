@@ -94,7 +94,7 @@ privileges or be logged in as admin.
 The `examples/` directory contains various ClickHouse cluster configurations:
 
 - **minimal.yaml**: Basic ClickHouse cluster with Keeper (2 replicas, 1 shard)
-- **cluster_with_ssl.yaml**: ClickHouse cluster with TLS/SSL enabled. Requires
+- **cluster_with_ssl.yaml**: ClickHouse cluster with TLS/SSL enabled. Requires cert-manager to issue certificates.
 - **aws_eks_gp3.yaml**: Configuration for AWS EKS with gp3 storage
 - **gcp_gke_ssd.yaml**: Configuration for GCP GKE with SSD storage
 - **custom_configuration.yaml**: ClickHouse cluster with configuration overrides
@@ -141,3 +141,4 @@ Before contributing, please ensure:
 ## Useful Links
 * [`Kubebuilder` Documentation](https://book.kubebuilder.io/introduction.html)
 * [ClickHouse Documentation](https://clickhouse.com/docs) 
+* [Slack channel](https://clickhousedb.slack.com/archives/C0ABN03GJA1)
