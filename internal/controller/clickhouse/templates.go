@@ -297,6 +297,15 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		return port.Name
 	})
 
+	if r.Cluster.Spec.ContainerTemplate.SecurityContext != nil {
+		securityContext := r.Cluster.Spec.ContainerTemplate.SecurityContext.DeepCopy()
+		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
+			return nil, fmt.Errorf("apply container security context overrides: %w", err)
+		}
+
+		container.SecurityContext = securityContext
+	}
+
 	if r.Cluster.Spec.Settings.DefaultUserPassword != nil {
 		var (
 			secretRef    *corev1.SecretKeySelector
@@ -342,6 +351,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,
 		Volumes:                       volumes,
+		SecurityContext:               r.Cluster.Spec.PodTemplate.SecurityContext,
 		Containers: []corev1.Container{
 			container,
 		},

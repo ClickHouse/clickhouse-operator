@@ -340,6 +340,15 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		})
 	}
 
+	if cr.Spec.ContainerTemplate.SecurityContext != nil {
+		securityContext := cr.Spec.ContainerTemplate.SecurityContext.DeepCopy()
+		if err := controllerutil.ApplyDefault(securityContext, *keeperContainer.SecurityContext); err != nil {
+			return nil, fmt.Errorf("apply container security context overrides: %w", err)
+		}
+
+		keeperContainer.SecurityContext = securityContext
+	}
+
 	keeperPodSpec := corev1.PodSpec{
 		TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
 		TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
@@ -352,6 +361,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,
 		Volumes:                       volumes,
+		SecurityContext:               cr.Spec.PodTemplate.SecurityContext,
 		Containers: []corev1.Container{
 			keeperContainer,
 		},

@@ -133,6 +133,10 @@ type PodTemplateSpec struct {
 	// +listMapKey=name
 	Volumes []corev1.Volume `json:"volumes,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
+	// SecurityContext holds pod-level security attributes and common container settings.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
+
 	// TopologyZoneKey is the key of node labels.
 	// Nodes that have a label with this key and identical values are considered to be in the same topology zone.
 	// Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.
@@ -178,6 +182,12 @@ type ContainerTemplateSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	Env []corev1.EnvVar `json:"env,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
+
+	// SecurityContext defines the security options the container should be run with.
+	// If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
 
 // ClusterTLSSpec defines cluster TLS configuration.

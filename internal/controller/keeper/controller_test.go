@@ -214,4 +214,28 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		//nolint:forcetypeassert
 		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
 	})
+
+	It("should use security context overrides from spec", func(ctx context.Context) {
+		updatedCR := cr.DeepCopy()
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		updatedCR.Spec.PodTemplate.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: ptr.To[int64](7),
+		}
+		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
+			Privileged: ptr.To(true),
+		}
+		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+
+		var sts appsv1.StatefulSet
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
+			Namespace: cr.Namespace,
+			Name:      cr.StatefulSetNameByReplicaID(0)}, &sts)).To(Succeed())
+
+		Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsUser).To(BeEquivalentTo(7))
+		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.Privileged).To(BeEquivalentTo(true))
+	})
 })

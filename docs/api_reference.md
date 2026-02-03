@@ -201,7 +201,7 @@ Parameters for pod configuration.
 | `nodeSelector`    | `map[string]string`          | No       | Node selector for pod placement.                                                     |
 | `affinity`        | `corev1.Affinity`            | No       | Pod affinity/anti-affinity rules.                                                    |
 | `tolerations`     | `[]corev1.Toleration`        | No       | Tolerations for tainted nodes.                                                       |
-| `securityContext` | `*corev1.PodSecurityContext` | No       | Pod security context.                                                                |
+| `securityContext` | `*corev1.PodSecurityContext` | No       | Pod security context overrides.                                                      |
 
 #### Example
 
@@ -236,7 +236,7 @@ Parameters for container configuration.
 | `resources`       | `corev1.ResourceRequirements` | No       | CPU and memory resource requirements.            |
 | `env`             | `[]corev1.EnvVar`             | No       | Environment variables.                           |
 | `volumeMounts`    | `[]corev1.VolumeMount`        | No       | Additional volume mounts.                        |
-| `securityContext` | `*corev1.SecurityContext`     | No       | Container security context.                      |
+| `securityContext` | `*corev1.SecurityContext`     | No       | Container security context overrides.            |
 
 #### Example
 
