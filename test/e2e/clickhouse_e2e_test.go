@@ -328,7 +328,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Namespace: testNamespace,
 			},
 			Data: map[string][]byte{
-				"password": []byte(controllerutil.Sha256Hash([]byte(password))),
+				"password": []byte(passwordSha),
 			},
 		}
 		auth := clickhouse.Auth{

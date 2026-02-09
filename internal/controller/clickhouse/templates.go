@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"fmt"
 	"maps"
+	"net"
 	"path"
 	"strconv"
 
@@ -197,25 +198,31 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 
 	protocols := buildProtocols(r.Cluster)
 
-	var readyCheck string
+	var probeCommand []string
 	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
-		readyCheck = fmt.Sprintf("wget -qO- http://127.0.0.1:%d | grep -o Ok.", PortHTTP)
+		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
+			"wget -qO- http://%s | grep -o Ok.",
+			net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTP)),
+		)}
 	} else {
-		readyCheck = fmt.Sprintf("wget --ca-certificate=%s -qO- https://%s:%d | grep -o Ok.",
-			path.Join(TLSConfigPath, CABundleFilename), r.Cluster.HostnameByID(id), PortHTTPSecure)
+		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
+			"wget --ca-certificate=%s -qO- https://%s | grep -o Ok.",
+			path.Join(TLSConfigPath, CABundleFilename),
+			net.JoinHostPort(r.Cluster.HostnameByID(id), strconv.Itoa(PortHTTPSecure)),
+		)}
 	}
 
-	livenessProbe := controller.DefaultProbeSettings
+	livenessProbe := controller.DefaultLivenessProbeSettings
 	livenessProbe.ProbeHandler = corev1.ProbeHandler{
 		Exec: &corev1.ExecAction{
-			Command: []string{"/usr/bin/clickhouse", "client", "-q", "SELECT 'liveness'"},
+			Command: probeCommand,
 		},
 	}
 
-	readinessProbe := controller.DefaultProbeSettings
+	readinessProbe := controller.DefaultReadinessProbeSettings
 	readinessProbe.ProbeHandler = corev1.ProbeHandler{
 		Exec: &corev1.ExecAction{
-			Command: []string{"/bin/bash", "-c", readyCheck},
+			Command: probeCommand,
 		},
 	}
 

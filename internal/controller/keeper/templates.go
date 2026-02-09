@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"fmt"
+	"net"
 	"path"
 	"slices"
 	"strconv"
@@ -260,15 +261,22 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		return nil, fmt.Errorf("build volumes for StatefulSet: %w", err)
 	}
 
-	readinessProbe := controller.DefaultProbeSettings
-	readinessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &corev1.ExecAction{
-			Command: []string{
-				"/bin/bash",
-				"-c",
-				fmt.Sprintf("wget -qO- http://127.0.0.1:%d/ready | grep -o '\"status\":\"ok\"'", PortHTTPControl),
-			},
+	probeAction := corev1.ExecAction{
+		Command: []string{"/bin/bash", "-c",
+			fmt.Sprintf("wget -qO- http://%s/ready | grep -o '\"status\":\"ok\"'",
+				net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTPControl)),
+			),
 		},
+	}
+
+	livenessProbe := controller.DefaultLivenessProbeSettings
+	livenessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &probeAction,
+	}
+
+	readinessProbe := controller.DefaultReadinessProbeSettings
+	readinessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &probeAction,
 	}
 
 	keeperContainer := corev1.Container{
@@ -295,6 +303,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 			},
 		},
 		VolumeMounts:             volumeMounts,
+		LivenessProbe:            &livenessProbe,
 		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,

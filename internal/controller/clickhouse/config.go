@@ -331,14 +331,14 @@ type clientConfigParams struct {
 }
 
 func clientConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
-	passEnv := EnvDefaultUserPassword
-	if r.Cluster.Spec.Settings.DefaultUserPassword == nil {
-		passEnv = ""
-	}
-
 	params := clientConfigParams{
 		ManagementPort:         PortManagement,
-		DefaultUserPasswordEnv: passEnv,
+		DefaultUserPasswordEnv: "",
+	}
+
+	// Only plaintext password could be set in client config.
+	if r.Cluster.Spec.Settings.DefaultUserPassword != nil && r.Cluster.Spec.Settings.DefaultUserPassword.PasswordType == "password" {
+		params.DefaultUserPasswordEnv = EnvDefaultUserPassword
 	}
 
 	builder := strings.Builder{}

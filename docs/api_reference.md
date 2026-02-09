@@ -317,11 +317,11 @@ logger:
 
 Reference to a Secret or ConfigMap key containing a password.
 
-| Field          | Type                    | Required | Default     | Description                                                                                                                                                                                                                                                    |
-|----------------|-------------------------|----------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `passwordType` | `string`                | No       | `plaintext` | Type of password encoding. Possible values: `plaintext`, `sha256_password`, `sha256_hash`, `double_sha1_password`, `double_sha1_hash`. See [ClickHouse documentation](https://clickhouse.com/docs/en/operations/settings/settings-users#password) for details. |
-| `secret`       | `*SecretKeySelector`    | No       | -           | Select password from a Secret key. Mutually exclusive with `configMap`.                                                                                                                                                                                        |
-| `configMap`    | `*ConfigMapKeySelector` | No       | -           | Select password from a ConfigMap key. Mutually exclusive with `secret`.                                                                                                                                                                                        |
+| Field          | Type                    | Required | Default    | Description                                                                                                                                                                                                                        |
+|----------------|-------------------------|----------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `passwordType` | `string`                | No       | `password` | Type of password encoding. Possible values: `password`, `password_sha256_hex`, `password_double_sha1_hex`. See [ClickHouse documentation](https://clickhouse.com/docs/en/operations/settings/settings-users#password) for details. |
+| `secret`       | `*SecretKeySelector`    | No       | -          | Select password from a Secret key. Mutually exclusive with `configMap`.                                                                                                                                                            |
+| `configMap`    | `*ConfigMapKeySelector` | No       | -          | Select password from a ConfigMap key. Mutually exclusive with `secret`.                                                                                                                                                            |
 
 **Note**: You must specify either `secret` OR `configMap`, not both.
 
@@ -329,7 +329,7 @@ Reference to a Secret or ConfigMap key containing a password.
 
 ```yaml
 defaultUserPassword:
-  passwordType: plaintext  # Optional, default
+  passwordType: password  # Optional, default
   secret:
     name: clickhouse-password
     key: password
@@ -339,7 +339,7 @@ defaultUserPassword:
 
 ```yaml
 defaultUserPassword:
-  passwordType: sha256_password
+  passwordType: password_sha256_hex
   secret:
     name: clickhouse-password
     key: password_hash

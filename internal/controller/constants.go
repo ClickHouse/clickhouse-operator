@@ -12,12 +12,22 @@ const (
 )
 
 var (
-	// DefaultProbeSettings defines default settings for Kubernetes liveness and readiness probes.
+	// DefaultLivenessProbeSettings defines default settings for Kubernetes liveness probes.
 	//nolint: mnd // Magic numbers are used as constants.
-	DefaultProbeSettings = corev1.Probe{
-		TimeoutSeconds:   10,
-		PeriodSeconds:    1,
-		SuccessThreshold: 1,
-		FailureThreshold: 15,
+	DefaultLivenessProbeSettings = corev1.Probe{
+		InitialDelaySeconds: 60,
+		TimeoutSeconds:      10,
+		PeriodSeconds:       5,
+		FailureThreshold:    10,
+	}
+
+	// DefaultReadinessProbeSettings defines default settings for Kubernetes liveness probes.
+	//nolint: mnd // Magic numbers are used as constants.
+	DefaultReadinessProbeSettings = corev1.Probe{
+		InitialDelaySeconds: 5,
+		TimeoutSeconds:      10,
+		PeriodSeconds:       1,
+		SuccessThreshold:    5,
+		FailureThreshold:    10,
 	}
 )
