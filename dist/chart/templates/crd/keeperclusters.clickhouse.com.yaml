@@ -63,6 +63,12 @@ spec:
                                     type: string
                                 description: Additional annotations that are added to resources.
                                 type: object
+                            clusterDomain:
+                                default: cluster.local
+                                description: |-
+                                    ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
+                                    Defaults to "cluster.local" if not specified.
+                                type: string
                             containerTemplate:
                                 description: Parameters passed to the Keeper container spec.
                                 properties:

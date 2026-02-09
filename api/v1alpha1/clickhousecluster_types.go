@@ -63,6 +63,12 @@ type ClickHouseClusterSpec struct {
 	// Configuration parameters for ClickHouse server.
 	// +optional
 	Settings ClickHouseSettings `json:"settings,omitempty"`
+
+	// ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
+	// Defaults to "cluster.local" if not specified.
+	// +optional
+	// +kubebuilder:default:="cluster.local"
+	ClusterDomain string `json:"clusterDomain,omitempty"`
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
@@ -359,8 +365,7 @@ func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) s
 
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
 func (v *ClickHouseCluster) HostnameByID(id ClickHouseReplicaID) string {
-	hostnameTemplate := "%s-0.%s.%s.svc.cluster.local"
-	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace)
+	return formatPodHostname(v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace, v.Spec.ClusterDomain)
 }
 
 // +kubebuilder:object:root=true
