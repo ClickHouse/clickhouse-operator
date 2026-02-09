@@ -29,13 +29,3 @@ const (
 	// DefaultClusterDomain is the default Kubernetes cluster domain suffix for DNS resolution.
 	DefaultClusterDomain = "cluster.local"
 )
-
-// EffectiveClusterDomain returns the cluster domain to use for DNS resolution.
-// If specDomain is empty, it returns the default "cluster.local".
-func EffectiveClusterDomain(specDomain string) string {
-	if specDomain == "" {
-		return DefaultClusterDomain
-	}
-
-	return specDomain
-}

@@ -23,17 +23,18 @@ kind: ClickHouseCluster
 
 ClickHouseClusterSpec defines the desired state of a ClickHouse cluster.
 
-| Field                 | Type                        | Required | Default      | Description                                           |
-|-----------------------|-----------------------------|----------|--------------|-------------------------------------------------------|
-| `replicas`            | `*int32`                    | No       | `3`          | Number of replicas in a single shard. Must be >= 0.   |
-| `shards`              | `*int32`                    | No       | `1`          | Number of shards in the cluster. Must be >= 0.        |
-| `keeperClusterRef`    | `LocalObjectReference`      | Yes      | -            | Reference to the KeeperCluster used for coordination. |
-| `podTemplate`         | `PodTemplateSpec`           | No       | -            | Parameters for the pod spec.                          |
-| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults | Parameters for the ClickHouse container spec.         |
-| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -            | Storage configuration for data volumes.               |
-| `labels`              | `map[string]string`         | No       | -            | Additional labels added to all resources.             |
-| `annotations`         | `map[string]string`         | No       | -            | Additional annotations added to all resources.        |
-| `settings`            | `ClickHouseConfig`          | No       | -            | ClickHouse configuration parameters.                  |
+| Field                 | Type                        | Required | Default         | Description                                               |
+|-----------------------|-----------------------------|----------|-----------------|-----------------------------------------------------------|
+| `replicas`            | `*int32`                    | No       | `3`             | Number of replicas in a single shard. Must be >= 0.       |
+| `shards`              | `*int32`                    | No       | `1`             | Number of shards in the cluster. Must be >= 0.            |
+| `keeperClusterRef`    | `LocalObjectReference`      | Yes      | -               | Reference to the KeeperCluster used for coordination.     |
+| `podTemplate`         | `PodTemplateSpec`           | No       | -               | Parameters for the pod spec.                              |
+| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults    | Parameters for the ClickHouse container spec.             |
+| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -               | Storage configuration for data volumes.                   |
+| `labels`              | `map[string]string`         | No       | -               | Additional labels added to all resources.                 |
+| `annotations`         | `map[string]string`         | No       | -               | Additional annotations added to all resources.            |
+| `settings`            | `ClickHouseConfig`          | No       | -               | ClickHouse configuration parameters.                      |
+| `clusterDomain`       | `string`                    | No       | `cluster.local` | Kubernetes cluster domain suffix used for DNS resolution. |
 
 #### Example
 
@@ -119,16 +120,16 @@ kind: KeeperCluster
 
 KeeperClusterSpec defines the desired state of a Keeper cluster.
 
-| Field                 | Type                        | Required | Default      | Description                                                                 |
-|-----------------------|-----------------------------|----------|--------------|-----------------------------------------------------------------------------|
-| `replicas`            | `*int32`                    | No       | `3`          | Number of replicas. Must be an odd number: 0, 1, 3, 5, 7, 9, 11, 13, or 15. |
-| `podTemplate`         | `PodTemplateSpec`           | No       | -            | Parameters for the pod spec.                                                |
-| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults | Parameters for the Keeper container spec.                                   |
-| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -            | Storage configuration for data volumes.                                     |
-| `labels`              | `map[string]string`         | No       | -            | Additional labels added to all resources.                                   |
-| `annotations`         | `map[string]string`         | No       | -            | Additional annotations added to all resources.                              |
-| `settings`            | `KeeperConfig`              | No       | -            | Keeper configuration parameters.                                            |
-
+| Field                 | Type                        | Required | Default         | Description                                                                 |
+|-----------------------|-----------------------------|----------|-----------------|-----------------------------------------------------------------------------|
+| `replicas`            | `*int32`                    | No       | `3`             | Number of replicas. Must be an odd number: 0, 1, 3, 5, 7, 9, 11, 13, or 15. |
+| `podTemplate`         | `PodTemplateSpec`           | No       | -               | Parameters for the pod spec.                                                |
+| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults    | Parameters for the Keeper container spec.                                   |
+| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -               | Storage configuration for data volumes.                                     |
+| `labels`              | `map[string]string`         | No       | -               | Additional labels added to all resources.                                   |
+| `annotations`         | `map[string]string`         | No       | -               | Additional annotations added to all resources.                              |
+| `settings`            | `KeeperConfig`              | No       | -               | Keeper configuration parameters.                                            |
+| `clusterDomain`       | `string`                    | No       | `cluster.local` | Kubernetes cluster domain suffix used for DNS resolution.                   |
 #### Example
 
 ```yaml

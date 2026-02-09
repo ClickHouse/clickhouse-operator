@@ -253,10 +253,8 @@ func (v *KeeperCluster) StatefulSetNameByReplicaID(replicaID KeeperReplicaID) st
 }
 
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
-func (v *KeeperCluster) HostnameByID(replicaID KeeperReplicaID) string {
-	domain := EffectiveClusterDomain(v.Spec.ClusterDomain)
-
-	return fmt.Sprintf("%s-0.%s.%s.svc.%s", v.StatefulSetNameByReplicaID(replicaID), v.HeadlessServiceName(), v.Namespace, domain)
+func (v *KeeperCluster) HostnameByID(id KeeperReplicaID) string {
+	return formatPodHostname(v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace, v.Spec.ClusterDomain)
 }
 
 // Hostnames returns list of domain names for all replicas to access within Kubernetes cluster.

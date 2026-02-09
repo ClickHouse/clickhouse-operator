@@ -289,3 +289,12 @@ func (s *DefaultPasswordSelector) Validate() error {
 
 	return nil
 }
+
+// formatPodHostname returns hostname for the first pod in the StatefulSet.
+func formatPodHostname(stsName, serviceName, namespace, domain string) string {
+	if domain == "" {
+		domain = DefaultClusterDomain
+	}
+
+	return fmt.Sprintf("%s-0.%s.%s.svc.%s", stsName, serviceName, namespace, domain)
+}
