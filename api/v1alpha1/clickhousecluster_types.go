@@ -365,14 +365,9 @@ func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) s
 
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
 func (v *ClickHouseCluster) HostnameByID(id ClickHouseReplicaID) string {
-	domain := v.Spec.ClusterDomain
-	if domain == "" {
-		domain = "cluster.local"
-	}
+	domain := EffectiveClusterDomain(v.Spec.ClusterDomain)
 
-	hostnameTemplate := "%s-0.%s.%s.svc." + domain
-
-	return fmt.Sprintf(hostnameTemplate, v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace)
+	return fmt.Sprintf("%s-0.%s.%s.svc.%s", v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace, domain)
 }
 
 // +kubebuilder:object:root=true
