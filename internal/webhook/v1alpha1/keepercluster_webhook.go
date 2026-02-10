@@ -63,17 +63,33 @@ func (w *KeeperClusterWebhook) ValidateCreate(_ context.Context, obj runtime.Obj
 		return nil, fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
 	}
 
-	return nil, w.validateImpl(keeperCluster)
+	warns, errs := w.validateImpl(keeperCluster)
+
+	return warns, errors.Join(errs...)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (w *KeeperClusterWebhook) ValidateUpdate(_ context.Context, _, newObj runtime.Object) (warnings admission.Warnings, err error) {
-	keeperCluster, ok := newObj.(*chv1.KeeperCluster)
+func (w *KeeperClusterWebhook) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
+	oldCluster, ok := oldObj.(*chv1.KeeperCluster)
+	if !ok {
+		return nil, fmt.Errorf("unexpected object type received %s", oldObj.GetObjectKind().GroupVersionKind())
+	}
+
+	newCluster, ok := newObj.(*chv1.KeeperCluster)
 	if !ok {
 		return nil, fmt.Errorf("unexpected object type received %s", newObj.GetObjectKind().GroupVersionKind())
 	}
 
-	return nil, w.validateImpl(keeperCluster)
+	warns, errs := w.validateImpl(newCluster)
+
+	if err := validateDataVolumeSpecChanges(
+		oldCluster.Spec.DataVolumeClaimSpec,
+		newCluster.Spec.DataVolumeClaimSpec,
+	); err != nil {
+		errs = append(errs, err)
+	}
+
+	return warns, errors.Join(errs...)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type.
@@ -81,13 +97,27 @@ func (w *KeeperClusterWebhook) ValidateDelete(context.Context, runtime.Object) (
 	return nil, nil
 }
 
-func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) error {
+func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) (admission.Warnings, []error) {
 	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
-	errs := ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, internal.ReservedKeeperVolumeNames)
+
+	var (
+		warns admission.Warnings
+		errs  []error
+	)
+
+	volumeWarns, volumeErrs := validateVolumes(
+		obj.Spec.PodTemplate.Volumes,
+		obj.Spec.ContainerTemplate.VolumeMounts,
+		internal.ReservedKeeperVolumeNames,
+		internal.KeeperDataPath,
+		obj.Spec.DataVolumeClaimSpec != nil,
+	)
+	warns = append(warns, volumeWarns...)
+	errs = append(errs, volumeErrs...)
 
 	if err := obj.Spec.Settings.TLS.Validate(); err != nil {
 		errs = append(errs, err)
 	}
 
-	return errors.Join(errs...)
+	return warns, errs
 }

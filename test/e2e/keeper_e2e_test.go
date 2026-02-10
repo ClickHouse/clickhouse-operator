@@ -40,7 +40,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 			},
 		}
 		checks := 0
@@ -90,7 +90,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 			},
 		}
 		checks := 0
@@ -144,7 +144,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 				Settings: v1.KeeperSettings{
 					TLS: v1.ClusterTLSSpec{
 						Enabled:  true,
@@ -204,6 +204,49 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 			KeeperRWChecks(ctx, &cr, ptr.To(0))
 		})
+	})
+
+	It("should work with custom data folder mount", func(ctx context.Context) {
+		cr := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("custom-disk-%d", rand.Uint32()), //nolint:gosec
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](1),
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: KeeperBaseVersion,
+					},
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "custom-data",
+						MountPath: "/var/lib/clickhouse",
+					}},
+				},
+				DataVolumeClaimSpec: nil, // Diskless configuration
+				PodTemplate: v1.PodTemplateSpec{
+					Volumes: []corev1.Volume{{
+						Name: "custom-data",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					}},
+				},
+			},
+		}
+
+		By("creating diskless keeper cluster CR")
+		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		DeferCleanup(func(ctx context.Context) {
+			By("deleting diskless keeper cluster CR")
+			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+		})
+
+		By("waiting for diskless keeper to be ready")
+		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+
+		By("verifying keeper is functional with basic read/write")
+		KeeperRWChecks(ctx, &cr, ptr.To(0))
 	})
 })
 

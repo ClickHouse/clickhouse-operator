@@ -2,6 +2,8 @@ package keeper
 
 import (
 	"github.com/blang/semver/v4"
+
+	"github.com/ClickHouse/clickhouse-operator/internal"
 )
 
 const (
@@ -24,9 +26,8 @@ const (
 
 	LogPath = "/var/log/clickhouse-keeper/"
 
-	BaseDataPath        = "/var/lib/clickhouse/"
-	StorageLogPath      = BaseDataPath + "coordination/log/"
-	StorageSnapshotPath = BaseDataPath + "coordination/snapshots/"
+	StorageLogPath      = internal.KeeperDataPath + "/coordination/log/"
+	StorageSnapshotPath = internal.KeeperDataPath + "/coordination/snapshots/"
 
 	ContainerName          = "clickhouse-keeper"
 	DefaultRevisionHistory = 10

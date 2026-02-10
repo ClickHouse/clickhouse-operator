@@ -48,9 +48,9 @@ type ClickHouseClusterSpec struct {
 	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
 	// Settings for the replicas storage.
-	// +required
+	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
-	DataVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
+	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional labels that are added to resources.
 	// +optional
@@ -75,7 +75,7 @@ type ClickHouseClusterSpec struct {
 func (s *ClickHouseClusterSpec) WithDefaults() {
 	defaultSpec := ClickHouseClusterSpec{
 		Replicas: ptr.To[int32](DefaultClickHouseReplicaCount),
-		Shards:   ptr.To[int32](DefaulClickHouseShardCount),
+		Shards:   ptr.To[int32](DefaultClickHouseShardCount),
 		ContainerTemplate: ContainerTemplateSpec{
 			Image: ContainerImage{
 				Repository: DefaultClickHouseContainerRepository,
@@ -109,6 +109,10 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 
 	if s.Settings.TLS.CABundle != nil && s.Settings.TLS.CABundle.Key == "" {
 		s.Settings.TLS.CABundle.Key = "ca.crt"
+	}
+
+	if s.DataVolumeClaimSpec != nil && len(s.DataVolumeClaimSpec.AccessModes) == 0 {
+		s.DataVolumeClaimSpec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 	}
 }
 
@@ -310,7 +314,7 @@ func (v *ClickHouseCluster) SpecificName() string {
 // Shards returns requested number of shards in the ClickHouseCluster.
 func (v *ClickHouseCluster) Shards() int32 {
 	if v.Spec.Shards == nil {
-		return DefaulClickHouseShardCount
+		return DefaultClickHouseShardCount
 	}
 
 	return *v.Spec.Shards

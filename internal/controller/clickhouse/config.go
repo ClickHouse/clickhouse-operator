@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
@@ -226,7 +227,7 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1
 	}
 
 	params := baseConfigParams{
-		Path: BaseDataPath,
+		Path: internal.ClickHouseDataPath,
 		Log:  controller.GenerateLoggerConfig(r.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
 		Macros: map[string]any{
 			"cluster": DefaultClusterName,

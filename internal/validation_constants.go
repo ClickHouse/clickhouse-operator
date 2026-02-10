@@ -7,6 +7,9 @@ const (
 
 	QuorumConfigVolumeName = "clickhouse-keeper-quorum-config-volume"
 	ConfigVolumeName       = "clickhouse-keeper-config-volume"
+
+	KeeperDataPath     = "/var/lib/clickhouse"
+	ClickHouseDataPath = "/var/lib/clickhouse"
 )
 
 var (

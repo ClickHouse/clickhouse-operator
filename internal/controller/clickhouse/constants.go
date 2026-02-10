@@ -30,8 +30,7 @@ const (
 	KeyFilename         = "clickhouse-server.key"
 	CustomCAFilename    = "custom-ca.crt"
 
-	LogPath      = "/var/log/clickhouse-server/"
-	BaseDataPath = "/var/lib/clickhouse/"
+	LogPath = "/var/log/clickhouse-server/"
 
 	DefaultClusterName       = "default"
 	KeeperPathUsers          = "/clickhouse/access"

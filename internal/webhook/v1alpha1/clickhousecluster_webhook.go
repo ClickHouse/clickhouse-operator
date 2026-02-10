@@ -64,7 +64,9 @@ func (w *ClickHouseClusterWebhook) ValidateCreate(_ context.Context, obj runtime
 		return nil, fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
 	}
 
-	return w.validateImpl(cluster)
+	warns, errs := w.validateImpl(cluster)
+
+	return warns, errors.Join(errs...)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
@@ -79,13 +81,22 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldObj, new
 		return nil, fmt.Errorf("unexpected new object type received %s", newObj.GetObjectKind().GroupVersionKind())
 	}
 
-	warns, err := w.validateImpl(newCluster)
+	w.Log.Info("Validate update spec", "name", newCluster.Name, "namespace", newCluster.Namespace)
+
+	warns, errs := w.validateImpl(newCluster)
 	if oldCluster.Spec.Shards != nil && newCluster.Spec.Shards != nil &&
 		*oldCluster.Spec.Shards > *newCluster.Spec.Shards {
 		warns = append(warns, "Decreasing the number of shards is a destructive operation. It removes shards with all their data.")
 	}
 
-	return warns, err
+	if err := validateDataVolumeSpecChanges(
+		oldCluster.Spec.DataVolumeClaimSpec,
+		newCluster.Spec.DataVolumeClaimSpec,
+	); err != nil {
+		errs = append(errs, err)
+	}
+
+	return warns, errors.Join(errs...)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
@@ -93,7 +104,7 @@ func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Objec
 	return nil, nil
 }
 
-func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, error) {
+func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, []error) {
 	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
 
 	var (
@@ -109,7 +120,15 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
-	errs = append(errs, ValidateCustomVolumeMounts(obj.Spec.PodTemplate.Volumes, obj.Spec.ContainerTemplate.VolumeMounts, internal.ReservedClickHouseVolumeNames)...)
+	volumeWarns, volumeErrs := validateVolumes(
+		obj.Spec.PodTemplate.Volumes,
+		obj.Spec.ContainerTemplate.VolumeMounts,
+		internal.ReservedClickHouseVolumeNames,
+		internal.ClickHouseDataPath,
+		obj.Spec.DataVolumeClaimSpec != nil,
+	)
+	warns = append(warns, volumeWarns...)
+	errs = append(errs, volumeErrs...)
 
 	if obj.Spec.Settings.DefaultUserPassword == nil {
 		warns = append(warns, ".spec.settings.defaultUserPassword is empty, 'default' user will be without password ")
@@ -119,5 +138,5 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		}
 	}
 
-	return warns, errors.Join(errs...)
+	return warns, errs
 }

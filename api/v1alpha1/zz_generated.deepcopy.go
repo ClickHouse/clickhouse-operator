@@ -105,7 +105,11 @@ func (in *ClickHouseClusterSpec) DeepCopyInto(out *ClickHouseClusterSpec) {
 	}
 	in.PodTemplate.DeepCopyInto(&out.PodTemplate)
 	in.ContainerTemplate.DeepCopyInto(&out.ContainerTemplate)
-	in.DataVolumeClaimSpec.DeepCopyInto(&out.DataVolumeClaimSpec)
+	if in.DataVolumeClaimSpec != nil {
+		in, out := &in.DataVolumeClaimSpec, &out.DataVolumeClaimSpec
+		*out = new(v1.PersistentVolumeClaimSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Labels != nil {
 		in, out := &in.Labels, &out.Labels
 		*out = make(map[string]string, len(*in))
@@ -364,7 +368,11 @@ func (in *KeeperClusterSpec) DeepCopyInto(out *KeeperClusterSpec) {
 	}
 	in.PodTemplate.DeepCopyInto(&out.PodTemplate)
 	in.ContainerTemplate.DeepCopyInto(&out.ContainerTemplate)
-	in.DataVolumeClaimSpec.DeepCopyInto(&out.DataVolumeClaimSpec)
+	if in.DataVolumeClaimSpec != nil {
+		in, out := &in.DataVolumeClaimSpec, &out.DataVolumeClaimSpec
+		*out = new(v1.PersistentVolumeClaimSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Labels != nil {
 		in, out := &in.Labels, &out.Labels
 		*out = make(map[string]string, len(*in))

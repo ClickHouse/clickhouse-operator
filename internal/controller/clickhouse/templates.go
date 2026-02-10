@@ -434,6 +434,13 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		})
 	}
 
+	resourceLabels := controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
+		controllerutil.LabelAppKey:         r.Cluster.SpecificName(),
+		controllerutil.LabelInstanceK8sKey: r.Cluster.SpecificName(),
+		controllerutil.LabelRoleKey:        controllerutil.LabelClickHouseValue,
+		controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
+	})
+
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: controllerutil.MergeMaps(id.Labels(), map[string]string{
@@ -450,27 +457,25 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: r.Cluster.SpecificName(),
-				Labels: controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
-					controllerutil.LabelAppKey:         r.Cluster.SpecificName(),
-					controllerutil.LabelRoleKey:        controllerutil.LabelClickHouseValue,
-					controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
-					controllerutil.LabelInstanceK8sKey: r.Cluster.SpecificName(),
-				}),
+				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(r.Cluster.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
 			Spec: serverPodSpec,
 		},
-		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: internal.PersistentVolumeName,
-				},
-				Spec: r.Cluster.Spec.DataVolumeClaimSpec,
-			},
-		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
+	}
+
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        internal.PersistentVolumeName,
+				Labels:      resourceLabels,
+				Annotations: r.Cluster.Spec.Annotations,
+			},
+			Spec: *r.Cluster.Spec.DataVolumeClaimSpec,
+		}}
 	}
 
 	return &appsv1.StatefulSet{
@@ -481,11 +486,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      r.Cluster.StatefulSetNameByReplicaID(id),
 			Namespace: r.Cluster.Namespace,
-			Labels: controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
-				controllerutil.LabelAppKey:         r.Cluster.SpecificName(),
-				controllerutil.LabelInstanceK8sKey: r.Cluster.SpecificName(),
-				controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
-			}),
+			Labels:    resourceLabels,
 			Annotations: controllerutil.MergeMaps(r.Cluster.Spec.Annotations, map[string]string{
 				controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
 			}),
@@ -576,17 +577,20 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]protocol {
 }
 
 func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
-	volumeMounts := []corev1.VolumeMount{
-		{
-			Name:      internal.PersistentVolumeName,
-			MountPath: BaseDataPath,
-			SubPath:   "var-lib-clickhouse",
-		},
-		{
-			Name:      internal.PersistentVolumeName,
-			MountPath: "/var/log/clickhouse-server",
-			SubPath:   "var-log-clickhouse",
-		},
+	var volumeMounts []corev1.VolumeMount
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		volumeMounts = append(volumeMounts,
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: internal.ClickHouseDataPath,
+				SubPath:   "var-lib-clickhouse",
+			},
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: "/var/log/clickhouse-server",
+				SubPath:   "var-log-clickhouse",
+			},
+		)
 	}
 
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode

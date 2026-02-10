@@ -428,6 +428,12 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		})
 	}
 
+	resourceLabels := controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+		controllerutil.LabelRoleKey:        controllerutil.LabelKeeperValue,
+		controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
+		controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
+	})
+
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: replicaLabels(cr, replicaID),
@@ -442,26 +448,25 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: cr.SpecificName(),
-				Labels: controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
-					controllerutil.LabelRoleKey:        controllerutil.LabelKeeperValue,
-					controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
-					controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
-				}),
+				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
 			Spec: keeperPodSpec,
 		},
-		VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
-			{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: internal.PersistentVolumeName,
-				},
-				Spec: cr.Spec.DataVolumeClaimSpec,
-			},
-		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
+	}
+
+	if cr.Spec.DataVolumeClaimSpec != nil {
+		spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        internal.PersistentVolumeName,
+				Labels:      resourceLabels,
+				Annotations: cr.Spec.Annotations,
+			},
+			Spec: *cr.Spec.DataVolumeClaimSpec,
+		}}
 	}
 
 	return &appsv1.StatefulSet{
@@ -472,10 +477,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.StatefulSetNameByReplicaID(replicaID),
 			Namespace: cr.Namespace,
-			Labels: controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
-				controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
-				controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
-			}),
+			Labels:    resourceLabels,
 			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
 				controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
 			}),
@@ -493,13 +495,13 @@ func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]strin
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (string, error) {
 	config := config{
 		ListenHost: "0.0.0.0",
-		Path:       BaseDataPath,
+		Path:       internal.KeeperDataPath,
 		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
 		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),
 		KeeperServer: keeperServer{
 			TCPPort:             PortNative,
 			ServerID:            strconv.FormatInt(int64(replicaID), 10),
-			StoragePath:         BaseDataPath,
+			StoragePath:         internal.KeeperDataPath,
 			DigestEnabled:       true,
 			LogStoragePath:      StorageLogPath,
 			SnapshotStoragePath: StorageSnapshotPath,
@@ -567,16 +569,20 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.
 			MountPath: ConfigPath,
 			ReadOnly:  true,
 		},
-		{
-			Name:      internal.PersistentVolumeName,
-			MountPath: BaseDataPath,
-			SubPath:   "var-lib-clickhouse",
-		},
-		{
-			Name:      internal.PersistentVolumeName,
-			MountPath: "/var/log/clickhouse-keeper",
-			SubPath:   "var-log-clickhouse",
-		},
+	}
+
+	if cr.Spec.DataVolumeClaimSpec != nil {
+		volumeMounts = append(volumeMounts,
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: internal.KeeperDataPath,
+				SubPath:   "var-lib-clickhouse",
+			},
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: "/var/log/clickhouse-keeper",
+				SubPath:   "var-log-clickhouse",
+			})
 	}
 
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode

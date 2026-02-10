@@ -4257,8 +4257,6 @@ spec:
                         x-kubernetes-map-type: atomic
                     type: object
                 type: object
-            required:
-            - dataVolumeClaimSpec
             type: object
           status:
             description: KeeperClusterStatus defines the observed state of KeeperCluster.

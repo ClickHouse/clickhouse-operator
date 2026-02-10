@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -77,6 +78,7 @@ var _ = BeforeSuite(func() {
 		l: logf.NewKubeAPIWarningLogger(logf.KubeAPIWarningLoggerOptions{
 			Deduplicate: false,
 		}),
+		log: logf.Log.WithName("warning"),
 	}
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
@@ -130,6 +132,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = BeforeEach(func() {
+	By("Clearing warnings")
 	warnings = warnings[:0]
 })
 
@@ -160,7 +163,8 @@ func getFirstFoundEnvTestBinaryDir() string {
 }
 
 type warningsHandler struct {
-	l *logf.KubeAPIWarningLogger
+	l   *logf.KubeAPIWarningLogger
+	log logr.Logger
 }
 
 func (h *warningsHandler) HandleWarningHeader(code int, agent string, text string) {
@@ -169,5 +173,12 @@ func (h *warningsHandler) HandleWarningHeader(code int, agent string, text strin
 	}
 
 	warnings = append(warnings, text)
-	h.l.HandleWarningHeaderWithContext(context.Background(), code, agent, text)
+	h.l.HandleWarningHeaderWithContext(logr.NewContext(context.Background(), h.log), code, agent, text)
+}
+
+func deferCleanup[C client.Object](obj C) {
+	DeferCleanup(func(ctx context.Context) {
+		By(fmt.Sprintf("Cleaning up %T %s/%s", obj, obj.GetNamespace(), obj.GetName()))
+		Expect(k8sClient.Delete(ctx, obj)).To(Succeed())
+	})
 }

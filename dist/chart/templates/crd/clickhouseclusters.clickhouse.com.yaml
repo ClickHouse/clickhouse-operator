@@ -4134,7 +4134,6 @@ spec:
                                 minimum: 0
                                 type: integer
                         required:
-                            - dataVolumeClaimSpec
                             - keeperClusterRef
                         type: object
                     status:

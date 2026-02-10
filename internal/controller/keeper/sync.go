@@ -762,12 +762,15 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		return nil, nil
 	}
 
-	if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, r.Cluster.Spec.DataVolumeClaimSpec) {
-		if err = r.UpdatePVC(ctx, log, replicaID, r.Cluster.Spec.DataVolumeClaimSpec); err != nil {
-			return nil, fmt.Errorf("update replica %d PVC: %w", replicaID, err)
-		}
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, r.Cluster.Spec.DataVolumeClaimSpec) {
+			if err = r.UpdatePVC(ctx, log, replicaID, *r.Cluster.Spec.DataVolumeClaimSpec); err != nil {
+				//nolint:nilerr // Error is logged internally and event sent
+				return nil, nil
+			}
 
-		statefulSet.Spec.VolumeClaimTemplates = replica.StatefulSet.Spec.VolumeClaimTemplates
+			statefulSet.Spec.VolumeClaimTemplates = replica.StatefulSet.Spec.VolumeClaimTemplates
+		}
 	}
 
 	log.Info("updating replica StatefulSet", "stateful_set", statefulSet.Name)

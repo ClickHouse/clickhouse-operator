@@ -19,7 +19,9 @@ var _ = Describe("BuildVolumes", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
 			},
-			Spec: v1.ClickHouseClusterSpec{},
+			Spec: v1.ClickHouseClusterSpec{
+				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
+			},
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
@@ -47,7 +49,7 @@ var _ = Describe("BuildVolumes", func() {
 		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
 		Expect(volumes).To(HaveLen(4))
-		Expect(mounts).To(HaveLen(6))
+		Expect(mounts).To(HaveLen(4))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -75,6 +77,7 @@ var _ = Describe("BuildVolumes", func() {
 						MountPath: "/etc/my-extra-volume",
 					}},
 				},
+				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
@@ -108,6 +111,7 @@ var _ = Describe("BuildVolumes", func() {
 						MountPath: "/etc/clickhouse-server/config.d/",
 					}},
 				},
+				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
@@ -160,6 +164,7 @@ var _ = Describe("BuildVolumes", func() {
 						MountPath: "/etc/clickhouse-server/tls/",
 					}},
 				},
+				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
 		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})

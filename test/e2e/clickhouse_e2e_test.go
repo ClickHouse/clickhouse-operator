@@ -44,7 +44,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Spec: v1.KeeperClusterSpec{
 					// Use standalone keeper for ClickHouse tests to save resources in CI
 					Replicas:            ptr.To[int32](1),
-					DataVolumeClaimSpec: defaultStorage,
+					DataVolumeClaimSpec: &defaultStorage,
 				},
 			}
 			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
@@ -69,7 +69,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 							Tag: ClickHouseBaseVersion,
 						},
 					},
-					DataVolumeClaimSpec: defaultStorage,
+					DataVolumeClaimSpec: &defaultStorage,
 					KeeperClusterRef: &corev1.LocalObjectReference{
 						Name: keeper.Name,
 					},
@@ -124,7 +124,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 							Tag: ClickHouseBaseVersion,
 						},
 					},
-					DataVolumeClaimSpec: defaultStorage,
+					DataVolumeClaimSpec: &defaultStorage,
 					KeeperClusterRef: &corev1.LocalObjectReference{
 						Name: keeper.Name,
 					},
@@ -162,6 +162,49 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Entry("scale up to 3 replicas", 2, v1.ClickHouseClusterSpec{Replicas: ptr.To[int32](3)}),
 			Entry("scale down to 2 replicas", 3, v1.ClickHouseClusterSpec{Replicas: ptr.To[int32](2)}),
 		)
+
+		It("should work with custom data folder mount", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("custom-disk-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            ptr.To[int32](1),
+					DataVolumeClaimSpec: nil, // Diskless configuration
+					KeeperClusterRef: &corev1.LocalObjectReference{
+						Name: keeper.Name,
+					},
+					PodTemplate: v1.PodTemplateSpec{
+						Volumes: []corev1.Volume{{
+							Name: "custom-data",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						}},
+					},
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{
+							Tag: ClickHouseBaseVersion,
+						},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "custom-data",
+							MountPath: "/var/lib/clickhouse",
+						}},
+					},
+				},
+			}
+
+			By("creating diskless ClickHouse cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				By("deleting diskless ClickHouse cluster CR")
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			ClickHouseRWChecks(ctx, &cr, ptr.To(0))
+		})
 	})
 
 	Describe("is handling TLS settings correctly", Ordered, func() {
@@ -193,7 +236,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 							Tag: KeeperBaseVersion,
 						},
 					},
-					DataVolumeClaimSpec: defaultStorage,
+					DataVolumeClaimSpec: &defaultStorage,
 					Settings: v1.KeeperSettings{
 						TLS: v1.ClusterTLSSpec{
 							Enabled:  true,
@@ -237,7 +280,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 							Tag: ClickHouseBaseVersion,
 						},
 					},
-					DataVolumeClaimSpec: defaultStorage,
+					DataVolumeClaimSpec: &defaultStorage,
 					Settings: v1.ClickHouseSettings{
 						TLS: v1.ClusterTLSSpec{
 							Enabled:  true,
@@ -348,7 +391,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 			},
 		}
 
@@ -367,7 +410,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 				Settings: v1.ClickHouseSettings{
 					DefaultUserPassword: &v1.DefaultPasswordSelector{
 						PasswordType: "password_sha256_hex",
@@ -463,7 +506,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Tag: KeeperBaseVersion,
 					},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 			},
 		}
 
@@ -521,7 +564,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						ReadOnly:  true,
 					}},
 				},
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 			},
 		}
 
@@ -574,7 +617,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 			Spec: v1.KeeperClusterSpec{
 				Replicas:            ptr.To[int32](3),
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 				PodTemplate: v1.PodTemplateSpec{
 					TopologyZoneKey: ptr.To("topology.kubernetes.io/zone"),
 					NodeHostnameKey: ptr.To("kubernetes.io/hostname"),
@@ -588,7 +631,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:            ptr.To[int32](3),
-				DataVolumeClaimSpec: defaultStorage,
+				DataVolumeClaimSpec: &defaultStorage,
 				KeeperClusterRef: &corev1.LocalObjectReference{
 					Name: keeperName,
 				},

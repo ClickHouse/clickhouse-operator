@@ -73,8 +73,6 @@ spec:
   replicas: 3
   dataVolumeClaimSpec:
     storageClassName: premium-rwo
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 1Gi
@@ -104,8 +102,6 @@ spec:
   replicas: 2
   dataVolumeClaimSpec:
     storageClassName: premium-rwo
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 20Gi

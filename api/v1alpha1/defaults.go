@@ -1,5 +1,9 @@
 package v1alpha1
 
+import (
+	corev1 "k8s.io/api/core/v1"
+)
+
 const (
 	DefaultKeeperContainerRepository = "docker.io/clickhouse/clickhouse-keeper"
 	DefaultKeeperContainerTag        = "latest"
@@ -21,11 +25,12 @@ const (
 	DefaultClickHouseMemoryLimit   = "1Gi"
 	DefaultClickHouseMemoryRequest = "256Mi"
 
-	DefaulClickHouseShardCount    = 1
+	DefaultClickHouseShardCount   = 1
 	DefaultClickHouseReplicaCount = 3
 
 	DefaultMaxLogFiles = 50
 
 	// DefaultClusterDomain is the default Kubernetes cluster domain suffix for DNS resolution.
 	DefaultClusterDomain = "cluster.local"
+	DefaultAccessMode    = corev1.ReadWriteOnce
 )

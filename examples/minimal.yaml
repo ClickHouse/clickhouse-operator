@@ -5,8 +5,6 @@ metadata:
 spec:
   replicas: 3
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 1Gi
@@ -18,8 +16,6 @@ metadata:
 spec:
   replicas: 2
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 1Gi

@@ -84,8 +84,6 @@ Configure persistent storage:
 spec:
   dataVolumeClaimSpec:
     storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 100Gi

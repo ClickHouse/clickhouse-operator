@@ -87,8 +87,6 @@ spec:
   replicas: 3
   dataVolumeClaimSpec:
     storageClassName: gp3
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 1Gi
@@ -118,8 +116,6 @@ spec:
   replicas: 3
   dataVolumeClaimSpec:
     storageClassName: gp3
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 50Gi

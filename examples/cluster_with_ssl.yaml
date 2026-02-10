@@ -72,11 +72,9 @@ metadata:
 spec:
   replicas: 3
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
-        storage: 1Gi
+        storage: 2Gi
   podTemplate:
     topologyZoneKey: topology.kubernetes.io/zone
     nodeHostnameKey: kubernetes.io/hostname
@@ -94,11 +92,9 @@ metadata:
 spec:
   replicas: 3
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
-        storage: 2Gi
+        storage: 4Gi
   keeperClusterRef:
     name: sample
   podTemplate:

@@ -34,9 +34,9 @@ type KeeperClusterSpec struct {
 	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
 	// Settings for the replicas storage.
-	// +required
+	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
-	DataVolumeClaimSpec corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
+	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional labels that are added to resources.
 	// +optional
@@ -90,6 +90,10 @@ func (s *KeeperClusterSpec) WithDefaults() {
 
 	if err := controllerutil.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
+	}
+
+	if s.DataVolumeClaimSpec != nil && len(s.DataVolumeClaimSpec.AccessModes) == 0 {
+		s.DataVolumeClaimSpec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 	}
 }
 
