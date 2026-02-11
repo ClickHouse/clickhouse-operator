@@ -88,7 +88,7 @@ spec:
                         protocol: TCP
                       {{- end }}
                   resources: {{ toYaml .Values.manager.resources | nindent 22 }}
-                  securityContext: {{ toYaml .Values.manager.securityContext | nindent 22 }}
+                  securityContext: {{ toYaml .Values.manager.containerSecurityContext | nindent 22 }}
                   {{- if .Values.certManager.enable }}
                   volumeMounts:
                       - mountPath: /tmp/k8s-server/serving-certs

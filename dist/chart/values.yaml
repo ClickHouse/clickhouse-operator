@@ -39,7 +39,7 @@ manager:
 
     ## Container-level security settings
     ##
-    securityContext:
+    containerSecurityContext:
         allowPrivilegeEscalation: false
         capabilities:
             drop:
