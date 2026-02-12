@@ -185,13 +185,18 @@ push-helmchart: package-helmchart ## Push helm image. It will be pushed to the $
 
 ##@ Build
 
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date "+%FT%T")
+VERSION_PKG = github.com/ClickHouse/clickhouse-operator/internal/version
+GO_LDFLAGS = -ldflags "-X $(VERSION_PKG).Version=v$(VERSION) -X $(VERSION_PKG).GitCommitHash=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)"
+
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build $(GO_LDFLAGS) -o bin/clickhouse-manager cmd/main.go
 
 .PHONY: build-linux-manager
 build-linux-manager:
-	CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} GO111MODULE=on go build -gcflags="all=-N -l" -o bin/manager_linux cmd/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} GO111MODULE=on go build -gcflags="all=-N -l" $(GO_LDFLAGS) -o bin/manager_linux cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -202,7 +207,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		-t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -221,7 +230,11 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name clickhouse-operator-builder
 	$(CONTAINER_TOOL) buildx use clickhouse-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		--tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm clickhouse-operator-builder
 	rm Dockerfile.cross
 

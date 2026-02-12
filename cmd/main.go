@@ -11,6 +11,7 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/version"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -133,7 +134,14 @@ func run() error {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config, err := ctrl.GetConfig()
+	if err != nil {
+		return fmt.Errorf("get kubeconfig: %w", err)
+	}
+
+	config.UserAgent = version.BuildUserAgent()
+
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -176,7 +184,11 @@ func run() error {
 		return fmt.Errorf("unable to setup readyz checker: %w", err)
 	}
 
-	setupLog.Info("starting manager")
+	setupLog.Info("starting manager",
+		"version", version.Version,
+		"gitCommitHash", version.GitCommitHash,
+		"buildTime", version.BuildTime,
+	)
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)

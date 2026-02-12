@@ -217,7 +217,7 @@ jobs:
         run: go mod download
 
       - name: Build image
-        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1"
+        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
