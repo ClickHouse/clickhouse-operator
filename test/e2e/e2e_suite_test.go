@@ -94,10 +94,10 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	var controllerPodName string
 
 	// projectimage stores the name of the image used in the example
-	var projectimage = "ghcr.io/clickhouse/clickhouse-operator:v0.0.1"
+	projectimage := "ghcr.io/clickhouse/clickhouse-operator:v0.0.1"
 
 	By("building the manager(Operator) image")
-	cmd = exec.Command("make", "docker-build", "IMG="+projectimage)
+	cmd = exec.Command("make", "docker-build", "IMG="+projectimage, "BUILD_TIME=e2e")
 	_, err = testutil.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -186,7 +186,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 })
 
 var _ = AfterSuite(func(ctx context.Context) {
-	cancelLogs()
+	if cancelLogs != nil {
+		cancelLogs()
+	}
 
 	// By("uninstalling the Prometheus manager bundle")
 	// utils.UninstallPrometheusOperator()
@@ -208,7 +210,13 @@ func CheckPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func CheckReplicaUpdated(ctx context.Context, cfgName string, cfgRev string, stsName string, stsRev string) bool {
+func CheckReplicaUpdated(
+	ctx context.Context,
+	cfgName string,
+	cfgRev string,
+	stsName string,
+	stsRev string,
+) bool {
 	var configmap corev1.ConfigMap
 	if err := k8sClient.Get(ctx, types.NamespacedName{
 		Namespace: testNamespace,
