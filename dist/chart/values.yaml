@@ -6,6 +6,10 @@
 ##
 # fullnameOverride: ""
 
+## List of namespaces to watch for resources.
+##
+watchNamespaces: [ ]
+
 # Configure the controller manager deployment
 ##
 manager:
