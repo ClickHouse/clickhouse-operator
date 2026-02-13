@@ -65,6 +65,10 @@ spec:
         env:
           - name: ENABLE_WEBHOOKS
             value: "false"
+          - name: WATCH_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.annotations['olm.targetNamespaces']
         securityContext:
           readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false

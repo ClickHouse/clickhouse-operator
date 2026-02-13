@@ -61,6 +61,9 @@ spec:
                   command:
                       - /manager
                   {{- $env := append .Values.manager.env (dict "name" "ENABLE_WEBHOOKS" "value" (printf "%t" .Values.webhook.enable)) }}
+                  {{- if not (empty .Values.watchNamespaces) }}
+                  {{-   $env = append $env (dict "name" "WATCH_NAMESPACES" "value" (join "," .Values.watchNamespaces)) }}
+                  {{- end }}
                   env: {{ toYaml $env | nindent 22 }}
                   image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag }}"
                   imagePullPolicy: {{ .Values.manager.image.pullPolicy }}

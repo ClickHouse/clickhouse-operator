@@ -1,35 +1,35 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"os"
 
-	"github.com/go-logr/zapr"
-
+	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/environment"
 	"github.com/ClickHouse/clickhouse-operator/internal/version"
+	whchv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/zapr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
-	whchv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
-	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -141,14 +141,32 @@ func run() error {
 
 	config.UserAgent = version.BuildUserAgent()
 
-	mgr, err := ctrl.NewManager(config, ctrl.Options{
+	mgrOptions := ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "d4ceba06.clickhouse.com",
-	})
+	}
+
+	env, err := environment.GetEnvironment(context.Background())
+	if err != nil {
+		return fmt.Errorf("load manager : %w", err)
+	}
+
+	if len(env.WatchNamespace) > 0 {
+		setupLog.Info("Watching namespaces", "namespaces", env.WatchNamespace)
+
+		mgrOptions.Cache.DefaultNamespaces = make(map[string]cache.Config, len(env.WatchNamespace))
+		for _, ns := range env.WatchNamespace {
+			mgrOptions.Cache.DefaultNamespaces[ns] = cache.Config{}
+		}
+	} else {
+		setupLog.Info("Watching all namespaces")
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOptions)
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
@@ -159,17 +177,17 @@ func run() error {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = whchv1.SetupKeeperWebhookWithManager(mgr, zapLogger); err != nil {
-			return fmt.Errorf("unable to setup KeeperCluster webhook: %w", err)
-		}
-	}
-
 	if err = clickhouse.SetupWithManager(mgr, zapLogger); err != nil {
 		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}
-	//golint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+
+	// +kubebuilder:scaffold:builder
+
+	if env.EnableWebhooks {
+		if err = whchv1.SetupKeeperWebhookWithManager(mgr, zapLogger); err != nil {
+			return fmt.Errorf("unable to setup KeeperCluster webhook: %w", err)
+		}
+
 		if err = whchv1.SetupClickHouseWebhookWithManager(mgr, zapLogger); err != nil {
 			return fmt.Errorf("unable to setup ClickHouseCluster webhook: %w", err)
 		}
