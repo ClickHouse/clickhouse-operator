@@ -197,6 +197,58 @@ jobs:
       - name: Check Helm release status
         run: helm status my-release --namespace clickhouse-operator-system
 
+  compat-e2e-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "Minimal supported kubernetes with LTS ClickHouse release"
+            kind_version: v1.28.15
+            clickhouse_version: "25.8"
+          - name: "Latest kubernetes version with LTS ClickHouse release"
+            kind_version: v1.35.1
+            clickhouse_version: "25.8"
+          - name: "Supported ClickHouse versions"
+            kind_version: v1.30.13
+            clickhouse_version: "26.1,25.12,25.11,25.8,25.3"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Go Mod
+        run: go mod download
+
+      - name: Build image
+        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
+
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kind
+          version: ${{ env.kind-version }}
+          config: ci/kind-cluster.config
+          node_image: "kindest/node:${{ matrix.kind_version }}"
+
+      - name: Run compatibility e2e tests
+        run: make test-compat-e2e
+        env:
+          CLICKHOUSE_VERSION: ${{ matrix.clickhouse_version }}
+
+      - name: Test Report
+        uses: dorny/test-reporter@v2
+        if: ${{ !cancelled() }}
+        with:
+          name: compat-e2e (k8s ${{ matrix.k8s_version }}${{ matrix.clickhouse_version && format(', ch {0}', matrix.clickhouse_version) || '' }})
+          badge-title: compat-e2e (k8s ${{ matrix.k8s_version }})
+          path: "**/report/*.xml"
+          reporter: java-junit
+
   e2e-test:
     needs: [ lint, bundle, build_and_test, helm-validate, helm-test ]
     strategy:
@@ -242,7 +294,7 @@ jobs:
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
-    needs: [ lint, bundle, build_and_test, helm-validate, helm-test, e2e-test ]
+    needs: [ lint, bundle, build_and_test, helm-validate, helm-test, compat-e2e-test, e2e-test ]
     if: always()
     steps:
       - name: Determine CI status

@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -288,6 +289,11 @@ func (s *DefaultPasswordSelector) Validate() error {
 	}
 
 	return nil
+}
+
+// normalizeName removes dots from name to make it valid for use as a hostname or label value, where dots are not allowed.
+func normalizeName(name string) string {
+	return strings.ReplaceAll(name, ".", "-")
 }
 
 // formatPodHostname returns hostname for the first pod in the StatefulSet.

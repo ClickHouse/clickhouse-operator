@@ -4,7 +4,7 @@ This guide covers installing the ClickHouse Operator using Helm charts.
 
 ## Prerequisites
 
-- Kubernetes cluster v1.30.0 or later
+- Kubernetes cluster v1.28.0 or later
 - Helm v3.0 or later
 - kubectl configured to communicate with your cluster
 
