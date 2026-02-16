@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -33,7 +33,7 @@ func TestControllers(t *testing.T) {
 var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
-		recorder     *record.FakeRecorder
+		recorder     *events.FakeRecorder
 		controller   *ClusterController
 		services     corev1.ServiceList
 		pdbs         policyv1.PodDisruptionBudgetList
@@ -58,7 +58,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
-		recorder = record.NewFakeRecorder(128)
+		recorder = events.NewFakeRecorder(128)
 		controller = &ClusterController{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
@@ -72,6 +72,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 	AfterAll(func() {
 		By("tearing down the test environment")
+
 		err := suite.TestEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -88,6 +89,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
+
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
@@ -123,45 +125,57 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		}
 
 		By("setting meta attributes for service")
+
 		for _, service := range services.Items {
 			Expect(service.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(service.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for pod disruption budget")
+
 		for _, pdb := range pdbs.Items {
 			Expect(pdb.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(pdb.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(pdb.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for configs")
+
 		for _, config := range configs.Items {
 			Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(config.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(config.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for statefulsets")
+
 		for _, sts := range statefulsets.Items {
 			Expect(sts.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(sts.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 				Expect(sts.Spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(sts.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 				Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
@@ -206,9 +220,11 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		var configmap corev1.ConfigMap
 		Expect(suite.Client.Get(ctx, types.NamespacedName{
 			Namespace: cr.Namespace,
-			Name:      cr.ConfigMapNameByReplicaID(0)}, &configmap)).To(Succeed())
+			Name:      cr.ConfigMapNameByReplicaID(0),
+		}, &configmap)).To(Succeed())
 
 		Expect(configmap.Data).To(HaveKey(ConfigFileName))
+
 		var config confMap
 		Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
 		//nolint:forcetypeassert
@@ -233,7 +249,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		var sts appsv1.StatefulSet
 		Expect(suite.Client.Get(ctx, types.NamespacedName{
 			Namespace: cr.Namespace,
-			Name:      cr.StatefulSetNameByReplicaID(0)}, &sts)).To(Succeed())
+			Name:      cr.StatefulSetNameByReplicaID(0),
+		}, &sts)).To(Succeed())
 
 		Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsUser).To(BeEquivalentTo(7))
 		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.Privileged).To(BeEquivalentTo(true))

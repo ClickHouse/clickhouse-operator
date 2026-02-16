@@ -56,6 +56,7 @@ var _ = BeforeSuite(func() {
 	// +kubebuilder:scaffold:scheme
 
 	By("bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: false,
@@ -105,7 +106,9 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		defer GinkgoRecover()
+
 		var mgrCtx context.Context
+
 		mgrCtx, cancelManager = context.WithCancel(context.Background())
 		Expect(mgr.Start(mgrCtx)).To(Succeed())
 	}()
@@ -127,12 +130,14 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	cancelManager()
+
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
 
 var _ = BeforeEach(func() {
 	By("Clearing warnings")
+
 	warnings = warnings[:0]
 })
 

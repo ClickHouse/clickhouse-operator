@@ -97,6 +97,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertConditionAndSend
 	condition metav1.Condition,
 	eventType string,
 	eventReason v1.EventReason,
+	eventAction v1.EventAction,
 	eventMessageFormat string,
 	eventMessageArgs ...any,
 ) (bool, error) {
@@ -106,7 +107,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertConditionAndSend
 	}
 
 	if changed {
-		r.GetRecorder().Eventf(r.Cluster, eventType, eventReason, eventMessageFormat, eventMessageArgs...)
+		r.GetRecorder().Eventf(r.Cluster, nil, eventType, eventReason, eventAction, eventMessageFormat, eventMessageArgs...)
 		return true, nil
 	}
 

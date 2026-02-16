@@ -33,16 +33,14 @@ const (
 	StageNotExists
 )
 
-var (
-	mapStatusText = map[ReplicaUpdateStage]string{
-		StageUpToDate:         "UpToDate",
-		StageHasDiff:          "HasDiff",
-		StageNotReadyUpToDate: "NotReadyUpToDate",
-		StageUpdating:         "Updating",
-		StageError:            "Error",
-		StageNotExists:        "NotExists",
-	}
-)
+var mapStatusText = map[ReplicaUpdateStage]string{
+	StageUpToDate:         "UpToDate",
+	StageHasDiff:          "HasDiff",
+	StageNotReadyUpToDate: "NotReadyUpToDate",
+	StageUpdating:         "Updating",
+	StageError:            "Error",
+	StageNotExists:        "NotExists",
+}
 
 func (s ReplicaUpdateStage) String() string {
 	return mapStatusText[s]
@@ -107,6 +105,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 	log util.Logger,
 	resource client.Object,
 	specFields []string,
+	action v1.EventAction,
 ) (bool, error) {
 	cli := r.GetClient()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
@@ -140,7 +139,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 
 		log.Info("resource not found, creating")
 
-		return true, r.Create(ctx, resource)
+		return true, r.Create(ctx, resource, action)
 	}
 
 	if util.GetSpecHashFromObject(foundResource) == resourceHash {
@@ -162,7 +161,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 		field.Set(reflect.ValueOf(resource).Elem().FieldByName(fieldName))
 	}
 
-	return true, r.Update(ctx, foundResource)
+	return true, r.Update(ctx, foundResource, action)
 }
 
 // ReconcileService reconciles a Kubernetes Service resource.
@@ -170,8 +169,9 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileService(
 	ctx context.Context,
 	log util.Logger,
 	service *corev1.Service,
+	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, service, []string{"Spec"})
+	return r.reconcileResource(ctx, log, service, []string{"Spec"}, action)
 }
 
 // ReconcilePodDisruptionBudget reconciles a Kubernetes PodDisruptionBudget resource.
@@ -179,8 +179,9 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcilePodDisruption
 	ctx context.Context,
 	log util.Logger,
 	pdb *policyv1.PodDisruptionBudget,
+	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, pdb, []string{"Spec"})
+	return r.reconcileResource(ctx, log, pdb, []string{"Spec"}, action)
 }
 
 // ReconcileConfigMap reconciles a Kubernetes ConfigMap resource.
@@ -188,18 +189,19 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileConfigMap(
 	ctx context.Context,
 	log util.Logger,
 	configMap *corev1.ConfigMap,
+	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, configMap, []string{"Data", "BinaryData"})
+	return r.reconcileResource(ctx, log, configMap, []string{"Data", "BinaryData"}, action)
 }
 
 // Create creates the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Context, resource client.Object) error {
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Context, resource client.Object, action v1.EventAction) error {
 	recorder := r.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
 	if err := r.GetClient().Create(ctx, resource); err != nil {
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, corev1.EventTypeWarning, v1.EventReasonFailedCreate,
+			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedCreate, action,
 				"Create %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -210,13 +212,13 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Con
 }
 
 // Update updates the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Context, resource client.Object) error {
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Context, resource client.Object, action v1.EventAction) error {
 	recorder := r.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
 	if err := r.GetClient().Update(ctx, resource); err != nil {
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, corev1.EventTypeWarning, v1.EventReasonFailedUpdate,
+			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
 				"Update %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -227,7 +229,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Con
 }
 
 // Delete deletes the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Context, resource client.Object) error {
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Context, resource client.Object, action v1.EventAction) error {
 	recorder := r.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
@@ -237,7 +239,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Con
 		}
 
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, corev1.EventTypeWarning, v1.EventReasonFailedDelete,
+			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedDelete, action,
 				"Delete %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -253,6 +255,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(
 	log util.Logger,
 	id ReplicaID,
 	volumeSpec corev1.PersistentVolumeClaimSpec,
+	action v1.EventAction,
 ) error {
 	cli := r.GetClient()
 
@@ -297,7 +300,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(
 	log.Info("updating replica PVC", "pvc", pvcs.Items[0].Name, "diff", gcmp.Diff(pvcs.Items[0].Spec, targetSpec))
 
 	pvcs.Items[0].Spec = *targetSpec
-	if err := r.Update(ctx, &pvcs.Items[0]); err != nil {
+	if err := r.Update(ctx, &pvcs.Items[0], action); err != nil {
 		return fmt.Errorf("update replica PVC %v: %w", id, err)
 	}
 

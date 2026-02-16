@@ -24,3 +24,13 @@ const (
 	EventReasonClusterReady    EventReason = "ClusterReady"
 	EventReasonClusterNotReady EventReason = "ClusterNotReady"
 )
+
+// EventAction represents the action associated with an event.
+type EventAction = string
+
+const (
+	EventActionReconciling    EventAction = "Reconciling"
+	EventActionScaling        EventAction = "Scaling"
+	EventActionBecameReady    EventAction = "BecameReady"
+	EventActionBecameNotReady EventAction = "BecameNotReady"
+)

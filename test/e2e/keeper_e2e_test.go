@@ -342,6 +342,7 @@ func CheckKeeperUpdateOrder(ctx context.Context, cluster v1.KeeperCluster) {
 			Expect(updatingReplica).To(Equal(v1.KeeperReplicaID(-1)),
 				"more than one replica is updating: %d and %d", updatingReplica, replicaID)
 			updatingReplica = replicaID
+
 		// Successfully updated replica
 		default:
 			minUpdated = min(minUpdated, replicaID)

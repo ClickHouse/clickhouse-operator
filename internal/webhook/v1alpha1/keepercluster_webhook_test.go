@@ -13,7 +13,6 @@ import (
 )
 
 var _ = Describe("KeeperCluster Webhook", func() {
-
 	Context("When creating KeeperCluster under Defaulting Webhook", func() {
 		It("Should fill in the default value if a required field is empty", func(ctx context.Context) {
 			By("Setting the default value")
@@ -67,6 +66,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 
 		It("Should check TLS enabled if required", func(ctx context.Context) {
 			By("Rejecting wrong settings")
+
 			cluster := chv1.KeeperCluster{
 				ObjectMeta: meta,
 				Spec: chv1.KeeperClusterSpec{
@@ -86,6 +86,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 
 		It("Should check certificate passed if TLS enabled", func(ctx context.Context) {
 			By("Rejecting wrong settings")
+
 			cluster := chv1.KeeperCluster{
 				ObjectMeta: meta,
 				Spec: chv1.KeeperClusterSpec{
@@ -115,6 +116,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			}
 
 			By("Rejecting cr with non existing volume")
+
 			err := k8sClient.Create(ctx, &cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("the volume mount 'non-existing-volume' is invalid because the volume is not defined"))
@@ -157,6 +159,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			}
 
 			By("Rejecting cr with data volume mount collision")
+
 			err := k8sClient.Create(ctx, &cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot mount a custom volume at the data path"))
@@ -191,6 +194,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			}}
 
 			By("Rejecting cr with added data volume")
+
 			err := k8sClient.Update(ctx, &cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot be added"))
@@ -212,6 +216,7 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			cluster.Spec.DataVolumeClaimSpec = nil
 
 			By("Rejecting cr with added data volume")
+
 			err := k8sClient.Update(ctx, &cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot be removed"))

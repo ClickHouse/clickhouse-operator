@@ -61,6 +61,7 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func(ctx context.Context) {
 	var err error
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
@@ -84,10 +85,12 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	// Expect(utils.InstallPrometheusOperator()).To(Succeed())
 
 	By("creating manager namespace")
+
 	cmd := exec.Command("kubectl", "create", "ns", namespace)
 	_, _ = testutil.Run(cmd)
 
 	By("creating test namespace")
+
 	cmd = exec.Command("kubectl", "create", "ns", testNamespace)
 	_, _ = testutil.Run(cmd)
 
@@ -97,11 +100,13 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	projectimage := "ghcr.io/clickhouse/clickhouse-operator:v0.0.1"
 
 	By("building the manager(Operator) image")
+
 	cmd = exec.Command("make", "docker-build", "IMG="+projectimage, "BUILD_TIME=e2e")
 	_, err = testutil.Run(cmd)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("loading the manager(Operator) image on Kind")
+
 	err = testutil.LoadImageToKindClusterWithName(ctx, projectimage)
 	Expect(err).NotTo(HaveOccurred())
 
@@ -109,6 +114,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	By("deploying the controller-manager")
 	Eventually(func() error {
 		cmd = exec.Command("make", "deploy", "IMG="+projectimage)
+
 		_, err = testutil.Run(cmd)
 		if err != nil {
 			return fmt.Errorf("deploy controller-manager: %w", err)
@@ -126,6 +132,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	Expect(err).NotTo(HaveOccurred())
 
 	By("validating that the controller-manager pod is running as expected")
+
 	verifyControllerUp := func() error {
 		// Get pod name
 		cmd = exec.Command("kubectl", "get",
@@ -139,14 +146,18 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 		podOutput, err := testutil.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
+
 		podNames := testutil.GetNonEmptyLines(string(podOutput))
 		if len(podNames) != 1 {
 			return fmt.Errorf("expect 1 controller pods running, but got %d", len(podNames))
 		}
+
 		controllerPodName = podNames[0]
 		Expect(controllerPodName).Should(ContainSubstring("controller-manager"))
+
 		logsCtx, cancel := context.WithCancel(context.Background())
 		cancelLogs = cancel
+
 		Expect(testutil.CapturePodLogs(logsCtx, config, namespace, controllerPodName)).To(Succeed())
 
 		// Validate pod status
@@ -156,9 +167,11 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		)
 		status, err := testutil.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
+
 		if string(status) != "Running" {
 			return fmt.Errorf("controller pod in %s status", status)
 		}
+
 		return nil
 	}
 	Eventually(verifyControllerUp, time.Minute*2, time.Second).Should(Succeed())
@@ -178,9 +191,11 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		if err == nil {
 			return errors.New("unexpected success creating object, webhook not engaged yet")
 		}
+
 		if !strings.Contains(err.Error(), "spec.keeperClusterRef") {
 			return fmt.Errorf("webhook not ready or different error: %w", err)
 		}
+
 		return nil
 	}, 2*time.Minute, 2*time.Second).WithContext(ctx).Should(Succeed())
 })
@@ -194,9 +209,11 @@ var _ = AfterSuite(func(ctx context.Context) {
 	// utils.UninstallPrometheusOperator()
 
 	By("removing manager namespace")
+
 	_, _ = testutil.Run(exec.CommandContext(ctx, "kubectl", "delete", "ns", namespace))
 
 	By("removing test namespace")
+
 	_, _ = testutil.Run(exec.CommandContext(ctx, "kubectl", "delete", "ns", testNamespace))
 })
 

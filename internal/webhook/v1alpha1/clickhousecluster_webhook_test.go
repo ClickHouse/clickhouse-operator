@@ -14,9 +14,9 @@ import (
 
 var _ = Describe("ClickHouseCluster Webhook", func() {
 	Context("When creating ClickHouseCluster under Defaulting Webhook", func() {
-
 		It("Should fill in the default value if a required field is empty", func(ctx context.Context) {
 			By("Setting the default value")
+
 			chCluster := &chv1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
@@ -80,6 +80,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 		It("Should check TLS enabled if required", func(ctx context.Context) {
 			By("Rejecting wrong settings")
+
 			cluster := chCluster.DeepCopy()
 			cluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled:  false,
@@ -93,6 +94,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 		It("Should check certificate passed if TLS enabled", func(ctx context.Context) {
 			By("Rejecting wrong settings")
+
 			cluster := chCluster.DeepCopy()
 			cluster.Spec.Settings.TLS = chv1.ClusterTLSSpec{
 				Enabled: true,
@@ -107,24 +109,28 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			cluster := chCluster.DeepCopy()
 
 			By("Rejecting cr without source")
+
 			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{}
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("exactly one of secret or configMap must be specified"))
 
 			By("Rejecting cr with empty secret name")
+
 			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{Secret: &chv1.SecretKeySelector{Key: "smth"}}
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("spec.settings.defaultUserPassword.secret.name: Required value"))
 
 			By("Rejecting cr with empty configmap key")
+
 			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{ConfigMap: &chv1.ConfigMapKeySelector{Name: "smth"}}
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("spec.settings.defaultUserPassword.configMap.key: Required value"))
 
 			By("Warning on empty field")
+
 			cluster.Spec.Settings.DefaultUserPassword = nil
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(Succeed())
@@ -138,7 +144,9 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			cluster.Spec.ContainerTemplate.VolumeMounts = []corev1.VolumeMount{{
 				Name: "non-existing-volume",
 			}}
+
 			By("Rejecting cr with non existing volume")
+
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("the volume mount 'non-existing-volume' is invalid because the volume is not defined"))
@@ -173,6 +181,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			}}
 
 			By("Rejecting cr with data volume mount collision")
+
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot mount a custom volume at the data path"))
@@ -202,6 +211,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			}}
 
 			By("Rejecting cr with added data volume")
+
 			err := k8sClient.Update(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot be added"))
@@ -219,10 +229,10 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			cluster.Spec.DataVolumeClaimSpec = nil
 
 			By("Rejecting cr with added data volume")
+
 			err := k8sClient.Update(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot be removed"))
 		})
 	})
-
 })

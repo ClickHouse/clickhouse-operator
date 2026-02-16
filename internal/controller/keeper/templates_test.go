@@ -22,6 +22,7 @@ var _ = Describe("ServerRevision", func() {
 
 	BeforeEach(func() {
 		var err error
+
 		baseCR = &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test",
@@ -87,6 +88,7 @@ var _ = Describe("ExtraConfig", func() {
 		}
 
 		var err error
+
 		baseConfigYAML, err = generateConfigForSingleReplica(cr, nil, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(yaml.Unmarshal([]byte(baseConfigYAML), &baseConfig)).To(Succeed())
@@ -120,6 +122,7 @@ var _ = Describe("ExtraConfig", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		var config confMap
+
 		err = yaml.Unmarshal([]byte(configYAML), &config)
 		Expect(err).NotTo(HaveOccurred())
 

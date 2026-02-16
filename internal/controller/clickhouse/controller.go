@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,9 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
-
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
@@ -32,7 +31,7 @@ type ClusterController struct {
 	client.Client
 
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 	Logger   controllerutil.Logger
 	Webhook  webhookv1.ClickHouseClusterWebhook
 }
@@ -112,7 +111,7 @@ func (cc *ClusterController) GetScheme() *runtime.Scheme {
 }
 
 // GetRecorder returns the KeeperCluster EventRecorder.
-func (cc *ClusterController) GetRecorder() record.EventRecorder {
+func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }
 
@@ -123,7 +122,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	clickhouseController := &ClusterController{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("clickhouse-controller"),
+		Recorder: mgr.GetEventRecorder("clickhouse-controller"),
 		Logger:   namedLogger,
 		Webhook:  webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
 	}

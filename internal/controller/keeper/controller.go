@@ -11,15 +11,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
-
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
@@ -29,7 +28,7 @@ type ClusterController struct {
 	client.Client
 
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 	Logger   controllerutil.Logger
 	Webhook  webhookv1.KeeperClusterWebhook
 }
@@ -42,7 +41,7 @@ type ClusterController struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
-// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -114,7 +113,7 @@ func (cc *ClusterController) GetScheme() *runtime.Scheme {
 }
 
 // GetRecorder returns the KeeperCluster EventRecorder.
-func (cc *ClusterController) GetRecorder() record.EventRecorder {
+func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }
 
@@ -125,7 +124,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	keeperController := &ClusterController{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("keeper-controller"),
+		Recorder: mgr.GetEventRecorder("keeper-controller"),
 		Logger:   namedLogger,
 		Webhook:  webhookv1.KeeperClusterWebhook{Log: namedLogger},
 	}

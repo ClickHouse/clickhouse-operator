@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -22,8 +20,8 @@ type KeeperClusterWebhook struct {
 	Log controllerutil.Logger
 }
 
-var _ webhook.CustomDefaulter = &KeeperClusterWebhook{}
-var _ webhook.CustomValidator = &KeeperClusterWebhook{}
+var _ admission.Defaulter[*chv1.KeeperCluster] = &KeeperClusterWebhook{}
+var _ admission.Validator[*chv1.KeeperCluster] = &KeeperClusterWebhook{}
 
 // SetupKeeperWebhookWithManager registers the webhook for KeeperCluster in the manager.
 func SetupKeeperWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
@@ -31,8 +29,7 @@ func SetupKeeperWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) 
 		Log: log.Named("keeper-webhook"),
 	}
 
-	err := ctrl.NewWebhookManagedBy(mgr).
-		For(&chv1.KeeperCluster{}).
+	err := ctrl.NewWebhookManagedBy(mgr, &chv1.KeeperCluster{}).
 		WithDefaulter(wh).
 		WithValidator(wh).
 		Complete()
@@ -44,42 +41,22 @@ func SetupKeeperWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) 
 }
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the type.
-func (w *KeeperClusterWebhook) Default(_ context.Context, obj runtime.Object) error {
-	keeperCluster, ok := obj.(*chv1.KeeperCluster)
-	if !ok {
-		return fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
-	}
-
-	w.Log.Info("Filling defaults", "name", keeperCluster.Name, "namespace", keeperCluster.Namespace)
-	keeperCluster.Spec.WithDefaults()
+func (w *KeeperClusterWebhook) Default(_ context.Context, cluster *chv1.KeeperCluster) error {
+	w.Log.Info("Filling defaults", "name", cluster.Name, "namespace", cluster.Namespace)
+	cluster.Spec.WithDefaults()
 
 	return nil
 }
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (w *KeeperClusterWebhook) ValidateCreate(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	keeperCluster, ok := obj.(*chv1.KeeperCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
-	}
-
-	warns, errs := w.validateImpl(keeperCluster)
+func (w *KeeperClusterWebhook) ValidateCreate(_ context.Context, cluster *chv1.KeeperCluster) (warnings admission.Warnings, err error) {
+	warns, errs := w.validateImpl(cluster)
 
 	return warns, errors.Join(errs...)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (w *KeeperClusterWebhook) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
-	oldCluster, ok := oldObj.(*chv1.KeeperCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected object type received %s", oldObj.GetObjectKind().GroupVersionKind())
-	}
-
-	newCluster, ok := newObj.(*chv1.KeeperCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected object type received %s", newObj.GetObjectKind().GroupVersionKind())
-	}
-
+func (w *KeeperClusterWebhook) ValidateUpdate(_ context.Context, oldCluster, newCluster *chv1.KeeperCluster) (warnings admission.Warnings, err error) {
 	warns, errs := w.validateImpl(newCluster)
 
 	if err := validateDataVolumeSpecChanges(
@@ -93,7 +70,7 @@ func (w *KeeperClusterWebhook) ValidateUpdate(_ context.Context, oldObj, newObj 
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type.
-func (w *KeeperClusterWebhook) ValidateDelete(context.Context, runtime.Object) (warnings admission.Warnings, err error) {
+func (w *KeeperClusterWebhook) ValidateDelete(context.Context, *chv1.KeeperCluster) (warnings admission.Warnings, err error) {
 	return nil, nil
 }
 

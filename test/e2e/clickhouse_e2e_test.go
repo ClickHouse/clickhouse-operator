@@ -214,10 +214,12 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		keeperCertName := fmt.Sprintf("keeper-cert-%d", suffix)
 		chCertName := fmt.Sprintf("ch-cert-%d", suffix)
 
-		var keeperCR *v1.KeeperCluster
-		var keeperCert *certv1.Certificate
-		var baseCr *v1.ClickHouseCluster
-		var chCert *certv1.Certificate
+		var (
+			keeperCR   *v1.KeeperCluster
+			keeperCert *certv1.Certificate
+			baseCr     *v1.ClickHouseCluster
+			chCert     *certv1.Certificate
+		)
 
 		BeforeAll(func(ctx context.Context) {
 			testutil.SetupCA(ctx, k8sClient, testNamespace, suffix)
@@ -597,9 +599,13 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 			chClient, err := testutil.NewClickHouseClient(ctx, config, cr, auth)
 			Expect(err).NotTo(HaveOccurred())
+
 			defer chClient.Close()
+
 			var maxTableSizeToDrop string
+
 			query := "SELECT value FROM system.server_settings WHERE name = 'max_table_size_to_drop'"
+
 			By("checking custom setting applied")
 			Expect(chClient.QueryRow(ctx, query, &maxTableSizeToDrop)).To(Succeed())
 			Expect(maxTableSizeToDrop).To(Equal("7"))
@@ -646,6 +652,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			var nodes corev1.NodeList
 			Expect(k8sClient.List(ctx, &nodes)).To(Succeed())
 			Expect(len(nodes.Items)).To(BeNumerically(">=", 3), "Too few nodes in the cluster to test affinity")
+
 			zones := map[string]struct{}{}
 			for _, node := range nodes.Items {
 				if zone, ok := node.Labels["topology.kubernetes.io/zone"]; ok {
@@ -655,6 +662,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					GinkgoWriter.Printf("Node %s has no zone label\n", node.Name)
 				}
 			}
+
 			Expect(len(zones)).To(BeNumerically(">=", 3), "Too few zones in the cluster to test affinity")
 		})
 
@@ -664,13 +672,16 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
 
 			By("checking keeper pod affinity")
+
 			var pods corev1.PodList
 			Expect(k8sClient.List(ctx, &pods, client.InNamespace(testNamespace),
 				client.MatchingLabels{controllerutil.LabelAppKey: keeper.SpecificName()})).To(Succeed())
 			Expect(pods.Items).To(HaveLen(int(keeper.Replicas())))
+
 			for _, pod := range pods.Items {
 				zone, ok := nodeToZone[pod.Spec.NodeName]
 				Expect(ok).To(BeTrue(), "Keeper pod %s on node %s without zone label", pod.Name, pod.Spec.NodeName)
+
 				keeperZones[zone] = struct{}{}
 				affinity := pod.Spec.Affinity
 				Expect(affinity.PodAntiAffinity).NotTo(BeNil())
@@ -685,14 +696,17 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			WaitClickHouseUpdatedAndReady(ctx, &cluster, 2*time.Minute, false)
 
 			By("checking clickhouse pod affinity")
+
 			var pods corev1.PodList
 			Expect(k8sClient.List(ctx, &pods, client.InNamespace(testNamespace),
 				client.MatchingLabels{controllerutil.LabelAppKey: cluster.SpecificName()})).To(Succeed())
 			Expect(pods.Items).To(HaveLen(int(cluster.Replicas())))
+
 			zones := map[string]struct{}{}
 			for _, pod := range pods.Items {
 				zone, ok := nodeToZone[pod.Spec.NodeName]
 				Expect(ok).To(BeTrue(), "ClickHouse pod %s on node %s without zone label", pod.Name, pod.Spec.NodeName)
+
 				zones[zone] = struct{}{}
 				affinity := pod.Spec.Affinity
 				Expect(affinity.PodAffinity).NotTo(BeNil())
@@ -709,6 +723,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				By("deleting clickhouse cluster")
 				Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
 			}
+
 			if keeper.UID != "" {
 				By("deleting keeper cluster")
 				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
@@ -838,6 +853,7 @@ func CheckClickHouseUpdateOrder(ctx context.Context, cluster v1.ClickHouseCluste
 				"shard %d more than one replica is updating: %d and %d",
 				shard, updatingReplica, replicaID.Index)
 			updatingReplica = replicaID.Index
+
 		// Successfully updated replica
 		default:
 			minUpdated = min(minUpdated, replicaID.Index)

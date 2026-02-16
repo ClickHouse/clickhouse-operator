@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -33,7 +33,7 @@ func TestControllers(t *testing.T) {
 var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
-		recorder     *record.FakeRecorder
+		recorder     *events.FakeRecorder
 		controller   *ClusterController
 		keeperName   = "keeper"
 		services     corev1.ServiceList
@@ -62,7 +62,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	BeforeAll(func(ctx context.Context) {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
-		recorder = record.NewFakeRecorder(128)
+		recorder = events.NewFakeRecorder(128)
 		controller = &ClusterController{
 			Client:   suite.Client,
 			Scheme:   scheme.Scheme,
@@ -91,6 +91,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	AfterAll(func() {
 		By("tearing down the test environment")
+
 		err := suite.TestEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -107,6 +108,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	It("should successfully create all resources of the new cluster", func(ctx context.Context) {
 		By("reconciling the created resource once")
+
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
@@ -144,56 +146,71 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}
 
 		By("setting meta attributes for service")
+
 		for _, service := range services.Items {
 			Expect(service.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(service.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(service.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for pod disruption budget")
+
 		for _, pdb := range pdbs.Items {
 			Expect(pdb.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(pdb.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(pdb.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for secrets")
+
 		for _, secret := range secrets.Items {
 			Expect(secret.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(secret.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(secret.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for configs")
+
 		for _, config := range configs.Items {
 			Expect(config.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(config.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(config.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 			}
 		}
 
 		By("setting meta attributes for statefulsets")
+
 		for _, sts := range statefulsets.Items {
 			Expect(sts.ObjectMeta.OwnerReferences).To(ContainElement(expectedOwnerRef))
+
 			for k, v := range cr.Spec.Labels {
 				Expect(sts.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 				Expect(sts.Spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(k, v))
 			}
+
 			for k, v := range cr.Spec.Annotations {
 				Expect(sts.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
 				Expect(sts.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(k, v))
@@ -225,6 +242,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
 
 		By("reconciling the cluster")
+
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
@@ -275,7 +293,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Name: cr.StatefulSetNameByReplicaID(v1.ClickHouseReplicaID{
 				ShardID: 1,
 				Index:   1,
-			})}, &sts)).To(Succeed())
+			}),
+		}, &sts)).To(Succeed())
 
 		Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsUser).To(BeEquivalentTo(7))
 		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.Privileged).To(BeEquivalentTo(true))

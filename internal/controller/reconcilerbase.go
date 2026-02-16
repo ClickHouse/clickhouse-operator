@@ -4,7 +4,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -25,7 +25,7 @@ type replicaID interface {
 type controller interface {
 	GetClient() client.Client
 	GetScheme() *k8sruntime.Scheme
-	GetRecorder() record.EventRecorder
+	GetRecorder() events.EventRecorder
 }
 
 // ResourceReconcilerBase provides a base class for cluster reconcilers.

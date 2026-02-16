@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -58,6 +58,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		configMap := mustGet[*corev1.ConfigMap](ctx, rec.GetClient(), cfgKey)
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
+
 		Expect(configMap).ToNot(BeNil())
 		Expect(sts).ToNot(BeNil())
 		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(rec.Cluster.Status.ConfigurationRevision))
@@ -87,6 +88,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
+
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("custom-keeper:latest"))
 	})
@@ -99,6 +101,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
+
 		sts = mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).ToNot(BeEmpty())
 	})
@@ -123,7 +126,7 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 	Expect(v1.AddToScheme(scheme)).To(Succeed())
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	eventRecorder := record.NewFakeRecorder(32)
+	eventRecorder := events.NewFakeRecorder(32)
 	logger := util.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	reconciler := &keeperReconciler{

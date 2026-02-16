@@ -192,13 +192,13 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
 	service := templateHeadlessService(r.Cluster)
-	if _, err := r.ReconcileService(ctx, log, service); err != nil {
+	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	for shard := range r.Cluster.Shards() {
 		pdb := templatePodDisruptionBudget(r.Cluster, shard)
-		if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb); err != nil {
+		if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
 		}
 	}
@@ -219,7 +219,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		if shardID >= int(r.Cluster.Shards()) {
 			log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
 
-			if err := r.Delete(ctx, &pdb); err != nil {
+			if err := r.Delete(ctx, &pdb, v1.EventActionReconciling); err != nil {
 				return nil, fmt.Errorf("remove shard %d: %w", shardID, err)
 			}
 		}
@@ -242,12 +242,12 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 	case getErr != nil:
 		log.Info("cluster secret not found, creating", "secret", r.Cluster.SecretName())
 
-		if err := r.Create(ctx, &r.secret); err != nil {
+		if err := r.Create(ctx, &r.secret, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("create cluster secret: %w", err)
 		}
 
 	case isSecretUpdated:
-		if err := r.Update(ctx, &r.secret); err != nil {
+		if err := r.Update(ctx, &r.secret, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("update cluster secret: %w", err)
 		}
 	default:
@@ -601,7 +601,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			if res.sts != nil {
 				log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
 
-				if err := r.Delete(ctx, res.sts); err != nil {
+				if err := r.Delete(ctx, res.sts, v1.EventActionReconciling); err != nil {
 					log.Error(err, "failed to delete replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
 				}
 			}
@@ -609,7 +609,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			if res.cfg != nil {
 				log.Info("removing replica configmap", "replica_id", id, "configmap", res.cfg.Name)
 
-				if err := r.Delete(ctx, res.cfg); err != nil {
+				if err := r.Delete(ctx, res.cfg, v1.EventActionReconciling); err != nil {
 					log.Error(err, "failed to delete replica configmap", "replica_id", id, "statefulset", res.sts.Name)
 				}
 			}
@@ -709,14 +709,14 @@ func (r *clickhouseReconciler) reconcileConditions(ctx context.Context, log ctrl
 	if len(notReadyShards) == 0 {
 		_, err = r.UpsertConditionAndSendEvent(ctx, log,
 			r.NewCondition(v1.ConditionTypeReady, metav1.ConditionTrue, v1.ClickHouseConditionAllShardsReady, "All shards are ready"),
-			corev1.EventTypeNormal, v1.EventReasonClusterReady, "ClickHouse cluster is ready",
+			corev1.EventTypeNormal, v1.EventReasonClusterReady, v1.EventActionBecameReady, "ClickHouse cluster is ready",
 		)
 	} else {
 		slices.Sort(notReadyShards)
 		message := fmt.Sprintf("Not Ready shards: %v", notReadyShards)
 		_, err = r.UpsertConditionAndSendEvent(ctx, log,
 			r.NewCondition(v1.ConditionTypeReady, metav1.ConditionFalse, v1.ClickHouseConditionSomeShardsNotReady, message),
-			corev1.EventTypeWarning, v1.EventReasonClusterNotReady, message,
+			corev1.EventTypeWarning, v1.EventReasonClusterNotReady, v1.EventActionBecameNotReady, message,
 		)
 	}
 
@@ -761,7 +761,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 		return nil, fmt.Errorf("template replica %s ConfigMap: %w", id, err)
 	}
 
-	configChanged, err := r.ReconcileConfigMap(ctx, log, configMap)
+	configChanged, err := r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling)
 	if err != nil {
 		return nil, fmt.Errorf("update replica %s ConfigMap: %w", id, err)
 	}
@@ -781,7 +781,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 		ctrlutil.AddObjectConfigHash(statefulSet, r.Cluster.Status.ConfigurationRevision)
 		ctrlutil.AddHashWithKeyToAnnotations(statefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
 
-		if err := r.Create(ctx, statefulSet); err != nil {
+		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("create replica %s: %w", id, err)
 		}
 
@@ -793,7 +793,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 	if err != nil || breakingStatefulSetVersion.GT(v) {
 		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, breakingStatefulSetVersion))
 
-		if err := r.Delete(ctx, replica.StatefulSet); err != nil {
+		if err := r.Delete(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("recreate replica %s: %w", id, err)
 		}
 
@@ -831,7 +831,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 
 	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
 		if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, r.Cluster.Spec.DataVolumeClaimSpec) {
-			if err = r.UpdatePVC(ctx, log, id, *r.Cluster.Spec.DataVolumeClaimSpec); err != nil {
+			if err = r.UpdatePVC(ctx, log, id, *r.Cluster.Spec.DataVolumeClaimSpec, v1.EventActionReconciling); err != nil {
 				//nolint:nilerr // Error is logged internally and event sent
 				return nil, nil
 			}
@@ -847,7 +847,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 	replica.StatefulSet.Labels = ctrlutil.MergeMaps(replica.StatefulSet.Labels, statefulSet.Labels)
 	ctrlutil.AddHashWithKeyToAnnotations(replica.StatefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
 
-	if err := r.Update(ctx, replica.StatefulSet); err != nil {
+	if err := r.Update(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("update replica %s: %w", id, err)
 	}
 

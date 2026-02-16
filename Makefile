@@ -59,7 +59,7 @@ OPERATOR_MANAGER_VERSION ?= v1.62.0
 # Image URL to use all building/pushing image targets
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.33.0
+ENVTEST_K8S_VERSION ?= 1.33.0
 
 # HELM_IMG defines the image used for the helm chart oci-based repo.
 HELM_IMG ?= $(IMAGE_REPO)/clickhouse-operator-helm
@@ -293,10 +293,10 @@ CODESPELL ?= $(LOCALBIN)/codespell
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
-CONTROLLER_TOOLS_VERSION ?= v0.19.0
+CONTROLLER_TOOLS_VERSION ?= v0.20.1
 ENVTEST_VERSION ?= release-0.22
-GOLANGCI_LINT_VERSION ?= v2.8.0
-KUBEBUILDER_VERSION ?= v4.11.0
+GOLANGCI_LINT_VERSION ?= v2.9.0
+KUBEBUILDER_VERSION ?= v4.12.0
 CODESPELL_VERSION ?= 2.4.1
 
 .PHONY: kustomize

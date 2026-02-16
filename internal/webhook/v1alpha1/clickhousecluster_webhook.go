@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/ClickHouse/clickhouse-operator/internal"
@@ -22,8 +20,7 @@ func SetupClickHouseWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logg
 		Log: log.Named("clickhouse-webhook"),
 	}
 
-	err := ctrl.NewWebhookManagedBy(mgr).
-		For(&chv1.ClickHouseCluster{}).
+	err := ctrl.NewWebhookManagedBy(mgr, &chv1.ClickHouseCluster{}).
 		WithValidator(wh).
 		WithDefaulter(wh).
 		Complete()
@@ -41,16 +38,11 @@ type ClickHouseClusterWebhook struct {
 	Log controllerutil.Logger
 }
 
-var _ webhook.CustomDefaulter = &ClickHouseClusterWebhook{}
-var _ webhook.CustomValidator = &ClickHouseClusterWebhook{}
+var _ admission.Defaulter[*chv1.ClickHouseCluster] = &ClickHouseClusterWebhook{}
+var _ admission.Validator[*chv1.ClickHouseCluster] = &ClickHouseClusterWebhook{}
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind ClickHouseCluster.
-func (w *ClickHouseClusterWebhook) Default(_ context.Context, obj runtime.Object) error {
-	cluster, ok := obj.(*chv1.ClickHouseCluster)
-	if !ok {
-		return fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
-	}
-
+func (w *ClickHouseClusterWebhook) Default(_ context.Context, cluster *chv1.ClickHouseCluster) error {
 	w.Log.Info("Fill defaults", "name", cluster.Name, "namespace", cluster.Namespace)
 	cluster.Spec.WithDefaults()
 
@@ -58,29 +50,14 @@ func (w *ClickHouseClusterWebhook) Default(_ context.Context, obj runtime.Object
 }
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
-func (w *ClickHouseClusterWebhook) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	cluster, ok := obj.(*chv1.ClickHouseCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected object type received %s", obj.GetObjectKind().GroupVersionKind())
-	}
-
+func (w *ClickHouseClusterWebhook) ValidateCreate(_ context.Context, cluster *chv1.ClickHouseCluster) (admission.Warnings, error) {
 	warns, errs := w.validateImpl(cluster)
 
 	return warns, errors.Join(errs...)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
-func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	oldCluster, ok := oldObj.(*chv1.ClickHouseCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected old object type received %s", oldObj)
-	}
-
-	newCluster, ok := newObj.(*chv1.ClickHouseCluster)
-	if !ok {
-		return nil, fmt.Errorf("unexpected new object type received %s", newObj.GetObjectKind().GroupVersionKind())
-	}
-
+func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster, newCluster *chv1.ClickHouseCluster) (admission.Warnings, error) {
 	w.Log.Info("Validate update spec", "name", newCluster.Name, "namespace", newCluster.Namespace)
 
 	warns, errs := w.validateImpl(newCluster)
@@ -100,7 +77,7 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldObj, new
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
-func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, runtime.Object) (admission.Warnings, error) {
+func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, *chv1.ClickHouseCluster) (admission.Warnings, error) {
 	return nil, nil
 }
 

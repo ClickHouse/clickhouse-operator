@@ -152,7 +152,7 @@ func run() error {
 
 	env, err := environment.GetEnvironment(context.Background())
 	if err != nil {
-		return fmt.Errorf("load manager : %w", err)
+		return fmt.Errorf("load manager environment: %w", err)
 	}
 
 	if len(env.WatchNamespace) > 0 {
@@ -166,7 +166,7 @@ func run() error {
 		setupLog.Info("Watching all namespaces")
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOptions)
+	mgr, err := ctrl.NewManager(config, mgrOptions)
 	if err != nil {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}

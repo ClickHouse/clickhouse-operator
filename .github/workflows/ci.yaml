@@ -37,7 +37,7 @@ jobs:
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.8.0
+          version: v2.9.0
 
       - name: Lint with codespell
         uses: codespell-project/actions-codespell@v2.2

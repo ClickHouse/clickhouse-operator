@@ -97,8 +97,10 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 		return volumes, volumeMounts, nil
 	}
 
-	newVolumes := []corev1.Volume{}
-	newVolumeMounts := []corev1.VolumeMount{}
+	var (
+		newVolumes      []corev1.Volume
+		newVolumeMounts []corev1.VolumeMount
+	)
 
 	volumeMap := map[string]corev1.Volume{}
 	for _, volume := range volumes {

@@ -124,7 +124,7 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) boo
 	for key, template := range secretsToGenerate {
 		if _, ok := secret.Data[key]; !ok {
 			changed = true
-			secret.Data[key] = []byte(fmt.Sprintf(template, controllerutil.GeneratePassword()))
+			secret.Data[key] = fmt.Appendf(nil, template, controllerutil.GeneratePassword())
 		}
 	}
 

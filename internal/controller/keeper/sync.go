@@ -316,7 +316,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 		if _, err := r.UpsertConditionAndSendEvent(ctx, log,
 			r.NewCondition(
 				v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, "",
-			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleCompleted,
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleCompleted, v1.EventActionScaling,
 			"Cluster is scaled to the requested size: %d replicas", requestedReplicas,
 		); err != nil {
 			return nil, fmt.Errorf("update cluster size aligned condition: %w", err)
@@ -328,7 +328,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 	// New cluster creation, creates all replicas.
 	if requestedReplicas > 0 && activeReplicas == 0 {
 		log.Debug("creating all replicas")
-		r.GetRecorder().Eventf(r.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaCreated,
+		r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeNormal, v1.EventReasonReplicaCreated, "InitialCreate",
 			"Initial cluster creation, creating %d replicas", requestedReplicas)
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""))
 
@@ -344,7 +344,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 	if requestedReplicas == 0 && activeReplicas > 0 {
 		log.Debug("deleting all replicas", "replicas", slices.Collect(maps.Keys(r.ReplicaState)))
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeClusterSizeAligned, metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""))
-		r.GetRecorder().Eventf(r.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted,
+		r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted, v1.EventActionScaling,
 			"Cluster scaled to 0 nodes, removing all %d replicas", len(r.ReplicaState))
 		r.ReplicaState = map[v1.KeeperReplicaID]replicaState{}
 
@@ -357,7 +357,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 			r.NewCondition(
 				v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingUp,
 				"Cluster has less replicas than requested",
-			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted,
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted, v1.EventActionScaling,
 			"Cluster scale up is started: current replicas %d, requested %d",
 			activeReplicas, requestedReplicas,
 		)
@@ -366,7 +366,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 			r.NewCondition(
 				v1.ConditionTypeClusterSizeAligned, metav1.ConditionFalse, v1.ConditionReasonScalingDown,
 				"Cluster has more replicas than requested",
-			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted,
+			), corev1.EventTypeNormal, v1.EventReasonHorizontalScaleStarted, v1.EventActionScaling,
 			"Cluster scale down is started: current replicas %d, requested %d",
 			activeReplicas, requestedReplicas,
 		)
@@ -387,8 +387,8 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 		for id := v1.KeeperReplicaID(1); ; id++ {
 			if _, ok := r.ReplicaState[id]; !ok {
 				log.Info("creating new replica", "replica_id", id)
-				r.GetRecorder().Eventf(r.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaCreated,
-					"Adding new replica %q to the cluster", r.Cluster.HostnameByID(id))
+				r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeNormal, v1.EventReasonReplicaCreated,
+					v1.EventActionScaling, "Adding new replica %q to the cluster", r.Cluster.HostnameByID(id))
 				r.SetReplica(id, replicaState{})
 
 				return nil, nil
@@ -410,7 +410,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 		}
 
 		log.Info("deleting replica", "replica_id", chosenIndex)
-		r.GetRecorder().Eventf(r.Cluster, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted,
+		r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeNormal, v1.EventReasonReplicaDeleted, v1.EventActionScaling,
 			"Deleting replica %q from the cluster", r.Cluster.HostnameByID(chosenIndex))
 		delete(r.ReplicaState, chosenIndex)
 
@@ -422,12 +422,12 @@ func (r *keeperReconciler) reconcileQuorumMembership(ctx context.Context, log ct
 
 func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
 	service := templateHeadlessService(r.Cluster)
-	if _, err := r.ReconcileService(ctx, log, service); err != nil {
+	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	pdb := templatePodDisruptionBudget(r.Cluster)
-	if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb); err != nil {
+	if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
 	}
 
@@ -436,7 +436,7 @@ func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctr
 		return nil, fmt.Errorf("template quorum config: %w", err)
 	}
 
-	if _, err = r.ReconcileConfigMap(ctx, log, configMap); err != nil {
+	if _, err = r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("reconcile quorum config: %w", err)
 	}
 
@@ -526,7 +526,7 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 		if _, ok := r.ReplicaState[id]; !ok {
 			log.Info("deleting stale ConfigMap", "replica_id", id, "configmap", configMap.Name)
 
-			if err := r.Delete(ctx, &configMap); err != nil {
+			if err := r.Delete(ctx, &configMap, v1.EventActionReconciling); err != nil {
 				log.Error(err, "delete stale replica", "replica_id", id, "configmap", configMap.Name)
 			}
 		}
@@ -547,7 +547,7 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 		if _, ok := r.ReplicaState[id]; !ok {
 			log.Info("deleting stale StatefulSet", "replica_id", id, "statefuleset", sts.Name)
 
-			if err := r.Delete(ctx, &sts); err != nil {
+			if err := r.Delete(ctx, &sts, v1.EventActionReconciling); err != nil {
 				log.Error(err, "delete stale replica", "replica_id", id, "statefuleset", sts.Name)
 			}
 		}
@@ -622,6 +622,7 @@ func (r *keeperReconciler) reconcileConditions(ctx context.Context, log ctrlutil
 
 	eventType := corev1.EventTypeWarning
 	eventReason := v1.EventReasonClusterNotReady
+	eventAction := v1.EventActionBecameNotReady
 
 	switch exists {
 	case 0:
@@ -672,13 +673,14 @@ func (r *keeperReconciler) reconcileConditions(ctx context.Context, log ctrlutil
 			reason = v1.KeeperConditionReasonClusterReady
 			eventType = corev1.EventTypeNormal
 			eventReason = v1.EventReasonClusterReady
+			eventAction = v1.EventActionBecameReady
 			message = "Cluster is ready"
 		}
 	}
 
 	if _, err := r.UpsertConditionAndSendEvent(ctx, log,
 		r.NewCondition(v1.ConditionTypeReady, status, reason, message),
-		eventType, eventReason, message,
+		eventType, eventReason, eventAction, message,
 	); err != nil {
 		return nil, fmt.Errorf("update ready condition: %w", err)
 	}
@@ -695,7 +697,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", replicaID, err)
 	}
 
-	configChanged, err := r.ReconcileConfigMap(ctx, log, configMap)
+	configChanged, err := r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling)
 	if err != nil {
 		return nil, fmt.Errorf("update replica %q ConfigMap: %w", replicaID, err)
 	}
@@ -715,7 +717,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		ctrlutil.AddObjectConfigHash(statefulSet, r.Cluster.Status.ConfigurationRevision)
 		ctrlutil.AddHashWithKeyToAnnotations(statefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
 
-		if err := r.Create(ctx, statefulSet); err != nil {
+		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("create replica %q: %w", replicaID, err)
 		}
 
@@ -727,7 +729,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 	if err != nil || breakingStatefulSetVersion.GT(v) {
 		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, breakingStatefulSetVersion))
 
-		if err := r.Delete(ctx, replica.StatefulSet); err != nil {
+		if err := r.Delete(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("recreate replica %d: %w", replicaID, err)
 		}
 
@@ -764,7 +766,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 
 	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
 		if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, r.Cluster.Spec.DataVolumeClaimSpec) {
-			if err = r.UpdatePVC(ctx, log, replicaID, *r.Cluster.Spec.DataVolumeClaimSpec); err != nil {
+			if err = r.UpdatePVC(ctx, log, replicaID, *r.Cluster.Spec.DataVolumeClaimSpec, v1.EventActionReconciling); err != nil {
 				//nolint:nilerr // Error is logged internally and event sent
 				return nil, nil
 			}
@@ -779,7 +781,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 	replica.StatefulSet.Labels = ctrlutil.MergeMaps(replica.StatefulSet.Labels, statefulSet.Labels)
 	ctrlutil.AddHashWithKeyToAnnotations(replica.StatefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
 
-	if err := r.Update(ctx, replica.StatefulSet); err != nil {
+	if err := r.Update(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("update replica %q: %w", replicaID, err)
 	}
 
@@ -851,7 +853,7 @@ func (r *keeperReconciler) checkHorizontalScalingAllowed(ctx context.Context, lo
 				v1.KeeperConditionTypeScaleAllowed, metav1.ConditionFalse, conditionReason,
 				fmt.Sprintf(format, formatArgs...),
 			),
-			corev1.EventTypeWarning, v1.EventReasonHorizontalScaleBlocked, format, formatArgs...,
+			corev1.EventTypeWarning, v1.EventReasonHorizontalScaleBlocked, v1.EventActionScaling, format, formatArgs...,
 		)
 		if err != nil {
 			return fmt.Errorf("update cluster scale blocked: %w", err)

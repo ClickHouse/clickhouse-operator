@@ -121,14 +121,17 @@ var _ = Describe("BuildVolumes", func() {
 		checkVolumeMounts(volumes, mounts)
 
 		projectedVolumeFound := false
+
 		volumeName := controllerutil.PathToName("/etc/clickhouse-server/config.d/")
 		for _, volume := range volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())
+
 				projectedVolumeFound = true
 				break
 			}
 		}
+
 		Expect(projectedVolumeFound).To(BeTrue())
 	})
 
@@ -174,14 +177,17 @@ var _ = Describe("BuildVolumes", func() {
 		checkVolumeMounts(volumes, mounts)
 
 		projectedVolumeFound := false
+
 		volumeName := controllerutil.PathToName("/etc/clickhouse-server/tls/")
 		for _, volume := range volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())
+
 				projectedVolumeFound = true
 				break
 			}
 		}
+
 		Expect(projectedVolumeFound).To(BeTrue())
 	})
 })
