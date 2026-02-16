@@ -143,6 +143,10 @@ test-keeper-e2e: ## Run keeper e2e tests.
 test-clickhouse-e2e: ## Run clickhouse e2e tests.
 	go test ./test/e2e/ --ginkgo.label-filter clickhouse -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
+.PHONY: test-compat-e2e  # Run compatibility smoke tests across ClickHouse versions.
+test-compat-e2e: ## Run compatibility e2e tests.
+	go test ./test/e2e/ --ginkgo.label-filter compatibility -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
+
 .PHONY: lint
 lint: golangci-lint codespell ## Run golangci-lint linter and codespell
 	$(GOLANGCI_LINT) run
