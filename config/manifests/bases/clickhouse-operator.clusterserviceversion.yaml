@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Full Lifecycle
     categories: Database
-    containerImage: ghcr.io/clickhouse/clickhouse-operator:v0.0.1
+    containerImage: clickhouse-operator.v0.0.0
     description: The Kubernetes Operator for ClickHouse®.
     repository: https://github.com/ClickHouse/clickhouse-operator
     support: ClickHouse Inc. https://clickhouse.com

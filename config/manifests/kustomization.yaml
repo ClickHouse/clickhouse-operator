@@ -26,3 +26,15 @@ patches:
     # Update the indices in this path if adding or removing volumes in the manager's Deployment.
     - op: remove
       path: /spec/template/spec/volumes/0
+
+replacements:
+  - source:
+      kind: Deployment
+      version: v1
+      name: controller-manager
+      fieldPath: .spec.template.spec.containers.0.image
+    targets:
+      - select:
+          kind: ClusterServiceVersion
+        fieldPaths:
+          - ".metadata.annotations.containerImage"
