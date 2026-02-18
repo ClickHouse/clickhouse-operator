@@ -7,7 +7,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_REPO: ghcr.io/clickhouse
-  VERSION: ${{ github.ref_name }}
 
 permissions:
   packages: write
@@ -38,22 +37,43 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
       - name: Log in to the Container registry
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Install jq
         uses: dcarbone/install-jq-action@v3.2.0
+
       - name: Set VERSION
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
       - name: Build operator bundle image
         run: make bundle bundle-buildx
+
+      - name: Compress OLM Bundle
+        working-directory: bundle
+        run: |
+          tar --use-compress-program zstd -cf olm-bundle-clickhouse-${{ env.VERSION }}.tzst \
+          --exclude '*.tar.gz' \
+          -C bundle .
+
+      - name: Upload operator OLM bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: olm-bundle-clickhouse
+          path: olm-bundle-clickhouse-${{ env.VERSION }}.tzst
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Build catalog
         run: make catalog-buildx
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
       - name: Mark catalog as latest
         run: make catalog-push-latest
 
@@ -74,6 +94,7 @@ jobs:
         run: |
           helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
           make push-helmchart
+
 
   create-release:
     runs-on: ubuntu-latest
@@ -149,3 +170,61 @@ jobs:
             dist/clickhouse-operator.yaml
             clickhouse-operator-helm-${{env.VERSION}}.tgz
             clickhouse-operator_${{env.VERSION}}_*.tar.gz
+
+
+  community-operators-release:
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    strategy:
+      matrix:
+        include:
+          - upstream_repo: git@github.com:k8s-operatorhub/community-operators.git
+            fork_repo: ClickHouse/community-operators
+            branch_name : clickhouse-operator-${{ github.ref_name }}
+          # Add OpenShift community-operators release
+    steps:
+      - name: Download ClickHouse Operator OLM bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: olm-bundle-clickhouse
+          path: olm-bundle-clickhouse.tzst
+
+      - name: Clone community-operators
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ matrix.fork_repo }}
+          path: community-operators
+
+      - name: Make changes and push to the fork
+        working-directory: community-operators
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git remote add upstream 
+          git fetch upstream main ${{ matrix.upstream_repo }}
+          git checkout -b ${{ matrix.branch_name }} upstream/main
+          
+          mkdir -p operators/clickhouse-operator/${{ github.ref_name }}
+          tar -C operators/clickhouse-operator/${{ github.ref_name }} --use-compress-program="zstd -d" -xf ../olm-bundle-clickhouse.tzst
+          
+          git add operators/
+          
+          git config user.name 'ClickHouse Operator Release Bot'
+          git config user.email 'operator@clickhouse.com'
+          
+          git commit -s -m "Update clickhouse-operator (${{ github.ref_name }})"
+          git push origin -u origin ${{ matrix.branch_name }} -f
+
+      - name: Open PR to community-operators
+        working-directory: community-operators
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prOpen=$(gh pr view ${{ matrix.branch_name }} -R ${{ matrix.upstream_repo }} --json closed --jq '.closed' 2>/dev/null | grep -q false && echo "true" || echo "false")
+          
+          
+          if [[ "$prOpen" == "false" ]]; then
+            gh pr create --title "Update clickhouse-operator (${{ github.ref_name }})" --repo ${{ matrix.upstream_repo }} --base main -F docs/pull_request_template.md --head ${{ matrix.fork_repo }}
+          else
+            echo "PR already exists, skipping..."
+          fi

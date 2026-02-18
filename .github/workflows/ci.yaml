@@ -3,7 +3,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main_g ]
 env:
   kind-version: 'v0.29.0'
 permissions:
