@@ -47,10 +47,12 @@ const (
 	EnvInterserverPassword = "CLICKHOUSE_INTERSERVER_PASSWORD"
 	EnvDefaultUserPassword = "CLICKHOUSE_DEFAULT_USER_PASSWORD"
 	EnvKeeperIdentity      = "CLICKHOUSE_KEEPER_IDENTITY"
+	EnvClusterSecret       = "CLICKHOUSE_CLUSTER_SECRET"
 
 	SecretKeyInterserverPassword = "interserver-password"
 	SecretKeyManagementPassword  = "management-password"
 	SecretKeyKeeperIdentity      = "keeper-identity"
+	SecretKeyClusterSecret       = "cluster-secret"
 )
 
 var (
@@ -59,5 +61,14 @@ var (
 		SecretKeyInterserverPassword: "%s",
 		SecretKeyManagementPassword:  "%s",
 		SecretKeyKeeperIdentity:      "clickhouse:%s",
+		SecretKeyClusterSecret:       "%s",
+	}
+	secretsToEnvMapping = []struct {
+		Key string
+		Env string
+	}{
+		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword},
+		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity},
+		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret},
 	}
 )

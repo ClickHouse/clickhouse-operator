@@ -166,19 +166,28 @@ type configGeneratorFunc func(tmpl *template.Template, r *clickhouseReconciler, 
 type baseConfigParams struct {
 	Path   string
 	Log    controller.LoggerConfig
-	Macros map[string]any
+	Macros []macro
 
-	KeeperNodes               []keeperNode
-	KeeperIdentityEnv         string
+	KeeperNodes       []keeperNode
+	KeeperIdentityEnv string
+
 	DistributedDDLPath        string
 	DistributedDDLProfileName string
 	UsersXMLPath              string
 	UsersZookeeperPath        string
 	UDFZookeeperPath          string
 
+	ClusterSecretEnv string
+	ManagementPort   uint16
+	ClusterHosts     [][]string
+
 	OpenSSL controller.OpenSSLConfig
 }
 
+type macro struct {
+	Name  string
+	Value any
+}
 type keeperNode struct {
 	Host   string
 	Port   int32
@@ -226,22 +235,37 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1
 		openSSL.Client.PreferServerCiphers = true
 	}
 
+	clusterHosts := make([][]string, r.Cluster.Shards())
+	for shard := range r.Cluster.Shards() {
+		hosts := make([]string, r.Cluster.Replicas())
+		for replica := range r.Cluster.Replicas() {
+			hosts[replica] = r.Cluster.HostnameByID(v1.ClickHouseReplicaID{ShardID: shard, Index: replica})
+		}
+
+		clusterHosts[shard] = hosts
+	}
+
 	params := baseConfigParams{
 		Path: internal.ClickHouseDataPath,
 		Log:  controller.GenerateLoggerConfig(r.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
-		Macros: map[string]any{
-			"cluster": DefaultClusterName,
-			"shard":   id.ShardID,
-			"replica": id.Index,
+		Macros: []macro{
+			{Name: "cluster", Value: DefaultClusterName},
+			{Name: "shard", Value: id.ShardID},
+			{Name: "replica", Value: id.Index},
 		},
 
-		KeeperNodes:               keeperNodes,
-		KeeperIdentityEnv:         EnvKeeperIdentity,
+		KeeperNodes:       keeperNodes,
+		KeeperIdentityEnv: EnvKeeperIdentity,
+
 		DistributedDDLPath:        KeeperPathDistributedDDL,
 		DistributedDDLProfileName: DefaultProfileName,
 		UsersXMLPath:              UsersFileName,
 		UsersZookeeperPath:        KeeperPathUsers,
 		UDFZookeeperPath:          KeeperPathUDF,
+
+		ClusterSecretEnv: EnvClusterSecret,
+		ManagementPort:   PortManagement,
+		ClusterHosts:     clusterHosts,
 
 		OpenSSL: openSSL,
 	}
@@ -259,13 +283,28 @@ type networkConfigParams struct {
 	InterserverHTTPUser           string
 	InterserverHTTPPasswordEnvVar string
 	ManagementPort                uint16
-	Protocols                     map[string]protocol
+	Protocols                     []namedProtocol
+}
+
+type namedProtocol struct {
+	Name     string
+	Protocol protocol
 }
 
 func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
-	protocols := buildProtocols(r.Cluster)
-	delete(protocols, "interserver")
-	delete(protocols, "management")
+	var protocols []namedProtocol
+	for name, proto := range buildProtocols(r.Cluster) {
+		if name == "interserver" || name == "management" {
+			continue
+		}
+
+		protocols = append(protocols, namedProtocol{
+			Name:     name,
+			Protocol: proto,
+		})
+	}
+
+	controllerutil.SortKey(protocols, func(p namedProtocol) string { return p.Name })
 
 	params := networkConfigParams{
 		InterserverHTTPPort:           PortInterserver,

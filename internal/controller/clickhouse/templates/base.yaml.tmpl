@@ -2,8 +2,8 @@ path: {{ .Path }}
 logger:
 {{ yaml .Log | indent 2 }}
 macros:
-  {{- range $key, $value := .Macros }}
-  {{ $key }}: {{ $value }}
+  {{- range $i, $m := .Macros }}
+  {{ $m.Name }}: {{ $m.Value }}
   {{- end }}
 
 {{- /* Replication settings */}}
@@ -18,6 +18,21 @@ zookeeper:
     {{- end }}
   identity:
     "@from_env": {{ .KeeperIdentityEnv }}
+
+remote_servers:
+  default:
+    secret:
+      "@from_env": {{ .ClusterSecretEnv }}
+    shard:
+    {{- $ctx := .}}
+    {{- range $shard, $replicas := .ClusterHosts }}
+      - internal_replication: true
+        replica:
+        {{- range $i, $replica := $replicas }}
+          - host: {{ $replica }}
+            port: {{ $ctx.ManagementPort }}
+        {{- end }}
+    {{- end }}
 
 distributed_ddl:
   path: {{ .DistributedDDLPath }}

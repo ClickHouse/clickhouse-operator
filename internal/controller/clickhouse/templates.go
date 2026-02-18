@@ -7,17 +7,17 @@ import (
 	"path"
 	"strconv"
 
-	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
-	"github.com/ClickHouse/clickhouse-operator/internal"
-	"github.com/ClickHouse/clickhouse-operator/internal/controller"
-	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
@@ -240,28 +240,6 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
 				Value: "1",
 			},
-			{
-				Name: EnvInterserverPassword,
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: r.Cluster.SecretName(),
-						},
-						Key: SecretKeyInterserverPassword,
-					},
-				},
-			},
-			{
-				Name: EnvKeeperIdentity,
-				ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: r.Cluster.SecretName(),
-						},
-						Key: SecretKeyKeeperIdentity,
-					},
-				},
-			},
 		}, r.Cluster.Spec.ContainerTemplate.Env...),
 		Ports: []corev1.ContainerPort{
 			{
@@ -285,6 +263,20 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
 			},
 		},
+	}
+
+	for _, secret := range secretsToEnvMapping {
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: secret.Env,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: r.Cluster.SecretName(),
+					},
+					Key: secret.Key,
+				},
+			},
+		})
 	}
 
 	container.Ports = make([]corev1.ContainerPort, 0, len(protocols))

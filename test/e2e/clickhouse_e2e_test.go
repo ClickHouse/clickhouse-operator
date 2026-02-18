@@ -6,11 +6,13 @@ import (
 	"math"
 	"math/rand/v2"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	mcertv1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	gcmp "github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -27,8 +29,8 @@ import (
 )
 
 const (
-	ClickHouseBaseVersion   = "25.3"
-	ClickHouseUpdateVersion = "25.5"
+	ClickHouseBaseVersion   = "25.12"
+	ClickHouseUpdateVersion = "26.1"
 )
 
 var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
@@ -523,20 +525,23 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Name: keeperCR.Name,
 				},
 				PodTemplate: v1.PodTemplateSpec{
-					Volumes: []corev1.Volume{{
-						Name: "custom-user",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: customConfigMap.Name,
+					Volumes: []corev1.Volume{
+						{
+							Name: "custom-user",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: customConfigMap.Name,
+									},
+									Items: []corev1.KeyToPath{
+										{
+											Key:  "user.yaml",
+											Path: "custom.yaml",
+										},
+									},
 								},
-								Items: []corev1.KeyToPath{{
-									Key:  "user.yaml",
-									Path: "custom.yaml",
-								}},
 							},
 						},
-					},
 						{
 							Name: "custom-config",
 							VolumeSource: corev1.VolumeSource{
@@ -550,7 +555,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 									}},
 								},
 							},
-						}},
+						},
+					},
 				},
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					Image: v1.ContainerImage{
@@ -730,6 +736,102 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}
 		})
 	})
+
+	It("should generate correct sharded cluster configuration", func(ctx context.Context) {
+		keeper := createTestKeeperCluster(ctx, 1)
+		WaitKeeperUpdatedAndReady(ctx, keeper, 2*time.Minute, false)
+
+		password := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
+		secret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				"password_sha": []byte(controllerutil.Sha256Hash([]byte(password))),
+			},
+		}
+		Expect(k8sClient.Create(ctx, &secret)).To(Succeed())
+
+		ch := v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("clickhouse-%d", rand.Uint32()), //nolint:gosec
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: ptr.To[int32](2),
+				Shards:   ptr.To[int32](2),
+				KeeperClusterRef: &corev1.LocalObjectReference{
+					Name: keeper.Name,
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Tag: ClickHouseBaseVersion,
+					},
+				},
+				DataVolumeClaimSpec: &defaultStorage,
+				Settings: v1.ClickHouseSettings{
+					DefaultUserPassword: &v1.DefaultPasswordSelector{
+						PasswordType: "password_sha256_hex",
+						Secret: &v1.SecretKeySelector{
+							Name: secret.Name,
+							Key:  "password_sha",
+						},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, &ch)).To(Succeed())
+		DeferCleanup(func(ctx context.Context) {
+			Expect(k8sClient.Delete(ctx, &ch)).To(Succeed())
+		})
+		WaitClickHouseUpdatedAndReady(ctx, &ch, 2*time.Minute, false)
+
+		chClient, err := testutil.NewClickHouseClient(ctx, config, &ch, clickhouse.Auth{
+			Username: "default",
+			Password: password,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		defer chClient.Close()
+
+		By("creating schema and inserting data")
+
+		setupQueries := `
+			CREATE DATABASE test_dist ON CLUSTER default Engine=Replicated;
+			CREATE TABLE test_dist.data (id Int32) ENGINE = ReplicatedMergeTree() ORDER BY id;
+			CREATE TABLE test_dist.dist (id Int32) ENGINE = Distributed(default, test_dist, data, id%2);
+			INSERT INTO test_dist.dist SELECT number FROM numbers(10)`
+		for q := range strings.SplitSeq(setupQueries, ";") {
+			Expect(chClient.Exec(ctx, q)).To(Succeed())
+		}
+
+		By("ensuring data is not duplicated and remote hosts could be queried")
+		Eventually(func() string {
+			rows, err := chClient.Query(ctx, "SELECT getMacro('shard') shard, sum(id) sum FROM test_dist.dist GROUP BY shard")
+
+			Expect(err).NotTo(HaveOccurred())
+			defer func() {
+				Expect(rows.Close()).To(Succeed())
+			}()
+
+			response := map[string]int64{}
+			for rows.Next() {
+				var (
+					shard string
+					sum   int64
+				)
+
+				Expect(rows.Scan(&shard, &sum)).To(Succeed())
+				response[shard] = sum
+			}
+
+			return gcmp.Diff(response, map[string]int64{
+				"0": 20,
+				"1": 25,
+			})
+		}, "10s").Should(BeEmpty())
+	})
 })
 
 func WaitClickHouseUpdatedAndReady(
@@ -738,9 +840,6 @@ func WaitClickHouseUpdatedAndReady(
 	timeout time.Duration,
 	isUpdate bool,
 ) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
 	EventuallyWithOffset(1, func() bool {
 		var cluster v1.ClickHouseCluster
@@ -748,7 +847,7 @@ func WaitClickHouseUpdatedAndReady(
 
 		if cluster.Generation != cluster.Status.ObservedGeneration ||
 			cluster.Status.CurrentRevision != cluster.Status.UpdateRevision ||
-			cluster.Status.ReadyReplicas != cluster.Replicas() {
+			cluster.Status.ReadyReplicas != cluster.Replicas()*cluster.Shards() {
 			return false
 		}
 
@@ -870,4 +969,30 @@ func CheckClickHouseUpdateOrder(ctx context.Context, cluster v1.ClickHouseCluste
 		Expect(maxNotUpdated < updatingReplica).To(BeTrue(), formatErr(updatingReplica, maxNotUpdated))
 		Expect(updatingReplica < minUpdated).To(BeTrue(), formatErr(minUpdated, updatingReplica))
 	}
+}
+
+func createTestKeeperCluster(ctx context.Context, replicas int32) *v1.KeeperCluster {
+	By("creating keeper cluster")
+
+	keeper := &v1.KeeperCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
+		},
+		Spec: v1.KeeperClusterSpec{
+			Replicas:            new(replicas),
+			DataVolumeClaimSpec: &defaultStorage,
+			ContainerTemplate: v1.ContainerTemplateSpec{
+				Image: v1.ContainerImage{
+					Tag: KeeperBaseVersion,
+				},
+			},
+		},
+	}
+	ExpectWithOffset(1, k8sClient.Create(ctx, keeper)).To(Succeed())
+	DeferCleanup(func(ctx context.Context) {
+		ExpectWithOffset(1, k8sClient.Delete(ctx, keeper)).To(Succeed())
+	})
+
+	return keeper
 }

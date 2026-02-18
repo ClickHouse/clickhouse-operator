@@ -12,17 +12,17 @@ interserver_http_credentials:
 tcp_port: {{ .ManagementPort }}
 
 protocols:
-{{- range $name, $protocol := .Protocols }}
-  {{ $name }}:
-    type: {{ $protocol.Type }}
-    {{- if ne $protocol.Impl "" }}
-    impl: {{ $protocol.Impl }}
+{{- range $protocol := .Protocols }}
+  {{ $protocol.Name }}:
+    type: {{ $protocol.Protocol.Type }}
+    {{- if ne $protocol.Protocol.Impl "" }}
+    impl: {{ $protocol.Protocol.Impl }}
     {{- end }}
-    {{- if ne $protocol.Port 0 }}
-    port: {{ $protocol.Port }}
+    {{- if ne $protocol.Protocol.Port 0 }}
+    port: {{ $protocol.Protocol.Port }}
     {{- end }}
-    {{- if ne $protocol.Description "" }}
-    description: {{ $protocol.Description }}
+    {{- if ne $protocol.Protocol.Description "" }}
+    description: {{ $protocol.Protocol.Description }}
     {{- end }}
 {{- end }}
 

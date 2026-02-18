@@ -106,9 +106,6 @@ linters:
     gosec:
       excludes:
         - G204
-    godot:
-      exclude:
-        - "^ *\\+operator-sdk:"
     ireturn:
       allow:
         - error
@@ -117,6 +114,7 @@ linters:
         - generic
         - Option$
         - github.com\/ClickHouse\/clickhouse-go/v2\.Conn
+        - github.com\/ClickHouse\/clickhouse-go\/v2\/lib\/driver\.Rows
         - k8s.io
     wsl_v5:
       allow-whole-block: true

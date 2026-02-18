@@ -231,7 +231,7 @@ func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config
 
 	transport, upgrader, err := spdy.RoundTripperFor(config)
 	if err != nil {
-		return fmt.Errorf("unable to create k8sround tripper: %w", err)
+		return fmt.Errorf("unable to create k8s round tripper: %w", err)
 	}
 
 	c.PodToAddr = make(map[*corev1.Pod]string, len(pods.Items))
@@ -313,8 +313,13 @@ func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod str
 			}
 
 			if err != nil {
-				GinkgoWriter.Printf("error while reading pod %s:%s logs: %v\n", namespace, pod, err)
-				return
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					GinkgoWriter.Printf("error while reading pod %s:%s logs: %v\n", namespace, pod, err)
+					return
+				}
 			}
 
 			select {
@@ -357,7 +362,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 			Name:      fmt.Sprintf("ca-cert-%d", suffix),
 		},
 		Spec: certv1.CertificateSpec{
-			IssuerRef: cmmeta.ObjectReference{
+			IssuerRef: cmmeta.IssuerReference{
 				Kind: "ClusterIssuer",
 				Name: ssIssuer.Name,
 			},

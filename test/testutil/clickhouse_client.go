@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/onsi/ginkgo/v2"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
@@ -56,9 +58,9 @@ func NewClickHouseClient(
 			Database: "default",
 			Username: "default",
 		},
-		Debugf: func(format string, args ...any) {
-			ginkgo.GinkgoWriter.Printf(format, args...)
-		},
+		Logger: slog.New(slog.NewTextHandler(ginkgo.GinkgoWriter, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})),
 	}
 	if len(auth) > 0 {
 		opts.Auth = auth[0]
@@ -106,18 +108,13 @@ func (c *ClickHouseClient) Close() {
 
 // CreateDatabase creates the test database on the ClickHouse cluster.
 func (c *ClickHouseClient) CreateDatabase(ctx context.Context) error {
-	// Query only one random node.
-	for _, client := range c.clients {
-		err := client.Exec(ctx, "CREATE DATABASE IF NOT EXISTS e2e_test ON CLUSTER 'default' "+
-			"Engine=Replicated('/data/e2e_test', '{shard}', '{replica}')")
-		if err != nil {
-			return fmt.Errorf("create database: %w", err)
-		}
-
-		return nil
+	q := "CREATE DATABASE IF NOT EXISTS e2e_test ON CLUSTER 'default' " +
+		"Engine=Replicated('/data/e2e_test', '{shard}', '{replica}')"
+	if err := c.Exec(ctx, q); err != nil {
+		return fmt.Errorf("create database: %w", err)
 	}
 
-	return errors.New("no cluster nodes available")
+	return nil
 }
 
 // CheckWrite writes test data to the ClickHouse cluster.
@@ -128,13 +125,9 @@ func (c *ClickHouseClient) CheckWrite(ctx context.Context, order int) error {
 		return errors.New("no cluster nodes available")
 	}
 
-	for id, client := range c.clients {
-		if err := client.Exec(ctx, fmt.Sprintf("CREATE TABLE %s (id Int64, val String) "+
-			"Engine=ReplicatedMergeTree() ORDER BY id", tableName)); err != nil {
-			return fmt.Errorf("create table on %v: %w", id, err)
-		}
-
-		break
+	q := fmt.Sprintf("CREATE TABLE %s (id Int64, val String) Engine=ReplicatedMergeTree ORDER BY id", tableName)
+	if err := c.Exec(ctx, q); err != nil {
+		return fmt.Errorf("create table: %w", err)
 	}
 
 	writtenShards := make(map[int32]struct{})
@@ -215,33 +208,50 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 // QueryRow executes a query on one of the ClickHouse cluster nodes.
 // Scans the result into the provided result variable.
 func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result any) error {
+	rows, err := c.Query(ctx, query)
+	if err != nil {
+		return fmt.Errorf("query row: %w", err)
+	}
+
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	if !rows.Next() {
+		return fmt.Errorf("no rows returned for query: %s", query)
+	}
+
+	if err := rows.Scan(result); err != nil {
+		return fmt.Errorf("scan row: %w", err)
+	}
+
+	return nil
+}
+
+// Query executes a query on one of the ClickHouse cluster nodes.
+func (c *ClickHouseClient) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
+	if len(c.clients) == 0 {
+		return nil, errors.New("no cluster nodes available")
+	}
+
+	for _, client := range c.clients {
+		return client.Query(ctx, query, args...) //nolint:wrapcheck
+	}
+
+	panic("unreachable")
+}
+
+// Exec executes a query on one of the ClickHouse cluster nodes.
+func (c *ClickHouseClient) Exec(ctx context.Context, query string, args ...any) error {
 	if len(c.clients) == 0 {
 		return errors.New("no cluster nodes available")
 	}
 
-	// Query only one random node.
 	for _, client := range c.clients {
-		rows, err := client.Query(ctx, query)
-		if err != nil {
-			return fmt.Errorf("query on cluster: %w", err)
-		}
-
-		defer func() {
-			_ = rows.Close()
-		}()
-
-		if !rows.Next() {
-			return fmt.Errorf("no rows returned for query: %s", query)
-		}
-
-		if err := rows.Scan(result); err != nil {
-			return fmt.Errorf("scan row: %w", err)
-		}
-
-		return nil
+		return client.Exec(ctx, query, args...) //nolint:wrapcheck
 	}
 
-	return errors.New("no cluster nodes available")
+	panic("unreachable")
 }
 
 // CheckDefaultDatabasesReplicated checks that the default database has Replicated engine on all cluster nodes.
