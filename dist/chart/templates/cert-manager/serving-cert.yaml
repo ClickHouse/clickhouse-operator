@@ -16,7 +16,11 @@ spec:
         - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
         - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc.cluster.local
     issuerRef:
+    {{- if .Values.certManager.issuerRef}}
+      {{ .Values.certManager.issuerRef | toYaml | nindent 6 }}
+    {{- else }}
         kind: Issuer
         name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "selfsigned-issuer" "context" $) }}
+    {{- end }}
     secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
 {{- end }}

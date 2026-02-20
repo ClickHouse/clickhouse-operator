@@ -65,7 +65,7 @@ spec:
                   {{-   $env = append $env (dict "name" "WATCH_NAMESPACE" "value" (join "," .Values.watchNamespaces)) }}
                   {{- end }}
                   env: {{ toYaml $env | nindent 22 }}
-                  image: "{{ .Values.manager.image.repository }}:{{ .Values.manager.image.tag }}"
+                  image: "{{ .Values.manager.image.repository }}:{{ default .Chart.AppVersion .Values.manager.image.tag }}"
                   imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
                   livenessProbe:
                       httpGet:
