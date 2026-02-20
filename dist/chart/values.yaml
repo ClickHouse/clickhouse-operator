@@ -17,7 +17,9 @@ manager:
 
     image:
         repository: ghcr.io/clickhouse/clickhouse-operator
-        tag: v0.0.1
+        ## Tag of the image to use. Defaults to the chart's appVersion if not set.
+        ##
+        ## tag: latest
         pullPolicy: IfNotPresent
 
     ## Arguments
@@ -120,8 +122,14 @@ metrics:
 ##
 certManager:
     enable: true
-    # Install cert-manager chart as a subchart.
+    ## Install cert-manager chart as a subchart.
+    ##
     install: false
+    ## Custom issuer configuration for cert-manager issued certificates.
+    ##
+    # issuerRef:
+    #   name: "issuer"
+    #   kind: "ClusterIssuer"
 
 ## cert-manager subchart values
 ##
@@ -145,3 +153,15 @@ prometheus:
     # Enable Prometheus ServiceMonitor for metrics scraping.
     # Requires prometheus-operator to be installed in the cluster.
     service_monitor: false
+
+
+# Extra manifests to deploy as an array
+extraManifests: []
+  # - |
+  #   apiVersion: v1
+  #   kind: ConfigMap
+  #   metadata:
+  #   labels:
+  #     name: prometheus-extra
+  #   data:
+  #     extra-data: "value"

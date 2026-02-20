@@ -62,10 +62,10 @@ docker_build_with_restart(
 if deploy_source == 'helm':
     k8s_yaml(
         helm('dist/chart', name='clickhouse-operator', set=[
-            "manager.container.image.repository="+image_repo,
-            "manager.container.image.label=latest",
-            "manager.securityContext={}",
-            "manager.manager.container.securityContext={}",
+            "manager.image.repository="+image_repo,
+            "manager.image.tag=latest",
+            "manager.podSecurityContext=null",
+            "manager.containerSecurityContext=null",
         ]),
     )
 else:

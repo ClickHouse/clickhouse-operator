@@ -120,12 +120,12 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /helm) \
 	--ginkgo.v
 
 .PHONY: test-ci
 test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /helm) \
 	-v -count=1 -race -coverprofile cover.out --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
@@ -144,6 +144,10 @@ test-clickhouse-e2e: ## Run clickhouse e2e tests.
 .PHONY: test-compat-e2e  # Run compatibility smoke tests across ClickHouse versions.
 test-compat-e2e: ## Run compatibility e2e tests.
 	go test ./test/e2e/ --ginkgo.label-filter compatibility -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
+
+.PHONY: test-helm  # Run helm chart tests against a Kind k8s instance that is spun up.
+test-helm: ginkgo ## Run helm chart tests
+	$(GINKGO) run --nodes 4 -p -v --junit-report=report/junit-report.xml test/helm
 
 .PHONY: lint
 lint: golangci-lint codespell ## Run golangci-lint linter and codespell
@@ -290,6 +294,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GINKGO ?= $(LOCALBIN)/ginkgo
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CODESPELL ?= $(LOCALBIN)/codespell
 
@@ -298,6 +303,7 @@ KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
 ENVTEST_VERSION ?= release-0.22
 GOLANGCI_LINT_VERSION ?= v2.9.0
+GINKGO_VERSION ?= v2.28.1
 KUBEBUILDER_VERSION ?= v4.12.0
 CODESPELL_VERSION ?= 2.4.1
 
@@ -320,6 +326,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: ginkgo
+ginkgo: $(GINKGO) ## Download ginkgo locally if necessary.
+$(GINKGO): $(LOCALBIN)
+	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
 
 .PHONY: kubebuilder
 kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.

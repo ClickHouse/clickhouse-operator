@@ -3,6 +3,7 @@ name: clickhouse-operator-helm
 type: application
 version: 0.0.1
 appVersion: "latest"
+kubeVersion: ">= 1.28.0"
 description: |
   The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.
   It provides declarative cluster management through custom resources, enabling users to easily create highly-available ClickHouse deployments.
