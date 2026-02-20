@@ -1,4 +1,4 @@
-{{- if .Values.prometheus.enable }}
+{{- if .Values.prometheus.service_monitor }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -8,8 +8,8 @@ metadata:
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         control-plane: controller-manager
-  name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager-metrics-monitor" "context" $) }}
-  namespace: {{ .Release.Namespace }}
+    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager-metrics-monitor" "context" $) }}
+    namespace: {{ .Release.Namespace }}
 spec:
     endpoints:
         - path: /metrics
@@ -37,8 +37,8 @@ spec:
             # Development/Test mode (insecure configuration)
             insecureSkipVerify: true
             {{- end }}
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
-      control-plane: controller-manager
+    selector:
+        matchLabels:
+            app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+            control-plane: controller-manager
 {{- end }}
