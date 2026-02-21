@@ -91,6 +91,12 @@ manager:
     ##
     terminationGracePeriodSeconds: 10
 
+## Create ClusterRole and ClusterRoleBinding for the operator manager.
+## Disable to deploy without cluster-scoped RBAC (e.g. when RBAC is managed externally).
+##
+clusterRole:
+    enable: true
+
 ## Helper RBAC roles for managing custom resources
 ##
 rbacHelpers:

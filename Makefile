@@ -171,6 +171,7 @@ generate-helmchart-ci: generate-helmchart ## Generate helm charts and reset some
 	git checkout dist/chart/templates/manager/
 	git checkout dist/chart/templates/metrics/
 	git checkout dist/chart/templates/monitoring/
+	git checkout dist/chart/templates/rbac/
 	git checkout dist/chart/templates/webhook/
 
 .PHONY: build-helmchart-dependencies
