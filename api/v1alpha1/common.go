@@ -42,7 +42,7 @@ type LoggerConfig struct {
 	// If false then disable all logging to file.
 	// +optional
 	// +kubebuilder:default:=true
-	LogToFile bool `json:"logToFile,omitempty"`
+	LogToFile *bool `json:"logToFile,omitempty"`
 
 	// If true, then log in JSON format.
 	// +optional

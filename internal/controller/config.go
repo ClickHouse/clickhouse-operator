@@ -38,7 +38,7 @@ func GenerateLoggerConfig(spec v1.LoggerConfig, basePath string, service string)
 		config.Formatting.Type = "json"
 	}
 
-	if spec.LogToFile {
+	if spec.LogToFile != nil && *spec.LogToFile {
 		config.Log = path.Join(basePath, service+".log")
 		config.ErrorLog = path.Join(basePath, service+".err.log")
 	}

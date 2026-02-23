@@ -95,7 +95,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 		},
 		Settings: ClickHouseSettings{
 			Logger: LoggerConfig{
-				LogToFile: true,
+				LogToFile: new(true),
 				Level:     "trace",
 				Size:      "1000M",
 				Count:     DefaultMaxLogFiles,

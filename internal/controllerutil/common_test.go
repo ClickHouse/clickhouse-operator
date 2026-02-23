@@ -22,6 +22,7 @@ type SampleStruct struct {
 	Array   []int
 	Map     map[int]string
 	Struct  InternalStruct
+	BoolPtr *bool
 }
 
 func TestUtils(t *testing.T) {
@@ -74,6 +75,26 @@ var _ = Describe("ApplyDefault", func() {
 		Expect(source.String).To(Equal(allSet.String))
 		Expect(source.Struct.Number).To(Equal(100))
 		Expect(source.Map[7]).To(Equal("custom"))
+	})
+
+	It("should set bool pointer if it is nil", func() {
+		source := SampleStruct{}
+		defaults := SampleStruct{
+			BoolPtr: new(true),
+		}
+		Expect(ApplyDefault(&source, defaults)).To(Succeed())
+		Expect(*source.BoolPtr).To(BeTrue())
+	})
+
+	It("should not update bool pointer if it is not nil", func() {
+		source := SampleStruct{
+			BoolPtr: new(false),
+		}
+		defaults := SampleStruct{
+			BoolPtr: new(true),
+		}
+		Expect(ApplyDefault(&source, defaults)).To(Succeed())
+		Expect(*source.BoolPtr).To(BeFalse())
 	})
 })
 
