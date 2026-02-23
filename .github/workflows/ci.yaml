@@ -39,9 +39,9 @@ jobs:
       - name: Check CRD backward compatibility
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            make check-crd-compat CRD_BASE_REF=origin/main
+            make check-crd-compat CRD_BASE_REF=${{ github.event.pull_request.base.sha }}
           else
-            make check-crd-compat CRD_BASE_REF=HEAD~1
+            make check-crd-compat CRD_BASE_REF=${{ github.event.before }}
           fi
 
       - name: Lint with golangci-lint
