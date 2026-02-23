@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -33,6 +35,14 @@ jobs:
 
       - name: Check manifests generated
         run: make manifests && git diff --exit-code
+
+      - name: Check CRD backward compatibility
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            make check-crd-compat CRD_BASE_REF=origin/main
+          else
+            make check-crd-compat CRD_BASE_REF=HEAD~1
+          fi
 
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
