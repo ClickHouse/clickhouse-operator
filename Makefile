@@ -297,6 +297,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 GINKGO ?= $(LOCALBIN)/ginkgo
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CODESPELL ?= $(LOCALBIN)/codespell
+CRD_SCHEMA_CHECKER ?= $(LOCALBIN)/crd-schema-checker
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
@@ -306,6 +307,7 @@ GOLANGCI_LINT_VERSION ?= v2.9.0
 GINKGO_VERSION ?= v2.28.1
 KUBEBUILDER_VERSION ?= v4.12.0
 CODESPELL_VERSION ?= 2.4.1
+CRD_SCHEMA_CHECKER_VERSION ?= latest
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -352,6 +354,30 @@ $(CODESPELL): $(LOCALBIN)
 		echo 'PYTHONPATH="$$DIR/codespell-deps" "$$DIR/codespell-deps/bin/codespell" "$$@"' >> $(CODESPELL) ;\
 		chmod +x $(CODESPELL) ;\
 	}
+
+.PHONY: crd-schema-checker
+crd-schema-checker: $(CRD_SCHEMA_CHECKER) ## Download crd-schema-checker locally if necessary.
+$(CRD_SCHEMA_CHECKER): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_SCHEMA_CHECKER),github.com/openshift/crd-schema-checker/cmd/crd-schema-checker,$(CRD_SCHEMA_CHECKER_VERSION))
+
+CRD_BASE_REF ?= origin/main
+.PHONY: check-crd-compat
+check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against $(CRD_BASE_REF).
+	@FAILED=0; \
+	for crd in config/crd/bases/*.yaml; do \
+		echo "Checking $$crd against $(CRD_BASE_REF)..."; \
+		BASELINE=$$(mktemp); \
+		if ! git show $(CRD_BASE_REF):$$crd > "$$BASELINE" 2>/dev/null; then \
+			echo "  No baseline found at $(CRD_BASE_REF):$$crd — skipping (new CRD)"; \
+			rm -f "$$BASELINE"; \
+			continue; \
+		fi; \
+		if ! $(CRD_SCHEMA_CHECKER) check-manifests --existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd"; then \
+			FAILED=1; \
+		fi; \
+		rm -f "$$BASELINE"; \
+	done; \
+	exit $$FAILED
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
