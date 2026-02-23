@@ -198,14 +198,14 @@ jobs:
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse_version }}
 
-      - name: Test Report
-        uses: dorny/test-reporter@v2
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: compat-e2e (k8s ${{ matrix.k8s_version }}${{ matrix.clickhouse_version && format(', ch {0}', matrix.clickhouse_version) || '' }})
-          badge-title: compat-e2e (k8s ${{ matrix.k8s_version }})
+          name: compat-e2e-report-${{ strategy.job-index }}
           path: "**/report/*.xml"
-          reporter: java-junit
+          if-no-files-found: error
+          overwrite: true
 
   e2e-test:
     needs: [ lint, build_and_test ]
@@ -237,17 +237,41 @@ jobs:
           config: ci/kind-cluster.config
 
       - name: Run e2e tests
-        run: |
-          make ${{ matrix.scope }}
+        run:  make ${{ matrix.scope }}
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-report-${{ matrix.scope }}
+          path: "**/report/*.xml"
+          if-no-files-found: error
+          overwrite: true
+
+  e2e-report:
+    needs: [compat-e2e-test, e2e-test]
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    steps:
+      - name: Download all compat test reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compat-e2e-report-*
+
+
+      - name: Download all e2e test reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-report-*
 
       - name: Test Report
         uses: dorny/test-reporter@v2
-        if: ${{ !cancelled() }}
         with:
-          name: ${{ matrix.scope }}
-          badge-title: ${{ matrix.scope }}
-          path: "**/report/*.xml"
+          name: E2E tests
+          badge-title: E2E tests
           reporter: java-junit
+          artifact: "/(.*)e2e-report(.*)/"
+          path: "**/*.xml"
 
   ci-success-check:
     name: All CI checks passed
