@@ -58,6 +58,12 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// PodDisruptionBudget configures the PDB created for each shard.
+	// When unset, the operator defaults to maxUnavailable=1 for single-replica
+	// shards and minAvailable=1 for multi-replica shards.
+	// +optional
+	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
+
 	// Configuration parameters for ClickHouse server.
 	// +optional
 	Settings ClickHouseSettings `json:"settings,omitempty"`
