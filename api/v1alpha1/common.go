@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // ContainerImage defines a container image with repository, tag or hash.
@@ -64,6 +65,19 @@ type LoggerConfig struct {
 	// +optional
 	// +kubebuilder:default:=50
 	Count int64 `json:"count,omitempty"`
+}
+
+// PodDisruptionBudgetSpec configures the PDB created for each shard.
+// Exactly one of MinAvailable or MaxUnavailable may be set.
+// When neither is set, the operator picks a safe default based on replica count.
+type PodDisruptionBudgetSpec struct {
+	// MinAvailable is the minimum number of pods that must remain available during a disruption.
+	// +optional
+	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
+
+	// MaxUnavailable is the maximum number of pods that can be unavailable during a disruption.
+	// +optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
 // PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
