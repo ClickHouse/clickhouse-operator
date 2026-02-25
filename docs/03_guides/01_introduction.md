@@ -1,17 +1,17 @@
-# Introduction to the ClickHouse Operator
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: 'Introduction'
+keywords: ['kubernetes']
+description: 'This document provides an overview of key concepts and usage patterns for the ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+# Introduction to the ClickHouse Operator {#introduction-to-the-clickhouse-operator}
 
 This document provides an overview of key concepts and usage patterns for the ClickHouse Operator.
 
-## Table of Contents
-
-- [What is the ClickHouse Operator](#what-is-the-clickhouse-operator)
-- [Custom Resources](#custom-resources)
-- [Coordination](#coordination)
-- [Schema Replication](#schema-replication)
-- [Storage Management](#storage-management)
-- [Default configuration Highlights](#default-configuration-highlights)
-
-## What is the ClickHouse Operator
+## What is the ClickHouse Operator {#what-is-the-clickhouse-operator}
 
 The ClickHouse Operator is a Kubernetes operator that automates the deployment and management of ClickHouse clusters on Kubernetes. Built using the operator pattern, it extends the Kubernetes API with custom resources that represent ClickHouse clusters and their dependencies.
 
@@ -23,11 +23,11 @@ The operator handles:
 - Rolling updates and upgrades
 - Storage provisioning
 
-## Custom Resources
+## Custom resources {#custom-resources}
 
 The operator provides two main custom resource definitions (CRDs):
 
-### ClickHouseCluster
+### ClickHouseCluster {#clickhousecluster}
 
 Represents a ClickHouse database cluster with configurable replicas and shards.
 
@@ -47,7 +47,7 @@ spec:
         storage: 100Gi
 ```
 
-### KeeperCluster
+### KeeperCluster {#keepercluster}
 
 Represents a ClickHouse Keeper cluster for distributed coordination (ZooKeeper replacement).
 
@@ -64,24 +64,26 @@ spec:
         storage: 10Gi
 ```
 
-## Coordination
+## Coordination {#coordination}
 
-### ClickHouse Keeper is Required
+### ClickHouse Keeper is required {#clickhouse-keeper-is-required}
 
-Every ClickHouseCluster requires a ClickHouse Keeper cluster for distributed coordination. 
+Every ClickHouseCluster requires a ClickHouse Keeper cluster for distributed coordination.
 The Keeper cluster must be referenced in the ClickHouseCluster spec using `keeperClusterRef`.
 
-###  One-to-One Keeper Relationship
+###  One-to-One Keeper relationship {#one-to-one-keeper-relationship}
 
-Each ClickHouseCluster must have its own dedicated KeeperCluster. You cannot share a single KeeperCluster between multiple ClickHouseClusters.
+Each ClickHouseCluster must have its own dedicated KeeperCluster. You can't share a single KeeperCluster between multiple ClickHouseClusters.
 
-**Why?** The operator automatically generates a unique authentication key for each ClickHouseCluster to access its Keeper. This key is stored in a Secret and cannot be shared.
+**Why?** The operator automatically generates a unique authentication key for each ClickHouseCluster to access its Keeper. This key is stored in a Secret and can't be shared.
 
 **Consequences**:
-- Multiple ClickHouseClusters cannot reference the same KeeperCluster
+- Multiple ClickHouseClusters can't reference the same KeeperCluster
 - Recreating a ClickHouseCluster requires recreating its KeeperCluster
 
-**NOTE**: Persistent Volumes are not deleted automatically when ClickHouseCluster or KeeperCluster resources are deleted.
+:::note
+Persistent Volumes aren't deleted automatically when ClickHouseCluster or KeeperCluster resources are deleted.
+:::
 
 When recreating a cluster:
 1. Delete the ClickHouseCluster resource
@@ -92,14 +94,14 @@ When recreating a cluster:
 
 To avoid authentication errors, either delete the Persistent Volumes manually or recreate both clusters together with fresh storage.
 
-## Schema Replication
+## Schema Replication {#schema-replication}
 
 The ClickHouse Operator automatically replicates database definitions across all replicas in a cluster.
 
-### What Gets Replicated
+### What Gets Replicated {#what-gets-replicated}
 
 The operator synchronizes:
-- [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) database definitions
+- [Replicated](/engines/database-engines/replicated) database definitions
 - Integration database engines (PostgreSQL, MySQL, etc.)
 
 The operator does **not** synchronize:
@@ -107,9 +109,11 @@ The operator does **not** synchronize:
 - Local tables in non-replicated databases
 - Table data (handled by ClickHouse replication)
 
-### Recommended: Use Replicated Database Engine
+### Recommended: Use Replicated database engine {#recommended-use-replicated-database-engine}
 
-**✅ Best Practice**: Always use the [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) database engine for production deployments.
+:::tip Best practice
+Always use the [Replicated](/docs/engines/database-engines/replicated) database engine for production deployments.
+:::
 
 Benefits:
 - Automatic schema replication across all nodes
@@ -123,22 +127,22 @@ Create databases with distributed DDL:
 CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
 ```
 
-### Avoid Non-Replicated Engines
+### Avoid non-Replicated engines {#avoid-non-replicated-engines}
 
 Non-replicated database engines (Atomic, Lazy, SQLite, Ordinary) require manual schema management:
 - Tables must be created individually on each replica
 - Schema drift can occur between nodes
-- Operator cannot automatically sync new replicas
+- Operator can't automatically sync new replicas
 
-### Disable Schema Replication
+### Disable schema replication {#disable-schema-replication}
 
 To disable automatic schema replication, set `spec.settings.enableDatabaseSync` to `false` in the ClickHouseCluster resource.
 
-## Storage Management
+## Storage management {#storage-management}
 
 The operator manages storage through Kubernetes PersistentVolumeClaims (PVCs).
 
-### Data Volume Configuration
+### Data volume configuration {#data-volume-configuration}
 
 Specify storage requirements in `dataVolumeClaimSpec`:
 
@@ -153,7 +157,7 @@ spec:
         storage: 500Gi
 ```
 
-### Storage Lifecycle
+### Storage Lifecycle {#storage-lifecycle}
 
 - **Creation**: PVCs are created automatically with the cluster
 - **Expansion**: Supported if StorageClass allows volume expansion
@@ -173,7 +177,7 @@ kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster
 kubectl delete pvc -l app.kubernetes.io/instance=sample-cluster
 ```
 
-## Default configuration Highlights
+## Default configuration highlights {#default-configuration-highlights}
 
 * **Pre-configured Cluster:** Cluster named 'default' containing all ClickHouse nodes.
 * **Default macros:** Some useful macros are pre-defined:
@@ -183,7 +187,7 @@ kubectl delete pvc -l app.kubernetes.io/instance=sample-cluster
 * **Replicated storage for Role Based Access Control(RBAC) entities**
 * **Replicated storage for User Defined Functions(UDF)**
 
-## Next Steps
+## Next steps {#next-steps}
 
-- [Configuration Guide](./configuration.md) - Detailed configuration options
-- [API Reference](./api_reference.md) - Complete API documentation
+- [Configuration Guide](./02_configuration.md) - Detailed configuration options
+- [API Reference](../04_api_reference.md) - Complete API documentation

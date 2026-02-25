@@ -516,7 +516,7 @@ docs-generate-api-ref: crd-ref-docs ## Generate API reference documentation from
 		--config=docs/templates/.crd-ref-docs.yaml \
 		--templates-dir=docs/templates \
 		--renderer=markdown \
-		--output-path=docs/api_reference.md \
+		--output-path=docs/04_api_reference.md \
 		--max-depth=10
 
 .PHONY: docs-lint-vale
@@ -527,7 +527,7 @@ docs-lint-vale: ## Run Vale linter on documentation
 .PHONY: docs-link-check
 docs-link-check: ## Run markdown-link-check on documentation
 	@command -v markdown-link-check >/dev/null 2>&1 || { echo "markdown-link-check is required but not installed. npm install -g markdown-link-check"; exit 1; }
-	markdown-link-check -c ci/.markdown-link-check.json *.md docs
+	markdown-link-check README.md docs/README.md docs/development.md
 
 .PHONY: docs-lint
 docs-lint: docs-lint-vale docs-link-check ## Run all documentation linters

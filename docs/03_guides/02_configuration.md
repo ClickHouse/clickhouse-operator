@@ -1,22 +1,19 @@
-# Configuration Guide
+---
+position: 2
+slug: /clickhouse-operator/guides/configuration
+title: 'Configuration'
+keywords: ['kubernetes']
+description: 'This guide covers how to configure ClickHouse and Keeper clusters using the ClickHouse operator.'
+doc_type: 'guide'
+---
+
+# ClickHouse Operator configuration guide {#clickhouse-operator-configuration-guide}
 
 This guide covers how to configure ClickHouse and Keeper clusters using the operator.
 
-## Table of Contents
+## ClickHouseCluster configuration {#clickhousecluster-configuration}
 
-- [ClickHouseCluster Configuration](#clickhousecluster-configuration)
-- [KeeperCluster Configuration](#keepercluster-configuration)
-- [Storage Configuration](#storage-configuration)
-- [Pod Configuration](#pod-configuration)
-- [Container Configuration](#container-configuration)
-- [TLS/SSL Configuration](#tlsssl-configuration)
-- [ClickHouse Settings](#clickhouse-settings)
-- [Custom Configuration](#custom-configuration)
-- [Example Configuration](#configuration-example)
-
-## ClickHouseCluster Configuration
-
-### Basic Configuration
+### Basic configuration {#basic-configuration}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -29,14 +26,12 @@ spec:
   keeperClusterRef:
     name: my-keeper     # Reference to KeeperCluster
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 10Gi
 ```
 
-### Replicas and Shards
+### Replicas and shards {#replicas-and-shards}
 
 - **Replicas**: Number of ClickHouse instances per shard (for high availability)
 - **Shards**: Number of horizontal partitions (for scaling)
@@ -49,7 +44,7 @@ spec:
 
 A cluster with `replicas: 3` and `shards: 2` will create 6 ClickHouse pods total.
 
-### Keeper Integration
+### Keeper integration {#keeper-integration}
 
 Every ClickHouse cluster must reference a KeeperCluster for coordination:
 
@@ -59,7 +54,7 @@ spec:
     name: my-keeper  # Name of the KeeperCluster in the same namespace
 ```
 
-## KeeperCluster Configuration
+## KeeperCluster configuration {#keepercluster-configuration}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -69,14 +64,12 @@ metadata:
 spec:
   replicas: 3  # Must be odd: 1, 3, 5, 7, 9, 11, 13, or 15
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 5Gi
 ```
 
-## Storage Configuration
+## Storage configuration {#storage-configuration}
 
 Configure persistent storage:
 
@@ -84,16 +77,20 @@ Configure persistent storage:
 spec:
   dataVolumeClaimSpec:
     storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
+    accessModes:
+      - ReadWriteOnce # Optional: this is default value
     resources:
       requests:
         storage: 100Gi
 ```
 
-**NOTE:** Operator can modify existing PVC only if the underlying storage class supports volume expansion.
+:::note
+Operator can modify existing PVC only if the underlying storage class supports volume expansion.
+:::
 
-## Pod Configuration
+## Pod configuration {#pod-configuration}
 
-### Automatic Topology Spread and Affinity
+### Automatic topology spread and affinity {#automatic-topology-spread-and-affinity}
 
 Distribute pods across availability zones:
 
@@ -104,9 +101,11 @@ spec:
     nodeHostnameKey: kubernetes.io/hostname
 ```
 
-**NOTE**: Ensure your Kubernetes cluster has enough nodes in different zones to satisfy the spread constraints.
+:::note
+Ensure your Kubernetes cluster has enough nodes in different zones to satisfy the spread constraints.
+:::
 
-### Manual configuration
+### Manual configuration {#manual-configuration}
 
 Arbitrary pod affinity/anti-affinity rules and topology spread constraints can be specified.
 
@@ -119,11 +118,11 @@ spec:
       <your-topology-spread-constraints-here>
 ```
 
-### See [API Reference](./api_reference.md#PodTemplateSpec) for all supported Pod template options.
+### See [API Reference](../04_api_reference.mdx#containertemplatespec) for all supported Pod template options. {#pod-template-api-reference}
 
-## Container Configuration
+## Container configuration {#container-configuration}
 
-### Custom Image
+### Custom image {#custom-image}
 
 Use a specific ClickHouse image:
 
@@ -136,7 +135,7 @@ spec:
     imagePullPolicy: IfNotPresent
 ```
 
-### Container Resources
+### Container resources {#container-resources}
 
 Configure CPU and memory for ClickHouse containers:
 
@@ -153,8 +152,7 @@ spec:
         memory: "1Gi"
 ```
 
-### Environment Variables
-
+### Environment variables {#environment-variables}
 
 Add custom environment variables:
 
@@ -166,7 +164,7 @@ spec:
       value: "1"
 ```
 
-### Volume Mounts
+### Volume mounts {#volume-mounts}
 
 Add additional volume mounts:
 
@@ -179,14 +177,16 @@ spec:
       subPath: custom.xml
 ```
 
-**NOTE:** It is allowed to specify multiple volume mounts to the same `mountPath`.
+:::note
+It is allowed to specify multiple volume mounts to the same `mountPath`.
 Operator will create projected volume with all specified mounts.
+:::
 
-### See [API Reference](./api_reference.md#ContainerTemplateSpec) for all supported Container template options.
+### See [API Reference](../04_api_reference.mdx#containertemplatespec) for all supported Container template options. {#container-template-api-reference}
 
-## TLS/SSL Configuration
+## TLS/SSL configuration {#tls-ssl-configuration}
 
-### Configure secure endpoints
+### Configure secure endpoints {#configure-secure-endpoints}
 
 Pass a reference to a Kubernetes Secret containing TLS certificates to enable secure endpoints
 
@@ -200,20 +200,22 @@ spec:
         name: <certificate-secret-name>
 ```
 
-### SSL Certificate Secret format
+### SSL certificate secret format {#ssl-certificate-secret-format}
 
 It is expected that the Secret contains the following keys:
 - `tls.crt` - PEM encoded server certificate
 - `tls.key` - PEM encoded private key
 - `ca.crt` - PEM encoded CA certificate chain
 
-**NOTE:** This format is compatible with cert-manager generated certificates.
+:::note
+This format is compatible with cert-manager generated certificates.
+:::
 
-### ClickHouse-Keeper communication over TLS
+### ClickHouse-Keeper communication over TLS {#clickhouse-keeper-communication-over-tls}
 
 If KeeperCluster has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
 
-ClickHouseCluster should be able to verify Keeper nodes certificates. 
+ClickHouseCluster should be able to verify Keeper nodes certificates.
 If ClickHouseCluster has TLS enabled, is uses `ca.crt` bundle for verification. Otherwise, default CA bundle is used.
 
 User may provide a custom CA bundle reference:
@@ -227,9 +229,9 @@ spec:
             key: <ca-certificate-key>
 ```
 
-## ClickHouse Settings
+## ClickHouse settings {#clickhouse-settings}
 
-### Default User Password
+### Default user password {#default-user-password}
 
 Set the default user password:
 
@@ -243,7 +245,9 @@ spec:
         key: <password>
 ```
 
-**NOTE** It is not recommended to use ConfigMap to store plain text passwords.
+:::note
+It isn't recommended to use ConfigMap to store plain text passwords.
+:::
 
 Create the secret:
 
@@ -251,7 +255,7 @@ Create the secret:
 kubectl create secret generic clickhouse-password --from-literal=password='your-secure-password'
 ```
 
-#### Using ConfigMap for User Passwords
+#### Using ConfigMap for user passwords {#using-configmap-for-user-passwords}
 
 You can also use ConfigMap for non-sensitive default passwords:
 
@@ -265,7 +269,7 @@ spec:
         key: default_password
 ```
 
-### Custom Users in configuration
+### Custom users in configuration {#custom-users-in-configuration}
 
 Configure additional users in configuration files.
 
@@ -317,7 +321,7 @@ spec:
         readOnly: true
 ```
 
-### Database Sync
+### Database sync {#database-sync}
 
 Enable automatic database synchronization for new replicas:
 
@@ -329,9 +333,9 @@ spec:
 
 When enabled, the operator synchronizes Replicated and integration tables to new replicas.
 
-## Custom Configuration
+## Custom configuration {#custom-configuration}
 
-### Embedded Extra Configuration
+### Embedded extra configuration {#embedded-extra-configuration}
 
 Instead of mounting custom configuration files, you can directly specify additional ClickHouse configuration options.
 
@@ -344,11 +348,12 @@ spec:
       background_pool_size: 20
 ```
 
-#### Useful links:
-* [YAML configuration examples](https://clickhouse.com/docs/operations/configuration-files#example-1)
-* [All server settings](https://clickhouse.com/docs/operations/server-configuration-parameters/settings)
+#### Useful links: {#useful-links}
 
-### Embedded Extra Users Configuration
+* [YAML configuration examples](/operations/configuration-files#example-1)
+* [All server settings](/operations/server-configuration-parameters/settings)
+
+### Embedded extra users configuration {#embedded-extra-users-configuration}
 
 You can also specify additional ClickHouse users configuration using `extraUsersConfig`. This is useful for defining users, profiles, quotas, and grants directly in the cluster specification.
 
@@ -374,11 +379,13 @@ spec:
             errors: 100
 ```
 
-**Note**: The `extraUsersConfig` is stored in k8s ConfigMap object. Avoid plain text secrets there.
+:::note
+The `extraUsersConfig` is stored in k8s ConfigMap object. Avoid plain text secrets there.
+:::
 
-#### See [documentation](https://clickhouse.com/docs/operations/settings/settings-users) for all supported ClickHouse users configuration options.
+#### See [documentation](/operations/settings/settings-users) for all supported ClickHouse users configuration options. {#users-settings-reference}
 
-### Configuration Example
+### Configuration example {#configuration-example}
 
 Complete configuration example:
 
@@ -391,8 +398,6 @@ spec:
   replicas: 3
   dataVolumeClaimSpec:
     storageClassName: <storage-class-name>
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 10Gi
@@ -430,8 +435,6 @@ spec:
   replicas: 2
   dataVolumeClaimSpec:
     storageClassName: <storage-class-name>
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 200Gi

@@ -1,24 +1,24 @@
-# OLM Installation
+---
+slug: /clickhouse-operator/install/olm
+title: 'Install the ClickHouse Operator with Operator Lifecycle Manager (OLM)'
+keywords: ['kubernetes']
+description: 'This guide covers installing the ClickHouse Operator using Operator Lifecycle Manager (OLM).'
+doc_type: 'guide'
+sidebar_label: 'OLM'
+---
 
 This guide covers installing the ClickHouse Operator using Operator Lifecycle Manager (OLM).
 
-## Table of Contents
-
-- [Prerequisites](#prerequisites)
-- [Install OLM](#install-olm)
-- [Install the Operator](#install-the-operator)
-- [Uninstall](#uninstall)
-
-## Prerequisites
+## Prerequisites {#prerequisites}
 
 - Kubernetes cluster version 1.28.0 or later
 - kubectl configured to access your cluster
 - Cluster admin permissions
 - Installed OLM (Operator Lifecycle Manager)
 
-## Install OLM
+## Install OLM {#install-olm}
 
-If OLM is not already installed in your cluster, install it:
+If OLM isn't already installed in your cluster, install it:
 
 ```bash
 # Check if OLM is installed
@@ -28,9 +28,9 @@ kubectl get ns olm
 curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/install.sh | bash -s v0.28.0
 ```
 
-## Install the Operator
+## Install the Operator {#install-the-operator}
 
-### Install from GitHub Catalog
+### Install from GitHub Catalog {#install-from-github-catalog}
 
 ```bash
 # Create the operator namespace
@@ -77,7 +77,12 @@ spec:
   installPlanApproval: Automatic
 EOF
 ```
-## Uninstall
+
+### Install from OperatorHub {#install-from-operatorhub}
+
+Follow the instructions on the [OperatorHub page for ClickHouse Operator](https://operatorhub.io/operator/clickhouse-operator) to install the operator using OLM.
+
+## Uninstall {#uninstall}
 
 ```bash
 # Delete the subscription
@@ -92,8 +97,9 @@ kubectl delete operatorgroup clickhouse-operator-group -n clickhouse-operator-sy
 # Delete the Operator view
 kubectl delete operator clickhouse-operator.clickhouse-operator-system
 ```
+
 More info about uninstalling can be found in the [OLM documentation](https://olm.operatorframework.io/docs/tasks/uninstall-operator/).
 
-## Additional Resources
+## Additional Resources {#additional-resources}
 
 - [Operator Lifecycle Manager Documentation](https://olm.operatorframework.io/docs)

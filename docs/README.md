@@ -1,27 +1,17 @@
-# Table of contents
+# ClickHouse Operator Documentation
 
-## Installation
+## To read the documentation, visit the [ClickHouse Docs](https://clickhouse.com/docs/clickhouse-operator/overview).
 
-Choose your preferred installation method:
+This directory contains the documentation sources for the ClickHouse Operator.
 
-- [Manifests Installation](./installation/kubectl.md) - Install using kubectl/kustomize
-- [Helm Installation](./installation/helm.md) - Install using Helm charts
-- [Operator Lifecycle Manager (OLM) Installation](./installation/olm.md) - Install using OLM
+The [clickhouse-docs](https://github.com/ClickHouse/clickhouse-docs) repository copies `.md` and `.yml` files into its `docs/kubernetes-operator/` directory during its
+build process.
 
-## Guides
+## API Reference Generation
 
-- **[Introduction](./introduction.md)** - General overview of ClickHouse Operator concepts
-- **[Configuration Guide](./configuration.md)** - Configure ClickHouse and Keeper clusters
+The API reference (`04_api_reference.md`) is generated from CRD types:
 
-## Reference
-
-- **[API Reference](./api_reference.md)** - Complete API documentation for custom resources
-- [ClickHouse Documentation](https://clickhouse.com/docs) - Official ClickHouse documentation
-
-## Development
-
-- [Development Guide](./development.md) - Contributors guide for developing the operator
-
-## Support
-
-- GitHub Issues: [Report bugs and request features](https://github.com/ClickHouse/clickhouse-operator/issues)
+```bash
+make docs-generate-api-ref
+```
+`templates/` contains the templates used for generating the API reference documentation.
