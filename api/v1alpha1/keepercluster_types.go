@@ -18,7 +18,6 @@ import (
 // KeeperClusterSpec defines the desired state of KeeperCluster.
 type KeeperClusterSpec struct {
 	// Number of replicas in the cluster
-	// This is a pointer to distinguish between explicit zero and unspecified.
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15
@@ -33,7 +32,7 @@ type KeeperClusterSpec struct {
 	// +optional
 	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
-	// Settings for the replicas storage.
+	// Specification of persistent storage for ClickHouse Keeper data.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
@@ -51,7 +50,6 @@ type KeeperClusterSpec struct {
 	Settings KeeperSettings `json:"settings,omitempty"`
 
 	// ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
-	// Defaults to "cluster.local" if not specified.
 	// +optional
 	// +kubebuilder:default:="cluster.local"
 	ClusterDomain string `json:"clusterDomain,omitempty"`
@@ -99,11 +97,11 @@ func (s *KeeperClusterSpec) WithDefaults() {
 
 // KeeperSettings defines ClickHouse Keeper server configuration.
 type KeeperSettings struct {
-	// Optionally you can lower the logger level or disable logging to file at all.
+	// Configuration of ClickHouse Keeper server logging.
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
 
-	// TLS settings, allows to enable TLS settings for Keeper.
+	// TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse Keeper server.
 	// +optional
 	TLS ClusterTLSSpec `json:"tls,omitempty"`
 
@@ -123,7 +121,7 @@ type KeeperClusterStatus struct {
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// ReadyReplicas Total number of replicas ready to server requests.
+	// ReadyReplicas Total number of replicas ready to serve requests.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ReadyReplicas int32 `json:"readyReplicas"`
@@ -145,7 +143,7 @@ type KeeperClusterStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-// KeeperCluster is the Schema for the keeperclusters API.
+// KeeperCluster is the Schema for the `keeperclusters` API.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=chk;keeper

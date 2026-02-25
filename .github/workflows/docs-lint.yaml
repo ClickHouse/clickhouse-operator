@@ -30,10 +30,27 @@ jobs:
           config-file: ci/.markdown-link-check.json
           file-extension: '.md'
 
+  api-reference-generated:
+    name: API Reference Generated
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Generate API Reference
+        run: make docs-generate-api-ref
+
+      - name: Check API Reference generated
+        run: git diff --exit-code docs/
+
   ci-success-check:
     name: All Docs CI checks passed
     runs-on: ubuntu-latest
-    needs: [ vale, markdown-link-check ]
+    needs: [ vale, markdown-link-check, api-reference-generated ]
     if: always()
     steps:
       - name: Determine CI status

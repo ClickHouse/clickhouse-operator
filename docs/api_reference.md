@@ -2,16 +2,12 @@
 
 This document provides detailed API reference for the ClickHouse Operator custom resources.
 
-## Table of Contents
 
-- [ClickHouseCluster](#clickhousecluster)
-- [KeeperCluster](#keepercluster)
-- [Common Types](#common-types)
+
 
 ## ClickHouseCluster
 
-ClickHouseCluster is the schema for the ClickHouse cluster API.
-
+ClickHouseCluster is the Schema for the `clickhouseclusters` API.
 ### API Version and Kind
 
 ```yaml
@@ -19,96 +15,169 @@ apiVersion: clickhouse.com/v1alpha1
 kind: ClickHouseCluster
 ```
 
-### ClickHouseClusterSpec
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [ClickHouseClusterSpec](#clickhouseclusterspec) |  | true |  |
+| `status` | [ClickHouseClusterStatus](#clickhouseclusterstatus) |  | true |  |
 
-ClickHouseClusterSpec defines the desired state of a ClickHouse cluster.
+Appears in:
+- [ClickHouseClusterList](#clickhouseclusterlist)
 
-| Field                 | Type                        | Required | Default         | Description                                               |
-|-----------------------|-----------------------------|----------|-----------------|-----------------------------------------------------------|
-| `replicas`            | `*int32`                    | No       | `3`             | Number of replicas in a single shard. Must be >= 0.       |
-| `shards`              | `*int32`                    | No       | `1`             | Number of shards in the cluster. Must be >= 0.            |
-| `keeperClusterRef`    | `LocalObjectReference`      | Yes      | -               | Reference to the KeeperCluster used for coordination.     |
-| `podTemplate`         | `PodTemplateSpec`           | No       | -               | Parameters for the pod spec.                              |
-| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults    | Parameters for the ClickHouse container spec.             |
-| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -               | Storage configuration for data volumes.                   |
-| `labels`              | `map[string]string`         | No       | -               | Additional labels added to all resources.                 |
-| `annotations`         | `map[string]string`         | No       | -               | Additional annotations added to all resources.            |
-| `settings`            | `ClickHouseConfig`          | No       | -               | ClickHouse configuration parameters.                      |
-| `clusterDomain`       | `string`                    | No       | `cluster.local` | Kubernetes cluster domain suffix used for DNS resolution. |
 
-#### Example
+## ClickHouseClusterList
+
+ClickHouseClusterList contains a list of ClickHouseCluster.
+### API Version and Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
-kind: ClickHouseCluster
-metadata:
-  name: example-cluster
-spec:
-  replicas: 3
-  shards: 2
-  keeperClusterRef:
-    name: example-keeper
-  dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 100Gi
-  containerTemplate:
-    image:
-      repository: clickhouse/clickhouse-server
-      tag: "25.12"
-    resources:
-      requests:
-        cpu: "2"
-        memory: "8Gi"
-      limits:
-        cpu: "4"
-        memory: "16Gi"
-  settings:
-    defaultUserPassword:
-      secret:
-        name: clickhouse-password
-        key: password
-    tls:
-      enabled: true
-      required: true
-      serverCertSecret:
-        name: clickhouse-cert
+kind: ClickHouseClusterList
 ```
 
-### ClickHouseConfig
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `items` | [ClickHouseCluster](#clickhousecluster) array |  | true |  |
 
-ClickHouse configuration parameters.
 
-| Field                 | Type                       | Required | Default      | Description                                                       |
-|-----------------------|----------------------------|----------|--------------|-------------------------------------------------------------------|
-| `defaultUserPassword` | `*DefaultPasswordSelector` | No       | -            | Password for the 'default' user from a Secret or ConfigMap.       |
-| `logger`              | `LoggerConfig`             | No       | See defaults | Logger configuration.                                             |
-| `tls`                 | `ClusterTLSSpec`           | No       | -            | TLS settings for ClickHouse.                                      |
-| `enableDatabaseSync`  | `bool`                     | No       | `true`       | Enable synchronization of databases to new replicas.              |
-| `extraConfig`         | `runtime.RawExtension`     | No       | -            | Additional ClickHouse configuration (merged with defaults).       |
-| `extraUsersConfig`    | `runtime.RawExtension`     | No       | -            | Additional ClickHouse users configuration (merged with defaults). |
+## ClickHouseClusterSpec
 
-### ClickHouseClusterStatus
+ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 
-ClickHouseClusterStatus defines the observed state of a ClickHouse cluster.
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `replicas` | integer | Number of replicas in the single shard. | false | 3 |
+| `shards` | integer | Number of shards in the cluster. | false | 1 |
+| `keeperClusterRef` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | Reference to the KeeperCluster that is used for ClickHouse coordination. | true |  |
+| `podTemplate` | [PodTemplateSpec](#podtemplatespec) | Parameters passed to the ClickHouse pod spec. | false |  |
+| `containerTemplate` | [ContainerTemplateSpec](#containertemplatespec) | Parameters passed to the ClickHouse container spec. | false |  |
+| `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse data. | false |  |
+| `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
+| `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
+| `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
+| `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 
-| Field                   | Type                 | Description                                            |
-|-------------------------|----------------------|--------------------------------------------------------|
-| `conditions`            | `[]metav1.Condition` | Current conditions of the cluster.                     |
-| `observedGeneration`    | `int64`              | Most recently observed generation.                     |
-| `replicas`              | `int32`              | Number of replicas currently running.                  |
-| `readyReplicas`         | `int32`              | Number of ready replicas.                              |
-| `configurationRevision` | `string`             | Target configuration revision applied by the operator. |
-| `statefulSetRevision`   | `string`             | Target StatefulSet controller revision.                |
-| `currentRevision`       | `string`             | Last applied cluster spec revision.                    |
-| `updateRevision`        | `string`             | Last requested cluster spec revision.                  |
+Appears in:
+- [ClickHouseCluster](#clickhousecluster)
+
+
+## ClickHouseClusterStatus
+
+ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `readyReplicas` | integer | ReadyReplicas Total number of replicas ready to serve requests. | false |  |
+| `configurationRevision` | string | ConfigurationRevision indicates target configuration revision for every replica. | true |  |
+| `statefulSetRevision` | string | StatefulSetRevision indicates target StatefulSet revision for every replica. | true |  |
+| `currentRevision` | string | CurrentRevision indicates latest applied ClickHouseCluster spec revision. | true |  |
+| `updateRevision` | string | UpdateRevision indicates latest requested ClickHouseCluster spec revision. | true |  |
+| `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
+
+Appears in:
+- [ClickHouseCluster](#clickhousecluster)
+
+
+
+## ClickHouseSettings
+
+ClickHouseSettings defines ClickHouse server settings options.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector) | Specifies source and type of the password for `default` ClickHouse user. | false |  |
+| `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
+| `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
+| `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |
+| `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one. | false |  |
+| `extraUsersConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse users configuration that will be merged with the default one. | false |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+
+## ClusterTLSSpec
+
+ClusterTLSSpec defines cluster TLS configuration.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `enabled` | boolean | Enabled indicates whether TLS is enabled, determining if secure ports should be opened. | false | false |
+| `required` | boolean | Required specifies whether TLS must be enforced for all connections. Disables not secure ports. | false | false |
+| `serverCertSecret` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ServerCertSecretRef is a reference to a TLS Secret containing the server certificate.<br />It is expected that the Secret has the same structure as certificates generated by cert-manager,<br />with the certificate and private key stored under "tls.crt" and "tls.key" keys respectively. | false |  |
+| `caBundle` | [SecretKeySelector](#secretkeyselector) | CABundle is a reference to a TLS Secret containing the CA bundle.<br />If empty and ServerCertSecret is specified, the CA bundle from certificate will be used.<br />Otherwise, system trusted CA bundle will be used.<br />Key is defaulted to "ca.crt" if not specified. | false |  |
+
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
+- [KeeperSettings](#keepersettings)
+
+
+
+
+## ConfigMapKeySelector
+
+ConfigMapKeySelector selects a key of a ConfigMap.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `name` | string | The name of the ConfigMap in the cluster's namespace to select from. | true |  |
+| `key` | string | The key of the ConfigMap to select from. Must be a valid key. | true |  |
+
+Appears in:
+- [DefaultPasswordSelector](#defaultpasswordselector)
+
+
+## ContainerImage
+
+ContainerImage defines a container image with repository, tag or hash.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `repository` | string | Container image registry name<br />Example: docker.io/clickhouse/clickhouse | false |  |
+| `tag` | string | Container image tag, mutually exclusive with 'hash'.<br />Example: 25.3 | false |  |
+| `hash` | string | Container image hash, mutually exclusive with 'tag'. | false |  |
+
+Appears in:
+- [ContainerTemplateSpec](#containertemplatespec)
+
+
+## ContainerTemplateSpec
+
+ContainerTemplateSpec describes the container configuration overrides for the cluster's containers.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `image` | [ContainerImage](#containerimage) | Image is the container image to be deployed. | true |  |
+| `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core) | ImagePullPolicy for the image, which defaults to IfNotPresent. | false |  |
+| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources is the resource requirements for the container.<br />This field cannot be updated once the cluster is created. | false |  |
+| `volumeMounts` | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array | VolumeMounts is the list of volume mounts for the container. | false |  |
+| `env` | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array | Env is the list of environment variables to set in the container. | false |  |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options the container should be run with.<br />If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+- [KeeperClusterSpec](#keeperclusterspec)
+
+
+## DefaultPasswordSelector
+
+DefaultPasswordSelector selects the source for the default user's password.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `passwordType` | string | Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true | password |
+| `secret` | [SecretKeySelector](#secretkeyselector) | Select password value from a Secret key | false |  |
+| `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key | false |  |
+
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
+
+
+
 
 ## KeeperCluster
 
-KeeperCluster is the schema for the ClickHouse Keeper cluster API.
-
+KeeperCluster is the Schema for the `keeperclusters` API.
 ### API Version and Kind
 
 ```yaml
@@ -116,308 +185,133 @@ apiVersion: clickhouse.com/v1alpha1
 kind: KeeperCluster
 ```
 
-### KeeperClusterSpec
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [KeeperClusterSpec](#keeperclusterspec) |  | true |  |
+| `status` | [KeeperClusterStatus](#keeperclusterstatus) |  | true |  |
 
-KeeperClusterSpec defines the desired state of a Keeper cluster.
+Appears in:
+- [KeeperClusterList](#keeperclusterlist)
 
-| Field                 | Type                        | Required | Default         | Description                                                                 |
-|-----------------------|-----------------------------|----------|-----------------|-----------------------------------------------------------------------------|
-| `replicas`            | `*int32`                    | No       | `3`             | Number of replicas. Must be an odd number: 0, 1, 3, 5, 7, 9, 11, 13, or 15. |
-| `podTemplate`         | `PodTemplateSpec`           | No       | -               | Parameters for the pod spec.                                                |
-| `containerTemplate`   | `ContainerTemplateSpec`     | No       | See defaults    | Parameters for the Keeper container spec.                                   |
-| `dataVolumeClaimSpec` | `PersistentVolumeClaimSpec` | Yes      | -               | Storage configuration for data volumes.                                     |
-| `labels`              | `map[string]string`         | No       | -               | Additional labels added to all resources.                                   |
-| `annotations`         | `map[string]string`         | No       | -               | Additional annotations added to all resources.                              |
-| `settings`            | `KeeperConfig`              | No       | -               | Keeper configuration parameters.                                            |
-| `clusterDomain`       | `string`                    | No       | `cluster.local` | Kubernetes cluster domain suffix used for DNS resolution.                   |
-#### Example
+
+## KeeperClusterList
+
+KeeperClusterList contains a list of KeeperCluster.
+### API Version and Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
-kind: KeeperCluster
-metadata:
-  name: example-keeper
-spec:
-  replicas: 3
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    accessModes:
-      - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Gi
-  containerTemplate:
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "512Mi"
-      limits:
-        cpu: "1"
-        memory: "1Gi"
-  podTemplate:
-    topologyZoneKey: topology.kubernetes.io/zone
-  settings:
-    tls:
-      enabled: true
-      required: true
-      serverCertSecret:
-        name: keeper-cert
+kind: KeeperClusterList
 ```
 
-### KeeperConfig
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `items` | [KeeperCluster](#keepercluster) array |  | true |  |
 
-Keeper configuration parameters.
 
-| Field         | Type                   | Required | Default      | Description                                             |
-|---------------|------------------------|----------|--------------|---------------------------------------------------------|
-| `logger`      | `LoggerConfig`         | No       | See defaults | Logger configuration.                                   |
-| `tls`         | `ClusterTLSSpec`       | No       | -            | TLS settings for Keeper.                                |
-| `extraConfig` | `runtime.RawExtension` | No       | -            | Additional Keeper configuration (merged with defaults). |
+## KeeperClusterSpec
 
-### KeeperClusterStatus
+KeeperClusterSpec defines the desired state of KeeperCluster.
 
-KeeperClusterStatus defines the observed state of a Keeper cluster.
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `replicas` | integer | Number of replicas in the cluster | false | 3 |
+| `podTemplate` | [PodTemplateSpec](#podtemplatespec) | Parameters passed to the Keeper pod spec. | false |  |
+| `containerTemplate` | [ContainerTemplateSpec](#containertemplatespec) | Parameters passed to the Keeper container spec. | false |  |
+| `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse Keeper data. | false |  |
+| `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
+| `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
+| `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
+| `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 
-| Field                   | Type                 | Description                                            |
-|-------------------------|----------------------|--------------------------------------------------------|
-| `conditions`            | `[]metav1.Condition` | Current conditions of the cluster.                     |
-| `observedGeneration`    | `int64`              | Most recently observed generation.                     |
-| `replicas`              | `int32`              | Number of replicas currently running.                  |
-| `readyReplicas`         | `int32`              | Number of ready replicas.                              |
-| `configurationRevision` | `string`             | Target configuration revision applied by the operator. |
-| `statefulSetRevision`   | `string`             | Target StatefulSet controller revision.                |
-| `currentRevision`       | `string`             | Last applied cluster spec revision.                    |
-| `updateRevision`        | `string`             | Last requested cluster spec revision.                  |
+Appears in:
+- [KeeperCluster](#keepercluster)
 
-## Common Types
 
-### PodTemplateSpec
+## KeeperClusterStatus
 
-Parameters for pod configuration.
+KeeperClusterStatus defines the observed state of KeeperCluster.
 
-| Field             | Type                         | Required | Description                                                                          |
-|-------------------|------------------------------|----------|--------------------------------------------------------------------------------------|
-| `topologyZoneKey` | `string`                     | No       | Kubernetes topology key for zone distribution (e.g., `topology.kubernetes.io/zone`). |
-| `nodeHostnameKey` | `string`                     | No       | Kubernetes label key for node hostname (e.g., `kubernetes.io/hostname`).             |
-| `nodeSelector`    | `map[string]string`          | No       | Node selector for pod placement.                                                     |
-| `affinity`        | `corev1.Affinity`            | No       | Pod affinity/anti-affinity rules.                                                    |
-| `tolerations`     | `[]corev1.Toleration`        | No       | Tolerations for tainted nodes.                                                       |
-| `securityContext` | `*corev1.PodSecurityContext` | No       | Pod security context overrides.                                                      |
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `readyReplicas` | integer | ReadyReplicas Total number of replicas ready to serve requests. | false |  |
+| `configurationRevision` | string | ConfigurationRevision indicates target configuration revision for every replica. | true |  |
+| `statefulSetRevision` | string | StatefulSetRevision indicates target StatefulSet revision for every replica. | true |  |
+| `currentRevision` | string | CurrentRevision indicates latest applied KeeperCluster spec revision. | true |  |
+| `updateRevision` | string | CurrentRevision indicates latest requested KeeperCluster spec revision. | true |  |
+| `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
 
-#### Example
+Appears in:
+- [KeeperCluster](#keepercluster)
 
-```yaml
-podTemplate:
-  topologyZoneKey: topology.kubernetes.io/zone
-  nodeHostnameKey: kubernetes.io/hostname
-  nodeSelector:
-    disktype: ssd
-  tolerations:
-  - key: "dedicated"
-    operator: "Equal"
-    value: "clickhouse"
-    effect: "NoSchedule"
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchLabels:
-            app.kubernetes.io/name: clickhouse
-        topologyKey: kubernetes.io/hostname
-```
 
-### ContainerTemplateSpec
 
-Parameters for container configuration.
+## KeeperSettings
 
-| Field             | Type                          | Required | Description                                      |
-|-------------------|-------------------------------|----------|--------------------------------------------------|
-| `image`           | `ContainerImage`              | No       | Container image configuration.                   |
-| `imagePullPolicy` | `corev1.PullPolicy`           | No       | Image pull policy (Always, IfNotPresent, Never). |
-| `resources`       | `corev1.ResourceRequirements` | No       | CPU and memory resource requirements.            |
-| `env`             | `[]corev1.EnvVar`             | No       | Environment variables.                           |
-| `volumeMounts`    | `[]corev1.VolumeMount`        | No       | Additional volume mounts.                        |
-| `securityContext` | `*corev1.SecurityContext`     | No       | Container security context overrides.            |
+KeeperSettings defines ClickHouse Keeper server configuration.
 
-#### Example
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse Keeper server logging. | false |  |
+| `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse Keeper server. | false |  |
+| `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse Keeper configuration that will be merged with the default one. | false |  |
 
-```yaml
-containerTemplate:
-  image:
-    repository: clickhouse/clickhouse-server
-    tag: "25.12"
-  imagePullPolicy: IfNotPresent
-  resources:
-    requests:
-      cpu: "2"
-      memory: "8Gi"
-    limits:
-      cpu: "4"
-      memory: "16Gi"
-  env:
-  - name: TZ
-    value: "UTC"
-```
+Appears in:
+- [KeeperClusterSpec](#keeperclusterspec)
 
-### ContainerImage
 
-Container image specification.
+## LoggerConfig
 
-| Field        | Type     | Required | Default                                                                              | Description                 |
-|--------------|----------|----------|--------------------------------------------------------------------------------------|-----------------------------|
-| `repository` | `string` | No       | ClickHouse: `clickhouse/clickhouse-server`<br>Keeper: `clickhouse/clickhouse-keeper` | Container image repository. |
-| `tag`        | `string` | No       | `latest`                                                                             | Image tag.                  |
+LoggerConfig defines server logging configuration.
 
-### ClusterTLSSpec
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `logToFile` | boolean | If false then disable all logging to file. | false | true |
+| `jsonLogs` | boolean | If true, then log in JSON format. | false | false |
+| `level` | string | Server logger verbosity level. | false | trace |
+| `size` | string | Maximum log file size. | false | 1000M |
+| `count` | integer | Maximum number of log files to keep. | false | 50 |
 
-TLS configuration for clusters.
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
+- [KeeperSettings](#keepersettings)
 
-| Field              | Type                          | Required | Description                                                    |
-|--------------------|-------------------------------|----------|----------------------------------------------------------------|
-| `enabled`          | `bool`                        | No       | Enable TLS.                                                    |
-| `required`         | `bool`                        | No       | Require TLS for all connections (disables insecure endpoints). |
-| `serverCertSecret` | `corev1.LocalObjectReference` | No       | Secret containing server certificate (tls.crt, tls.key).       |
-| `caBundle`         | `*SecretKeySelector`          | No       | Secret containing CA bundle for verification.                  |
 
-#### Example
+## PodTemplateSpec
 
-```yaml
-tls:
-  enabled: true
-  required: true
-  serverCertSecret:
-    name: clickhouse-cert
-  caBundle:
-    secretKeyRef:
-      name: ca-cert-secret
-      key: ca.crt
-```
+PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
 
-### LoggerConfig
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `terminationGracePeriodSeconds` | integer | Optional duration in seconds the pod needs to terminate gracefully. May be decreased in delete request.<br />Value must be non-negative integer. The value zero indicates stop immediately via<br />the kill signal (no opportunity to shut down).<br />If this value is nil, the default grace period will be used instead.<br />The grace period is the duration in seconds after the processes running in the pod are sent<br />a termination signal and the time when the processes are forcibly halted with a kill signal.<br />Set this value longer than the expected cleanup time for your process.<br />Defaults to 30 seconds. | false |  |
+| `topologySpreadConstraints` | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) array | TopologySpreadConstraints describes how a group of pods ought to spread across topology<br />domains. Scheduler will schedule pods in a way which abides by the constraints.<br />All topologySpreadConstraints are ANDed. | false |  |
+| `imagePullSecrets` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) array | ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.<br />If specified, these secrets will be passed to individual puller implementations for them to use.<br />More info: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod | false |  |
+| `nodeSelector` | object (keys:string, values:string) | NodeSelector is a selector which must be true for the pod to fit on a node.<br />Selector which must match a node's labels for the pod to be scheduled on that node.<br />More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/ | false |  |
+| `affinity` | [Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core) | If specified, the pod's scheduling constraints | false |  |
+| `tolerations` | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array | If specified, the pod's Tolerations. | false |  |
+| `schedulerName` | string | If specified, the pod will be dispatched by specified scheduler.<br />If not specified, the pod will be dispatched by default scheduler. | false |  |
+| `serviceAccountName` | string | ServiceAccountName is the name of the ServiceAccount to use to run this pod.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/ | false |  |
+| `volumes` | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array | Volumes defines the list of volumes that can be mounted by containers belonging to the pod.<br />More info: https://kubernetes.io/docs/concepts/storage/volumes | false |  |
+| `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes and common container settings. | false |  |
+| `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology zone.<br />Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.<br />Recommended to be set to "topology.kubernetes.io/zone" | false |  |
+| `nodeHostnameKey` | string | NodeHostnameKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be on the same node.<br />Set it to enable default AntiAffinity rules to spread replicas from the different shards across nodes.<br />Recommended to be set to "kubernetes.io/hostname" | false |  |
 
-Logger configuration for ClickHouse and Keeper.
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+- [KeeperClusterSpec](#keeperclusterspec)
 
-| Field       | Type     | Required | Default   | Description                                           |
-|-------------|----------|----------|-----------|-------------------------------------------------------|
-| `logToFile` | `bool`   | No       | `true`    | Write logs to file.                                   |
-| `level`     | `string` | No       | `"trace"` | Log level: trace, debug, information, warning, error. |
-| `size`      | `string` | No       | `"1000M"` | Maximum log file size.                                |
-| `count`     | `int`    | No       | `50`      | Number of log files to keep.                          |
 
-#### Example
+## SecretKeySelector
 
-```yaml
-logger:
-  logToFile: true
-  level: "information"
-  size: "1000M"
-  count: 50
-```
+SecretKeySelector selects a key of a Secret.
 
-### DefaultPasswordSelector
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `name` | string | The name of the secret in the cluster's namespace to select from. | true |  |
+| `key` | string | The key of the secret to select from.  Must be a valid secret key. | true |  |
 
-Reference to a Secret or ConfigMap key containing a password.
+Appears in:
+- [ClusterTLSSpec](#clustertlsspec)
+- [DefaultPasswordSelector](#defaultpasswordselector)
 
-| Field          | Type                    | Required | Default    | Description                                                                                                                                                                                                                        |
-|----------------|-------------------------|----------|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `passwordType` | `string`                | No       | `password` | Type of password encoding. Possible values: `password`, `password_sha256_hex`, `password_double_sha1_hex`. See [ClickHouse documentation](https://clickhouse.com/docs/en/operations/settings/settings-users#password) for details. |
-| `secret`       | `*SecretKeySelector`    | No       | -          | Select password from a Secret key. Mutually exclusive with `configMap`.                                                                                                                                                            |
-| `configMap`    | `*ConfigMapKeySelector` | No       | -          | Select password from a ConfigMap key. Mutually exclusive with `secret`.                                                                                                                                                            |
-
-**Note**: You must specify either `secret` OR `configMap`, not both.
-
-#### Example with Secret (Recommended)
-
-```yaml
-defaultUserPassword:
-  passwordType: password  # Optional, default
-  secret:
-    name: clickhouse-password
-    key: password
-```
-
-#### Example with SHA256
-
-```yaml
-defaultUserPassword:
-  passwordType: password_sha256_hex
-  secret:
-    name: clickhouse-password
-    key: password_hash
-```
-
-#### Example with ConfigMap
-
-```yaml
-defaultUserPassword:
-  passwordType: plaintext
-  configMap:
-    name: clickhouse-config
-    key: default_password
-```
-
-## Default Values
-
-### ClickHouse Defaults
-
-| Setting              | Default Value                  |
-|----------------------|--------------------------------|
-| Replicas             | `3`                            |
-| Shards               | `1`                            |
-| Image Repository     | `clickhouse/clickhouse-server` |
-| Image Tag            | `latest`                       |
-| Image Pull Policy    | `IfNotPresent`                 |
-| CPU Request          | `2`                            |
-| CPU Limit            | `4`                            |
-| Memory Request       | `4Gi`                          |
-| Memory Limit         | `8Gi`                          |
-| Logger Level         | `trace`                        |
-| Logger Log to File   | `true`                         |
-| Logger Size          | `1000M`                        |
-| Logger Count         | `50`                           |
-| Enable Database Sync | `true`                         |
-
-### Keeper Defaults
-
-| Setting            | Default Value                  |
-|--------------------|--------------------------------|
-| Replicas           | `3`                            |
-| Image Repository   | `clickhouse/clickhouse-keeper` |
-| Image Tag          | `latest`                       |
-| Image Pull Policy  | `IfNotPresent`                 |
-| CPU Request        | `500m`                         |
-| CPU Limit          | `1`                            |
-| Memory Request     | `512Mi`                        |
-| Memory Limit       | `1Gi`                          |
-| Logger Level       | `trace`                        |
-| Logger Log to File | `true`                         |
-| Logger Size        | `1000M`                        |
-| Logger Count       | `50`                           |
-
-## Conditions
-
-### ClickHouseCluster conditions
-
-| Type                      | Description                                                                                        |
-|---------------------------|----------------------------------------------------------------------------------------------------|
-| `SpecValid`               | Whether ClickHouseCluster CustomResource passes validation. Useful in deployments without webhooks |
-| `ReconcileSucceeded`      | The success of the last reconciliation cycle                                                       |
-| `ReplicaStartupSucceeded` | Whether all replicas of the ClickHouseCluster are able to start.                                   |
-| `Healthy`                 | Readiness of all requested replicas.                                                               |
-| `ClusterSizeAligned`      | Cluster have the same amount of replicas/shards as requested.                                      |
-| `ConfigurationInSync`     | Represents Configuration deployment state                                                          |
-| `Ready`                   | ClickHouseCluster is ready to serve client requests. At least one replica in every shard is Ready  |
-| `SchemaInSync`            | All replicas have the same database schema after scaling operations.                               |
-
-### KeeperCluster conditions
-
-| Type                      | Description                                                                                    |
-|---------------------------|------------------------------------------------------------------------------------------------|
-| `SpecValid`               | Whether KeeperCluster CustomResource passes validation. Useful in deployments without webhooks |
-| `ReconcileSucceeded`      | The success of the last reconciliation cycle                                                   |
-| `ReplicaStartupSucceeded` | Whether all replicas of the KeeperCluster are able to start.                                   |
-| `Healthy`                 | Readiness of all requested replicas.                                                           |
-| `ClusterSizeAligned`      | Cluster have the same amount of replicas as requested.                                         |
-| `ConfigurationInSync`     | Represents Configuration deployment state                                                      |
-| `Ready`                   | KeeperCluster is ready to serve client requests. Leader elected.                               |
-| `ScaleAllowed`            | Represents the operator's ability to add/remove a node in the quorum.                          |

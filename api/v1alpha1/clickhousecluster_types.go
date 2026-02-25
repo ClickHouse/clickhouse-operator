@@ -20,16 +20,14 @@ import (
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 type ClickHouseClusterSpec struct {
-	// Number of replicas in the single shard
-	// This is a pointer to distinguish between explicit zero and unspecified.
+	// Number of replicas in the single shard.
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum=0
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Replica count in shard"
 	Replicas *int32 `json:"replicas"`
 
-	// Number of shards in the cluster
-	// This is a pointer to distinguish between explicit zero and unspecified.
+	// Number of shards in the cluster.
 	// +optional
 	// +kubebuilder:default:=1
 	// +kubebuilder:validation:Minimum=0
@@ -39,7 +37,7 @@ type ClickHouseClusterSpec struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
 	KeeperClusterRef *corev1.LocalObjectReference `json:"keeperClusterRef"`
 
-	// Parameters passed to the Keeper pod spec.
+	// Parameters passed to the ClickHouse pod spec.
 	// +optional
 	PodTemplate PodTemplateSpec `json:"podTemplate,omitempty"`
 
@@ -47,7 +45,7 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	ContainerTemplate ContainerTemplateSpec `json:"containerTemplate,omitempty"`
 
-	// Settings for the replicas storage.
+	// Specification of persistent storage for ClickHouse data.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
@@ -65,7 +63,6 @@ type ClickHouseClusterSpec struct {
 	Settings ClickHouseSettings `json:"settings,omitempty"`
 
 	// ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
-	// Defaults to "cluster.local" if not specified.
 	// +optional
 	// +kubebuilder:default:="cluster.local"
 	ClusterDomain string `json:"clusterDomain,omitempty"`
@@ -118,20 +115,21 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 
 // ClickHouseSettings defines ClickHouse server settings options.
 type ClickHouseSettings struct {
-	// Reference to the Secret key, which contains password for the user 'default'.
+	// Specifies source and type of the password for `default` ClickHouse user.
 	// +optional
 	DefaultUserPassword *DefaultPasswordSelector `json:"defaultUserPassword,omitempty"`
 
-	// Optionally you can lower the logger level or disable logging to file at all.
+	// Configuration of ClickHouse server logging.
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
 
-	// TLS settings, allows to enable TLS settings for ClickHouse.
+	// TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server.
 	// +optional
 	TLS ClusterTLSSpec `json:"tls,omitempty"`
 
-	// Enables synchronization of ClickHouse databases to the newly created replicas by the operator.
-	// Supports only Replicated and integration tables.
+	// Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas
+	// after scale down.
+	// Supports only Replicated and integration databases.
 	// +optional
 	// +kubebuilder:default:=true
 	EnableDatabaseSync bool `json:"enableDatabaseSync,omitempty"`
@@ -158,7 +156,7 @@ type ClickHouseClusterStatus struct {
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// ReadyReplicas Total number of replicas ready to server requests.
+	// ReadyReplicas Total number of replicas ready to serve requests.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ReadyReplicas int32 `json:"readyReplicas"`
@@ -180,7 +178,7 @@ type ClickHouseClusterStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
-// ClickHouseCluster is the Schema for the clickhouseclusters API.
+// ClickHouseCluster is the Schema for the `clickhouseclusters` API.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=chc;clickhouse

@@ -298,6 +298,7 @@ GINKGO ?= $(LOCALBIN)/ginkgo
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CODESPELL ?= $(LOCALBIN)/codespell
 CRD_SCHEMA_CHECKER ?= $(LOCALBIN)/crd-schema-checker
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
@@ -308,6 +309,7 @@ GINKGO_VERSION ?= v2.28.1
 KUBEBUILDER_VERSION ?= v4.12.0
 CODESPELL_VERSION ?= 2.4.1
 CRD_SCHEMA_CHECKER_VERSION ?= latest
+CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -501,6 +503,21 @@ catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
 
 ##@ Documentation
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
+
+.PHONY: docs-generate-api-ref
+docs-generate-api-ref: crd-ref-docs ## Generate API reference documentation from CRD types.
+	$(CRD_REF_DOCS) \
+		--source-path=api/v1alpha1 \
+		--config=docs/templates/.crd-ref-docs.yaml \
+		--templates-dir=docs/templates \
+		--renderer=markdown \
+		--output-path=docs/api_reference.md \
+		--max-depth=10
 
 .PHONY: docs-lint-vale
 docs-lint-vale: ## Run Vale linter on documentation

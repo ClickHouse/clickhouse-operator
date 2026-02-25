@@ -8,3 +8,7 @@ Tolerations
 plaintext
 timeframe
 Bugcrowd
+CABundle
+Env
+ANDed
+boolean

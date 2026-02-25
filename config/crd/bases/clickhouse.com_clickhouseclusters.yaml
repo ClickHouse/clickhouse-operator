@@ -36,7 +36,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClickHouseCluster is the Schema for the clickhouseclusters API.
+        description: ClickHouseCluster is the Schema for the `clickhouseclusters`
+          API.
         properties:
           apiVersion:
             description: |-
@@ -65,9 +66,8 @@ spec:
                 type: object
               clusterDomain:
                 default: cluster.local
-                description: |-
-                  ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
-                  Defaults to "cluster.local" if not specified.
+                description: ClusterDomain is the Kubernetes cluster domain suffix
+                  used for DNS resolution.
                 type: string
               containerTemplate:
                 description: Parameters passed to the ClickHouse container spec.
@@ -248,7 +248,7 @@ spec:
                         type: string
                       tag:
                         description: |-
-                          Container image tag
+                          Container image tag, mutually exclusive with 'hash'.
                           Example: 25.3
                         type: string
                     type: object
@@ -586,7 +586,7 @@ spec:
                     x-kubernetes-list-type: map
                 type: object
               dataVolumeClaimSpec:
-                description: Settings for the replicas storage.
+                description: Specification of persistent storage for ClickHouse data.
                 properties:
                   accessModes:
                     description: |-
@@ -801,7 +801,7 @@ spec:
                 description: Additional labels that are added to resources.
                 type: object
               podTemplate:
-                description: Parameters passed to the Keeper pod spec.
+                description: Parameters passed to the ClickHouse pod spec.
                 properties:
                   affinity:
                     description: If specified, the pod's scheduling constraints
@@ -2019,7 +2019,7 @@ spec:
                     format: int64
                     type: integer
                   tolerations:
-                    description: If specified, the pod's tolerations.
+                    description: If specified, the pod's Tolerations.
                     items:
                       description: |-
                         The pod this Toleration is attached to tolerates any taint that matches
@@ -4164,9 +4164,7 @@ spec:
                 type: object
               replicas:
                 default: 3
-                description: |-
-                  Number of replicas in the single shard
-                  This is a pointer to distinguish between explicit zero and unspecified.
+                description: Number of replicas in the single shard.
                 format: int32
                 minimum: 0
                 type: integer
@@ -4174,18 +4172,18 @@ spec:
                 description: Configuration parameters for ClickHouse server.
                 properties:
                   defaultUserPassword:
-                    description: Reference to the Secret key, which contains password
-                      for the user 'default'.
+                    description: Specifies source and type of the password for `default`
+                      ClickHouse user.
                     properties:
                       configMap:
                         description: Select password value from a ConfigMap key
                         properties:
                           key:
-                            description: The key of the configMap to select from.
+                            description: The key of the ConfigMap to select from.
                               Must be a valid key.
                             type: string
                           name:
-                            description: The name of the configMap in the cluster's
+                            description: The name of the ConfigMap in the cluster's
                               namespace to select from.
                             type: string
                         required:
@@ -4216,8 +4214,9 @@ spec:
                   enableDatabaseSync:
                     default: true
                     description: |-
-                      Enables synchronization of ClickHouse databases to the newly created replicas by the operator.
-                      Supports only Replicated and integration tables.
+                      Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas
+                      after scale down.
+                      Supports only Replicated and integration databases.
                     type: boolean
                   extraConfig:
                     description: Additional ClickHouse configuration that will be
@@ -4232,8 +4231,7 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   logger:
-                    description: Optionally you can lower the logger level or disable
-                      logging to file at all.
+                    description: Configuration of ClickHouse server logging.
                     properties:
                       count:
                         default: 50
@@ -4246,6 +4244,7 @@ spec:
                         type: boolean
                       level:
                         default: trace
+                        description: Server logger verbosity level.
                         enum:
                         - test
                         - trace
@@ -4267,7 +4266,8 @@ spec:
                         type: string
                     type: object
                   tls:
-                    description: TLS settings, allows to enable TLS settings for ClickHouse.
+                    description: TLS settings, allows to configure secure endpoints
+                      and certificate verification for ClickHouse server.
                     properties:
                       caBundle:
                         description: |-
@@ -4299,8 +4299,10 @@ spec:
                           for all connections. Disables not secure ports.
                         type: boolean
                       serverCertSecret:
-                        description: ServerCertSecretRef is a reference to a TLS Secret
-                          containing the server certificate.
+                        description: |-
+                          ServerCertSecretRef is a reference to a TLS Secret containing the server certificate.
+                          It is expected that the Secret has the same structure as certificates generated by cert-manager,
+                          with the certificate and private key stored under "tls.crt" and "tls.key" keys respectively.
                         properties:
                           name:
                             default: ""
@@ -4317,9 +4319,7 @@ spec:
                 type: object
               shards:
                 default: 1
-                description: |-
-                  Number of shards in the cluster
-                  This is a pointer to distinguish between explicit zero and unspecified.
+                description: Number of shards in the cluster.
                 format: int32
                 minimum: 0
                 type: integer
@@ -4402,7 +4402,7 @@ spec:
                 format: int64
                 type: integer
               readyReplicas:
-                description: ReadyReplicas Total number of replicas ready to server
+                description: ReadyReplicas Total number of replicas ready to serve
                   requests.
                 format: int32
                 type: integer
