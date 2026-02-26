@@ -100,12 +100,14 @@ func templatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 		// Smart default: single-replica shards use maxUnavailable=1 to avoid
 		// drain deadlocks; multi-replica shards use minAvailable=1 for HA.
 		if cr.Replicas() <= 1 {
-			maxUnavailable := intstr.FromInt32(1)
-			pdb.Spec.MaxUnavailable = &maxUnavailable
+			pdb.Spec.MaxUnavailable = new(intstr.FromInt32(1))
 		} else {
-			minAvailable := intstr.FromInt32(1)
-			pdb.Spec.MinAvailable = &minAvailable
+			pdb.Spec.MinAvailable = new(intstr.FromInt32(1))
 		}
+	}
+
+	if cr.Spec.PodDisruptionBudget != nil && cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy != nil {
+		pdb.Spec.UnhealthyPodEvictionPolicy = cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy
 	}
 
 	return pdb

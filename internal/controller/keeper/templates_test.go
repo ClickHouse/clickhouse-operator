@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -209,5 +210,22 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 		Expect(pdb.Namespace).To(Equal("default"))
 		Expect(pdb.Labels).To(HaveKeyWithValue("env", "test"))
 		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "test-keeper"))
+	})
+
+	It("should set unhealthyPodEvictionPolicy when specified", func() {
+		policy := policyv1.AlwaysAllow
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			UnhealthyPodEvictionPolicy: &policy,
+		}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).NotTo(BeNil())
+		Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
+	})
+
+	It("should not set unhealthyPodEvictionPolicy when not specified", func() {
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).To(BeNil())
 	})
 })

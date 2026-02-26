@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -84,6 +85,12 @@ type PodDisruptionBudgetSpec struct {
 	// MaxUnavailable is the maximum number of pods that can be unavailable during a disruption.
 	// +optional
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+
+	// UnhealthyPodEvictionPolicy defines the criteria for when unhealthy pods
+	// should be considered for eviction.
+	// Valid values are "IfReady" and "AlwaysAllow".
+	// +optional
+	UnhealthyPodEvictionPolicy *policyv1.UnhealthyPodEvictionPolicyType `json:"unhealthyPodEvictionPolicy,omitempty"`
 }
 
 // PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
