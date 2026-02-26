@@ -53,6 +53,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse data. | false |  |
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
+| `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 
@@ -221,6 +222,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse Keeper data. | false |  |
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
+| `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for the Keeper cluster.<br />When unset, the operator defaults to maxUnavailable=replicas/2<br />(preserving quorum for a 2F+1 cluster). | false |  |
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 
@@ -276,6 +278,24 @@ LoggerConfig defines server logging configuration.
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
 - [KeeperSettings](#keepersettings)
+
+
+## PodDisruptionBudgetSpec
+
+PodDisruptionBudgetSpec configures the PDB created for the cluster.
+Exactly one of MinAvailable or MaxUnavailable may be set.
+When neither is set, the operator picks a safe default based on replica count.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `enabled` | boolean | Enabled controls whether the operator creates PodDisruptionBudgets.<br />Defaults to true when unset. Set to false to disable PDB creation (e.g. for dev environments). | false | true |
+| `minAvailable` | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util) | MinAvailable is the minimum number of pods that must remain available during a disruption. | false |  |
+| `maxUnavailable` | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util) | MaxUnavailable is the maximum number of pods that can be unavailable during a disruption. | false |  |
+| `unhealthyPodEvictionPolicy` | [UnhealthyPodEvictionPolicyType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#unhealthypodevictionpolicytype-v1-policy) | UnhealthyPodEvictionPolicy defines the criteria for when unhealthy pods<br />should be considered for eviction.<br />Valid values are "IfReady" and "AlwaysAllow". | false |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+- [KeeperClusterSpec](#keeperclusterspec)
 
 
 ## PodTemplateSpec

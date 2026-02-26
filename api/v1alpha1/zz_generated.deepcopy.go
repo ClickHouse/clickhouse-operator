@@ -22,6 +22,7 @@ package v1alpha1
 
 import (
 	"k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -487,6 +488,11 @@ func (in *PodDisruptionBudgetSpec) DeepCopyInto(out *PodDisruptionBudgetSpec) {
 	if in.MaxUnavailable != nil {
 		in, out := &in.MaxUnavailable, &out.MaxUnavailable
 		*out = new(intstr.IntOrString)
+		**out = **in
+	}
+	if in.UnhealthyPodEvictionPolicy != nil {
+		in, out := &in.UnhealthyPodEvictionPolicy, &out.UnhealthyPodEvictionPolicy
+		*out = new(policyv1.UnhealthyPodEvictionPolicyType)
 		**out = **in
 	}
 }

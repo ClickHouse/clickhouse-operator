@@ -797,6 +797,12 @@ spec:
                                             - type: string
                                         description: MinAvailable is the minimum number of pods that must remain available during a disruption.
                                         x-kubernetes-int-or-string: true
+                                    unhealthyPodEvictionPolicy:
+                                        description: |-
+                                            UnhealthyPodEvictionPolicy defines the criteria for when unhealthy pods
+                                            should be considered for eviction.
+                                            Valid values are "IfReady" and "AlwaysAllow".
+                                        type: string
                                 type: object
                             podTemplate:
                                 description: Parameters passed to the ClickHouse pod spec.
