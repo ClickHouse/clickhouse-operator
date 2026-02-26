@@ -106,8 +106,11 @@ func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 		pdb.Spec.MinAvailable = cr.Spec.PodDisruptionBudget.MinAvailable
 	default:
 		// Keeper uses quorum: in a 2F+1 cluster, up to F nodes can be down.
-		maxUnavailable := intstr.FromInt32(cr.Replicas() / 2)
-		pdb.Spec.MaxUnavailable = &maxUnavailable
+		pdb.Spec.MaxUnavailable = new(intstr.FromInt32(cr.Replicas() / 2))
+	}
+
+	if cr.Spec.PodDisruptionBudget != nil && cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy != nil {
+		pdb.Spec.UnhealthyPodEvictionPolicy = cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy
 	}
 
 	return pdb

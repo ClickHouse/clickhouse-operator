@@ -4,6 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -278,6 +279,23 @@ var _ = Describe("PDB", func() {
 		Expect(pdb.Labels).To(HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"))
 		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "test-clickhouse"))
 		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"))
+	})
+
+	It("should set unhealthyPodEvictionPolicy when specified", func() {
+		policy := policyv1.AlwaysAllow
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			UnhealthyPodEvictionPolicy: &policy,
+		}
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).NotTo(BeNil())
+		Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
+	})
+
+	It("should not set unhealthyPodEvictionPolicy when not specified", func() {
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).To(BeNil())
 	})
 })
 
