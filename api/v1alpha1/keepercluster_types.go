@@ -45,6 +45,12 @@ type KeeperClusterSpec struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// PodDisruptionBudget configures the PDB created for the Keeper cluster.
+	// When unset, the operator defaults to maxUnavailable=replicas/2
+	// (preserving quorum for a 2F+1 cluster).
+	// +optional
+	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
+
 	// Configuration parameters for ClickHouse Keeper server.
 	// +optional
 	Settings KeeperSettings `json:"settings,omitempty"`

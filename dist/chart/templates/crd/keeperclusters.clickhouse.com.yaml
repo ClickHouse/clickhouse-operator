@@ -759,6 +759,31 @@ spec:
                                     type: string
                                 description: Additional labels that are added to resources.
                                 type: object
+                            podDisruptionBudget:
+                                description: |-
+                                    PodDisruptionBudget configures the PDB created for the Keeper cluster.
+                                    When unset, the operator defaults to maxUnavailable=replicas/2
+                                    (preserving quorum for a 2F+1 cluster).
+                                properties:
+                                    enabled:
+                                        default: true
+                                        description: |-
+                                            Enabled controls whether the operator creates PodDisruptionBudgets.
+                                            Defaults to true when unset. Set to false to disable PDB creation (e.g. for dev environments).
+                                        type: boolean
+                                    maxUnavailable:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        description: MaxUnavailable is the maximum number of pods that can be unavailable during a disruption.
+                                        x-kubernetes-int-or-string: true
+                                    minAvailable:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        description: MinAvailable is the minimum number of pods that must remain available during a disruption.
+                                        x-kubernetes-int-or-string: true
+                                type: object
                             podTemplate:
                                 description: Parameters passed to the Keeper pod spec.
                                 properties:

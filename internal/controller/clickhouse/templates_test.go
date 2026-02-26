@@ -5,6 +5,8 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal"
@@ -189,6 +191,93 @@ var _ = Describe("BuildVolumes", func() {
 		}
 
 		Expect(projectedVolumeFound).To(BeTrue())
+	})
+})
+
+var _ = Describe("PDB", func() {
+	var cr *v1.ClickHouseCluster
+
+	BeforeEach(func() {
+		cr = &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: ptr.To[int32](3),
+				Shards:   ptr.To[int32](2),
+			},
+		}
+	})
+
+	It("should default to minAvailable=1 for multi-replica shards", func() {
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.MinAvailable).NotTo(BeNil())
+		Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(1))
+		Expect(pdb.Spec.MaxUnavailable).To(BeNil())
+	})
+
+	It("should default to maxUnavailable=1 for single-replica shards", func() {
+		cr.Spec.Replicas = ptr.To[int32](1)
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(1))
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
+	It("should respect custom maxUnavailable", func() {
+		maxUnavailable := intstr.FromInt32(2)
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &maxUnavailable,
+		}
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(2))
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
+	It("should respect custom minAvailable", func() {
+		minAvailable := intstr.FromInt32(2)
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MinAvailable: &minAvailable,
+		}
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.MinAvailable).NotTo(BeNil())
+		Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(2))
+		Expect(pdb.Spec.MaxUnavailable).To(BeNil())
+	})
+
+	It("should support percentage-based values", func() {
+		minAvailable := intstr.FromString("50%")
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MinAvailable: &minAvailable,
+		}
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Spec.MinAvailable).NotTo(BeNil())
+		Expect(pdb.Spec.MinAvailable.String()).To(Equal("50%"))
+	})
+
+	It("should set correct name per shard", func() {
+		pdb0 := templatePodDisruptionBudget(cr, 0)
+		pdb1 := templatePodDisruptionBudget(cr, 1)
+
+		Expect(pdb0.Name).To(Equal("test-clickhouse-0"))
+		Expect(pdb1.Name).To(Equal("test-clickhouse-1"))
+	})
+
+	It("should set correct labels and selector for shard", func() {
+		cr.Spec.Labels = map[string]string{"env": "test"}
+		pdb := templatePodDisruptionBudget(cr, 0)
+
+		Expect(pdb.Labels).To(HaveKeyWithValue("env", "test"))
+		Expect(pdb.Labels).To(HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"))
+		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "test-clickhouse"))
+		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"))
 	})
 })
 

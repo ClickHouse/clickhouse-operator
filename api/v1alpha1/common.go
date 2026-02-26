@@ -67,10 +67,16 @@ type LoggerConfig struct {
 	Count int64 `json:"count,omitempty"`
 }
 
-// PodDisruptionBudgetSpec configures the PDB created for each shard.
+// PodDisruptionBudgetSpec configures the PDB created for the cluster.
 // Exactly one of MinAvailable or MaxUnavailable may be set.
 // When neither is set, the operator picks a safe default based on replica count.
 type PodDisruptionBudgetSpec struct {
+	// Enabled controls whether the operator creates PodDisruptionBudgets.
+	// Defaults to true when unset. Set to false to disable PDB creation (e.g. for dev environments).
+	// +optional
+	// +kubebuilder:default:=true
+	Enabled *bool `json:"enabled,omitempty"`
+
 	// MinAvailable is the minimum number of pods that must remain available during a disruption.
 	// +optional
 	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty"`
