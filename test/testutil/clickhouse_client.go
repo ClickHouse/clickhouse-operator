@@ -195,6 +195,10 @@ func (c *ClickHouseClient) CheckRead(ctx context.Context, order int) error {
 				return fmt.Errorf("expected 10 rows on %v, got more", id)
 			}
 
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("reading results of query test data on %v: %w", id, err)
+			}
+
 			return nil
 		}()
 		if err != nil {
@@ -223,6 +227,10 @@ func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result an
 
 	if err := rows.Scan(result); err != nil {
 		return fmt.Errorf("scan row: %w", err)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read query results: %w", err)
 	}
 
 	return nil

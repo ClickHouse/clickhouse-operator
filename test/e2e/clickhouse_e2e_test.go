@@ -826,6 +826,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				response[shard] = sum
 			}
 
+			Expect(rows.Err()).ToNot(HaveOccurred())
+
 			return gcmp.Diff(response, map[string]int64{
 				"0": 20,
 				"1": 25,
