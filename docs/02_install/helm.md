@@ -1,14 +1,21 @@
-# Installation with Helm
+---
+slug: /clickhouse-operator/install/helm
+title: 'Install the ClickHouse Operator with Helm'
+keywords: ['kubernetes']
+description: 'This guide covers installing the ClickHouse Operator using Helm charts.'
+doc_type: 'guide'
+sidebar_label: 'Helm'
+---
 
 This guide covers installing the ClickHouse Operator using Helm charts.
 
-## Prerequisites
+## Prerequisites {#prerequisites}
 
 - Kubernetes cluster v1.28.0 or later
 - Helm v3.0 or later
 - kubectl configured to communicate with your cluster
 
-## Install Helm
+## Install Helm {#install-helm}
 
 If you don't have Helm installed:
 
@@ -22,14 +29,17 @@ Verify installation:
 helm version
 ```
 
-## Install the Operator
+## Install the Operator {#install-the-operator}
 
-**NOTE:**  By default Helm chart deploys ClickHouse Operator with webhooks enabled and requires cert-manager installed.
+:::note
+By default Helm chart deploys ClickHouse Operator with webhooks enabled and requires cert-manager installed.
+:::
+
 ```bash
 helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
 ```
 
-### From OCI Helm Repository
+### From OCI Helm repository {#from-oci-helm-repository}
 
 Install the latest release
 ```bash
@@ -46,7 +56,7 @@ Install a specific operator version
        --set-json="manager.container.tag=<operator version>
 ```
 
-### From Local Chart
+### From Local Chart {#from-local-chart}
 
 Clone the repository and install from the local chart:
 
@@ -56,5 +66,6 @@ cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
 
-### Configuration Options
-For advanced configuration options, refer to the [values.yaml](../../dist/chart/values.yaml) file in the Helm chart
+### Configuration options {#configuration-options}
+
+For advanced configuration options, refer to the [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) file in the Helm chart
