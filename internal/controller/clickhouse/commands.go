@@ -128,6 +128,10 @@ func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) 
 		databases[db.Name] = db
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to fetch all database rows on replica %s: %w", id, err)
+	}
+
 	return databases, nil
 }
 
@@ -277,6 +281,10 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 		replicatedTables = append(replicatedTables, fmt.Sprintf("`%s`.`%s`", dbName, tableName))
 	}
 
+	if err := rows.Err(); err != nil {
+		errs = append(errs, fmt.Errorf("fetch replicated table rows: %w", err))
+	}
+
 	for _, table := range replicatedTables {
 		log.Debug("syncing table replica", "table", table)
 
@@ -365,6 +373,13 @@ func (cmd *commander) CleanupDatabaseReplicas(
 		}
 
 		succeed++
+	}
+
+	if err := rows.Err(); err != nil {
+		if succeed > 0 {
+			return fmt.Errorf("some stale replicas were cleaned up (%d/%d) but failed to fetch all stale database replica rows: %w", succeed, total, err)
+		}
+		return fmt.Errorf("failed to fetch all stale database replica rows : %w", err)
 	}
 
 	if total != succeed {
