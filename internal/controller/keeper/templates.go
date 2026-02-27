@@ -77,9 +77,7 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 }
 
 func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBudget {
-	maxUnavailable := intstr.FromInt32(cr.Replicas() / 2)
-
-	return &policyv1.PodDisruptionBudget{
+	pdb := &policyv1.PodDisruptionBudget{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PodDisruptionBudget",
 			APIVersion: "v1",
@@ -93,7 +91,6 @@ func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
-			MaxUnavailable: &maxUnavailable,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					controllerutil.LabelAppKey: cr.SpecificName(),
@@ -101,6 +98,22 @@ func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 			},
 		},
 	}
+
+	switch {
+	case cr.Spec.PodDisruptionBudget != nil && cr.Spec.PodDisruptionBudget.MaxUnavailable != nil:
+		pdb.Spec.MaxUnavailable = cr.Spec.PodDisruptionBudget.MaxUnavailable
+	case cr.Spec.PodDisruptionBudget != nil && cr.Spec.PodDisruptionBudget.MinAvailable != nil:
+		pdb.Spec.MinAvailable = cr.Spec.PodDisruptionBudget.MinAvailable
+	default:
+		// Keeper uses quorum: in a 2F+1 cluster, up to F nodes can be down.
+		pdb.Spec.MaxUnavailable = new(intstr.FromInt32(cr.Replicas() / 2))
+	}
+
+	if cr.Spec.PodDisruptionBudget != nil && cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy != nil {
+		pdb.Spec.UnhealthyPodEvictionPolicy = cr.Spec.PodDisruptionBudget.UnhealthyPodEvictionPolicy
+	}
+
+	return pdb
 }
 
 type quorumConfig []serverConfig

@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -426,9 +427,20 @@ func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctr
 		return nil, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
-	pdb := templatePodDisruptionBudget(r.Cluster)
-	if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
-		return nil, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
+	if r.Cluster.Spec.PodDisruptionBudget != nil && r.Cluster.Spec.PodDisruptionBudget.Enabled != nil && !*r.Cluster.Spec.PodDisruptionBudget.Enabled {
+		if err := r.Delete(ctx, &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      r.Cluster.PodDisruptionBudgetName(),
+				Namespace: r.Cluster.Namespace,
+			},
+		}, v1.EventActionReconciling); err != nil {
+			return nil, fmt.Errorf("delete PodDisruptionBudget resource: %w", err)
+		}
+	} else {
+		pdb := templatePodDisruptionBudget(r.Cluster)
+		if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
+			return nil, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
+		}
 	}
 
 	configMap, err := templateQuorumConfig(r)

@@ -5,10 +5,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 type confMap map[any]any
@@ -129,5 +132,100 @@ var _ = Describe("ExtraConfig", func() {
 		Expect(config).ToNot(Equal(baseConfig), cmp.Diff(config, baseConfig))
 		//nolint:forcetypeassert
 		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["compress_logs"]).To(BeTrue())
+	})
+})
+
+var _ = Describe("templatePodDisruptionBudget", func() {
+	var cr *v1.KeeperCluster
+
+	BeforeEach(func() {
+		cr = &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](3),
+			},
+		}
+	})
+
+	It("should default to maxUnavailable=replicas/2 for 3-node cluster", func() {
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(1)) // 3/2 = 1
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
+	It("should default to maxUnavailable=replicas/2 for 5-node cluster", func() {
+		cr.Spec.Replicas = ptr.To[int32](5)
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(2)) // 5/2 = 2
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
+	It("should respect custom maxUnavailable", func() {
+		maxUnavailable := intstr.FromInt32(2)
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &maxUnavailable,
+		}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(2))
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
+	It("should respect custom minAvailable", func() {
+		minAvailable := intstr.FromInt32(2)
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MinAvailable: &minAvailable,
+		}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MinAvailable).NotTo(BeNil())
+		Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(2))
+		Expect(pdb.Spec.MaxUnavailable).To(BeNil())
+	})
+
+	It("should support percentage-based values", func() {
+		maxUnavailable := intstr.FromString("50%")
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			MaxUnavailable: &maxUnavailable,
+		}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.String()).To(Equal("50%"))
+	})
+
+	It("should set correct name, labels, and selector", func() {
+		cr.Spec.Labels = map[string]string{"env": "test"}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Name).To(Equal("test-keeper"))
+		Expect(pdb.Namespace).To(Equal("default"))
+		Expect(pdb.Labels).To(HaveKeyWithValue("env", "test"))
+		Expect(pdb.Spec.Selector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "test-keeper"))
+	})
+
+	It("should set unhealthyPodEvictionPolicy when specified", func() {
+		policy := policyv1.AlwaysAllow
+		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			UnhealthyPodEvictionPolicy: &policy,
+		}
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).NotTo(BeNil())
+		Expect(*pdb.Spec.UnhealthyPodEvictionPolicy).To(Equal(policyv1.AlwaysAllow))
+	})
+
+	It("should not set unhealthyPodEvictionPolicy when not specified", func() {
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).To(BeNil())
 	})
 })
