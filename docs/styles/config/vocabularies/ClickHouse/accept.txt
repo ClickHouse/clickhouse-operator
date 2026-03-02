@@ -4,6 +4,8 @@ CRDs
 namespace
 uncomment
 PVCs
+PDBs
+PDBPolicy
 Tolerations
 plaintext
 timeframe
