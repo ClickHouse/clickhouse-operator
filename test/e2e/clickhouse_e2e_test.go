@@ -368,14 +368,14 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 	Describe("default and management users works", Ordered, func() {
 		password := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
-		passwordSha := controllerutil.Sha256Hash([]byte(password))
+		passwordSHA := controllerutil.Sha256Hash([]byte(password))
 		secret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
 				Namespace: testNamespace,
 			},
 			Data: map[string][]byte{
-				"password": []byte(passwordSha),
+				"password": []byte(passwordSHA),
 			},
 		}
 		auth := clickhouse.Auth{
@@ -424,7 +424,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						},
 					},
 					ExtraUsersConfig: runtime.RawExtension{
-						Raw: []byte(fmt.Sprintf(`{"users": {"custom": {"password_sha256_hex": "%s"}}}`, passwordSha)),
+						Raw: []byte(fmt.Sprintf(`{"users": {"custom": {"password_sha256_hex": "%s"}}}`, passwordSHA)),
 					},
 				},
 			},
@@ -475,6 +475,26 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			ClickHouseRWChecks(ctx, cr, &checks, clickhouse.Auth{
 				Username: "custom",
 				Password: password,
+			})
+		})
+
+		It("should be accessible with sql user credentials", func(ctx context.Context) {
+			newPassword := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
+			By("creating sql user and granting permissions", func() {
+				chClient, err := testutil.NewClickHouseClient(ctx, config, cr, auth)
+				Expect(err).NotTo(HaveOccurred())
+
+				defer chClient.Close()
+
+				Expect(chClient.Exec(ctx, fmt.Sprintf(
+					"CREATE USER sql_test IDENTIFIED WITH sha256_password BY '%s'", newPassword),
+				)).To(Succeed())
+				Expect(chClient.Exec(ctx, "GRANT ALL ON *.* TO sql_test")).To(Succeed())
+			})
+
+			ClickHouseRWChecks(ctx, cr, &checks, clickhouse.Auth{
+				Username: "sql_test",
+				Password: newPassword,
 			})
 		})
 	})
