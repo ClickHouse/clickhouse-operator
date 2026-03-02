@@ -22,6 +22,7 @@ apiVersion: {{ $type.GVK.Group }}/{{ $type.GVK.Version }}
 kind: {{ $type.GVK.Kind }}
 ```
 {{- end }}
+{{- if $type.Members }}
 
 | Field | Type | Description | Required | Default |
 |-------|------|-------------|----------|---------|
@@ -30,18 +31,20 @@ kind: {{ $type.GVK.Kind }}
 | `{{ .Name }}` | {{ markdownRenderType .Type }} | {{ template "type_members" . }} | {{ template "validationRequired" .Validation }} | {{ markdownRenderDefault .Default }} |
 {{-   end }}
 {{- end }}
+{{- end }}
+{{- if $type.EnumValues }}
+
+| Field | Description |
+|-------|-------------|
+{{-   range $type.EnumValues }}
+| `{{ .Name }}` | {{ markdownRenderFieldDoc .Doc }} |
+{{-   end }}
+{{- end }}
 {{- if $type.References }}
 
 Appears in:
 {{-   range $type.SortedReferences }}
 - {{ markdownRenderTypeLink . }}
-{{-   end }}
-{{- end }}
-{{- if $type.EnumValues }}
-| Field | Description |
-|-------|-------------|
-{{-   range $type.EnumValues }}
-| `{{ .Name }}` | {{ markdownRenderFieldDoc .Doc }} |
 {{-   end }}
 {{- end }}
 {{- end }}

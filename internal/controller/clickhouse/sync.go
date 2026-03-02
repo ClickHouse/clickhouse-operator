@@ -196,9 +196,10 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		return nil, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
-	pdbDisabled := r.Cluster.Spec.PodDisruptionBudget != nil && r.Cluster.Spec.PodDisruptionBudget.Enabled != nil && !*r.Cluster.Spec.PodDisruptionBudget.Enabled
+	pdbIgnored := r.Cluster.Spec.PodDisruptionBudget.Ignored()
+	pdbEnabled := r.Cluster.Spec.PodDisruptionBudget.Enabled()
 
-	if !pdbDisabled {
+	if pdbEnabled {
 		for shard := range r.Cluster.Shards() {
 			pdb := templatePodDisruptionBudget(r.Cluster, shard)
 			if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
@@ -207,24 +208,26 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		}
 	}
 
-	var disruptionBudgets policyv1.PodDisruptionBudgetList
-	if err := r.GetClient().List(ctx, &disruptionBudgets,
-		ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
-		return nil, fmt.Errorf("list PodDisruptionBudgets: %w", err)
-	}
-
-	for _, pdb := range disruptionBudgets.Items {
-		shardID, err := strconv.Atoi(pdb.Labels[ctrlutil.LabelClickHouseShardID])
-		if err != nil {
-			log.Warn("failed to get shard ID from PodDisruptionBudget labels", "pdb", pdb.Name, "error", err)
-			continue
+	if !pdbIgnored {
+		var disruptionBudgets policyv1.PodDisruptionBudgetList
+		if err := r.GetClient().List(ctx, &disruptionBudgets,
+			ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
+			return nil, fmt.Errorf("list PodDisruptionBudgets: %w", err)
 		}
 
-		if pdbDisabled || shardID >= int(r.Cluster.Shards()) {
-			log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
+		for _, pdb := range disruptionBudgets.Items {
+			shardID, err := strconv.Atoi(pdb.Labels[ctrlutil.LabelClickHouseShardID])
+			if err != nil {
+				log.Warn("failed to get shard ID from PodDisruptionBudget labels", "pdb", pdb.Name, "error", err)
+				continue
+			}
 
-			if err := r.Delete(ctx, &pdb, v1.EventActionReconciling); err != nil {
-				return nil, fmt.Errorf("remove shard %d: %w", shardID, err)
+			if !pdbEnabled || shardID >= int(r.Cluster.Shards()) {
+				log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
+
+				if err := r.Delete(ctx, &pdb, v1.EventActionReconciling); err != nil {
+					return nil, fmt.Errorf("remove shard %d: %w", shardID, err)
+				}
 			}
 		}
 	}

@@ -97,6 +97,10 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
+	if err := obj.Spec.PodDisruptionBudget.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
 	volumeWarns, volumeErrs := validateVolumes(
 		obj.Spec.PodTemplate.Volumes,
 		obj.Spec.ContainerTemplate.VolumeMounts,

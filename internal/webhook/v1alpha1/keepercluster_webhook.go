@@ -82,6 +82,10 @@ func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) (admission.
 		errs  []error
 	)
 
+	if err := obj.Spec.PodDisruptionBudget.Validate(); err != nil {
+		errs = append(errs, err)
+	}
+
 	volumeWarns, volumeErrs := validateVolumes(
 		obj.Spec.PodTemplate.Volumes,
 		obj.Spec.ContainerTemplate.VolumeMounts,

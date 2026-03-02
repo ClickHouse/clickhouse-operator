@@ -68,15 +68,28 @@ type LoggerConfig struct {
 	Count int64 `json:"count,omitempty"`
 }
 
+// PDBPolicy controls whether PodDisruptionBudgets are created.
+// +kubebuilder:validation:Enum=Enabled;Disabled;Ignored
+type PDBPolicy string
+
+const (
+	// PDBPolicyEnabled enables PodDisruptionBudgets creation by the operator.
+	PDBPolicyEnabled PDBPolicy = "Enabled"
+	// PDBPolicyDisabled disables PodDisruptionBudgets, operator will delete resource with matching labels.
+	PDBPolicyDisabled PDBPolicy = "Disabled"
+	// PDBPolicyIgnored ignores PodDisruptionBudgets, operator will not create or delete any PDBs, existing PDBs will be left unchanged.
+	PDBPolicyIgnored PDBPolicy = "Ignored"
+)
+
 // PodDisruptionBudgetSpec configures the PDB created for the cluster.
 // Exactly one of MinAvailable or MaxUnavailable may be set.
 // When neither is set, the operator picks a safe default based on replica count.
 type PodDisruptionBudgetSpec struct {
-	// Enabled controls whether the operator creates PodDisruptionBudgets.
-	// Defaults to true when unset. Set to false to disable PDB creation (e.g. for dev environments).
+	// Policy controls whether the operator creates PodDisruptionBudgets.
+	// Defaults to "Enabled" when unset. Set it to "Disabled" to skip PDB creation (e.g. for development environments).
 	// +optional
-	// +kubebuilder:default:=true
-	Enabled *bool `json:"enabled,omitempty"`
+	// +kubebuilder:default:=Enabled
+	Policy PDBPolicy `json:"policy,omitempty"`
 
 	// MinAvailable is the minimum number of pods that must remain available during a disruption.
 	// +optional
@@ -91,6 +104,50 @@ type PodDisruptionBudgetSpec struct {
 	// Valid values are "IfReady" and "AlwaysAllow".
 	// +optional
 	UnhealthyPodEvictionPolicy *policyv1.UnhealthyPodEvictionPolicyType `json:"unhealthyPodEvictionPolicy,omitempty"`
+}
+
+// Enabled returns true if the PodDisruptionBudgets should be created.
+func (s *PodDisruptionBudgetSpec) Enabled() bool {
+	return s == nil || s.Policy == PDBPolicyEnabled
+}
+
+// Ignored returns true if the PodDisruptionBudgets should be ignored.
+func (s *PodDisruptionBudgetSpec) Ignored() bool {
+	return s != nil && s.Policy == PDBPolicyIgnored
+}
+
+// Validate validates the PodDisruptionBudgetSpec configuration.
+func (s *PodDisruptionBudgetSpec) Validate() error {
+	if s == nil {
+		return nil
+	}
+
+	if s.MinAvailable != nil && s.MaxUnavailable != nil {
+		return errors.New("only one of podDisruptionBudget.minAvailable or podDisruptionBudget.maxUnavailable can be set")
+	}
+
+	return nil
+}
+
+// ApplyOverrides applies the PodDisruptionBudgetSpec configuration to the given PodDisruptionBudgetSpec.
+func (s *PodDisruptionBudgetSpec) ApplyOverrides(pdb *policyv1.PodDisruptionBudgetSpec) {
+	if s == nil {
+		return
+	}
+
+	if s.MinAvailable != nil {
+		pdb.MaxUnavailable = nil
+		pdb.MinAvailable = s.MinAvailable
+	}
+
+	if s.MaxUnavailable != nil {
+		pdb.MinAvailable = nil
+		pdb.MaxUnavailable = s.MaxUnavailable
+	}
+
+	if s.UnhealthyPodEvictionPolicy != nil {
+		pdb.UnhealthyPodEvictionPolicy = s.UnhealthyPodEvictionPolicy
+	}
 }
 
 // PodTemplateSpec describes the pod configuration overrides for the cluster's pods.

@@ -280,6 +280,20 @@ Appears in:
 - [KeeperSettings](#keepersettings)
 
 
+## PDBPolicy
+
+PDBPolicy controls whether PodDisruptionBudgets are created.
+
+| Field | Description |
+|-------|-------------|
+| `Enabled` | PDBPolicyEnabled enables PodDisruptionBudgets creation by the operator.<br /> |
+| `Disabled` | PDBPolicyDisabled disables PodDisruptionBudgets, operator will delete resource with matching labels.<br /> |
+| `Ignored` | PDBPolicyIgnored ignores PodDisruptionBudgets, operator will not create or delete any PDBs, existing PDBs will be left unchanged.<br /> |
+
+Appears in:
+- [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
+
+
 ## PodDisruptionBudgetSpec
 
 PodDisruptionBudgetSpec configures the PDB created for the cluster.
@@ -288,7 +302,7 @@ When neither is set, the operator picks a safe default based on replica count.
 
 | Field | Type | Description | Required | Default |
 |-------|------|-------------|----------|---------|
-| `enabled` | boolean | Enabled controls whether the operator creates PodDisruptionBudgets.<br />Defaults to true when unset. Set to false to disable PDB creation (e.g. for dev environments). | false | true |
+| `policy` | [PDBPolicy](#pdbpolicy) | Policy controls whether the operator creates PodDisruptionBudgets.<br />Defaults to "Enabled" when unset. Set it to "Disabled" to skip PDB creation (e.g. for development environments). | false | Enabled |
 | `minAvailable` | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util) | MinAvailable is the minimum number of pods that must remain available during a disruption. | false |  |
 | `maxUnavailable` | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util) | MaxUnavailable is the maximum number of pods that can be unavailable during a disruption. | false |  |
 | `unhealthyPodEvictionPolicy` | [UnhealthyPodEvictionPolicyType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#unhealthypodevictionpolicytype-v1-policy) | UnhealthyPodEvictionPolicy defines the criteria for when unhealthy pods<br />should be considered for eviction.<br />Valid values are "IfReady" and "AlwaysAllow". | false |  |

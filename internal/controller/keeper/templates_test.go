@@ -159,7 +159,7 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 	})
 
 	It("should default to maxUnavailable=replicas/2 for 5-node cluster", func() {
-		cr.Spec.Replicas = ptr.To[int32](5)
+		cr.Spec.Replicas = new(int32(5))
 		pdb := templatePodDisruptionBudget(cr)
 
 		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
@@ -168,9 +168,8 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 	})
 
 	It("should respect custom maxUnavailable", func() {
-		maxUnavailable := intstr.FromInt32(2)
 		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
-			MaxUnavailable: &maxUnavailable,
+			MaxUnavailable: new(intstr.FromInt32(2)),
 		}
 		pdb := templatePodDisruptionBudget(cr)
 
@@ -180,9 +179,8 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 	})
 
 	It("should respect custom minAvailable", func() {
-		minAvailable := intstr.FromInt32(2)
 		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
-			MinAvailable: &minAvailable,
+			MinAvailable: new(intstr.FromInt32(2)),
 		}
 		pdb := templatePodDisruptionBudget(cr)
 
@@ -192,9 +190,8 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 	})
 
 	It("should support percentage-based values", func() {
-		maxUnavailable := intstr.FromString("50%")
 		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
-			MaxUnavailable: &maxUnavailable,
+			MaxUnavailable: new(intstr.FromString("50%")),
 		}
 		pdb := templatePodDisruptionBudget(cr)
 
@@ -213,9 +210,8 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 	})
 
 	It("should set unhealthyPodEvictionPolicy when specified", func() {
-		policy := policyv1.AlwaysAllow
 		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
-			UnhealthyPodEvictionPolicy: &policy,
+			UnhealthyPodEvictionPolicy: new(policyv1.AlwaysAllow),
 		}
 		pdb := templatePodDisruptionBudget(cr)
 
