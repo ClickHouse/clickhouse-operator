@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
@@ -220,6 +221,23 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			err := k8sClient.Update(ctx, &cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("cannot be removed"))
+		})
+
+		It("Should reject invalid PodDisruptionBudged", func(ctx context.Context) {
+			cluster := chv1.KeeperCluster{
+				ObjectMeta: meta,
+				Spec: chv1.KeeperClusterSpec{
+					PodDisruptionBudget: &chv1.PodDisruptionBudgetSpec{
+						Policy:         chv1.PDBPolicyEnabled,
+						MinAvailable:   new(intstr.FromInt32(1)),
+						MaxUnavailable: new(intstr.FromInt32(1)),
+					},
+				},
+			}
+
+			err := k8sClient.Create(ctx, &cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("only one of"))
 		})
 	})
 })

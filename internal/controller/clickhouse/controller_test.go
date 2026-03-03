@@ -299,4 +299,38 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsUser).To(BeEquivalentTo(7))
 		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.Privileged).To(BeEquivalentTo(true))
 	})
+
+	It("should ignore PDBs if Ignored", func(ctx context.Context) {
+		var updatedCR v1.ClickHouseCluster
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), &updatedCR)).To(Succeed())
+
+		updatedCR.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			Policy: v1.PDBPolicyIgnored,
+		}
+
+		Expect(suite.Client.Update(ctx, &updatedCR)).To(Succeed())
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
+		Expect(pdbs.Items).To(HaveLen(2))
+	})
+
+	It("should delete PDBs if Disabled", func(ctx context.Context) {
+		var updatedCR v1.ClickHouseCluster
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), &updatedCR)).To(Succeed())
+
+		updatedCR.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
+			Policy: v1.PDBPolicyDisabled,
+		}
+
+		Expect(suite.Client.Update(ctx, &updatedCR)).To(Succeed())
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
+		Expect(pdbs.Items).To(BeEmpty())
+	})
 })

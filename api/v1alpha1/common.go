@@ -108,7 +108,7 @@ type PodDisruptionBudgetSpec struct {
 
 // Enabled returns true if the PodDisruptionBudgets should be created.
 func (s *PodDisruptionBudgetSpec) Enabled() bool {
-	return s == nil || s.Policy == PDBPolicyEnabled
+	return s == nil || s.Policy == PDBPolicyEnabled || s.Policy == ""
 }
 
 // Ignored returns true if the PodDisruptionBudgets should be ignored.
