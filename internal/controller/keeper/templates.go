@@ -234,10 +234,10 @@ func getStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
-	config, err := generateConfigForSingleReplica(cr, extraConfig, replicaID)
+func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, id v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
+	config, err := generateConfigForSingleReplica(cr, extraConfig, id)
 	if err != nil {
-		return nil, fmt.Errorf("generate configmap for replica %q: %w", replicaID, err)
+		return nil, fmt.Errorf("generate configmap for replica %q: %w", id, err)
 	}
 
 	return &corev1.ConfigMap{
@@ -246,9 +246,9 @@ func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        cr.ConfigMapNameByReplicaID(replicaID),
+			Name:        cr.ConfigMapNameByReplicaID(id),
 			Namespace:   cr.Namespace,
-			Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID)),
+			Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, id)),
 			Annotations: cr.Spec.Annotations,
 		},
 		Data: map[string]string{
@@ -257,180 +257,13 @@ func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, replica
 	}, nil
 }
 
-func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
-	volumes, volumeMounts, err := buildVolumes(cr, replicaID)
+func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
+	podSpec, err := templatePodSpec(cr, id)
 	if err != nil {
-		return nil, fmt.Errorf("build volumes for StatefulSet: %w", err)
+		return nil, fmt.Errorf("template pod spec: %w", err)
 	}
 
-	probeAction := corev1.ExecAction{
-		Command: []string{"/bin/bash", "-c",
-			fmt.Sprintf("wget -qO- http://%s/ready | grep -o '\"status\":\"ok\"'",
-				net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTPControl)),
-			),
-		},
-	}
-
-	livenessProbe := controller.DefaultLivenessProbeSettings
-	livenessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &probeAction,
-	}
-
-	readinessProbe := controller.DefaultReadinessProbeSettings
-	readinessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &probeAction,
-	}
-
-	keeperContainer := corev1.Container{
-		Name:            ContainerName,
-		Image:           cr.Spec.ContainerTemplate.Image.String(),
-		ImagePullPolicy: cr.Spec.ContainerTemplate.ImagePullPolicy,
-		Resources:       cr.Spec.ContainerTemplate.Resources,
-		Env: append([]corev1.EnvVar{
-			{
-				Name:  "KEEPER_CONFIG",
-				Value: QuorumConfigPath + QuorumConfigFileName,
-			},
-		}, cr.Spec.ContainerTemplate.Env...),
-		Ports: []corev1.ContainerPort{
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "raft-ipc",
-				ContainerPort: PortInterserver,
-			},
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "prometheus",
-				ContainerPort: PortPrometheusScrape,
-			},
-		},
-		VolumeMounts:             volumeMounts,
-		LivenessProbe:            &livenessProbe,
-		ReadinessProbe:           &readinessProbe,
-		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
-		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-		// Default capabilities given to ClickHouse keeper.
-		// For more information, see https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/policy/container-capabilities/
-		// IPC_LOCK
-		// •  Lock memory (mlock(2), mlockall(2), mmap(2), shmctl(2));
-		// •  Allocate memory using huge pages (memfd_create(2), mmap(2), shmctl(2)).
-		// ^^ Needed for better performance.
-		//
-		// SYS_PTRACE
-		// •  Trace arbitrary processes using ptrace(2);
-		// •  apply get_robust_list(2) to arbitrary processes;
-		// •  transfer data to or from the memory of arbitrary processes using process_vm_readv(2) and process_vm_writev(2);
-		// •  inspect processes using kcmp(2).
-		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
-		//
-		// PERFMON
-		// 	 Employ various performance-monitoring mechanisms, including:
-		// •  call perf_event_open(2);
-		// •  employ various BPF operations that have performance implications.
-		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
-			},
-		},
-	}
-
-	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
-		keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper",
-			ContainerPort: PortNative,
-		})
-	}
-
-	if cr.Spec.Settings.TLS.Enabled {
-		keeperContainer.Ports = append(keeperContainer.Ports, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper-secure",
-			ContainerPort: PortNativeSecure,
-		})
-	}
-
-	if cr.Spec.ContainerTemplate.SecurityContext != nil {
-		securityContext := cr.Spec.ContainerTemplate.SecurityContext.DeepCopy()
-		if err := controllerutil.ApplyDefault(securityContext, *keeperContainer.SecurityContext); err != nil {
-			return nil, fmt.Errorf("apply container security context overrides: %w", err)
-		}
-
-		keeperContainer.SecurityContext = securityContext
-	}
-
-	keeperPodSpec := corev1.PodSpec{
-		TerminationGracePeriodSeconds: cr.Spec.PodTemplate.TerminationGracePeriodSeconds,
-		TopologySpreadConstraints:     cr.Spec.PodTemplate.TopologySpreadConstraints,
-		ImagePullSecrets:              cr.Spec.PodTemplate.ImagePullSecrets,
-		NodeSelector:                  cr.Spec.PodTemplate.NodeSelector,
-		Affinity:                      cr.Spec.PodTemplate.Affinity,
-		Tolerations:                   cr.Spec.PodTemplate.Tolerations,
-		SchedulerName:                 cr.Spec.PodTemplate.SchedulerName,
-		ServiceAccountName:            cr.Spec.PodTemplate.ServiceAccountName,
-		RestartPolicy:                 corev1.RestartPolicyAlways,
-		DNSPolicy:                     corev1.DNSClusterFirst,
-		Volumes:                       volumes,
-		SecurityContext:               cr.Spec.PodTemplate.SecurityContext,
-		Containers: []corev1.Container{
-			keeperContainer,
-		},
-	}
-
-	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
-		if keeperPodSpec.Affinity == nil {
-			keeperPodSpec.Affinity = &corev1.Affinity{}
-		}
-
-		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
-			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-		}
-
-		keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
-			TopologyKey: *cr.Spec.PodTemplate.TopologyZoneKey,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:  cr.SpecificName(),
-					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
-				},
-			},
-		})
-
-		keeperPodSpec.TopologySpreadConstraints = append(keeperPodSpec.TopologySpreadConstraints, corev1.TopologySpreadConstraint{
-			MaxSkew:           1,
-			TopologyKey:       *cr.Spec.PodTemplate.TopologyZoneKey,
-			WhenUnsatisfiable: corev1.DoNotSchedule,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:  cr.SpecificName(),
-					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
-				},
-			},
-		})
-	}
-
-	if cr.Spec.PodTemplate.NodeHostnameKey != nil && *cr.Spec.PodTemplate.NodeHostnameKey != "" {
-		if keeperPodSpec.Affinity == nil {
-			keeperPodSpec.Affinity = &corev1.Affinity{}
-		}
-
-		if keeperPodSpec.Affinity.PodAntiAffinity == nil {
-			keeperPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-		}
-
-		keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(keeperPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
-			TopologyKey: *cr.Spec.PodTemplate.NodeHostnameKey,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:  cr.SpecificName(),
-					controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
-				},
-			},
-		})
-	}
-
-	resourceLabels := controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, replicaID), map[string]string{
+	resourceLabels := controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, id), map[string]string{
 		controllerutil.LabelRoleKey:        controllerutil.LabelKeeperValue,
 		controllerutil.LabelAppK8sKey:      controllerutil.LabelKeeperValue,
 		controllerutil.LabelInstanceK8sKey: cr.SpecificName(),
@@ -438,7 +271,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 
 	spec := appsv1.StatefulSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: replicaLabels(cr, replicaID),
+			MatchLabels: replicaLabels(cr, id),
 		},
 		ServiceName:         cr.HeadlessServiceName(),
 		PodManagementPolicy: appsv1.ParallelPodManagement,
@@ -455,7 +288,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
-			Spec: keeperPodSpec,
+			Spec: podSpec,
 		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
 	}
@@ -467,7 +300,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 				Labels:      resourceLabels,
 				Annotations: cr.Spec.Annotations,
 			},
-			Spec: *cr.Spec.DataVolumeClaimSpec,
+			Spec: *cr.Spec.DataVolumeClaimSpec.DeepCopy(),
 		}}
 	}
 
@@ -477,7 +310,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) (*a
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.StatefulSetNameByReplicaID(replicaID),
+			Name:      cr.StatefulSetNameByReplicaID(id),
 			Namespace: cr.Namespace,
 			Labels:    resourceLabels,
 			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
@@ -494,7 +327,7 @@ func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]strin
 	return labels
 }
 
-func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, replicaID v1.KeeperReplicaID) (string, error) {
+func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, id v1.KeeperReplicaID) (string, error) {
 	config := config{
 		ListenHost: "0.0.0.0",
 		Path:       internal.KeeperDataPath,
@@ -502,7 +335,7 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),
 		KeeperServer: keeperServer{
 			TCPPort:             PortNative,
-			ServerID:            strconv.FormatInt(int64(replicaID), 10),
+			ServerID:            strconv.FormatInt(int64(id), 10),
 			StoragePath:         internal.KeeperDataPath,
 			DigestEnabled:       true,
 			LogStoragePath:      StorageLogPath,
@@ -559,7 +392,204 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 	return string(yamlConfig), nil
 }
 
-func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
+func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpec, error) {
+	volumes, volumeMounts, err := buildVolumes(cr, id)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("build volumes: %w", err)
+	}
+
+	container, err := templateContainer(cr, volumeMounts)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("template container: %w", err)
+	}
+
+	podTemplate := cr.Spec.PodTemplate.DeepCopy()
+	podSpec := corev1.PodSpec{
+		TerminationGracePeriodSeconds: podTemplate.TerminationGracePeriodSeconds,
+		TopologySpreadConstraints:     podTemplate.TopologySpreadConstraints,
+		ImagePullSecrets:              podTemplate.ImagePullSecrets,
+		NodeSelector:                  podTemplate.NodeSelector,
+		Affinity:                      podTemplate.Affinity,
+		Tolerations:                   podTemplate.Tolerations,
+		SchedulerName:                 podTemplate.SchedulerName,
+		ServiceAccountName:            podTemplate.ServiceAccountName,
+		SecurityContext:               podTemplate.SecurityContext,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		DNSPolicy:                     corev1.DNSClusterFirst,
+		Volumes:                       volumes,
+		Containers: []corev1.Container{
+			container,
+		},
+	}
+
+	if podTemplate.TopologyZoneKey != nil && *podTemplate.TopologyZoneKey != "" {
+		if podSpec.Affinity == nil {
+			podSpec.Affinity = &corev1.Affinity{}
+		}
+
+		if podSpec.Affinity.PodAntiAffinity == nil {
+			podSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+			podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+			corev1.WeightedPodAffinityTerm{
+				Weight: MaximalAffinityWeight,
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					TopologyKey: *podTemplate.TopologyZoneKey,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							controllerutil.LabelAppKey:  cr.SpecificName(),
+							controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+						},
+					},
+				},
+			})
+
+		podSpec.TopologySpreadConstraints = append(
+			podSpec.TopologySpreadConstraints,
+			corev1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       *podTemplate.TopologyZoneKey,
+				WhenUnsatisfiable: corev1.DoNotSchedule,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						controllerutil.LabelAppKey:  cr.SpecificName(),
+						controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+					},
+				},
+			})
+	}
+
+	if podTemplate.NodeHostnameKey != nil && *podTemplate.NodeHostnameKey != "" {
+		if podSpec.Affinity == nil {
+			podSpec.Affinity = &corev1.Affinity{}
+		}
+
+		if podSpec.Affinity.PodAntiAffinity == nil {
+			podSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
+			podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+			corev1.PodAffinityTerm{
+				TopologyKey: *podTemplate.NodeHostnameKey,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						controllerutil.LabelAppKey:  cr.SpecificName(),
+						controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+					},
+				},
+			})
+	}
+
+	return podSpec, nil
+}
+
+func templateContainer(cr *v1.KeeperCluster, volumeMounts []corev1.VolumeMount) (corev1.Container, error) {
+	containerTemplate := cr.Spec.ContainerTemplate.DeepCopy()
+
+	probeAction := corev1.ExecAction{
+		Command: []string{"/bin/bash", "-c",
+			fmt.Sprintf("wget -qO- http://%s/ready | grep -o '\"status\":\"ok\"'",
+				net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTPControl)),
+			),
+		},
+	}
+
+	livenessProbe := controller.DefaultLivenessProbeSettings
+	livenessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &probeAction,
+	}
+
+	readinessProbe := controller.DefaultReadinessProbeSettings
+	readinessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &probeAction,
+	}
+
+	container := corev1.Container{
+		Name:            ContainerName,
+		Image:           containerTemplate.Image.String(),
+		ImagePullPolicy: containerTemplate.ImagePullPolicy,
+		Resources:       containerTemplate.Resources,
+		Env: append([]corev1.EnvVar{
+			{
+				Name:  "KEEPER_CONFIG",
+				Value: QuorumConfigPath + QuorumConfigFileName,
+			},
+		}, containerTemplate.Env...),
+		Ports: []corev1.ContainerPort{
+			{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "raft-ipc",
+				ContainerPort: PortInterserver,
+			},
+			{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "prometheus",
+				ContainerPort: PortPrometheusScrape,
+			},
+		},
+		VolumeMounts:             volumeMounts,
+		LivenessProbe:            &livenessProbe,
+		ReadinessProbe:           &readinessProbe,
+		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
+		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		// Default capabilities given to ClickHouse keeper.
+		// For more information, see https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/policy/container-capabilities/
+		// IPC_LOCK
+		// •  Lock memory (mlock(2), mlockall(2), mmap(2), shmctl(2));
+		// •  Allocate memory using huge pages (memfd_create(2), mmap(2), shmctl(2)).
+		// ^^ Needed for better performance.
+		//
+		// SYS_PTRACE
+		// •  Trace arbitrary processes using ptrace(2);
+		// •  apply get_robust_list(2) to arbitrary processes;
+		// •  transfer data to or from the memory of arbitrary processes using process_vm_readv(2) and process_vm_writev(2);
+		// •  inspect processes using kcmp(2).
+		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
+		//
+		// PERFMON
+		// 	 Employ various performance-monitoring mechanisms, including:
+		// •  call perf_event_open(2);
+		// •  employ various BPF operations that have performance implications.
+		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+			},
+		},
+	}
+
+	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          "keeper",
+			ContainerPort: PortNative,
+		})
+	}
+
+	if cr.Spec.Settings.TLS.Enabled {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          "keeper-secure",
+			ContainerPort: PortNativeSecure,
+		})
+	}
+
+	if containerTemplate.SecurityContext != nil {
+		securityContext := containerTemplate.SecurityContext
+		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
+			return corev1.Container{}, fmt.Errorf("apply container security context overrides: %w", err)
+		}
+
+		container.SecurityContext = securityContext
+	}
+
+	return container, nil
+}
+
+func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      internal.QuorumConfigVolumeName,
@@ -612,7 +642,7 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					DefaultMode: &defaultConfigMapMode,
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.ConfigMapNameByReplicaID(replicaID),
+						Name: cr.ConfigMapNameByReplicaID(id),
 					},
 				},
 			},
@@ -642,10 +672,15 @@ func buildVolumes(cr *v1.KeeperCluster, replicaID v1.KeeperReplicaID) ([]corev1.
 		})
 	}
 
-	volumes, volumeMounts, err := controller.ProjectVolumes(
-		append(volumes, cr.Spec.PodTemplate.Volumes...),
-		append(volumeMounts, cr.Spec.ContainerTemplate.VolumeMounts...),
-	)
+	for _, volume := range cr.Spec.PodTemplate.Volumes {
+		volumes = append(volumes, *volume.DeepCopy())
+	}
+
+	for _, volumeMount := range cr.Spec.ContainerTemplate.VolumeMounts {
+		volumeMounts = append(volumeMounts, *volumeMount.DeepCopy())
+	}
+
+	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create projected volumes: %w", err)
 	}

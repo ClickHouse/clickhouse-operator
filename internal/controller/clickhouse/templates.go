@@ -200,239 +200,9 @@ func templateConfigMap(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*cor
 }
 
 func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*appsv1.StatefulSet, error) {
-	volumes, volumeMounts, err := buildVolumes(r, id)
+	podSpec, err := templatePodSpec(r, id)
 	if err != nil {
-		return nil, fmt.Errorf("build volumes: %w", err)
-	}
-
-	protocols := buildProtocols(r.Cluster)
-
-	var probeCommand []string
-	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
-		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
-			"wget -qO- http://%s | grep -o Ok.",
-			net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTP)),
-		)}
-	} else {
-		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
-			"wget --ca-certificate=%s -qO- https://%s | grep -o Ok.",
-			path.Join(TLSConfigPath, CABundleFilename),
-			net.JoinHostPort(r.Cluster.HostnameByID(id), strconv.Itoa(PortHTTPSecure)),
-		)}
-	}
-
-	livenessProbe := controller.DefaultLivenessProbeSettings
-	livenessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &corev1.ExecAction{
-			Command: probeCommand,
-		},
-	}
-
-	readinessProbe := controller.DefaultReadinessProbeSettings
-	readinessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &corev1.ExecAction{
-			Command: probeCommand,
-		},
-	}
-
-	container := corev1.Container{
-		Name:            ContainerName,
-		Image:           r.Cluster.Spec.ContainerTemplate.Image.String(),
-		ImagePullPolicy: r.Cluster.Spec.ContainerTemplate.ImagePullPolicy,
-		Resources:       r.Cluster.Spec.ContainerTemplate.Resources,
-		Env: append([]corev1.EnvVar{
-			{
-				Name:  "CLICKHOUSE_CONFIG",
-				Value: path.Join(ConfigPath, ConfigFileName),
-			},
-			{
-				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
-				Value: "1",
-			},
-		}, r.Cluster.Spec.ContainerTemplate.Env...),
-		Ports: []corev1.ContainerPort{
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "prometheus",
-				ContainerPort: PortPrometheusScrape,
-			},
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "interserver",
-				ContainerPort: PortInterserver,
-			},
-		},
-		VolumeMounts:             volumeMounts,
-		LivenessProbe:            &livenessProbe,
-		ReadinessProbe:           &readinessProbe,
-		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
-		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
-			},
-		},
-	}
-
-	for _, secret := range secretsToEnvMapping {
-		container.Env = append(container.Env, corev1.EnvVar{
-			Name: secret.Env,
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: r.Cluster.SecretName(),
-					},
-					Key: secret.Key,
-				},
-			},
-		})
-	}
-
-	container.Ports = make([]corev1.ContainerPort, 0, len(protocols))
-	for name, protocol := range protocols {
-		if protocol.Port == 0 {
-			continue
-		}
-
-		container.Ports = append(container.Ports, corev1.ContainerPort{
-			Protocol:      corev1.ProtocolTCP,
-			Name:          name,
-			ContainerPort: int32(protocol.Port),
-		})
-	}
-
-	controllerutil.SortKey(container.Ports, func(port corev1.ContainerPort) string {
-		return port.Name
-	})
-
-	if r.Cluster.Spec.ContainerTemplate.SecurityContext != nil {
-		securityContext := r.Cluster.Spec.ContainerTemplate.SecurityContext.DeepCopy()
-		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
-			return nil, fmt.Errorf("apply container security context overrides: %w", err)
-		}
-
-		container.SecurityContext = securityContext
-	}
-
-	if r.Cluster.Spec.Settings.DefaultUserPassword != nil {
-		var (
-			secretRef    *corev1.SecretKeySelector
-			configMapRef *corev1.ConfigMapKeySelector
-		)
-
-		if r.Cluster.Spec.Settings.DefaultUserPassword.Secret != nil {
-			secretRef = &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: r.Cluster.Spec.Settings.DefaultUserPassword.Secret.Name,
-				},
-				Key: r.Cluster.Spec.Settings.DefaultUserPassword.Secret.Key,
-			}
-		}
-
-		if r.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap != nil {
-			configMapRef = &corev1.ConfigMapKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{
-					Name: r.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap.Name,
-				},
-				Key: r.Cluster.Spec.Settings.DefaultUserPassword.ConfigMap.Key,
-			}
-		}
-
-		container.Env = append(container.Env, corev1.EnvVar{
-			Name: EnvDefaultUserPassword,
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef:    secretRef,
-				ConfigMapKeyRef: configMapRef,
-			},
-		})
-	}
-
-	serverPodSpec := corev1.PodSpec{
-		TerminationGracePeriodSeconds: r.Cluster.Spec.PodTemplate.TerminationGracePeriodSeconds,
-		TopologySpreadConstraints:     r.Cluster.Spec.PodTemplate.TopologySpreadConstraints,
-		ImagePullSecrets:              r.Cluster.Spec.PodTemplate.ImagePullSecrets,
-		NodeSelector:                  r.Cluster.Spec.PodTemplate.NodeSelector,
-		Affinity:                      r.Cluster.Spec.PodTemplate.Affinity,
-		Tolerations:                   r.Cluster.Spec.PodTemplate.Tolerations,
-		SchedulerName:                 r.Cluster.Spec.PodTemplate.SchedulerName,
-		ServiceAccountName:            r.Cluster.Spec.PodTemplate.ServiceAccountName,
-		RestartPolicy:                 corev1.RestartPolicyAlways,
-		DNSPolicy:                     corev1.DNSClusterFirst,
-		Volumes:                       volumes,
-		SecurityContext:               r.Cluster.Spec.PodTemplate.SecurityContext,
-		Containers: []corev1.Container{
-			container,
-		},
-	}
-
-	if r.Cluster.Spec.PodTemplate.TopologyZoneKey != nil && *r.Cluster.Spec.PodTemplate.TopologyZoneKey != "" {
-		if serverPodSpec.Affinity == nil {
-			serverPodSpec.Affinity = &corev1.Affinity{}
-		}
-
-		if serverPodSpec.Affinity.PodAntiAffinity == nil {
-			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-		}
-
-		if serverPodSpec.Affinity.PodAffinity == nil {
-			serverPodSpec.Affinity.PodAffinity = &corev1.PodAffinity{}
-		}
-
-		shardID := strconv.Itoa(int(id.ShardID))
-		serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
-			TopologyKey: *r.Cluster.Spec.PodTemplate.TopologyZoneKey,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:            r.Cluster.SpecificName(),
-					controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
-					controllerutil.LabelClickHouseShardID: shardID,
-				},
-			},
-		})
-		serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution, corev1.WeightedPodAffinityTerm{
-			PodAffinityTerm: corev1.PodAffinityTerm{
-				TopologyKey: *r.Cluster.Spec.PodTemplate.TopologyZoneKey,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						controllerutil.LabelAppKey:  r.keeper.SpecificName(),
-						controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
-					},
-				},
-			},
-			Weight: 1,
-		})
-		serverPodSpec.TopologySpreadConstraints = append(serverPodSpec.TopologySpreadConstraints, corev1.TopologySpreadConstraint{
-			MaxSkew:           1,
-			TopologyKey:       *r.Cluster.Spec.PodTemplate.TopologyZoneKey,
-			WhenUnsatisfiable: corev1.DoNotSchedule,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:            r.Cluster.SpecificName(),
-					controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
-					controllerutil.LabelClickHouseShardID: shardID,
-				},
-			},
-		})
-	}
-
-	if r.Cluster.Spec.PodTemplate.NodeHostnameKey != nil && *r.Cluster.Spec.PodTemplate.NodeHostnameKey != "" {
-		if serverPodSpec.Affinity == nil {
-			serverPodSpec.Affinity = &corev1.Affinity{}
-		}
-
-		if serverPodSpec.Affinity.PodAntiAffinity == nil {
-			serverPodSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-		}
-
-		serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(serverPodSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, corev1.PodAffinityTerm{
-			TopologyKey: *r.Cluster.Spec.PodTemplate.NodeHostnameKey,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
-					controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
-				},
-			},
-		})
+		return nil, fmt.Errorf("template pod spec: %w", err)
 	}
 
 	resourceLabels := controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
@@ -463,7 +233,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},
-			Spec: serverPodSpec,
+			Spec: podSpec,
 		},
 		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
 	}
@@ -475,7 +245,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 				Labels:      resourceLabels,
 				Annotations: r.Cluster.Spec.Annotations,
 			},
-			Spec: *r.Cluster.Spec.DataVolumeClaimSpec,
+			Spec: *r.Cluster.Spec.DataVolumeClaimSpec.DeepCopy(),
 		}}
 	}
 
@@ -512,6 +282,269 @@ func generateConfigForSingleReplica(r *clickhouseReconciler, id v1.ClickHouseRep
 	}
 
 	return configFiles, nil
+}
+
+func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1.PodSpec, error) {
+	cr := r.Cluster
+
+	volumes, volumeMounts, err := buildVolumes(r, id)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("build volumes: %w", err)
+	}
+
+	container, err := templateContainer(cr, id, volumeMounts)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("template container: %w", err)
+	}
+
+	podTemplate := cr.Spec.PodTemplate.DeepCopy()
+	podSpec := corev1.PodSpec{
+		TerminationGracePeriodSeconds: podTemplate.TerminationGracePeriodSeconds,
+		TopologySpreadConstraints:     podTemplate.TopologySpreadConstraints,
+		ImagePullSecrets:              podTemplate.ImagePullSecrets,
+		NodeSelector:                  podTemplate.NodeSelector,
+		Affinity:                      podTemplate.Affinity,
+		Tolerations:                   podTemplate.Tolerations,
+		SchedulerName:                 podTemplate.SchedulerName,
+		ServiceAccountName:            podTemplate.ServiceAccountName,
+		SecurityContext:               podTemplate.SecurityContext,
+		RestartPolicy:                 corev1.RestartPolicyAlways,
+		DNSPolicy:                     corev1.DNSClusterFirst,
+		Volumes:                       volumes,
+		Containers: []corev1.Container{
+			container,
+		},
+	}
+
+	if podTemplate.TopologyZoneKey != nil && *podTemplate.TopologyZoneKey != "" {
+		if podSpec.Affinity == nil {
+			podSpec.Affinity = &corev1.Affinity{}
+		}
+
+		if podSpec.Affinity.PodAntiAffinity == nil {
+			podSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		if podSpec.Affinity.PodAffinity == nil {
+			podSpec.Affinity.PodAffinity = &corev1.PodAffinity{}
+		}
+
+		shardID := strconv.Itoa(int(id.ShardID))
+		podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+			podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+			corev1.WeightedPodAffinityTerm{
+				Weight: MaximalAffinityWeight,
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					TopologyKey: *podTemplate.TopologyZoneKey,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							controllerutil.LabelAppKey:            cr.SpecificName(),
+							controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+							controllerutil.LabelClickHouseShardID: shardID,
+						},
+					},
+				},
+			})
+		podSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+			podSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+			corev1.WeightedPodAffinityTerm{
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					TopologyKey: *podTemplate.TopologyZoneKey,
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							controllerutil.LabelAppKey:  r.keeper.SpecificName(),
+							controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+						},
+					},
+				},
+				Weight: 1,
+			})
+		podSpec.TopologySpreadConstraints = append(
+			podSpec.TopologySpreadConstraints,
+			corev1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       *podTemplate.TopologyZoneKey,
+				WhenUnsatisfiable: corev1.DoNotSchedule,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						controllerutil.LabelAppKey:            cr.SpecificName(),
+						controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+						controllerutil.LabelClickHouseShardID: shardID,
+					},
+				},
+			})
+	}
+
+	if podTemplate.NodeHostnameKey != nil && *podTemplate.NodeHostnameKey != "" {
+		if podSpec.Affinity == nil {
+			podSpec.Affinity = &corev1.Affinity{}
+		}
+
+		if podSpec.Affinity.PodAntiAffinity == nil {
+			podSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+		}
+
+		podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
+			podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+			corev1.PodAffinityTerm{
+				TopologyKey: *podTemplate.NodeHostnameKey,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						controllerutil.LabelAppKey:  cr.SpecificName(),
+						controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+					},
+				},
+			})
+	}
+
+	return podSpec, nil
+}
+
+func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volumeMounts []corev1.VolumeMount) (corev1.Container, error) {
+	containerTemplate := cr.Spec.ContainerTemplate.DeepCopy()
+	protocols := buildProtocols(cr)
+
+	var probeCommand []string
+	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
+		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
+			"wget -qO- http://%s | grep -o Ok.",
+			net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTP)),
+		)}
+	} else {
+		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
+			"wget --ca-certificate=%s -qO- https://%s | grep -o Ok.",
+			path.Join(TLSConfigPath, CABundleFilename),
+			net.JoinHostPort(cr.HostnameByID(id), strconv.Itoa(PortHTTPSecure)),
+		)}
+	}
+
+	livenessProbe := controller.DefaultLivenessProbeSettings
+	livenessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &corev1.ExecAction{
+			Command: probeCommand,
+		},
+	}
+
+	readinessProbe := controller.DefaultReadinessProbeSettings
+	readinessProbe.ProbeHandler = corev1.ProbeHandler{
+		Exec: &corev1.ExecAction{
+			Command: probeCommand,
+		},
+	}
+
+	container := corev1.Container{
+		Name:            ContainerName,
+		Image:           containerTemplate.Image.String(),
+		ImagePullPolicy: containerTemplate.ImagePullPolicy,
+		Resources:       containerTemplate.Resources,
+		Env: append([]corev1.EnvVar{
+			{
+				Name:  "CLICKHOUSE_CONFIG",
+				Value: path.Join(ConfigPath, ConfigFileName),
+			},
+			{
+				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
+				Value: "1",
+			},
+		}, containerTemplate.Env...),
+		Ports: []corev1.ContainerPort{
+			{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "prometheus",
+				ContainerPort: PortPrometheusScrape,
+			},
+			{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "interserver",
+				ContainerPort: PortInterserver,
+			},
+		},
+		VolumeMounts:             volumeMounts,
+		LivenessProbe:            &livenessProbe,
+		ReadinessProbe:           &readinessProbe,
+		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
+		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		SecurityContext: &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+			},
+		},
+	}
+
+	for _, secret := range secretsToEnvMapping {
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: secret.Env,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: cr.SecretName(),
+					},
+					Key: secret.Key,
+				},
+			},
+		})
+	}
+
+	container.Ports = make([]corev1.ContainerPort, 0, len(protocols))
+	for name, protocol := range protocols {
+		if protocol.Port == 0 {
+			continue
+		}
+
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          name,
+			ContainerPort: int32(protocol.Port),
+		})
+	}
+
+	controllerutil.SortKey(container.Ports, func(port corev1.ContainerPort) string {
+		return port.Name
+	})
+
+	if containerTemplate.SecurityContext != nil {
+		securityContext := containerTemplate.SecurityContext
+		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
+			return corev1.Container{}, fmt.Errorf("apply container security context overrides: %w", err)
+		}
+
+		container.SecurityContext = securityContext
+	}
+
+	if cr.Spec.Settings.DefaultUserPassword != nil {
+		var (
+			secretRef    *corev1.SecretKeySelector
+			configMapRef *corev1.ConfigMapKeySelector
+		)
+
+		if cr.Spec.Settings.DefaultUserPassword.Secret != nil {
+			secretRef = &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: cr.Spec.Settings.DefaultUserPassword.Secret.Name,
+				},
+				Key: cr.Spec.Settings.DefaultUserPassword.Secret.Key,
+			}
+		}
+
+		if cr.Spec.Settings.DefaultUserPassword.ConfigMap != nil {
+			configMapRef = &corev1.ConfigMapKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: cr.Spec.Settings.DefaultUserPassword.ConfigMap.Name,
+				},
+				Key: cr.Spec.Settings.DefaultUserPassword.ConfigMap.Key,
+			}
+		}
+
+		container.Env = append(container.Env, corev1.EnvVar{
+			Name: EnvDefaultUserPassword,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef:    secretRef,
+				ConfigMapKeyRef: configMapRef,
+			},
+		})
+	}
+
+	return container, nil
 }
 
 type protocol struct {
@@ -681,8 +714,13 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 		})
 	}
 
-	volumes = append(volumes, r.Cluster.Spec.PodTemplate.Volumes...)
-	volumeMounts = append(volumeMounts, r.Cluster.Spec.ContainerTemplate.VolumeMounts...)
+	for _, volume := range r.Cluster.Spec.PodTemplate.Volumes {
+		volumes = append(volumes, *volume.DeepCopy())
+	}
+
+	for _, volumeMount := range r.Cluster.Spec.ContainerTemplate.VolumeMounts {
+		volumeMounts = append(volumeMounts, *volumeMount.DeepCopy())
+	}
 
 	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
 	if err != nil {

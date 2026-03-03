@@ -13,16 +13,17 @@ import (
 	. "github.com/onsi/gomega"    //nolint:staticcheck
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-
-	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/randfill"
+
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // TestSuit encapsulates the testing environment and utilities.
@@ -166,4 +167,31 @@ func AssertEvents(events chan string, expected map[string]int) {
 		}
 	}()
 	ExpectWithOffset(1, recordedEvents).To(BeEquivalentTo(expected))
+}
+
+// NewSpecFiller creates a new randfill.Filler from go-fuzz data,
+// with custom functions to handle specific fields that require special handling.
+func NewSpecFiller(data []byte) *randfill.Filler {
+	return randfill.NewFromGoFuzz(data).NilChance(0.3).NumElements(0, 3).Funcs(
+		// runtime.RawExtension contains a runtime.Object interface that randfill cannot fill.
+		func(r *k8sruntime.RawExtension, c randfill.Continue) {
+			if c.Bool() {
+				r.Raw = []byte(`{"key":"value"}`)
+			}
+		},
+		// DataSource contains a TypedObjectReference with interface-like fields.
+		func(pvc *corev1.PersistentVolumeClaimSpec, c randfill.Continue) {
+			c.FillNoCustom(pvc)
+			pvc.DataSource = nil
+			pvc.DataSourceRef = nil
+		},
+		// When TLS is enabled, ServerCertSecret must be non-nil.
+		func(tls *v1.ClusterTLSSpec, c randfill.Continue) {
+			c.FillNoCustom(tls)
+
+			if tls.Enabled && tls.ServerCertSecret == nil {
+				tls.ServerCertSecret = &corev1.LocalObjectReference{Name: "test-cert"}
+			}
+		},
+	)
 }

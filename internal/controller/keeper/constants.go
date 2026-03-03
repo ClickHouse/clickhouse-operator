@@ -31,6 +31,7 @@ const (
 
 	ContainerName          = "clickhouse-keeper"
 	DefaultRevisionHistory = 10
+	MaximalAffinityWeight  = 100
 )
 
 var breakingStatefulSetVersion, _ = semver.Parse("0.0.1")

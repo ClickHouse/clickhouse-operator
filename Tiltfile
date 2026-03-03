@@ -1,14 +1,15 @@
 load('ext://cert_manager', 'deploy_cert_manager')
 load("ext://restart_process", "docker_build_with_restart")
 
-enable_cert_manager=False
 enable_prometheus=False
 deploy_source='kustomize'
 secure_clusters = True
 image_repo = "ghcr.io/clickhouse/clickhouse-operator"
 
-if enable_cert_manager:
+if not local("kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager", quiet=True, echo_off=True):
     deploy_cert_manager(version='v1.19.2')
+else:
+    print("cert-manager is already deployed")
 
 if enable_prometheus:
     prometheus_operator_url = "https://github.com/prometheus-operator/prometheus-operator/releases/download/v0.87.0/bundle.yaml"

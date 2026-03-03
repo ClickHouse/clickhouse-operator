@@ -128,6 +128,14 @@ test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /helm) \
 	-v -count=1 -race -coverprofile cover.out --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
+fuzz-keeper: generate # Run keeper spec fuzz tests
+	go test -run=^$$ -fuzz=FuzzClusterSpec -fuzztime 60s ./internal/controller/keeper
+
+fuzz-clickhouse: generate # Run clickhouse spec fuzz tests
+	go test -run=^$$ -fuzz=FuzzClusterSpec -fuzztime 60s ./internal/controller/clickhouse
+
+fuzz: fuzz-keeper fuzz-clickhouse ## Run all fuzz tests
+
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e: ## Run all e2e tests.

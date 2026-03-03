@@ -1,6 +1,9 @@
 package clickhouse
 
 import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -8,9 +11,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
@@ -310,4 +315,61 @@ func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
 		mountPaths[mount.MountPath] = struct{}{}
 		ExpectWithOffset(1, volumeMap).To(HaveKey(mount.Name), "Mount %s is not in volumes", mount.Name)
 	}
+}
+
+func FuzzClusterSpec(f *testing.F) {
+	// Manually added cases
+	f.Add([]byte("02"))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		fill := testutil.NewSpecFiller(data)
+		r := &clickhouseReconciler{
+			reconcilerBase: reconcilerBase{
+				Cluster: newClickHouseCluster(fill),
+			},
+			keeper: v1.KeeperCluster{ObjectMeta: metav1.ObjectMeta{Name: "keeper"}},
+		}
+		id := v1.ClickHouseReplicaID{ShardID: 1, Index: 1}
+
+		crBefore := r.Cluster.DeepCopy()
+
+		stsFirst, err1 := templateStatefulSet(r, id)
+		if diff := cmp.Diff(crBefore.Spec, r.Cluster.Spec); diff != "" {
+			t.Errorf("ClusterSpec mutated:\n%s", diff)
+		}
+
+		stsSecond, err2 := templateStatefulSet(r, id)
+		if diff := cmp.Diff(crBefore.Spec, r.Cluster.Spec); diff != "" {
+			t.Errorf("ClusterSpec mutated:\n%s", diff)
+		}
+
+		if err1 == nil {
+			if diff := cmp.Diff(stsFirst, stsSecond); diff != "" {
+				t.Errorf("result differs:\n%s", diff)
+			}
+		} else {
+			if err1.Error() != err2.Error() {
+				t.Errorf("errors differ: %v vs %v", err1, err2)
+			}
+		}
+	})
+}
+
+func newClickHouseCluster(f *randfill.Filler) *v1.ClickHouseCluster {
+	cr := &v1.ClickHouseCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app": "clickhouse-operator",
+			},
+			Annotations: map[string]string{
+				"annotation1": "value1",
+			},
+		},
+	}
+	f.Fill(&cr.Spec)
+	cr.Spec.WithDefaults()
+
+	return cr
 }

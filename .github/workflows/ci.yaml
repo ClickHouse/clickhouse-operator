@@ -120,6 +120,23 @@ jobs:
           path: "**/report/*.xml"
           reporter: java-junit
 
+  fuzz_specs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Go Mod
+        run: go mod download
+
+      - name: Run fuzz tests
+        run: make fuzz
+
   helm-test:
     runs-on: ubuntu-latest
     steps:
@@ -286,7 +303,7 @@ jobs:
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
-    needs: [ lint, bundle, build_and_test, helm-test, compat-e2e-test, e2e-test ]
+    needs: [ lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test ]
     if: always()
     steps:
       - name: Determine CI status

@@ -39,6 +39,7 @@ const (
 
 	ContainerName          = "clickhouse-server"
 	DefaultRevisionHistory = 10
+	MaximalAffinityWeight  = 100
 
 	InterserverUserName        = "interserver"
 	OperatorManagementUsername = "operator"
