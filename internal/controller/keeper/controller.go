@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -38,10 +39,12 @@ type ClusterController struct {
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters/finalizers,verbs=update
 
 // +kubebuilder:rbac:groups="",resources=configmaps;services;pods,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -136,6 +139,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&corev1.Pod{}).
+		Owns(&batchv1.Job{}).
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(keeperController)
 	if err != nil {

@@ -33,6 +33,9 @@ spec:
             - jsonPath: .spec.replicas
               name: Replicas
               type: number
+            - jsonPath: .status.version
+              name: Version
+              type: string
             - jsonPath: .metadata.creationTimestamp
               name: Age
               type: date
@@ -4194,6 +4197,9 @@ spec:
                                 type: string
                             updateRevision:
                                 description: CurrentRevision indicates latest requested KeeperCluster spec revision.
+                                type: string
+                            version:
+                                description: Version indicates the version reported by the container image.
                                 type: string
                         type: object
                 type: object

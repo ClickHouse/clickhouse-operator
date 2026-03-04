@@ -147,6 +147,10 @@ type KeeperClusterStatus struct {
 	// ObservedGeneration indicates latest generation observed by controller.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Version indicates the version reported by the container image.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
+	Version string `json:"version,omitempty"`
 }
 
 // KeeperCluster is the Schema for the `keeperclusters` API.
@@ -157,6 +161,7 @@ type KeeperClusterStatus struct {
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
 // +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"
 // +kubebuilder:printcolumn:name="Replicas",type="number",JSONPath=".spec.replicas"
+// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +operator-sdk:csv:customresourcedefinitions:resources={{Pod,v1}}
 // +operator-sdk:csv:customresourcedefinitions:resources={{PersistentVolumeClaim,v1}}

@@ -160,7 +160,7 @@ func setStatusCondition(conditions *[]metav1.Condition, newCondition metav1.Cond
 		return true
 	}
 
-	changed := existingCondition.Status != newCondition.Status
+	changed := existingCondition.Status != newCondition.Status || existingCondition.Reason != newCondition.Reason
 	if changed {
 		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
 	} else {

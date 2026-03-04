@@ -38,6 +38,7 @@ type replicaState struct {
 	Error       bool `json:"error"`
 	StatefulSet *appsv1.StatefulSet
 	Pinged      bool
+	Version     string
 }
 
 func (r replicaState) Updated() bool {
@@ -108,6 +109,7 @@ type clickhouseReconciler struct {
 	secret    corev1.Secret
 	commander *commander
 
+	versionProbe           chctrl.VersionProbeResult
 	databasesInSync        bool
 	staleReplicasCleanedUp bool
 }
@@ -317,6 +319,20 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", stsRevision))
 	}
 
+	probeResult, err := r.VersionProbe(ctx, log, chctrl.VersionProbeConfig{
+		Binary:            "clickhouse-server",
+		Labels:            r.Cluster.Spec.Labels,
+		Annotations:       r.Cluster.Spec.Annotations,
+		PodTemplate:       r.Cluster.Spec.PodTemplate,
+		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("run version probe: %w", err)
+	}
+
+	r.versionProbe = probeResult
+	r.Cluster.Status.Version = r.versionProbe.Version
+
 	return nil, nil
 }
 
@@ -342,9 +358,9 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			hasError = true
 		}
 
-		pingErr := r.commander.Ping(ctx, id)
-		if pingErr != nil {
-			log.Debug("failed to ping replica", "replica_id", id, "error", pingErr)
+		version, versionErr := r.commander.Version(ctx, id)
+		if versionErr != nil {
+			log.Debug("failed to query version on replica", "replica_id", id, "error", versionErr)
 		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
@@ -352,7 +368,8 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return id, replicaState{
 			StatefulSet: &sts,
 			Error:       hasError,
-			Pinged:      pingErr == nil,
+			Pinged:      versionErr == nil,
+			Version:     version,
 		}, nil
 	})
 
@@ -694,6 +711,15 @@ func (r *clickhouseReconciler) reconcileConditions(ctx context.Context, log ctrl
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionFalse, v1.ConditionReasonConfigurationChanged, message))
 	} else {
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""))
+	}
+
+	replicaVersions := make(map[string]string, len(r.ReplicaState))
+	for id, replica := range r.ReplicaState {
+		replicaVersions[id.String()] = replica.Version
+	}
+
+	if err := r.UpdateVersionSyncCondition(ctx, log, r.versionProbe, replicaVersions, len(notUpdatedReplicas) > 0); err != nil {
+		return nil, fmt.Errorf("update VersionSync condition: %w", err)
 	}
 
 	exists := len(r.ReplicaState)

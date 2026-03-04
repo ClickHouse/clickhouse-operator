@@ -95,6 +95,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, true)
+			ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 			ClickHouseRWChecks(ctx, &cr, &checks)
 		},
 			Entry("update log level", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{

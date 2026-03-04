@@ -157,3 +157,15 @@ var _ = Describe("ExecuteParallel", func() {
 		}))
 	})
 })
+
+var _ = DescribeTable("ParseVersion", func(in, out string, isErr bool) {
+	result, err := ParseVersion(in)
+	Expect(result).To(Equal(out))
+	Expect(err != nil).To(Equal(isErr))
+},
+	Entry("from keeper mntr", "v26.1.3.52-stable-5549f2acae95c6d627654f50e212a85d059a55f9", "26.1.3.52", false),
+	Entry("from --version", "ClickHouse local version 25.4.1.1.", "25.4.1.1", false),
+	Entry("exact match", "25.4.1.1", "25.4.1.1", false),
+	Entry("error", "command not found: clickhouse", "", true),
+	Entry("empty result", "", "", true),
+)

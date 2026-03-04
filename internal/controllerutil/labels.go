@@ -23,8 +23,8 @@ const (
 const (
 	LabelKeeperValue       = "clickhouse-keeper"
 	LabelKeeperAllReplicas = "all-replicas"
-
-	LabelClickHouseValue = "clickhouse-server"
+	LabelClickHouseValue   = "clickhouse-server"
+	LabelVersionProbe      = "version-probe"
 )
 
 // AppRequirements returns ListOptions to list resources of the given app.

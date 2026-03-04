@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +40,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		pdbs         policyv1.PodDisruptionBudgetList
 		configs      corev1.ConfigMapList
 		statefulsets appsv1.StatefulSetList
+		jobs         batchv1.JobList
 		cr           = &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "standalone",
@@ -107,6 +109,10 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(1))
+
+		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
 
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ReplicaCreated":  1,

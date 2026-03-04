@@ -25,6 +25,12 @@ const (
 	EventReasonClusterNotReady EventReason = "ClusterNotReady"
 )
 
+// Event reasons for version checks.
+const (
+	EventReasonVersionDiverge     EventReason = "VersionDiverge"
+	EventReasonVersionProbeFailed EventReason = "VersionProbeFailed"
+)
+
 // EventAction represents the action associated with an event.
 type EventAction = string
 
@@ -33,4 +39,5 @@ const (
 	EventActionScaling        EventAction = "Scaling"
 	EventActionBecameReady    EventAction = "BecameReady"
 	EventActionBecameNotReady EventAction = "BecameNotReady"
+	EventActionVersionCheck   EventAction = "VersionCheck"
 )

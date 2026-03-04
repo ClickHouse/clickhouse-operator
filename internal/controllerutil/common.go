@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -281,4 +282,16 @@ func ShouldEmitEvent(err error) bool {
 	}
 
 	return false
+}
+
+var versionRegex = regexp.MustCompile(`\d+(\.\d+){2,3}`)
+
+// ParseVersion extracts a version string from the given raw input.
+func ParseVersion(raw string) (string, error) {
+	version := versionRegex.FindAllString(raw, -1)
+	if len(version) != 1 {
+		return "", fmt.Errorf("failed to parse version: %q", raw)
+	}
+
+	return version[0], nil
 }

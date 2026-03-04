@@ -38,6 +38,13 @@ const (
 	ConditionTypeConfigurationInSync    ConditionType   = "ConfigurationInSync"
 	ConditionReasonConfigurationChanged ConditionReason = "ConfigurationChanged"
 
+	// ConditionTypeVersionInSync indicates that all replicas report the same version as the image.
+	ConditionTypeVersionInSync        ConditionType   = "VersionInSync"
+	ConditionReasonVersionMatch       ConditionReason = "VersionMatch"
+	ConditionReasonVersionMismatch    ConditionReason = "VersionMismatch"
+	ConditionReasonVersionPending     ConditionReason = "VersionPending"
+	ConditionReasonVersionProbeFailed ConditionReason = "VersionProbeFailed"
+
 	// ConditionTypeReady indicates that cluster is ready to serve client requests.
 	ConditionTypeReady                      ConditionType   = "Ready"
 	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"
@@ -83,6 +90,7 @@ var (
 		ConditionTypeHealthy,
 		ConditionTypeClusterSizeAligned,
 		ConditionTypeConfigurationInSync,
+		ConditionTypeVersionInSync,
 		ConditionTypeReady,
 		ClickHouseConditionTypeSchemaInSync,
 	}
@@ -95,6 +103,7 @@ var (
 		ConditionTypeHealthy,
 		ConditionTypeClusterSizeAligned,
 		ConditionTypeConfigurationInSync,
+		ConditionTypeVersionInSync,
 		ConditionTypeReady,
 		KeeperConditionTypeScaleAllowed,
 	}

@@ -100,6 +100,7 @@ type reconcilerBase = chctrl.ResourceReconcilerBase[v1.KeeperClusterStatus, *v1.
 type keeperReconciler struct {
 	reconcilerBase
 
+	versionProbe chctrl.VersionProbeResult
 	// Should be populated after reconcileClusterRevisions with parsed extra config.
 	ExtraConfig map[string]any
 	// Computed by reconcileActiveReplicaStatus
@@ -150,6 +151,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 				r.NewCondition(v1.ConditionTypeHealthy, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeReplicaStartupSucceeded, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
+				r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeClusterSizeAligned, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.KeeperConditionTypeScaleAllowed, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 			})
@@ -179,7 +181,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 	return result, nil
 }
 
-func (r *keeperReconciler) reconcileClusterRevisions(_ context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
 	if r.Cluster.Status.ObservedGeneration != r.Cluster.Generation {
 		r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
 		log.Debug(fmt.Sprintf("observed new CR generation %d", r.Cluster.Generation))
@@ -223,6 +225,20 @@ func (r *keeperReconciler) reconcileClusterRevisions(_ context.Context, log ctrl
 		r.Cluster.Status.StatefulSetRevision = stsRevision
 		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", stsRevision))
 	}
+
+	probeResult, err := r.VersionProbe(ctx, log, chctrl.VersionProbeConfig{
+		Binary:            "clickhouse-keeper",
+		Labels:            r.Cluster.Spec.Labels,
+		Annotations:       r.Cluster.Spec.Annotations,
+		PodTemplate:       r.Cluster.Spec.PodTemplate,
+		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("run version probe: %w", err)
+	}
+
+	r.versionProbe = probeResult
+	r.Cluster.Status.Version = r.versionProbe.Version
 
 	return nil, nil
 }
@@ -613,6 +629,15 @@ func (r *keeperReconciler) reconcileConditions(ctx context.Context, log ctrlutil
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionFalse, v1.ConditionReasonConfigurationChanged, message))
 	} else {
 		r.SetCondition(log, r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""))
+	}
+
+	replicaVersions := make(map[string]string, len(r.ReplicaState))
+	for id, replica := range r.ReplicaState {
+		replicaVersions[fmt.Sprintf("%d", id)] = replica.Status.Version
+	}
+
+	if err := r.UpdateVersionSyncCondition(ctx, log, r.versionProbe, replicaVersions, len(notUpdatedReplicas) > 0); err != nil {
+		return nil, fmt.Errorf("update VersionSync condition: %w", err)
 	}
 
 	exists := len(r.ReplicaState)

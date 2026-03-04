@@ -74,6 +74,7 @@ ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 | `currentRevision` | string | CurrentRevision indicates latest applied ClickHouseCluster spec revision. | true |  |
 | `updateRevision` | string | UpdateRevision indicates latest requested ClickHouseCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
+| `version` | string | Version indicates the version reported by the container image. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -243,6 +244,7 @@ KeeperClusterStatus defines the observed state of KeeperCluster.
 | `currentRevision` | string | CurrentRevision indicates latest applied KeeperCluster spec revision. | true |  |
 | `updateRevision` | string | CurrentRevision indicates latest requested KeeperCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
+| `version` | string | Version indicates the version reported by the container image. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)

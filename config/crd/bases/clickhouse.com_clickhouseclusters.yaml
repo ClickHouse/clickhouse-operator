@@ -30,6 +30,9 @@ spec:
     - jsonPath: .spec.replicas
       name: Replicas
       type: number
+    - jsonPath: .status.version
+      name: Version
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -4450,6 +4453,10 @@ spec:
               updateRevision:
                 description: UpdateRevision indicates latest requested ClickHouseCluster
                   spec revision.
+                type: string
+              version:
+                description: Version indicates the version reported by the container
+                  image.
                 type: string
             type: object
         type: object

@@ -90,17 +90,23 @@ func (cmd *commander) Close() {
 	cmd.conns = map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 }
 
-func (cmd *commander) Ping(ctx context.Context, id v1.ClickHouseReplicaID) error {
+func (cmd *commander) Version(ctx context.Context, id v1.ClickHouseReplicaID) (string, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+		return "", fmt.Errorf("failed to get connection for replica %s: %w", id, err)
 	}
 
-	if err := conn.Ping(ctx); err != nil {
-		return fmt.Errorf("ping replica %s: %w", id, err)
+	var version string
+	if err := conn.QueryRow(ctx, "SELECT version()").Scan(&version); err != nil {
+		return "", fmt.Errorf("query version on replica %s: %w", id, err)
 	}
 
-	return nil
+	version, err = controllerutil.ParseVersion(version)
+	if err != nil {
+		return "", fmt.Errorf("parse version from replica %s response: %w", id, err)
+	}
+
+	return version, nil
 }
 
 func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]databaseDescriptor, error) {
