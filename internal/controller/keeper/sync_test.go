@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -104,6 +105,50 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		sts = mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).ToNot(BeEmpty())
+	})
+
+	It("should delete stuck pod in error state", func(ctx context.Context) {
+		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
+
+		podKey := types.NamespacedName{
+			Namespace: rec.Cluster.Namespace,
+			Name:      sts.Name + "-0",
+		}
+
+		By("creating a pod that simulates a stuck state")
+
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: podKey.Namespace,
+				Name:      podKey.Name,
+				Annotations: map[string]string{
+					appsv1.ControllerRevisionHashLabelKey: "outdated",
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:  "clickhouse-keeper",
+					Image: "custom-keeper:latest",
+				}},
+			},
+		}
+		Expect(rec.GetClient().Create(ctx, pod)).To(Succeed())
+
+		By("setting replica state with error and a spec diff")
+
+		rec.ReplicaState[replicaID] = replicaState{
+			Error:       true,
+			StatefulSet: sts,
+		}
+
+		result, err := rec.reconcileReplicaResources(ctx, log)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(result.IsZero()).To(BeFalse())
+
+		By("verifying the stuck pod was deleted")
+
+		err = rec.GetClient().Get(ctx, podKey, &corev1.Pod{})
+		Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "stuck pod should have been deleted")
 	})
 })
 

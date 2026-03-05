@@ -308,22 +308,16 @@ func (cmd *commander) CleanupDatabaseReplicas(
 	log controllerutil.Logger,
 	notInSync map[v1.ClickHouseReplicaID]struct{},
 ) error {
-	var anyID v1.ClickHouseReplicaID
-	for id := range cmd.cluster.ReplicaIDs() {
-		anyID = id
-		break
-	}
-
-	log = log.With("replica_id", anyID)
-
-	conn, err := cmd.getConn(anyID)
+	id, conn, err := cmd.getAnyConn()
 	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %v: %w", anyID, err)
+		return err
 	}
+
+	log = log.With("replica_id", id)
 
 	rows, err := conn.Query(ctx, listStaleDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
 	if err != nil {
-		return fmt.Errorf("failed to query stale database replicas %v: %w", anyID, err)
+		return fmt.Errorf("failed to query stale database replicas %v: %w", id, err)
 	}
 
 	defer func() {
@@ -427,4 +421,15 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 	cmd.conns[id] = conn
 
 	return conn, nil
+}
+
+func (cmd *commander) getAnyConn() (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
+	cmd.lock.RLock()
+	defer cmd.lock.RUnlock()
+
+	for id, conn := range cmd.conns {
+		return id, conn, nil
+	}
+
+	return v1.ClickHouseReplicaID{}, nil, errors.New("no available connections")
 }

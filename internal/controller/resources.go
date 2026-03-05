@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"time"
 
+	"github.com/blang/semver/v4"
 	gcmp "github.com/google/go-cmp/cmp"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -46,7 +48,7 @@ func (s ReplicaUpdateStage) String() string {
 	return mapStatusText[s]
 }
 
-var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"}
+var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
 
 // CheckPodError checks if the pod of the given StatefulSet have permanent errors preventing it from starting.
 func CheckPodError(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (bool, error) {
@@ -305,4 +307,140 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(
 	}
 
 	return nil
+}
+
+// ReplicaUpdateInput contains the parameters needed to reconcile a StatefulSet for a replica.
+type ReplicaUpdateInput struct {
+	ExistingSTS           *appsv1.StatefulSet
+	DesiredConfigMap      *corev1.ConfigMap
+	DesiredSTS            *appsv1.StatefulSet
+	HasError              bool
+	ConfigurationRevision string
+	StatefulSetRevision   string
+	BreakingSTSVersion    semver.Version
+	DataVolumeClaimSpec   *corev1.PersistentVolumeClaimSpec
+}
+
+// ReconcileReplicaResources reconciles a replica's ConfigMap, StatefulSet and PVC.
+// Handling Pod restarts on config changes.
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResources(
+	ctx context.Context,
+	log util.Logger,
+	replicaID ReplicaID,
+	input ReplicaUpdateInput,
+) (*ctrlruntime.Result, error) {
+	configChanged, err := r.ReconcileConfigMap(ctx, log, input.DesiredConfigMap, v1.EventActionReconciling)
+	if err != nil {
+		return nil, fmt.Errorf("update replica ConfigMap: %w", err)
+	}
+
+	statefulSet := input.DesiredSTS
+
+	if err := ctrlruntime.SetControllerReference(r.Cluster, statefulSet, r.GetScheme()); err != nil {
+		return nil, fmt.Errorf("set replica StatefulSet controller reference: %w", err)
+	}
+
+	if input.ExistingSTS == nil {
+		log.Info("replica StatefulSet not found, creating", "stateful_set", statefulSet.Name)
+		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
+		util.AddHashWithKeyToAnnotations(statefulSet, util.AnnotationSpecHash, input.StatefulSetRevision)
+
+		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
+			return nil, fmt.Errorf("create replica: %w", err)
+		}
+
+		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	}
+
+	// Check if the StatefulSet is outdated and needs to be recreated
+	v, err := semver.Parse(input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion])
+	if err != nil || input.BreakingSTSVersion.GT(v) {
+		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, input.BreakingSTSVersion))
+
+		if err := r.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
+			return nil, fmt.Errorf("recreate replica: %w", err)
+		}
+
+		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	}
+
+	stsNeedsUpdate := util.GetSpecHashFromObject(input.ExistingSTS) != input.StatefulSetRevision
+
+	// Trigger Pod restart if config changed
+	// Always restarts on config changes, need to add check if it is needed.
+	if util.GetConfigHashFromObject(input.ExistingSTS) != input.ConfigurationRevision {
+		// Use same way as Kubernetes for force restarting Pods one by one
+		// (https://github.com/kubernetes/kubernetes/blob/22a21f974f5c0798a611987405135ab7e62502da/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/objectrestarter.go#L41)
+		// Not included by default in the StatefulSet so that hash-diffs work correctly
+		log.Info("forcing Pod restart, because of config changes")
+
+		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
+
+		util.AddObjectConfigHash(input.ExistingSTS, input.ConfigurationRevision)
+
+		stsNeedsUpdate = true
+	} else if restartedAt, ok := input.ExistingSTS.Spec.Template.Annotations[util.AnnotationRestartedAt]; ok {
+		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = restartedAt
+	}
+
+	if !stsNeedsUpdate {
+		log.Debug("StatefulSet is up to date", "stateful_set", statefulSet.Name)
+
+		if configChanged {
+			return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		}
+
+		// Delete stuck pod if in error state so the StatefulSet controller can recreate it
+		if input.HasError {
+			podName := input.ExistingSTS.Name + "-0"
+			pod := &corev1.Pod{}
+
+			err = r.GetClient().Get(ctx, types.NamespacedName{Namespace: input.ExistingSTS.Namespace, Name: podName}, pod)
+			if err != nil {
+				if k8serrors.IsNotFound(err) {
+					return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+				}
+
+				log.Info("failed to get error pod", "pod", podName)
+
+				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			}
+
+			if pod.Annotations[appsv1.ControllerRevisionHashLabelKey] != input.ExistingSTS.Status.UpdateRevision {
+				log.Info("deleting pod stuck in error state", "pod", podName)
+
+				if err = r.GetClient().Delete(ctx, pod); err != nil {
+					log.Warn("failed to delete stuck pod", "pod", podName, "error", err)
+				}
+
+				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			}
+		}
+
+		return nil, nil
+	}
+
+	if input.DataVolumeClaimSpec != nil {
+		if !gcmp.Equal(input.ExistingSTS.Spec.VolumeClaimTemplates[0].Spec, input.DataVolumeClaimSpec) {
+			if err = r.UpdatePVC(ctx, log, replicaID, *input.DataVolumeClaimSpec, v1.EventActionReconciling); err != nil {
+				//nolint:nilerr // Error is logged internally and event sent
+				return nil, nil
+			}
+
+			statefulSet.Spec.VolumeClaimTemplates = input.ExistingSTS.Spec.VolumeClaimTemplates
+		}
+	}
+
+	log.Info("updating replica StatefulSet", "stateful_set", statefulSet.Name)
+	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS.Spec, statefulSet.Spec))
+	input.ExistingSTS.Spec = statefulSet.Spec
+	input.ExistingSTS.Annotations = util.MergeMaps(input.ExistingSTS.Annotations, statefulSet.Annotations)
+	input.ExistingSTS.Labels = util.MergeMaps(input.ExistingSTS.Labels, statefulSet.Labels)
+	util.AddHashWithKeyToAnnotations(input.ExistingSTS, util.AnnotationSpecHash, input.StatefulSetRevision)
+
+	if err = r.Update(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
+		return nil, fmt.Errorf("update replica: %w", err)
+	}
+
+	return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 }

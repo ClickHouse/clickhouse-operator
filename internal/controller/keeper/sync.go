@@ -9,10 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/blang/semver/v4"
-	gcmp "github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -261,18 +258,24 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.KeeperReplicaID, replicaState, error) {
 		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
 		if err != nil {
-			log.Error(err, "get replica ID from StatefulSet labels", "stateful_set", sts.Name)
+			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
 			return -1, replicaState{}, fmt.Errorf("get StatefulSet replica ID: %w", err)
 		}
 
 		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
 		if err != nil {
-			log.Warn("failed to check replica pod error", "stateful_set", sts.Name, "error", err)
+			log.Warn("failed to check replica pod error", "statefulset", sts.Name, "error", err)
 
 			hasError = true
 		}
 
-		status := getServerStatus(ctx, log.With("replica_id", id), r.Cluster.HostnameByID(id), tlsRequired)
+		var status serverStatus
+		if !hasError {
+			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+			defer cancel()
+
+			status = getServerStatus(ctx, log.With("replica_id", id), r.Cluster.HostnameByID(id), tlsRequired)
+		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
@@ -730,95 +733,28 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", replicaID, err)
 	}
 
-	configChanged, err := r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling)
-	if err != nil {
-		return nil, fmt.Errorf("update replica %q ConfigMap: %w", replicaID, err)
-	}
-
 	statefulSet, err := templateStatefulSet(r.Cluster, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("template replica %q StatefulSet: %w", replicaID, err)
 	}
 
-	if err := ctrl.SetControllerReference(r.Cluster, statefulSet, r.GetScheme()); err != nil {
-		return nil, fmt.Errorf("set replica %q StatefulSet controller reference: %w", replicaID, err)
-	}
-
 	replica := r.Replica(replicaID)
-	if replica.StatefulSet == nil {
-		log.Info("replica StatefulSet not found, creating", "stateful_set", statefulSet.Name)
-		ctrlutil.AddObjectConfigHash(statefulSet, r.Cluster.Status.ConfigurationRevision)
-		ctrlutil.AddHashWithKeyToAnnotations(statefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
 
-		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
-			return nil, fmt.Errorf("create replica %q: %w", replicaID, err)
-		}
-
-		return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
+	result, err := r.ReconcileReplicaResources(ctx, log, replicaID, chctrl.ReplicaUpdateInput{
+		ExistingSTS:           replica.StatefulSet,
+		DesiredConfigMap:      configMap,
+		DesiredSTS:            statefulSet,
+		HasError:              replica.Error,
+		ConfigurationRevision: r.Cluster.Status.ConfigurationRevision,
+		StatefulSetRevision:   r.Cluster.Status.StatefulSetRevision,
+		BreakingSTSVersion:    breakingStatefulSetVersion,
+		DataVolumeClaimSpec:   r.Cluster.Spec.DataVolumeClaimSpec,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reconcile replica %q resources: %w", replicaID, err)
 	}
 
-	// Check if the StatefulSet is outdated and needs to be recreated
-	v, err := semver.Parse(replica.StatefulSet.Annotations[ctrlutil.AnnotationStatefulSetVersion])
-	if err != nil || breakingStatefulSetVersion.GT(v) {
-		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, breakingStatefulSetVersion))
-
-		if err := r.Delete(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
-			return nil, fmt.Errorf("recreate replica %d: %w", replicaID, err)
-		}
-
-		return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-	}
-
-	stsNeedsUpdate := replica.HasStatefulSetDiff(r)
-
-	// Trigger Pod restart if config changed
-	if replica.HasConfigMapDiff(r) {
-		// Use same way as Kubernetes for force restarting Pods one by one
-		// (https://github.com/kubernetes/kubernetes/blob/22a21f974f5c0798a611987405135ab7e62502da/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/objectrestarter.go#L41)
-		// Not included by default in the StatefulSet so that hash-diffs work correctly
-		log.Info("forcing keeper Pod restart, because of config changes")
-
-		statefulSet.Spec.Template.Annotations[ctrlutil.AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-
-		ctrlutil.AddObjectConfigHash(replica.StatefulSet, r.Cluster.Status.ConfigurationRevision)
-
-		stsNeedsUpdate = true
-	} else if restartedAt, ok := replica.StatefulSet.Spec.Template.Annotations[ctrlutil.AnnotationRestartedAt]; ok {
-		statefulSet.Spec.Template.Annotations[ctrlutil.AnnotationRestartedAt] = restartedAt
-	}
-
-	if !stsNeedsUpdate {
-		log.Debug("StatefulSet is up to date")
-
-		if configChanged {
-			return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-		}
-
-		return nil, nil
-	}
-
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		if !gcmp.Equal(replica.StatefulSet.Spec.VolumeClaimTemplates[0].Spec, r.Cluster.Spec.DataVolumeClaimSpec) {
-			if err = r.UpdatePVC(ctx, log, replicaID, *r.Cluster.Spec.DataVolumeClaimSpec, v1.EventActionReconciling); err != nil {
-				//nolint:nilerr // Error is logged internally and event sent
-				return nil, nil
-			}
-
-			statefulSet.Spec.VolumeClaimTemplates = replica.StatefulSet.Spec.VolumeClaimTemplates
-		}
-	}
-
-	log.Info("updating replica StatefulSet", "stateful_set", statefulSet.Name)
-	replica.StatefulSet.Spec = statefulSet.Spec
-	replica.StatefulSet.Annotations = ctrlutil.MergeMaps(replica.StatefulSet.Annotations, statefulSet.Annotations)
-	replica.StatefulSet.Labels = ctrlutil.MergeMaps(replica.StatefulSet.Labels, statefulSet.Labels)
-	ctrlutil.AddHashWithKeyToAnnotations(replica.StatefulSet, ctrlutil.AnnotationSpecHash, r.Cluster.Status.StatefulSetRevision)
-
-	if err := r.Update(ctx, replica.StatefulSet, v1.EventActionReconciling); err != nil {
-		return nil, fmt.Errorf("update replica %q: %w", replicaID, err)
-	}
-
-	return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
+	return result, nil
 }
 
 func (r *keeperReconciler) loadQuorumReplicas(ctx context.Context) (map[v1.KeeperReplicaID]struct{}, error) {

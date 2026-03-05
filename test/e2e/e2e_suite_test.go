@@ -32,8 +32,9 @@ import (
 )
 
 const (
-	namespace     = "clickhouse-operator-system"
-	testNamespace = "clickhouse-operator-test"
+	namespace       = "clickhouse-operator-system"
+	testNamespace   = "clickhouse-operator-test"
+	pollingInterval = time.Millisecond * 100
 )
 
 var (

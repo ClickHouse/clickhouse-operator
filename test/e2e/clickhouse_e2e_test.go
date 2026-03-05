@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -208,6 +209,41 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 			ClickHouseRWChecks(ctx, &cr, ptr.To(0))
+		})
+
+		It("should recreate stuck pods", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      fmt.Sprintf("custom-disk-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(1)),
+					DataVolumeClaimSpec: nil, // Diskless configuration
+					KeeperClusterRef: &corev1.LocalObjectReference{
+						Name: keeper.Name,
+					},
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{
+							Repository: "invalid",
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			Eventually(func() bool {
+				Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+				cond := meta.FindStatusCondition(cr.Status.Conditions, string(v1.ConditionTypeReplicaStartupSucceeded))
+				return cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason == string(v1.ConditionReasonReplicaError)
+			}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(BeTrue())
+
+			cr.Spec.ContainerTemplate.Image = v1.ContainerImage{
+				Tag: ClickHouseBaseVersion,
+			}
+			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
+			ClickHouseRWChecks(ctx, &cr, new(0))
 		})
 	})
 
@@ -854,7 +890,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				"0": 20,
 				"1": 25,
 			})
-		}, "10s").Should(BeEmpty())
+		}, "10s").WithPolling(pollingInterval).Should(BeEmpty())
 	})
 })
 
@@ -888,7 +924,7 @@ func WaitClickHouseUpdatedAndReady(
 		}
 
 		return true
-	}, timeout).Should(BeTrue())
+	}, timeout).WithPolling(pollingInterval).Should(BeTrue())
 	// Needed for replica deletion to not forward deleting pods.
 	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
 	count := int(cr.Replicas() * cr.Shards())
@@ -906,7 +942,7 @@ func WaitClickHouseUpdatedAndReady(
 		}
 
 		return true
-	}).Should(BeTrue())
+	}).WithPolling(pollingInterval).Should(BeTrue())
 }
 
 func ClickHouseRWChecks(ctx context.Context, cr *v1.ClickHouseCluster, checksDone *int, auth ...clickhouse.Auth) {

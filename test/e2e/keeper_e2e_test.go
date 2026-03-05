@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -250,6 +251,36 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		By("verifying keeper is functional with basic read/write")
 		KeeperRWChecks(ctx, &cr, ptr.To(0))
 	})
+
+	It("should recreate stuck pods", func(ctx context.Context) {
+		cr := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: testNamespace,
+				Name:      fmt.Sprintf("stuck-pod-%d", rand.Uint32()), //nolint:gosec
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: new(int32(1)),
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{
+						Repository: "invalid",
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+		Eventually(func() bool {
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			cond := meta.FindStatusCondition(cr.Status.Conditions, string(v1.ConditionTypeReplicaStartupSucceeded))
+			return cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason == string(v1.ConditionReasonReplicaError)
+		}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(BeTrue())
+
+		cr.Spec.ContainerTemplate.Image = v1.ContainerImage{
+			Tag: KeeperBaseVersion,
+		}
+		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
+		KeeperRWChecks(ctx, &cr, ptr.To(0))
+	})
 })
 
 func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
@@ -278,7 +309,7 @@ func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeou
 		}
 
 		return true
-	}, timeout).Should(BeTrue())
+	}, timeout).WithPolling(pollingInterval).Should(BeTrue())
 	// Needed for replica deletion to not forward deleting pods.
 	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
 	count := int(cr.Replicas())

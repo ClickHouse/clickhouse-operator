@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/net/proxy"
+
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
@@ -32,12 +34,8 @@ type serverStatus struct {
 	Version     string
 }
 
-type dialer interface {
-	DialContext(ctx context.Context, network, address string) (net.Conn, error)
-}
-
 func getConnection(ctx context.Context, hostname string, tlsRequired bool) (net.Conn, error) {
-	var d dialer = &net.Dialer{}
+	var d proxy.ContextDialer = &net.Dialer{}
 
 	port := PortNative
 	if tlsRequired {
