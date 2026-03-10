@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [ main ]
 env:
-  kind-version: 'v0.29.0'
+  kind-version: 'v0.31.0'
 permissions:
   contents: read
   statuses: write
@@ -44,6 +44,7 @@ jobs:
             make check-crd-compat CRD_BASE_REF=${{ github.event.before }}
           fi
 
+
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -53,6 +54,11 @@ jobs:
         uses: codespell-project/actions-codespell@v2.2
         with:
           config: ci/.codespellrc
+
+      - name: actionlint
+        uses: raven-actions/actionlint@v2
+        with:
+          flags: '-config-file ci/actionlint.yaml'
 
   bundle:
     runs-on: ubuntu-latest
@@ -183,20 +189,20 @@ jobs:
           reporter: java-junit
 
   compat-e2e-test:
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest]
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: "Minimal supported kubernetes with LTS ClickHouse release"
-            kind_version: v1.28.15
+            k8s_image: v1.28.15
             clickhouse_version: "25.8"
           - name: "Latest kubernetes version with LTS ClickHouse release"
-            kind_version: v1.35.1
+            k8s_image: v1.35.1
             clickhouse_version: "25.8"
           - name: "Supported ClickHouse versions"
-            kind_version: v1.30.13
-            clickhouse_version: "26.1,25.12,25.11,25.8,25.3"
+            k8s_image: v1.30.13
+            clickhouse_version: "26.2,26.1,25.12,25.8,25.3"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -206,19 +212,19 @@ jobs:
         with:
           go-version-file: 'go.mod'
 
-      - name: Go Mod
-        run: go mod download
-
-      - name: Build image
-        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
-
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
         with:
           cluster_name: kind
           version: ${{ env.kind-version }}
           config: ci/kind-cluster.config
-          node_image: "kindest/node:${{ matrix.kind_version }}"
+          node_image: "kindest/node:${{ matrix.k8s_image }}"
+
+      - name: Go Mod
+        run: go mod download
+
+      - name: Build image
+        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
 
       - name: Run compatibility e2e tests
         run: make test-compat-e2e
@@ -262,6 +268,7 @@ jobs:
           cluster_name: kind
           version: ${{ env.kind-version }}
           config: ci/kind-cluster.config
+          node_image: "kindest/node:v1.34.3" # Can't use newer node image as self-hosted runners use cgroups v1
 
       - name: Run e2e tests
         run:  make ${{ matrix.scope }}

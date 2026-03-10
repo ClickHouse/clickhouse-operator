@@ -314,6 +314,10 @@ func (v *ClickHouseCluster) GetStatus() *ClickHouseClusterStatus {
 
 // Conditions returns pointer to the conditions slice.
 func (v *ClickHouseCluster) Conditions() *[]metav1.Condition {
+	if v.Status.Conditions == nil {
+		v.Status.Conditions = []metav1.Condition{}
+	}
+
 	return &v.Status.Conditions
 }
 

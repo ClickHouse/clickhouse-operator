@@ -219,6 +219,10 @@ func (v *KeeperCluster) GetStatus() *KeeperClusterStatus {
 
 // Conditions returns pointer to the conditions slice.
 func (v *KeeperCluster) Conditions() *[]metav1.Condition {
+	if v.Status.Conditions == nil {
+		v.Status.Conditions = []metav1.Condition{}
+	}
+
 	return &v.Status.Conditions
 }
 

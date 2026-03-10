@@ -158,13 +158,18 @@ test-helm: ginkgo ## Run helm chart tests
 	$(GINKGO) run --nodes 4 -p -v --junit-report=report/junit-report.xml test/helm
 
 .PHONY: lint
-lint: golangci-lint codespell ## Run golangci-lint linter and codespell
+lint: golangci-lint codespell actionlint ## Run golangci-lint linter, codespell, and actionlint
 	$(GOLANGCI_LINT) run
 	$(CODESPELL) --config ci/.codespellrc
+	$(ACTIONLINT) -config-file ci/actionlint.yaml
 
 .PHONY: golangci-fmt
 golangci-fmt: golangci-lint ## Run golangci-lint fmt
 	$(GOLANGCI_LINT) fmt
+
+.PHONY: lint-actions
+lint-actions: actionlint ## Lint GitHub Actions workflow files
+	$(ACTIONLINT) -config-file ci/actionlint.yaml -shellcheck "$(shell which shellcheck)"
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
@@ -307,6 +312,7 @@ KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CODESPELL ?= $(LOCALBIN)/codespell
 CRD_SCHEMA_CHECKER ?= $(LOCALBIN)/crd-schema-checker
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
+ACTIONLINT ?= $(LOCALBIN)/actionlint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.7.1
@@ -318,6 +324,7 @@ KUBEBUILDER_VERSION ?= v4.12.0
 CODESPELL_VERSION ?= 2.4.1
 CRD_SCHEMA_CHECKER_VERSION ?= latest
 CRD_REF_DOCS_VERSION ?= v0.3.0
+ACTIONLINT_VERSION ?= v1.7.7
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -369,6 +376,11 @@ $(CODESPELL): $(LOCALBIN)
 crd-schema-checker: $(CRD_SCHEMA_CHECKER) ## Download crd-schema-checker locally if necessary.
 $(CRD_SCHEMA_CHECKER): $(LOCALBIN)
 	$(call go-install-tool,$(CRD_SCHEMA_CHECKER),github.com/openshift/crd-schema-checker/cmd/crd-schema-checker,$(CRD_SCHEMA_CHECKER_VERSION))
+
+.PHONY: actionlint
+actionlint: $(ACTIONLINT) ## Download actionlint locally if necessary.
+$(ACTIONLINT): $(LOCALBIN)
+	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 CRD_BASE_REF ?= origin/main
 .PHONY: check-crd-compat

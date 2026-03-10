@@ -148,13 +148,18 @@ func (cmd *commander) CreateDatabases(ctx context.Context, id v1.ClickHouseRepli
 	}
 
 	for name, desc := range databases {
-		query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` UUID '%s' ENGINE = %s", name, desc.UUID, desc.EngineFull)
-		if err = conn.Exec(ctx, query); err != nil {
+		dbCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{"database": name}))
+
+		if err = conn.Exec(dbCtx, fmt.Sprintf(
+			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
+			desc.UUID, desc.EngineFull,
+		),
+		); err != nil {
 			return fmt.Errorf("failed to create database %s on replica %s: %w", name, id, err)
 		}
 
 		if desc.IsReplicated {
-			if err = conn.Exec(ctx, fmt.Sprintf("SYSTEM SYNC DATABASE REPLICA `%s`", name)); err != nil {
+			if err = conn.Exec(dbCtx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
 				return fmt.Errorf("failed to sync replica for database %s on replica %s: %w", name, id, err)
 			}
 		}
@@ -259,13 +264,19 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 		if desc.IsReplicated {
 			log.Debug("syncing database replica", "database", name)
 
-			if err = conn.Exec(ctx, fmt.Sprintf("SYSTEM SYNC DATABASE REPLICA `%s`", name)); err != nil {
+			syncCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{"database": name}))
+			if err = conn.Exec(syncCtx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
 				errs = append(errs, fmt.Errorf("sync database %s: %w", name, err))
 			}
 		}
 	}
 
-	var replicatedTables []string
+	type replicatedTable struct {
+		database string
+		name     string
+	}
+
+	var replicatedTables []replicatedTable
 
 	rows, err := conn.Query(ctx, `SELECT database, name FROM system.tables WHERE engine LIKE 'Replicated%'`)
 	if err != nil {
@@ -284,7 +295,7 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 			continue
 		}
 
-		replicatedTables = append(replicatedTables, fmt.Sprintf("`%s`.`%s`", dbName, tableName))
+		replicatedTables = append(replicatedTables, replicatedTable{database: dbName, name: tableName})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -292,10 +303,14 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 	}
 
 	for _, table := range replicatedTables {
-		log.Debug("syncing table replica", "table", table)
+		log.Debug("syncing table replica", "database", table.database, "table", table.name)
 
-		if err = conn.Exec(ctx, fmt.Sprintf("SYSTEM SYNC REPLICA %s LIGHTWEIGHT", table)); err != nil {
-			errs = append(errs, fmt.Errorf("sync replica %s: %w", table, err))
+		syncCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{
+			"database": table.database,
+			"table":    table.name,
+		}))
+		if err = conn.Exec(syncCtx, "SYSTEM SYNC REPLICA {database:Identifier}.{table:Identifier} LIGHTWEIGHT"); err != nil {
+			errs = append(errs, fmt.Errorf("sync replica %s.%s: %w", table.database, table.name, err))
 		}
 	}
 
@@ -317,7 +332,7 @@ func (cmd *commander) CleanupDatabaseReplicas(
 
 	rows, err := conn.Query(ctx, listStaleDatabaseReplicasQuery, cmd.cluster.Shards(), cmd.cluster.Replicas())
 	if err != nil {
-		return fmt.Errorf("failed to query stale database replicas %v: %w", id, err)
+		return fmt.Errorf("query stale database replicas %v: %w", id, err)
 	}
 
 	defer func() {
@@ -366,6 +381,7 @@ func (cmd *commander) CleanupDatabaseReplicas(
 
 		log.Debug("deleting stale database replica", "database", database, "replica_id", toDrop)
 
+		// Both parameters don't support query parameters, and arg binding doesn't support identifiers
 		err = execConn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
 		if err != nil {
 			log.Info("failed to drop stale database replica", "replica_id", toDrop, "error", err)

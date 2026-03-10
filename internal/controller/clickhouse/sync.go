@@ -344,7 +344,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, replicaState, error) {
 		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
 		if err != nil {
-			log.Error(err, "failed to get replica ID from StatefulSet labels", "statefulset", sts.Name)
+			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
 			return v1.ClickHouseReplicaID{}, replicaState{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
 		}
 
@@ -393,7 +393,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	for id, state := range states {
 		if exists := r.SetReplica(id, state); exists {
 			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
-				"replica_id", id, "statefuleset", state.StatefulSet.Name)
+				"replica_id", id, "statefulset", state.StatefulSet.Name)
 		}
 	}
 

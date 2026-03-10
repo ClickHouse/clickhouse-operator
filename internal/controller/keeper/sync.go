@@ -572,10 +572,10 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 		}
 
 		if _, ok := r.ReplicaState[id]; !ok {
-			log.Info("deleting stale StatefulSet", "replica_id", id, "statefuleset", sts.Name)
+			log.Info("deleting stale StatefulSet", "replica_id", id, "statefulset", sts.Name)
 
 			if err := r.Delete(ctx, &sts, v1.EventActionReconciling); err != nil {
-				log.Error(err, "delete stale replica", "replica_id", id, "statefuleset", sts.Name)
+				log.Error(err, "delete stale replica", "replica_id", id, "statefulset", sts.Name)
 			}
 		}
 	}

@@ -87,6 +87,12 @@ else:
     k8s_yaml('examples/minimal.yaml')
 
 k8s_resource(
+    new_name='clickhouse-operator-namespace',
+    objects=['clickhouse-operator-system:Namespace'],
+    labels=['operator'],
+)
+
+k8s_resource(
     new_name='keeper',
     objects=['sample:KeeperCluster:default'],
     labels=['test'],

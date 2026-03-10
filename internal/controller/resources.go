@@ -64,7 +64,7 @@ func CheckPodError(ctx context.Context, log util.Logger, client client.Client, s
 			return false, fmt.Errorf("get clickhouse pod %q: %w", podName, err)
 		}
 
-		log.Info("pod is not exists", "pod", podName, "stateful_set", sts.Name)
+		log.Info("pod does not exist", "pod", podName, "statefulset", sts.Name)
 
 		return false, nil
 	}
@@ -341,7 +341,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 	}
 
 	if input.ExistingSTS == nil {
-		log.Info("replica StatefulSet not found, creating", "stateful_set", statefulSet.Name)
+		log.Info("replica StatefulSet not found, creating", "statefulset", statefulSet.Name)
 		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
 		util.AddHashWithKeyToAnnotations(statefulSet, util.AnnotationSpecHash, input.StatefulSetRevision)
 
@@ -355,7 +355,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 	// Check if the StatefulSet is outdated and needs to be recreated
 	v, err := semver.Parse(input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion])
 	if err != nil || input.BreakingSTSVersion.GT(v) {
-		log.Warn(fmt.Sprintf("Removing the StatefulSet because of a breaking change. Found version: %v, expected version: %v", v, input.BreakingSTSVersion))
+		log.Warn("removing StatefulSet because of a breaking change", "found_version", v.String(), "expected_version", input.BreakingSTSVersion.String())
 
 		if err := r.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("recreate replica: %w", err)
@@ -384,7 +384,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 	}
 
 	if !stsNeedsUpdate {
-		log.Debug("StatefulSet is up to date", "stateful_set", statefulSet.Name)
+		log.Debug("StatefulSet is up to date", "statefulset", statefulSet.Name)
 
 		if configChanged {
 			return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
@@ -401,12 +401,12 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 					return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 				}
 
-				log.Info("failed to get error pod", "pod", podName)
+				log.Warn("failed to get error pod", "pod", podName, "error", err)
 
 				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 			}
 
-			if pod.Annotations[appsv1.ControllerRevisionHashLabelKey] != input.ExistingSTS.Status.UpdateRevision {
+			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.ExistingSTS.Status.UpdateRevision {
 				log.Info("deleting pod stuck in error state", "pod", podName)
 
 				if err = r.GetClient().Delete(ctx, pod); err != nil {
@@ -431,7 +431,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 		}
 	}
 
-	log.Info("updating replica StatefulSet", "stateful_set", statefulSet.Name)
+	log.Info("updating replica StatefulSet", "statefulset", statefulSet.Name)
 	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS.Spec, statefulSet.Spec))
 	input.ExistingSTS.Spec = statefulSet.Spec
 	input.ExistingSTS.Annotations = util.MergeMaps(input.ExistingSTS.Annotations, statefulSet.Annotations)

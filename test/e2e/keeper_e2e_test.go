@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	KeeperBaseVersion   = "25.3"
-	KeeperUpdateVersion = "25.5"
+	KeeperBaseVersion   = "26.1"
+	KeeperUpdateVersion = "26.2"
 )
 
 var _ = Describe("Keeper controller", Label("keeper"), func() {

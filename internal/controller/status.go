@@ -37,9 +37,6 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) SetConditions(
 	conditions []metav1.Condition,
 ) bool {
 	clusterCond := r.Cluster.Conditions()
-	if *clusterCond == nil {
-		*clusterCond = make([]metav1.Condition, 0, len(conditions))
-	}
 
 	hasChanges := false
 	for _, condition := range conditions {
@@ -124,7 +121,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertStatus(
 
 		crdInstance := r.Cluster.DeepCopyObject().(clusterObject[Status]) //nolint:forcetypeassert // safe cast
 		if err := cli.Get(ctx, r.Cluster.NamespacedName(), crdInstance); err != nil {
-			return fmt.Errorf("upsert status: get resource %s: %w", r.Cluster.GetName(), err)
+			return fmt.Errorf("get resource %s: %w", r.Cluster.GetName(), err)
 		}
 
 		preStatus := crdInstance.GetStatus()
@@ -134,10 +131,16 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertStatus(
 			return nil
 		}
 
-		log.Debug("status difference:\n" + gcmp.Diff(*preStatus, *r.Cluster.GetStatus()))
-		*crdInstance.GetStatus() = *r.Cluster.GetStatus()
+		diff := gcmp.Diff(*preStatus, *r.Cluster.GetStatus())
 
-		return cli.Status().Update(ctx, crdInstance)
+		*crdInstance.GetStatus() = *r.Cluster.GetStatus()
+		if err := cli.Status().Update(ctx, crdInstance); err != nil {
+			return fmt.Errorf("update resource %s: %w", r.Cluster.GetName(), err)
+		}
+
+		log.Debug("status difference:\n" + diff)
+
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("upsert status: %w", err)

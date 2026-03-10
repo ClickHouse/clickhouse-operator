@@ -121,7 +121,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: podKey.Namespace,
 				Name:      podKey.Name,
-				Annotations: map[string]string{
+				Labels: map[string]string{
 					appsv1.ControllerRevisionHashLabelKey: "outdated",
 				},
 			},
