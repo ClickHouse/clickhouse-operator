@@ -29,6 +29,7 @@ const (
 const (
 	EventReasonVersionDiverge     EventReason = "VersionDiverge"
 	EventReasonVersionProbeFailed EventReason = "VersionProbeFailed"
+	EventReasonUpgradeAvailable   EventReason = "VersionUpgradeAvailable"
 )
 
 // EventAction represents the action associated with an event.

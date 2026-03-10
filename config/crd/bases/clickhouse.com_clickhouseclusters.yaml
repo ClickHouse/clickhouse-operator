@@ -4363,6 +4363,12 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              upgradeChannel:
+                description: |-
+                  UpgradeChannel specifies the release channel for major version upgrade checks.
+                  When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
+                pattern: ^(lts|stable|\d+\.\d+)?$
+                type: string
             required:
             - keeperClusterRef
             type: object

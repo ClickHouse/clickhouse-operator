@@ -72,6 +72,12 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="cluster.local"
 	ClusterDomain string `json:"clusterDomain,omitempty"`
+
+	// UpgradeChannel specifies the release channel for major version upgrade checks.
+	// When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
+	// +optional
+	// +kubebuilder:validation:Pattern=`^(lts|stable|\d+\.\d+)?$`
+	UpgradeChannel string `json:"upgradeChannel,omitempty"`
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.

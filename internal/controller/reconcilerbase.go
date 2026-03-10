@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
 type clusterObject[Status any] interface {
@@ -26,6 +28,7 @@ type controller interface {
 	GetClient() client.Client
 	GetScheme() *k8sruntime.Scheme
 	GetRecorder() events.EventRecorder
+	GetVersionChecker() *upgrade.Checker
 }
 
 // ResourceReconcilerBase provides a base class for cluster reconcilers.

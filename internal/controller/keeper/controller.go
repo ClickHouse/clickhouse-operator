@@ -21,6 +21,7 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
@@ -32,6 +33,7 @@ type ClusterController struct {
 	Recorder events.EventRecorder
 	Logger   controllerutil.Logger
 	Webhook  webhookv1.KeeperClusterWebhook
+	Checker  *upgrade.Checker
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -120,8 +122,13 @@ func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }
 
+// GetVersionChecker returns the version upgrade Checker.
+func (cc *ClusterController) GetVersionChecker() *upgrade.Checker {
+	return cc.Checker
+}
+
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
@@ -130,6 +137,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 		Recorder: mgr.GetEventRecorder("keeper-controller"),
 		Logger:   namedLogger,
 		Webhook:  webhookv1.KeeperClusterWebhook{Log: namedLogger},
+		Checker:  checker,
 	}
 
 	err := ctrl.NewControllerManagedBy(mgr).

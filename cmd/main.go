@@ -6,12 +6,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/environment"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	"github.com/ClickHouse/clickhouse-operator/internal/version"
 	whchv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 
@@ -30,6 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+)
+
+const (
+	defaultVersionUpdateInterval = 24 * time.Hour
 )
 
 var (
@@ -60,6 +66,8 @@ func run() error {
 		secureMetrics                                    bool
 		enableHTTP2                                      bool
 		tlsOpts                                          []func(*tls.Config)
+		versionUpdateInterval                            time.Duration
+		disableVersionUpdateChecks                       bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
@@ -78,7 +86,11 @@ func run() error {
 	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+		"If set, HTTP/2 will be enabled for the metrics and webhook servers.")
+	flag.DurationVar(&versionUpdateInterval, "version-update-interval", defaultVersionUpdateInterval,
+		"Interval for updating ClickHouse versions list.")
+	flag.BoolVar(&disableVersionUpdateChecks, "disable-version-update-checks", false,
+		"If set, the operator will not check for ClickHouse updates and notify about outdated versions.")
 
 	opts := zap.Options{
 		Development: true,
@@ -173,11 +185,21 @@ func run() error {
 
 	zapLogger := controllerutil.NewLogger(logger)
 
-	if err = keeper.SetupWithManager(mgr, zapLogger); err != nil {
+	var upgradeChecker *upgrade.Checker
+	if !disableVersionUpdateChecks {
+		updater := upgrade.NewReleaseUpdater(upgrade.NewURLFetcher(), versionUpdateInterval, zapLogger)
+		if err = mgr.Add(updater); err != nil {
+			return fmt.Errorf("unable to add release updater to manager: %w", err)
+		}
+
+		upgradeChecker = upgrade.NewChecker(updater)
+	}
+
+	if err = keeper.SetupWithManager(mgr, zapLogger, upgradeChecker); err != nil {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 
-	if err = clickhouse.SetupWithManager(mgr, zapLogger); err != nil {
+	if err = clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker); err != nil {
 		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}
 

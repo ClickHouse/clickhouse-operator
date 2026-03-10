@@ -149,6 +149,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 				r.NewCondition(v1.ConditionTypeReplicaStartupSucceeded, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeConfigurationInSync, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
+				r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.ConditionTypeClusterSizeAligned, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 				r.NewCondition(v1.KeeperConditionTypeScaleAllowed, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg),
 			})
@@ -641,6 +642,10 @@ func (r *keeperReconciler) reconcileConditions(ctx context.Context, log ctrlutil
 
 	if err := r.UpdateVersionSyncCondition(ctx, log, r.versionProbe, replicaVersions, len(notUpdatedReplicas) > 0); err != nil {
 		return nil, fmt.Errorf("update VersionSync condition: %w", err)
+	}
+
+	if err := r.UpdateUpgradeCondition(ctx, log, r.versionProbe, r.Cluster.Spec.UpgradeChannel); err != nil {
+		return nil, fmt.Errorf("update VersionUpgraded condition: %w", err)
 	}
 
 	exists := len(r.ReplicaState)

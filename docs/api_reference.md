@@ -56,6 +56,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
+| `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -226,6 +227,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for the Keeper cluster.<br />When unset, the operator defaults to maxUnavailable=replicas/2<br />(preserving quorum for a 2F+1 cluster). | false |  |
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
+| `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)

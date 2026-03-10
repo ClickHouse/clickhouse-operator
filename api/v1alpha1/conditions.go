@@ -45,6 +45,14 @@ const (
 	ConditionReasonVersionPending     ConditionReason = "VersionPending"
 	ConditionReasonVersionProbeFailed ConditionReason = "VersionProbeFailed"
 
+	// ConditionTypeVersionUpgraded indicates whether latest version within upgrade channel selected.
+	ConditionTypeVersionUpgraded        ConditionType   = "VersionUpgraded"
+	ConditionReasonWrongReleaseChannel  ConditionReason = "WrongReleaseChannel"
+	ConditionReasonMinorUpdateAvailable ConditionReason = "MinorUpdateAvailable"
+	ConditionReasonMajorUpdateAvailable ConditionReason = "MajorUpdateAvailable"
+	ConditionReasonVersionOutdated      ConditionReason = "VersionOutdated"
+	ConditionReasonUpgradeCheckFailed   ConditionReason = "UpgradeCheckFailed"
+
 	// ConditionTypeReady indicates that cluster is ready to serve client requests.
 	ConditionTypeReady                      ConditionType   = "Ready"
 	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"
@@ -91,6 +99,7 @@ var (
 		ConditionTypeClusterSizeAligned,
 		ConditionTypeConfigurationInSync,
 		ConditionTypeVersionInSync,
+		ConditionTypeVersionUpgraded,
 		ConditionTypeReady,
 		ClickHouseConditionTypeSchemaInSync,
 	}
@@ -104,6 +113,7 @@ var (
 		ConditionTypeClusterSizeAligned,
 		ConditionTypeConfigurationInSync,
 		ConditionTypeVersionInSync,
+		ConditionTypeVersionUpgraded,
 		ConditionTypeReady,
 		KeeperConditionTypeScaleAllowed,
 	}

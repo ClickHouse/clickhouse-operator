@@ -729,6 +729,10 @@ func (r *clickhouseReconciler) reconcileConditions(ctx context.Context, log ctrl
 		return nil, fmt.Errorf("update VersionSync condition: %w", err)
 	}
 
+	if err := r.UpdateUpgradeCondition(ctx, log, r.versionProbe, r.Cluster.Spec.UpgradeChannel); err != nil {
+		return nil, fmt.Errorf("update VersionUpgraded condition: %w", err)
+	}
+
 	exists := len(r.ReplicaState)
 	expected := int(r.Cluster.Replicas() * r.Cluster.Shards())
 
