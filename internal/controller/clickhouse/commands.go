@@ -17,35 +17,28 @@ import (
 
 const (
 	listDatabasesQuery = `SELECT name, engine_full, uuid, engine = 'Replicated' AS is_replicated
-FROM system.databases 
-WHERE 
-	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary')
+FROM system.databases
+WHERE
+	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary', 'Memory')
 SETTINGS
 	format_display_secrets_in_show_and_select=1`
 	listStaleDatabaseReplicasQuery = `SELECT
 	database,
-	toInt32(database_shard_name) AS shard_id,
-	toInt32(database_replica_name) AS replica_id,
-	sum(is_active)::Bool AS is_active,
-	any(hostname) AS hostname
+	shard_id,
+	replica_id,
+	sum(is_active)::Bool AS is_active
 FROM (
-	SELECT 
-		name as database,
-		database_shard_name,
-		database_replica_name,
-		is_active,
-		hostname() AS hostname
+	SELECT
+		cluster as database,
+		toInt32(database_shard_name) AS shard_id,
+		toInt32(database_replica_name) AS replica_id,
+		is_active
 	FROM clusterAllReplicas(default, system.clusters)
-	WHERE database_replica_name != ''
+	WHERE database_replica_name != '' AND (shard_id >= ? OR replica_id >= ?)
 )
-GROUP BY 
-	database, shard_id, replica_id
-HAVING
-	shard_id >= ?
-	OR replica_id >= ?
-SETTINGS
-	skip_unavailable_shards=1`
-	createDefaultDatabaseQuery = `CREATE DATABASE IF NOT EXISTS default UUID ? 
+GROUP BY database, shard_id, replica_id
+SETTINGS skip_unavailable_shards=1`
+	createDefaultDatabaseQuery = `CREATE DATABASE IF NOT EXISTS default UUID ?
 		ENGINE=Replicated('/clickhouse/databases/default', '{shard}', '{replica}')`
 )
 
@@ -134,14 +127,14 @@ func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) 
 		databases[db.Name] = db
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to fetch all database rows on replica %s: %w", id, err)
 	}
 
 	return databases, nil
 }
 
-func (cmd *commander) CreateDatabases(ctx context.Context, id v1.ClickHouseReplicaID, databases map[string]databaseDescriptor) error {
+func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Logger, id v1.ClickHouseReplicaID, databases map[string]databaseDescriptor) error {
 	conn, err := cmd.getConn(id)
 	if err != nil {
 		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
@@ -149,6 +142,8 @@ func (cmd *commander) CreateDatabases(ctx context.Context, id v1.ClickHouseRepli
 
 	for name, desc := range databases {
 		dbCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{"database": name}))
+
+		log.Debug("creating database", "replica_id", id, "database", name)
 
 		if err = conn.Exec(dbCtx, fmt.Sprintf(
 			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
@@ -159,6 +154,8 @@ func (cmd *commander) CreateDatabases(ctx context.Context, id v1.ClickHouseRepli
 		}
 
 		if desc.IsReplicated {
+			log.Debug("sync database replica", "replica_id", id, "database", name)
+
 			if err = conn.Exec(dbCtx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
 				return fmt.Errorf("failed to sync replica for database %s on replica %s: %w", name, id, err)
 			}
@@ -169,7 +166,7 @@ func (cmd *commander) CreateDatabases(ctx context.Context, id v1.ClickHouseRepli
 }
 
 // EnsureDefaultDatabaseEngine ensures that the default database engine is set to the Selected one.
-func (cmd *commander) EnsureDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, cluster *v1.ClickHouseCluster, id v1.ClickHouseReplicaID) error {
+func (cmd *commander) EnsureDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, id v1.ClickHouseReplicaID) error {
 	log = log.With("replica_id", id)
 
 	conn, err := cmd.getConn(id)
@@ -211,8 +208,8 @@ func (cmd *commander) EnsureDefaultDatabaseEngine(ctx context.Context, log contr
 
 	log.Debug("creating replicated default database")
 
-	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cluster.SpecificName())).String()
-	if err := conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
+	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
+	if err = conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
 		return fmt.Errorf("create default replicated database %s: %w", id, err)
 	}
 
@@ -298,7 +295,7 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 		replicatedTables = append(replicatedTables, replicatedTable{database: dbName, name: tableName})
 	}
 
-	if err := rows.Err(); err != nil {
+	if err = rows.Err(); err != nil {
 		errs = append(errs, fmt.Errorf("fetch replicated table rows: %w", err))
 	}
 
@@ -323,7 +320,7 @@ func (cmd *commander) CleanupDatabaseReplicas(
 	log controllerutil.Logger,
 	notInSync map[v1.ClickHouseReplicaID]struct{},
 ) error {
-	id, conn, err := cmd.getAnyConn()
+	id, conn, err := cmd.getAnyConn(ctx)
 	if err != nil {
 		return err
 	}
@@ -347,13 +344,12 @@ func (cmd *commander) CleanupDatabaseReplicas(
 			database string
 			toDrop   v1.ClickHouseReplicaID
 			isActive bool
-			hostname string
 		)
 
 		total++
 
-		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive, &hostname); err != nil {
-			log.Info("failed to scan stale database %s replica", "error", err)
+		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive); err != nil {
+			log.Info("failed to scan stale database replica", "error", err)
 			continue
 		}
 
@@ -367,22 +363,10 @@ func (cmd *commander) CleanupDatabaseReplicas(
 			continue
 		}
 
-		toExec, err := v1.IDFromHostname(cmd.cluster, hostname)
-		if err != nil {
-			log.Warn("failed to parse replica ID from hostname", "hostname", hostname, "error", err)
-			continue
-		}
-
-		execConn, err := cmd.getConn(toExec)
-		if err != nil {
-			log.Warn("failed to get connection for replica", "replica_id", toExec, "error", err)
-			continue
-		}
-
 		log.Debug("deleting stale database replica", "database", database, "replica_id", toDrop)
 
 		// Both parameters don't support query parameters, and arg binding doesn't support identifiers
-		err = execConn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
+		err = conn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
 		if err != nil {
 			log.Info("failed to drop stale database replica", "replica_id", toDrop, "error", err)
 			continue
@@ -422,6 +406,8 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 		return conn, nil
 	}
 
+	cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
+
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{fmt.Sprintf("%s:%d", cmd.cluster.HostnameByID(id), PortManagement)},
 		Auth: cmd.auth,
@@ -439,12 +425,14 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 	return conn, nil
 }
 
-func (cmd *commander) getAnyConn() (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
+func (cmd *commander) getAnyConn(ctx context.Context) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
 	cmd.lock.RLock()
 	defer cmd.lock.RUnlock()
 
 	for id, conn := range cmd.conns {
-		return id, conn, nil
+		if conn.Ping(ctx) == nil {
+			return id, conn, nil
+		}
 	}
 
 	return v1.ClickHouseReplicaID{}, nil, errors.New("no available connections")

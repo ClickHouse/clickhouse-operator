@@ -481,7 +481,7 @@ func (r *clickhouseReconciler) reconcileReplicateSchema(ctx context.Context, log
 
 	hasNotSynced := false
 	replicaDatabases := ctrlutil.ExecuteParallel(readyReplicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]databaseDescriptor, error) {
-		if err := r.commander.EnsureDefaultDatabaseEngine(ctx, log, r.Cluster, id); err != nil {
+		if err := r.commander.EnsureDefaultDatabaseEngine(ctx, log, id); err != nil {
 			log.Info("failed to ensure default database engine for replica", "replica", id, "error", err)
 
 			hasNotSynced = true
@@ -519,7 +519,7 @@ func (r *clickhouseReconciler) reconcileReplicateSchema(ctx context.Context, log
 
 		log.Info("replicating databases to replica", "replica_id", id, "databases", slices.Collect(maps.Keys(dbsToSync)))
 
-		err := r.commander.CreateDatabases(ctx, id, dbsToSync)
+		err := r.commander.CreateDatabases(ctx, log, id, dbsToSync)
 		if err != nil {
 			log.Info("failed to create databases on replica", "error", err, "replica_id", id)
 

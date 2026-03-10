@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"iter"
 	"strconv"
-	"strings"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -263,35 +262,6 @@ func (id ClickHouseReplicaID) Labels() map[string]string {
 		controllerutil.LabelClickHouseShardID:   strconv.Itoa(int(id.ShardID)),
 		controllerutil.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
 	}
-}
-
-// IDFromHostname extracts ClickHouseReplicaID from given hostname.
-func IDFromHostname(v *ClickHouseCluster, hostname string) (ClickHouseReplicaID, error) {
-	if !strings.HasPrefix(hostname, v.SpecificName()+"-") || !strings.HasSuffix(hostname, "-0") {
-		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q", hostname)
-	}
-
-	idParts := hostname[len(v.SpecificName())+1 : len(hostname)-2] // leave only {shard}-{index}
-
-	parts := strings.Split(idParts, "-")
-	if len(parts) != 2 {
-		return ClickHouseReplicaID{}, fmt.Errorf("invalid hostname %q, expected format: <name>-<shard>-<index>-0", hostname)
-	}
-
-	shardID, err := strconv.ParseInt(parts[0], 10, 32)
-	if err != nil {
-		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q in hostname %q: %w", parts[0], hostname, err)
-	}
-
-	index, err := strconv.ParseInt(parts[1], 10, 32)
-	if err != nil {
-		return ClickHouseReplicaID{}, fmt.Errorf("invalid index %q in hostname %q: %w", parts[1], hostname, err)
-	}
-
-	return ClickHouseReplicaID{
-		ShardID: int32(shardID),
-		Index:   int32(index),
-	}, nil
 }
 
 var _ logr.Marshaler = ClickHouseReplicaID{}
