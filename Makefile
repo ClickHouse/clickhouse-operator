@@ -3,12 +3,16 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.0.1
-ifeq ($(VERSION),latest)
-FULL_VERSION := latest
+ifeq ($(VERSION),)
+VERSION := $(shell git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n1 | cut -c 2-)
+ifeq ($(VERSION),)
+VERSION := 0.0.0
+endif
+FULL_VERSION := v$(VERSION)-$(shell git rev-parse --short HEAD)
 else
 FULL_VERSION := v$(VERSION)
 endif
+
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
@@ -207,7 +211,7 @@ push-helmchart: package-helmchart ## Push helm image. It will be pushed to the $
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date "+%FT%T")
 VERSION_PKG = github.com/ClickHouse/clickhouse-operator/internal/version
-GO_LDFLAGS = -ldflags "-X $(VERSION_PKG).Version=v$(VERSION) -X $(VERSION_PKG).GitCommitHash=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)"
+GO_LDFLAGS = -ldflags "-X $(VERSION_PKG).Version=$(FULL_VERSION) -X $(VERSION_PKG).GitCommitHash=$(GIT_COMMIT) -X $(VERSION_PKG).BuildTime=$(BUILD_TIME)"
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
@@ -227,7 +231,7 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
-		--build-arg VERSION=$(VERSION) \
+		--build-arg VERSION=$(FULL_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
 		-t ${IMG} .
@@ -250,12 +254,15 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx create --name clickhouse-operator-builder
 	$(CONTAINER_TOOL) buildx use clickhouse-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
-		--build-arg VERSION=$(VERSION) \
+		--build-arg VERSION=$(FULL_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
 		--tag ${IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm clickhouse-operator-builder
 	rm Dockerfile.cross
+
+docker-buildx-latest: docker-buildx ## Build and push docker image and tag it as latest
+	$(CONTAINER_TOOL) buildx imagetools create -t $(IMAGE_TAG_BASE):latest $(IMG)
 
 PLATFORMS_SPLITTED = $(shell echo $(PLATFORMS) | tr "," " ")
 .PHONY: docker-save
