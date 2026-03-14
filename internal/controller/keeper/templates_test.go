@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
+	appsv1 "k8s.io/api/apps/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -227,6 +228,81 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 		pdb := templatePodDisruptionBudget(cr)
 
 		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).To(BeNil())
+	})
+})
+
+var _ = Describe("templateStatefulSet K8s default alignment", func() {
+	var cr *v1.KeeperCluster
+
+	BeforeEach(func() {
+		cr = &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: ptr.To[int32](1),
+			},
+		}
+	})
+
+	It("should set terminationGracePeriodSeconds to 30 when not specified", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.TerminationGracePeriodSeconds).ToNot(BeNil())
+		Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+	})
+
+	It("should respect user-specified terminationGracePeriodSeconds", func() {
+		cr.Spec.PodTemplate.TerminationGracePeriodSeconds = ptr.To[int64](60)
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(60)))
+	})
+
+	It("should set schedulerName to default-scheduler when not specified", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.SchedulerName).To(Equal("default-scheduler"))
+	})
+
+	It("should respect user-specified schedulerName", func() {
+		cr.Spec.PodTemplate.SchedulerName = "custom-scheduler"
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.SchedulerName).To(Equal("custom-scheduler"))
+	})
+
+	It("should set securityContext to empty struct when not specified", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.SecurityContext).ToNot(BeNil())
+	})
+
+	It("should set rollingUpdate partition and maxUnavailable", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.UpdateStrategy.RollingUpdate).ToNot(BeNil())
+		Expect(sts.Spec.UpdateStrategy.RollingUpdate.Partition).ToNot(BeNil())
+		Expect(*sts.Spec.UpdateStrategy.RollingUpdate.Partition).To(Equal(int32(0)))
+		Expect(sts.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable).ToNot(BeNil())
+		Expect(sts.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(1))
+	})
+
+	It("should set persistentVolumeClaimRetentionPolicy to Retain", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.PersistentVolumeClaimRetentionPolicy).ToNot(BeNil())
+		Expect(sts.Spec.PersistentVolumeClaimRetentionPolicy.WhenDeleted).To(Equal(appsv1.RetainPersistentVolumeClaimRetentionPolicyType))
+		Expect(sts.Spec.PersistentVolumeClaimRetentionPolicy.WhenScaled).To(Equal(appsv1.RetainPersistentVolumeClaimRetentionPolicyType))
+	})
+
+	It("should set liveness probe successThreshold to 1", func() {
+		sts, err := templateStatefulSet(cr, 0)
+		Expect(err).ToNot(HaveOccurred())
+		container := sts.Spec.Template.Spec.Containers[0]
+		Expect(container.LivenessProbe).ToNot(BeNil())
+		Expect(container.LivenessProbe.SuccessThreshold).To(Equal(int32(1)))
 	})
 })
 

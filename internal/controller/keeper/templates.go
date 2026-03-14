@@ -277,8 +277,15 @@ func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*appsv1.S
 		PodManagementPolicy: appsv1.ParallelPodManagement,
 		Replicas:            ptr.To[int32](1),
 		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-			Type:          appsv1.RollingUpdateStatefulSetStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{},
+			Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+				Partition:      ptr.To[int32](0),
+				MaxUnavailable: ptr.To(intstr.FromInt32(1)),
+			},
+		},
+		PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+			WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+			WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
@@ -404,16 +411,32 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 	}
 
 	podTemplate := cr.Spec.PodTemplate.DeepCopy()
+
+	// Set K8s-defaulted fields explicitly so the desired spec matches
+	// what the API server returns, preventing spurious reconcile diffs.
+	terminationGracePeriod := podTemplate.TerminationGracePeriodSeconds
+	if terminationGracePeriod == nil {
+		terminationGracePeriod = ptr.To[int64](30)
+	}
+	schedulerName := podTemplate.SchedulerName
+	if schedulerName == "" {
+		schedulerName = corev1.DefaultSchedulerName
+	}
+	securityContext := podTemplate.SecurityContext
+	if securityContext == nil {
+		securityContext = &corev1.PodSecurityContext{}
+	}
+
 	podSpec := corev1.PodSpec{
-		TerminationGracePeriodSeconds: podTemplate.TerminationGracePeriodSeconds,
+		TerminationGracePeriodSeconds: terminationGracePeriod,
 		TopologySpreadConstraints:     podTemplate.TopologySpreadConstraints,
 		ImagePullSecrets:              podTemplate.ImagePullSecrets,
 		NodeSelector:                  podTemplate.NodeSelector,
 		Affinity:                      podTemplate.Affinity,
 		Tolerations:                   podTemplate.Tolerations,
-		SchedulerName:                 podTemplate.SchedulerName,
+		SchedulerName:                 schedulerName,
 		ServiceAccountName:            podTemplate.ServiceAccountName,
-		SecurityContext:               podTemplate.SecurityContext,
+		SecurityContext:               securityContext,
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,
 		Volumes:                       volumes,
