@@ -37,8 +37,9 @@ const (
 	KeeperPathUDF            = "/clickhouse/user_defined"
 	KeeperPathDistributedDDL = "/clickhouse/task_queue/ddl"
 
-	ContainerName          = "clickhouse-server"
-	DefaultRevisionHistory = 10
+	ContainerName                        = "clickhouse-server"
+	DefaultRevisionHistory               = 10
+	DefaultTerminationGracePeriodSeconds = 30
 	MaximalAffinityWeight  = 100
 
 	InterserverUserName        = "interserver"

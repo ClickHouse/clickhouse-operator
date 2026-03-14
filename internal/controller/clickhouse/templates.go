@@ -310,12 +310,14 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 	// what the API server returns, preventing spurious reconcile diffs.
 	terminationGracePeriod := podTemplate.TerminationGracePeriodSeconds
 	if terminationGracePeriod == nil {
-		terminationGracePeriod = ptr.To[int64](30)
+		terminationGracePeriod = ptr.To[int64](DefaultTerminationGracePeriodSeconds)
 	}
+
 	schedulerName := podTemplate.SchedulerName
 	if schedulerName == "" {
 		schedulerName = corev1.DefaultSchedulerName
 	}
+
 	securityContext := podTemplate.SecurityContext
 	if securityContext == nil {
 		securityContext = &corev1.PodSecurityContext{}

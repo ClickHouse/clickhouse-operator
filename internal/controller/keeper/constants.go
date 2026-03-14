@@ -29,8 +29,9 @@ const (
 	StorageLogPath      = internal.KeeperDataPath + "/coordination/log/"
 	StorageSnapshotPath = internal.KeeperDataPath + "/coordination/snapshots/"
 
-	ContainerName          = "clickhouse-keeper"
-	DefaultRevisionHistory = 10
+	ContainerName                        = "clickhouse-keeper"
+	DefaultRevisionHistory               = 10
+	DefaultTerminationGracePeriodSeconds = 30
 	MaximalAffinityWeight  = 100
 )
 

@@ -416,12 +416,14 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 	// what the API server returns, preventing spurious reconcile diffs.
 	terminationGracePeriod := podTemplate.TerminationGracePeriodSeconds
 	if terminationGracePeriod == nil {
-		terminationGracePeriod = ptr.To[int64](30)
+		terminationGracePeriod = ptr.To[int64](DefaultTerminationGracePeriodSeconds)
 	}
+
 	schedulerName := podTemplate.SchedulerName
 	if schedulerName == "" {
 		schedulerName = corev1.DefaultSchedulerName
 	}
+
 	securityContext := podTemplate.SecurityContext
 	if securityContext == nil {
 		securityContext = &corev1.PodSecurityContext{}
