@@ -205,6 +205,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 							Image:           cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
 							SecurityContext: cfg.ContainerTemplate.SecurityContext,
+							Resources:       cfg.ContainerTemplate.Resources,
 							Command:         []string{"sh", "-c", cfg.Binary + " --version > /dev/termination-log 2>&1"},
 						},
 					},

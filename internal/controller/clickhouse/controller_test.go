@@ -135,6 +135,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
 		Expect(jobs.Items).To(HaveLen(1))
 		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
+		Expect(jobs.Items[0].Spec.Template.Spec.Containers[0].Resources).ToNot(BeZero())
 
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ClusterNotReady": 1,
