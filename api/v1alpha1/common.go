@@ -248,8 +248,7 @@ type ContainerTemplateSpec struct {
 	// +kubebuilder:validation:Enum="Always";"Never";"IfNotPresent"
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
-	// Resources is the resource requirements for the container.
-	// This field cannot be updated once the cluster is created.
+	// Resources is the resource requirements for the server container.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 

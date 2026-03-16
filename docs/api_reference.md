@@ -152,7 +152,7 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 |-------|------|-------------|----------|---------|
 | `image` | [ContainerImage](#containerimage) | Image is the container image to be deployed. | true |  |
 | `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core) | ImagePullPolicy for the image, which defaults to IfNotPresent. | false |  |
-| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources is the resource requirements for the container.<br />This field cannot be updated once the cluster is created. | false |  |
+| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources is the resource requirements for the server container. | false |  |
 | `volumeMounts` | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array | VolumeMounts is the list of volume mounts for the container. | false |  |
 | `env` | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array | Env is the list of environment variables to set in the container. | false |  |
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options the container should be run with.<br />If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |  |

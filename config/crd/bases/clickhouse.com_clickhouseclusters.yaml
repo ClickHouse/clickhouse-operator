@@ -264,9 +264,8 @@ spec:
                     - IfNotPresent
                     type: string
                   resources:
-                    description: |-
-                      Resources is the resource requirements for the container.
-                      This field cannot be updated once the cluster is created.
+                    description: Resources is the resource requirements for the server
+                      container.
                     properties:
                       claims:
                         description: |-
