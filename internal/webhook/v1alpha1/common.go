@@ -106,7 +106,7 @@ func validateAdditionalDataVolumeClaimSpecs(specs []v1alpha1.AdditionalVolumeCla
 		// Resolve the effective mount path (mirrors WithDefaults logic) for duplicate detection.
 		mountPath := spec.MountPath
 		if mountPath == "" {
-			mountPath = "/var/lib/clickhouse/disks/" + spec.Name
+			mountPath = internal.AdditionalDiskBasePath + spec.Name
 		}
 		if _, ok := seenPaths[mountPath]; ok {
 			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d] has duplicate mountPath %q", i, mountPath))

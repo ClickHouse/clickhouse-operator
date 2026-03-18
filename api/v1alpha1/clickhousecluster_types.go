@@ -183,6 +183,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 			s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 		}
 		if s.AdditionalDataVolumeClaimSpecs[i].MountPath == "" {
+			// Keep in sync with internal.AdditionalDiskBasePath.
 			s.AdditionalDataVolumeClaimSpecs[i].MountPath = "/var/lib/clickhouse/disks/" + s.AdditionalDataVolumeClaimSpecs[i].Name
 		}
 	}
