@@ -14,12 +14,15 @@ spec:
     endpoints:
         - path: /metrics
           port: metrics
-          scheme: https
-          interval: "5s"
           bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          interval: "5s"
+          {{- if not .Values.metrics.secure }}
+          scheme: http
+          {{- else }}
+          scheme: https
           tlsConfig:
             {{- if .Values.certManager.enable }}
-            serverName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
+            serverName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
             # Apply secure TLS configuration with cert-manager
             insecureSkipVerify: false
             ca:
@@ -37,6 +40,7 @@ spec:
             # Development/Test mode (insecure configuration)
             insecureSkipVerify: true
             {{- end }}
+          {{- end }}
     selector:
         matchLabels:
             app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}

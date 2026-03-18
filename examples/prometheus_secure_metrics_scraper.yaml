@@ -56,4 +56,5 @@ spec:
   serviceMonitorSelector:
     matchLabels:
       # This is a matcher to ServiceMonitor created by helmchart or manifests if enabled
-      control-plane: clickhouse-operator
+      control-plane: controller-manager
+  serviceMonitorNamespaceSelector: {}
