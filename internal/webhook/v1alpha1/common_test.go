@@ -91,13 +91,12 @@ var _ = Describe("validateAdditionalDataVolumeClaimSpecs", func() {
 })
 
 var _ = Describe("validateAdditionalDataVolumeClaimSpecsChanges", func() {
-	It("should reject adding additionalDataVolumeClaimSpecs after creation", func() {
+	It("should allow adding additionalDataVolumeClaimSpecs after creation", func() {
 		err := validateAdditionalDataVolumeClaimSpecsChanges(
 			nil,
 			[]v1alpha1.AdditionalVolumeClaimSpec{{Name: "disk1", MountPath: "/path", Spec: corev1.PersistentVolumeClaimSpec{}}},
 		)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("cannot be added"))
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("should reject removing additionalDataVolumeClaimSpecs after creation", func() {
@@ -109,7 +108,7 @@ var _ = Describe("validateAdditionalDataVolumeClaimSpecsChanges", func() {
 		Expect(err.Error()).To(ContainSubstring("cannot be removed"))
 	})
 
-	It("should reject changing count", func() {
+	It("should allow adding new names while preserving old names", func() {
 		err := validateAdditionalDataVolumeClaimSpecsChanges(
 			[]v1alpha1.AdditionalVolumeClaimSpec{{Name: "disk1", MountPath: "/path", Spec: corev1.PersistentVolumeClaimSpec{}}},
 			[]v1alpha1.AdditionalVolumeClaimSpec{
@@ -117,8 +116,16 @@ var _ = Describe("validateAdditionalDataVolumeClaimSpecsChanges", func() {
 				{Name: "disk2", MountPath: "/path2", Spec: corev1.PersistentVolumeClaimSpec{}},
 			},
 		)
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should reject rename", func() {
+		err := validateAdditionalDataVolumeClaimSpecsChanges(
+			[]v1alpha1.AdditionalVolumeClaimSpec{{Name: "disk1", MountPath: "/path", Spec: corev1.PersistentVolumeClaimSpec{}}},
+			[]v1alpha1.AdditionalVolumeClaimSpec{{Name: "disk-renamed", MountPath: "/path", Spec: corev1.PersistentVolumeClaimSpec{}}},
+		)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("count cannot be changed"))
+		Expect(err.Error()).To(ContainSubstring("cannot be removed or renamed"))
 	})
 
 	It("should allow no change when both empty", func() {

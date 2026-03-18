@@ -1,8 +1,6 @@
 {{- /* Storage configuration: all disks in a single volume for true JBOD round-robin distribution */}}
 storage_configuration:
   disks:
-    default:
-      path: {{ .DefaultDiskPath }}
 {{- range .AdditionalDisks }}
     {{ .Name }}:
       path: {{ .Path }}

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -116,31 +115,26 @@ func validateAdditionalDataVolumeClaimSpecs(specs []v1alpha1.AdditionalVolumeCla
 	return errs
 }
 
-// validateAdditionalDataVolumeClaimSpecsChanges validates that additionalDataVolumeClaimSpecs
-// cannot be added or removed after cluster creation (StatefulSet volumeClaimTemplates are immutable).
+// validateAdditionalDataVolumeClaimSpecsChanges validates update policy for additionalDataVolumeClaimSpecs:
+// - adding new disks is allowed
+// - removing existing disks is rejected
+// - renaming existing disks is rejected (equivalent to remove+add)
+// - updating specs for existing names is allowed
 func validateAdditionalDataVolumeClaimSpecsChanges(oldSpecs, newSpecs []v1alpha1.AdditionalVolumeClaimSpec) error {
-	oldLen, newLen := len(oldSpecs), len(newSpecs)
-	if oldLen == 0 && newLen > 0 {
-		return errors.New("additionalDataVolumeClaimSpecs cannot be added after cluster creation")
-	}
-	if oldLen > 0 && newLen == 0 {
+	if len(oldSpecs) > 0 && len(newSpecs) == 0 {
 		return errors.New("additionalDataVolumeClaimSpecs cannot be removed after cluster creation")
 	}
-	if oldLen != newLen {
-		return errors.New("additionalDataVolumeClaimSpecs count cannot be changed after cluster creation")
+
+	newNames := make(map[string]struct{}, len(newSpecs))
+	for _, s := range newSpecs {
+		newNames[s.Name] = struct{}{}
 	}
-	oldNames := make([]string, len(oldSpecs))
-	newNames := make([]string, len(newSpecs))
-	for i, s := range oldSpecs {
-		oldNames[i] = s.Name
+
+	for _, s := range oldSpecs {
+		if _, ok := newNames[s.Name]; !ok {
+			return errors.New("additionalDataVolumeClaimSpecs names cannot be removed or renamed after cluster creation")
+		}
 	}
-	for i, s := range newSpecs {
-		newNames[i] = s.Name
-	}
-	slices.Sort(oldNames)
-	slices.Sort(newNames)
-	if !slices.Equal(oldNames, newNames) {
-		return errors.New("additionalDataVolumeClaimSpecs names cannot be changed after cluster creation")
-	}
+
 	return nil
 }
