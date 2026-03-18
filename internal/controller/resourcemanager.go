@@ -243,6 +243,10 @@ type ReplicaUpdateInput struct {
 	Existing  ReplicaState
 	Desired   ReplicaState
 	HasError  bool
+
+	// AdditionalPVCs holds desired PVCs for JBOD additional disks,
+	// reconciled out-of-band (not via StatefulSet volumeClaimTemplates).
+	AdditionalPVCs []*corev1.PersistentVolumeClaim
 }
 
 // UpdatePVC updates the PersistentVolumeClaim for the given replica ID if it exists and differs from the provided spec.
@@ -328,6 +332,13 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 
 	statefulSet.Spec.VolumeClaimTemplates = input.Existing.STS.Spec.VolumeClaimTemplates
 
+	// Reconcile additional JBOD PVCs (out-of-band, not via StatefulSet volumeClaimTemplates).
+	if len(input.AdditionalPVCs) > 0 {
+		if pvcErr := rm.reconcileAdditionalPVCs(ctx, log, input.AdditionalPVCs); pvcErr != nil {
+			log.Warn("failed to reconcile additional PVCs", "error", pvcErr)
+		}
+	}
+
 	{
 		desiredVer, err := semver.Parse(input.Desired.STS.Annotations[util.AnnotationStatefulSetVersion])
 		if err != nil {
@@ -400,6 +411,82 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 	}
 
 	return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+}
+
+// ReconcilePVC reconciles a PersistentVolumeClaim. Creates it if missing, or patches
+// mutable fields (storage size, volumeAttributesClassName, labels) if it already exists.
+func (rm *ResourceManager) ReconcilePVC(
+	ctx context.Context,
+	log util.Logger,
+	pvc *corev1.PersistentVolumeClaim,
+	action v1.EventAction,
+) (bool, error) {
+	const kind = "PersistentVolumeClaim"
+	log = log.With(kind, pvc.GetName())
+
+	if err := ctrlruntime.SetControllerReference(rm.owner, pvc, rm.ctrl.GetScheme()); err != nil {
+		return false, fmt.Errorf("set %s/%s ctrl reference: %w", kind, pvc.GetName(), err)
+	}
+
+	existing := &corev1.PersistentVolumeClaim{}
+	if err := rm.ctrl.GetClient().Get(ctx, types.NamespacedName{
+		Namespace: pvc.GetNamespace(),
+		Name:      pvc.GetName(),
+	}, existing); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return false, fmt.Errorf("get %s/%s: %w", kind, pvc.GetName(), err)
+		}
+		log.Info("PVC not found, creating")
+		return true, rm.Create(ctx, pvc, action)
+	}
+
+	desiredStorage := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	existingStorage := existing.Spec.Resources.Requests[corev1.ResourceStorage]
+	storageChanged := desiredStorage.Cmp(existingStorage) != 0
+	labelsChanged := !reflect.DeepEqual(pvc.GetLabels(), existing.GetLabels())
+
+	if !storageChanged && !labelsChanged {
+		log.Debug("PVC is up to date")
+		return false, nil
+	}
+
+	base := existing.DeepCopy()
+	existing.SetLabels(pvc.GetLabels())
+	if storageChanged {
+		log.Info("resizing PVC storage", "from", existingStorage.String(), "to", desiredStorage.String())
+		if existing.Spec.Resources.Requests == nil {
+			existing.Spec.Resources.Requests = make(corev1.ResourceList)
+		}
+		existing.Spec.Resources.Requests[corev1.ResourceStorage] = desiredStorage
+	}
+
+	if err := rm.ctrl.GetClient().Patch(ctx, existing, client.MergeFrom(base)); err != nil {
+		if util.ShouldEmitEvent(err) {
+			rm.ctrl.GetRecorder().Eventf(rm.owner, existing, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
+				"Update %s %s failed: %s", kind, existing.GetName(), err.Error())
+		}
+		return false, fmt.Errorf("patch %s/%s: %w", kind, existing.GetName(), err)
+	}
+
+	return true, nil
+}
+
+func (rm *ResourceManager) reconcileAdditionalPVCs(
+	ctx context.Context,
+	log util.Logger,
+	pvcs []*corev1.PersistentVolumeClaim,
+) error {
+	for _, desiredPVC := range pvcs {
+		if desiredPVC == nil {
+			continue
+		}
+
+		if _, err := rm.ReconcilePVC(ctx, log, desiredPVC, v1.EventActionReconciling); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func diffFilter(specFields []string) gcmp.Option {

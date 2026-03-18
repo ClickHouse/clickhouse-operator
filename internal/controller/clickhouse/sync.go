@@ -1018,6 +1018,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 	}
 
 	replica := r.ReplicaState[id]
+	additionalPVCs := templateAdditionalPVCs(r, id)
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
@@ -1028,6 +1029,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 			STS: statefulSet,
 			PVC: pvc,
 		},
+		AdditionalPVCs: additionalPVCs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconcile replica %s resources: %w", id, err)

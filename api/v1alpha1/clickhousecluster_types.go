@@ -49,6 +49,13 @@ type ClickHouseClusterSpec struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
+	// Additional persistent volume claims attached to each ClickHouse pod.
+	// Each entry creates a volumeClaimTemplate on the StatefulSet, producing
+	// per-pod PVCs named <name>-<statefulset>-<ordinal>.
+	// Use for JBOD / multi-disk storage layouts.
+	// +optional
+	AdditionalDataVolumeClaimSpecs []AdditionalVolumeClaimSpec `json:"additionalDataVolumeClaimSpecs,omitempty"`
+
 	// Additional labels that are added to resources.
 	// +optional
 	Labels map[string]string `json:"labels,omitempty"`
@@ -109,6 +116,19 @@ type AdditionalPort struct {
 	Port int32 `json:"port"`
 }
 
+// AdditionalVolumeClaimSpec defines an additional persistent volume claim for a ClickHouse pod.
+type AdditionalVolumeClaimSpec struct {
+	// Name used as the volumeClaimTemplate name and the volume/volumeMount name.
+	// Must be unique and not collide with the primary data volume name.
+	Name string `json:"name"`
+	// PVC spec for this additional volume.
+	Spec corev1.PersistentVolumeClaimSpec `json:"spec"`
+	// MountPath inside the ClickHouse container.
+	// If empty, defaults to /var/lib/clickhouse/disks/<name>.
+	// +optional
+	MountPath string `json:"mountPath,omitempty"`
+}
+
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
 func (s *ClickHouseClusterSpec) WithDefaults() {
 	defaultSpec := ClickHouseClusterSpec{
@@ -156,6 +176,15 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 
 	if s.DataVolumeClaimSpec != nil && len(s.DataVolumeClaimSpec.AccessModes) == 0 {
 		s.DataVolumeClaimSpec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
+	}
+
+	for i := range s.AdditionalDataVolumeClaimSpecs {
+		if len(s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes) == 0 {
+			s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
+		}
+		if s.AdditionalDataVolumeClaimSpecs[i].MountPath == "" {
+			s.AdditionalDataVolumeClaimSpecs[i].MountPath = "/var/lib/clickhouse/disks/" + s.AdditionalDataVolumeClaimSpecs[i].Name
+		}
 	}
 }
 

@@ -1,0 +1,18 @@
+{{- /* Storage configuration: default policy includes all disks (JBOD when additional disks present) */}}
+storage_configuration:
+  disks:
+    default:
+      path: {{ .DefaultDiskPath }}
+{{- range .AdditionalDisks }}
+    {{ .Name }}:
+      path: {{ .Path }}
+{{- end }}
+  policies:
+    default:
+      volumes:
+        main:
+          disk: default
+{{- range .AdditionalDisks }}
+        {{ .Name }}:
+          disk: {{ .Name }}
+{{- end }}

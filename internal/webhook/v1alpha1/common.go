@@ -4,9 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
 )
 
 // validateCustomVolumeMounts validates that the provided volume mounts correspond to defined volumes and
@@ -76,5 +80,55 @@ func validateDataVolumeSpecChanges(oldSpec, newSpec *corev1.PersistentVolumeClai
 		return errors.New("data volume cannot be removed after cluster creation")
 	}
 
+	return nil
+}
+
+// validateAdditionalDataVolumeClaimSpecs validates additionalDataVolumeClaimSpecs:
+// - names must not collide with the primary data volume name
+// - no duplicate names in the slice
+func validateAdditionalDataVolumeClaimSpecs(specs []v1alpha1.AdditionalVolumeClaimSpec) []error {
+	var errs []error
+	seen := make(map[string]struct{})
+	for i, spec := range specs {
+		if spec.Name == internal.PersistentVolumeName {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name %q collides with primary data volume name", i, spec.Name))
+		}
+		if _, ok := seen[spec.Name]; ok {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs has duplicate name %q", spec.Name))
+		}
+		seen[spec.Name] = struct{}{}
+		if spec.Name == "" {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name must not be empty", i))
+		}
+	}
+	return errs
+}
+
+// validateAdditionalDataVolumeClaimSpecsChanges validates that additionalDataVolumeClaimSpecs
+// cannot be added or removed after cluster creation (StatefulSet volumeClaimTemplates are immutable).
+func validateAdditionalDataVolumeClaimSpecsChanges(oldSpecs, newSpecs []v1alpha1.AdditionalVolumeClaimSpec) error {
+	oldLen, newLen := len(oldSpecs), len(newSpecs)
+	if oldLen == 0 && newLen > 0 {
+		return errors.New("additionalDataVolumeClaimSpecs cannot be added after cluster creation")
+	}
+	if oldLen > 0 && newLen == 0 {
+		return errors.New("additionalDataVolumeClaimSpecs cannot be removed after cluster creation")
+	}
+	if oldLen != newLen {
+		return errors.New("additionalDataVolumeClaimSpecs count cannot be changed after cluster creation")
+	}
+	oldNames := make([]string, len(oldSpecs))
+	newNames := make([]string, len(newSpecs))
+	for i, s := range oldSpecs {
+		oldNames[i] = s.Name
+	}
+	for i, s := range newSpecs {
+		newNames[i] = s.Name
+	}
+	slices.Sort(oldNames)
+	slices.Sort(newNames)
+	if !slices.Equal(oldNames, newNames) {
+		return errors.New("additionalDataVolumeClaimSpecs names cannot be changed after cluster creation")
+	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -87,6 +88,13 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster,
 		errs = append(errs, err)
 	}
 
+	if err := validateAdditionalDataVolumeClaimSpecsChanges(
+		oldCluster.Spec.AdditionalDataVolumeClaimSpecs,
+		newCluster.Spec.AdditionalDataVolumeClaimSpecs,
+	); err != nil {
+		errs = append(errs, err)
+	}
+
 	return warns, errors.Join(errs...)
 }
 
@@ -111,10 +119,17 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
+	additionalVolumeErrs := validateAdditionalDataVolumeClaimSpecs(obj.Spec.AdditionalDataVolumeClaimSpecs)
+	errs = append(errs, additionalVolumeErrs...)
+
+	reservedNames := slices.Clone(internal.ReservedClickHouseVolumeNames)
+	for _, addl := range obj.Spec.AdditionalDataVolumeClaimSpecs {
+		reservedNames = append(reservedNames, addl.Name)
+	}
 	volumeWarns, volumeErrs := validateVolumes(
 		obj.Spec.PodTemplate.Volumes,
 		obj.Spec.ContainerTemplate.VolumeMounts,
-		internal.ReservedClickHouseVolumeNames,
+		reservedNames,
 		internal.ClickHouseDataPath,
 		obj.Spec.DataVolumeClaimSpec != nil,
 	)
