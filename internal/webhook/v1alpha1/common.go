@@ -86,20 +86,32 @@ func validateDataVolumeSpecChanges(oldSpec, newSpec *corev1.PersistentVolumeClai
 // validateAdditionalDataVolumeClaimSpecs validates additionalDataVolumeClaimSpecs:
 // - names must not collide with the primary data volume name
 // - no duplicate names in the slice
+// - no duplicate mount paths in the slice (would cause two PVCs to mount at the same path)
 func validateAdditionalDataVolumeClaimSpecs(specs []v1alpha1.AdditionalVolumeClaimSpec) []error {
 	var errs []error
-	seen := make(map[string]struct{})
+	seenNames := make(map[string]struct{})
+	seenPaths := make(map[string]struct{})
 	for i, spec := range specs {
-		if spec.Name == internal.PersistentVolumeName {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name %q collides with primary data volume name", i, spec.Name))
-		}
-		if _, ok := seen[spec.Name]; ok {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs has duplicate name %q", spec.Name))
-		}
-		seen[spec.Name] = struct{}{}
 		if spec.Name == "" {
 			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name must not be empty", i))
 		}
+		if spec.Name == internal.PersistentVolumeName {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name %q collides with primary data volume name", i, spec.Name))
+		}
+		if _, ok := seenNames[spec.Name]; ok {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs has duplicate name %q", spec.Name))
+		}
+		seenNames[spec.Name] = struct{}{}
+
+		// Resolve the effective mount path (mirrors WithDefaults logic) for duplicate detection.
+		mountPath := spec.MountPath
+		if mountPath == "" {
+			mountPath = "/var/lib/clickhouse/disks/" + spec.Name
+		}
+		if _, ok := seenPaths[mountPath]; ok {
+			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d] has duplicate mountPath %q", i, mountPath))
+		}
+		seenPaths[mountPath] = struct{}{}
 	}
 	return errs
 }

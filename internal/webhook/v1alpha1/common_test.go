@@ -68,6 +68,26 @@ var _ = Describe("validateAdditionalDataVolumeClaimSpecs", func() {
 		})
 		Expect(errs).To(BeEmpty())
 	})
+
+	It("should reject duplicate explicit mountPaths", func() {
+		errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+			{Name: "disk1", MountPath: "/mnt/data", Spec: corev1.PersistentVolumeClaimSpec{}},
+			{Name: "disk2", MountPath: "/mnt/data", Spec: corev1.PersistentVolumeClaimSpec{}},
+		})
+		Expect(errs).To(HaveLen(1))
+		Expect(errs[0].Error()).To(ContainSubstring("duplicate mountPath"))
+	})
+
+	It("should reject duplicate mountPaths where one is implicit default", func() {
+		// disk1 has no mountPath so it defaults to /var/lib/clickhouse/disks/disk1;
+		// disk2 explicitly sets the same path — both resolve to the same location.
+		errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+			{Name: "disk1", Spec: corev1.PersistentVolumeClaimSpec{}},
+			{Name: "disk2", MountPath: "/var/lib/clickhouse/disks/disk1", Spec: corev1.PersistentVolumeClaimSpec{}},
+		})
+		Expect(errs).To(HaveLen(1))
+		Expect(errs[0].Error()).To(ContainSubstring("duplicate mountPath"))
+	})
 })
 
 var _ = Describe("validateAdditionalDataVolumeClaimSpecsChanges", func() {

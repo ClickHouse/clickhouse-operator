@@ -1,4 +1,4 @@
-{{- /* Storage configuration: default policy includes all disks (JBOD when additional disks present) */}}
+{{- /* Storage configuration: all disks in a single volume for true JBOD round-robin distribution */}}
 storage_configuration:
   disks:
     default:
@@ -11,8 +11,8 @@ storage_configuration:
     default:
       volumes:
         main:
-          disk: default
+          disk:
+            - default
 {{- range .AdditionalDisks }}
-        {{ .Name }}:
-          disk: {{ .Name }}
+            - {{ .Name }}
 {{- end }}

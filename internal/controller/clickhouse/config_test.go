@@ -81,10 +81,25 @@ var _ = Describe("ConfigGenerator", func() {
 		storageConfig, ok := configData["etc-clickhouse-server-config-d-10-storage-jbod-yaml"]
 		Expect(ok).To(BeTrue())
 		Expect(storageConfig).To(ContainSubstring("storage_configuration"))
-		Expect(storageConfig).To(ContainSubstring("default"))
 		Expect(storageConfig).To(ContainSubstring("disk1"))
 		Expect(storageConfig).To(ContainSubstring("disk2"))
 		Expect(storageConfig).To(ContainSubstring("/var/lib/clickhouse/disks/disk1/"))
 		Expect(storageConfig).To(ContainSubstring("/custom/path/"))
+
+		// Verify true JBOD: all disks must be listed inside a single "main" volume
+		// as a YAML list (round-robin distribution), not as separate per-disk volumes.
+		parsed := map[any]any{}
+		Expect(yaml.Unmarshal([]byte(storageConfig), &parsed)).To(Succeed())
+		policies := parsed["storage_configuration"].(map[any]any)["policies"].(map[any]any)
+		volumes := policies["default"].(map[any]any)["volumes"].(map[any]any)
+		Expect(volumes).To(HaveLen(1), "true JBOD has exactly one volume containing all disks")
+		mainVolume := volumes["main"].(map[any]any)
+		diskList, ok := mainVolume["disk"].([]any)
+		Expect(ok).To(BeTrue(), "disks under main volume must be a list")
+		diskNames := make([]string, len(diskList))
+		for i, d := range diskList {
+			diskNames[i] = d.(string)
+		}
+		Expect(diskNames).To(ContainElements("default", "disk1", "disk2"))
 	})
 })

@@ -229,10 +229,8 @@ func (g *storageJbodConfigGenerator) Generate(r *clickhouseReconciler, _ v1.Clic
 		Path string
 	}, 0, len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs))
 	for _, addl := range r.Cluster.Spec.AdditionalDataVolumeClaimSpecs {
+		// MountPath is guaranteed non-empty by WithDefaults(); ensure trailing slash for ClickHouse disk config.
 		diskPath := addl.MountPath
-		if diskPath == "" {
-			diskPath = "/var/lib/clickhouse/disks/" + addl.Name
-		}
 		if diskPath[len(diskPath)-1] != '/' {
 			diskPath += "/"
 		}
