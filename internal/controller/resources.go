@@ -13,9 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrlruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -126,7 +125,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 		return false, fmt.Errorf("deep hash %s/%s: %w", kind, resource.GetName(), err)
 	}
 
-	util.AddHashWithKeyToAnnotations(resource, util.AnnotationSpecHash, resourceHash)
+	util.AddSpecHashToObject(resource, resourceHash)
 
 	foundResource := resource.DeepCopyObject().(client.Object) //nolint:forcetypeassert // safe cast
 
@@ -215,10 +214,26 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Con
 
 // Update updates the given Kubernetes resource and emits events on failure.
 func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Context, resource client.Object, action v1.EventAction) error {
+	cli := r.GetClient()
 	recorder := r.GetRecorder()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
+	fetched := resource.DeepCopyObject().(client.Object) //nolint:forcetypeassert
+	first := true
 
-	if err := r.GetClient().Update(ctx, resource); err != nil {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if !first {
+			if err := cli.Get(ctx, client.ObjectKeyFromObject(fetched), fetched); err != nil {
+				return fmt.Errorf("get %s/%s: %w", kind, resource.GetName(), err)
+			}
+
+			resource.SetResourceVersion(fetched.GetResourceVersion())
+		}
+
+		first = false
+
+		return cli.Update(ctx, resource)
+	})
+	if err != nil {
 		if util.ShouldEmitEvent(err) {
 			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
 				"Update %s %s failed: %s", kind, resource.GetName(), err.Error())
@@ -251,74 +266,87 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Con
 	return nil
 }
 
-// UpdatePVC updates the PersistentVolumeClaim for the given replica ID if it exists and differs from the provided spec.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(
+// GetPVCByStatefulSet returns the PersistentVolumeClaim created by given StatefulSet.
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) GetPVCByStatefulSet(
 	ctx context.Context,
 	log util.Logger,
-	id ReplicaID,
-	volumeSpec corev1.PersistentVolumeClaimSpec,
-	action v1.EventAction,
-) error {
+	sts *appsv1.StatefulSet,
+) (*corev1.PersistentVolumeClaim, error) {
+	if len(sts.Spec.VolumeClaimTemplates) == 0 {
+		return nil, fmt.Errorf("StatefulSet %s does not have volume claim templates", sts.Name)
+	}
+
 	cli := r.GetClient()
 
-	var pvcs corev1.PersistentVolumeClaimList
-
-	req := util.AppRequirements(r.Cluster.GetNamespace(), r.Cluster.SpecificName())
-	for k, v := range id.Labels() {
-		idReq, _ := labels.NewRequirement(k, selection.Equals, []string{v})
-		req.LabelSelector = req.LabelSelector.Add(*idReq)
-	}
-
-	log.Debug("listing replica PVCs", "replica_id", id, "selector", req.LabelSelector.String())
-
-	if err := cli.List(ctx, &pvcs, req); err != nil {
-		return fmt.Errorf("list replica %v PVCs: %w", id, err)
-	}
-
-	if len(pvcs.Items) == 0 {
-		log.Info("no PVCs found for replica, skipping update", "replica_id", id)
-		return nil
-	}
-
-	if len(pvcs.Items) > 1 {
-		pvcNames := make([]string, len(pvcs.Items))
-		for i, pvc := range pvcs.Items {
-			pvcNames[i] = pvc.Name
+	var pvc corev1.PersistentVolumeClaim
+	if err := cli.Get(ctx, types.NamespacedName{
+		Namespace: sts.Namespace,
+		Name:      fmt.Sprintf("%s-%s-0", sts.Spec.VolumeClaimTemplates[0].Name, sts.Name),
+	}, &pvc); err != nil {
+		if k8serrors.IsNotFound(err) {
+			log.Info("PVC not found for StatefulSet", "statefulset", sts.Name)
+			return nil, nil
 		}
 
-		return fmt.Errorf("found multiple PVCs for replica %v: %v", id, pvcNames)
+		return nil, fmt.Errorf("get PVC for StatefulSet %s: %w", sts.Name, err)
 	}
 
-	if gcmp.Equal(pvcs.Items[0].Spec, volumeSpec) {
-		log.Debug("replica PVC is up to date", "pvc", pvcs.Items[0].Name)
-		return nil
-	}
-
-	targetSpec := volumeSpec.DeepCopy()
-	if err := util.ApplyDefault(targetSpec, pvcs.Items[0].Spec); err != nil {
-		return fmt.Errorf("apply patch to replica PVC %v: %w", id, err)
-	}
-
-	log.Info("updating replica PVC", "pvc", pvcs.Items[0].Name, "diff", gcmp.Diff(pvcs.Items[0].Spec, targetSpec))
-
-	pvcs.Items[0].Spec = *targetSpec
-	if err := r.Update(ctx, &pvcs.Items[0], action); err != nil {
-		return fmt.Errorf("update replica PVC %v: %w", id, err)
-	}
-
-	return nil
+	return &pvc, nil
 }
 
 // ReplicaUpdateInput contains the parameters needed to reconcile a StatefulSet for a replica.
 type ReplicaUpdateInput struct {
-	ExistingSTS           *appsv1.StatefulSet
-	DesiredConfigMap      *corev1.ConfigMap
-	DesiredSTS            *appsv1.StatefulSet
-	HasError              bool
 	ConfigurationRevision string
-	StatefulSetRevision   string
-	BreakingSTSVersion    semver.Version
-	DataVolumeClaimSpec   *corev1.PersistentVolumeClaimSpec
+	DesiredConfigMap      *corev1.ConfigMap
+
+	StatefulSetRevision string
+	ExistingSTS         *appsv1.StatefulSet
+	DesiredSTS          *appsv1.StatefulSet
+	HasError            bool
+	BreakingSTSVersion  semver.Version
+
+	PVCRevision    string
+	ExistingPVC    *corev1.PersistentVolumeClaim
+	DesiredPVCSpec *corev1.PersistentVolumeClaimSpec
+}
+
+// UpdatePVC updates the PersistentVolumeClaim for the given replica ID if it exists and differs from the provided spec.
+func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(ctx context.Context, log util.Logger, input ReplicaUpdateInput) error {
+	if input.DesiredPVCSpec == nil {
+		return nil
+	}
+
+	if input.ExistingPVC == nil {
+		log.Debug("replica PVC not found, skipping update")
+		return nil
+	}
+
+	log = log.With("pvc", input.ExistingPVC.Name)
+
+	if util.GetSpecHashFromObject(input.ExistingPVC) == input.PVCRevision {
+		log.Debug("PVC is up to date")
+		return nil
+	}
+
+	targetSpec := input.DesiredPVCSpec.DeepCopy()
+	if err := util.ApplyDefault(targetSpec, input.ExistingPVC.Spec); err != nil {
+		return fmt.Errorf("patch PVC spec: %w", err)
+	}
+
+	log.Info("updating PVC", "diff", gcmp.Diff(input.ExistingPVC.Spec, *targetSpec))
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: *input.ExistingPVC.ObjectMeta.DeepCopy(),
+		Spec:       *targetSpec,
+	}
+
+	util.AddSpecHashToObject(pvc, input.PVCRevision)
+
+	if err := r.Update(ctx, pvc, v1.EventActionReconciling); err != nil {
+		return fmt.Errorf("update PVC: %w", err)
+	}
+
+	return nil
 }
 
 // ReconcileReplicaResources reconciles a replica's ConfigMap, StatefulSet and PVC.
@@ -326,7 +354,6 @@ type ReplicaUpdateInput struct {
 func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResources(
 	ctx context.Context,
 	log util.Logger,
-	replicaID ReplicaID,
 	input ReplicaUpdateInput,
 ) (*ctrlruntime.Result, error) {
 	configChanged, err := r.ReconcileConfigMap(ctx, log, input.DesiredConfigMap, v1.EventActionReconciling)
@@ -336,14 +363,18 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 
 	statefulSet := input.DesiredSTS
 
-	if err := ctrlruntime.SetControllerReference(r.Cluster, statefulSet, r.GetScheme()); err != nil {
+	if err = ctrlruntime.SetControllerReference(r.Cluster, statefulSet, r.GetScheme()); err != nil {
 		return nil, fmt.Errorf("set replica StatefulSet controller reference: %w", err)
 	}
 
 	if input.ExistingSTS == nil {
 		log.Info("replica StatefulSet not found, creating", "statefulset", statefulSet.Name)
 		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
-		util.AddHashWithKeyToAnnotations(statefulSet, util.AnnotationSpecHash, input.StatefulSetRevision)
+		util.AddSpecHashToObject(statefulSet, input.StatefulSetRevision)
+
+		if input.DesiredPVCSpec != nil {
+			util.AddSpecHashToObject(&statefulSet.Spec.VolumeClaimTemplates[0], input.PVCRevision)
+		}
 
 		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("create replica: %w", err)
@@ -352,10 +383,19 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
+	if err = r.UpdatePVC(ctx, log, input); err != nil {
+		log.Warn("failed to update replica PVC", "error", err)
+	}
+
+	statefulSet.Spec.VolumeClaimTemplates = input.ExistingSTS.Spec.VolumeClaimTemplates
+
 	// Check if the StatefulSet is outdated and needs to be recreated
 	v, err := semver.Parse(input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion])
 	if err != nil || input.BreakingSTSVersion.GT(v) {
-		log.Warn("removing StatefulSet because of a breaking change", "found_version", v.String(), "expected_version", input.BreakingSTSVersion.String())
+		log.Warn("removing StatefulSet because of a breaking change",
+			"found_version", input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion],
+			"expected_version", input.BreakingSTSVersion.String(),
+		)
 
 		if err := r.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("recreate replica: %w", err)
@@ -376,7 +416,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 
 		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 
-		util.AddObjectConfigHash(input.ExistingSTS, input.ConfigurationRevision)
+		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
 
 		stsNeedsUpdate = true
 	} else if restartedAt, ok := input.ExistingSTS.Spec.Template.Annotations[util.AnnotationRestartedAt]; ok {
@@ -420,25 +460,16 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 		return nil, nil
 	}
 
-	if input.DataVolumeClaimSpec != nil {
-		if !gcmp.Equal(input.ExistingSTS.Spec.VolumeClaimTemplates[0].Spec, input.DataVolumeClaimSpec) {
-			if err = r.UpdatePVC(ctx, log, replicaID, *input.DataVolumeClaimSpec, v1.EventActionReconciling); err != nil {
-				//nolint:nilerr // Error is logged internally and event sent
-				return nil, nil
-			}
-
-			statefulSet.Spec.VolumeClaimTemplates = input.ExistingSTS.Spec.VolumeClaimTemplates
-		}
-	}
-
 	log.Info("updating replica StatefulSet", "statefulset", statefulSet.Name)
-	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS.Spec, statefulSet.Spec))
-	input.ExistingSTS.Spec = statefulSet.Spec
-	input.ExistingSTS.Annotations = util.MergeMaps(input.ExistingSTS.Annotations, statefulSet.Annotations)
-	input.ExistingSTS.Labels = util.MergeMaps(input.ExistingSTS.Labels, statefulSet.Labels)
-	util.AddHashWithKeyToAnnotations(input.ExistingSTS, util.AnnotationSpecHash, input.StatefulSetRevision)
 
-	if err = r.Update(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
+	updatedSTS := input.ExistingSTS.DeepCopy()
+	updatedSTS.Spec = statefulSet.Spec
+	updatedSTS.Annotations = util.MergeMaps(updatedSTS.Annotations, statefulSet.Annotations)
+	updatedSTS.Labels = util.MergeMaps(updatedSTS.Labels, statefulSet.Labels)
+	util.AddSpecHashToObject(updatedSTS, input.StatefulSetRevision)
+	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS, updatedSTS))
+
+	if err = r.Update(ctx, updatedSTS, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("update replica: %w", err)
 	}
 

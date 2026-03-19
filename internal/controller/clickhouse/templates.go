@@ -168,6 +168,8 @@ func getStatefulSetRevision(r *clickhouseReconciler) (string, error) {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
 
+	sts.Spec.VolumeClaimTemplates = nil
+
 	hash, err := controllerutil.DeepHashObject(sts)
 	if err != nil {
 		return "", fmt.Errorf("hash template StatefulSet: %w", err)

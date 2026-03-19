@@ -34,6 +34,11 @@ func GetSpecHashFromObject(found client.Object) string {
 	return annotations[AnnotationSpecHash]
 }
 
+// AddSpecHashToObject adds given spec hash to object's annotations.
+func AddSpecHashToObject(obj client.Object, hash string) {
+	AddHashWithKeyToAnnotations(obj, AnnotationSpecHash, hash)
+}
+
 // GetConfigHashFromObject retrieves config hash from object's annotations.
 func GetConfigHashFromObject(found client.Object) string {
 	annotations := found.GetAnnotations()

@@ -12,12 +12,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
@@ -338,5 +340,85 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
 		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(BeEmpty())
+	})
+
+	It("should update all replica resources, but not proceed to the next if failed", func(ctx context.Context) {
+		By("creating a new cluster with DataVolumeClaimSpec")
+
+		pvcCR := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pvc-test",
+				Namespace: "default",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:         ptr.To[int32](2),
+				Shards:           ptr.To[int32](1),
+				KeeperClusterRef: &corev1.LocalObjectReference{Name: keeperName},
+				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			},
+		}
+		Expect(suite.Client.Create(ctx, pvcCR)).To(Succeed())
+
+		By("reconcile to create all resources including STS with VolumeClaimTemplates")
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: pvcCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(ctx, pvcCR.NamespacedName(), pvcCR)).To(Succeed())
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+
+		By("marking StatefulSets as ready")
+		testutil.ReconcileStatefulSets(ctx, pvcCR, suite)
+
+		By("recording STS state before PVC change")
+
+		replicaID := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
+		stsName := pvcCR.StatefulSetNameByReplicaID(replicaID)
+
+		var sts appsv1.StatefulSet
+		Expect(suite.Client.Get(ctx, types.NamespacedName{Namespace: pvcCR.Namespace, Name: stsName}, &sts)).To(Succeed())
+
+		By("make STS and PVC changes")
+
+		pvcCR.Spec.DataVolumeClaimSpec.StorageClassName = new("changed")
+		pvcCR.Spec.ContainerTemplate.Image = v1.ContainerImage{Tag: "changed"}
+		Expect(suite.Client.Update(ctx, pvcCR)).To(Succeed())
+
+		By("reconcile updated CR")
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: pvcCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"FailedUpdate": 1,
+		})
+
+		By("ensuring STS updated")
+		Expect(suite.Client.Get(ctx, pvcCR.NamespacedName(), pvcCR)).To(Succeed())
+		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(&sts), &sts)).To(Succeed())
+		Expect(sts.Annotations[controllerutil.AnnotationSpecHash]).To(Equal(pvcCR.Status.StatefulSetRevision))
+
+		By("retry reconcile")
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: pvcCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"FailedUpdate": 1,
+		})
+
+		By("ensuring next replica not changed")
+		Expect(suite.Client.Get(ctx, pvcCR.NamespacedName(), pvcCR)).To(Succeed())
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
+			Namespace: pvcCR.Namespace,
+			Name:      pvcCR.StatefulSetNameByReplicaID(v1.ClickHouseReplicaID{ShardID: 0, Index: 0}),
+		}, &sts)).To(Succeed())
+		Expect(sts.Annotations[controllerutil.AnnotationSpecHash]).ToNot(Equal(pvcCR.Status.StatefulSetRevision))
 	})
 })

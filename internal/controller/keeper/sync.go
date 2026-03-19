@@ -28,6 +28,7 @@ type replicaState struct {
 	Error       bool `json:"error"`
 	Status      serverStatus
 	StatefulSet *appsv1.StatefulSet
+	PVC         *corev1.PersistentVolumeClaim
 }
 
 func (r replicaState) Updated() bool {
@@ -52,20 +53,30 @@ func (r replicaState) Ready(ctx *keeperReconciler) bool {
 	return stsReady && slices.Contains(clusterModes, r.Status.ServerState)
 }
 
-func (r replicaState) HasStatefulSetDiff(rec *keeperReconciler) bool {
+func (r replicaState) HasDiff(rec *keeperReconciler) bool {
 	if r.StatefulSet == nil {
 		return true
 	}
 
-	return ctrlutil.GetSpecHashFromObject(r.StatefulSet) != rec.Cluster.Status.StatefulSetRevision
-}
-
-func (r replicaState) HasConfigMapDiff(rec *keeperReconciler) bool {
-	if r.StatefulSet == nil {
+	if ctrlutil.GetSpecHashFromObject(r.StatefulSet) != rec.Cluster.Status.StatefulSetRevision {
 		return true
 	}
 
-	return ctrlutil.GetConfigHashFromObject(r.StatefulSet) != rec.Cluster.Status.ConfigurationRevision
+	if ctrlutil.GetConfigHashFromObject(r.StatefulSet) != rec.Cluster.Status.ConfigurationRevision {
+		return true
+	}
+
+	if rec.Cluster.Spec.DataVolumeClaimSpec != nil {
+		if r.PVC == nil {
+			return true
+		}
+
+		if ctrlutil.GetSpecHashFromObject(r.PVC) != rec.pvcRevision {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (r replicaState) UpdateStage(rec *keeperReconciler) chctrl.ReplicaUpdateStage {
@@ -81,7 +92,7 @@ func (r replicaState) UpdateStage(rec *keeperReconciler) chctrl.ReplicaUpdateSta
 		return chctrl.StageUpdating
 	}
 
-	if r.HasConfigMapDiff(rec) || r.HasStatefulSetDiff(rec) {
+	if r.HasDiff(rec) {
 		return chctrl.StageHasDiff
 	}
 
@@ -102,6 +113,7 @@ type keeperReconciler struct {
 	ExtraConfig map[string]any
 	// Computed by reconcileActiveReplicaStatus
 	HorizontalScaleAllowed bool
+	pvcRevision            string
 }
 type reconcileFunc func(context.Context, ctrlutil.Logger) (*ctrl.Result, error)
 
@@ -224,6 +236,13 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", stsRevision))
 	}
 
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		r.pvcRevision, err = ctrlutil.DeepHashObject(r.Cluster.Spec.DataVolumeClaimSpec)
+		if err != nil {
+			return nil, fmt.Errorf("get PVC revision: %w", err)
+		}
+	}
+
 	probeResult, err := r.VersionProbe(ctx, log, chctrl.VersionProbeConfig{
 		Binary:            "clickhouse-keeper",
 		Labels:            r.Cluster.Spec.Labels,
@@ -278,10 +297,19 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			status = getServerStatus(ctx, log.With("replica_id", id), r.Cluster.HostnameByID(id), tlsRequired)
 		}
 
+		var pvc *corev1.PersistentVolumeClaim
+		if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+			pvc, err = r.GetPVCByStatefulSet(ctx, log.With("replica_id", id), &sts)
+			if err != nil {
+				log.Error(err, "failed to get PVC for replica", "replica_id", id)
+			}
+		}
+
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
 		return id, replicaState{
 			StatefulSet: &sts,
+			PVC:         pvc,
 			Error:       hasError,
 			Status:      status,
 		}, nil
@@ -606,7 +634,7 @@ func (r *keeperReconciler) reconcileConditions(ctx context.Context, log ctrlutil
 			replicasByMode[replica.Status.ServerState] = append(replicasByMode[replica.Status.ServerState], id)
 		}
 
-		if replica.HasConfigMapDiff(r) || replica.HasStatefulSetDiff(r) || !replica.Updated() {
+		if replica.HasDiff(r) || !replica.Updated() {
 			notUpdatedReplicas = append(notUpdatedReplicas, id)
 		}
 	}
@@ -745,15 +773,19 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 
 	replica := r.Replica(replicaID)
 
-	result, err := r.ReconcileReplicaResources(ctx, log, replicaID, chctrl.ReplicaUpdateInput{
-		ExistingSTS:           replica.StatefulSet,
-		DesiredConfigMap:      configMap,
-		DesiredSTS:            statefulSet,
-		HasError:              replica.Error,
+	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		ConfigurationRevision: r.Cluster.Status.ConfigurationRevision,
-		StatefulSetRevision:   r.Cluster.Status.StatefulSetRevision,
-		BreakingSTSVersion:    breakingStatefulSetVersion,
-		DataVolumeClaimSpec:   r.Cluster.Spec.DataVolumeClaimSpec,
+		DesiredConfigMap:      configMap,
+
+		StatefulSetRevision: r.Cluster.Status.StatefulSetRevision,
+		ExistingSTS:         replica.StatefulSet,
+		DesiredSTS:          statefulSet,
+		HasError:            replica.Error,
+		BreakingSTSVersion:  breakingStatefulSetVersion,
+
+		PVCRevision:    r.pvcRevision,
+		ExistingPVC:    replica.PVC,
+		DesiredPVCSpec: r.Cluster.Spec.DataVolumeClaimSpec,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconcile replica %q resources: %w", replicaID, err)
@@ -840,7 +872,7 @@ func (r *keeperReconciler) checkHorizontalScalingAllowed(ctx context.Context, lo
 
 	readyReplicas := 0
 	for id, replica := range r.ReplicaState {
-		if !replica.HasConfigMapDiff(r) && !replica.HasStatefulSetDiff(r) {
+		if !replica.HasDiff(r) {
 			updatedReplicas++
 		}
 

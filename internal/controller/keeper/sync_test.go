@@ -92,11 +92,19 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("custom-keeper:latest"))
+		Expect(sts.Annotations[util.AnnotationSpecHash]).To(Equal(rec.Cluster.Status.StatefulSetRevision))
 	})
 
 	It("should restart server on config changes", func(ctx context.Context) {
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).To(BeEmpty())
+		rec.ReplicaState[replicaID] = replicaState{
+			Error:       false,
+			StatefulSet: sts,
+			Status: serverStatus{
+				ServerState: ModeStandalone,
+			},
+		}
 		rec.Cluster.Spec.Settings.Logger.Level = "info"
 		rec.Cluster.Status.ConfigurationRevision = "cfg-v2"
 		result, err := rec.reconcileReplicaResources(ctx, log)

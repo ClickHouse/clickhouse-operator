@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,14 +10,18 @@ import (
 	"strings"
 
 	"github.com/go-logr/zapr"
+	gcmp "github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
 	. "github.com/onsi/gomega"    //nolint:staticcheck
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -70,11 +75,34 @@ func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(suite.Cfg).NotTo(BeNil())
 
-	suite.Client, err = client.New(suite.Cfg, client.Options{Scheme: scheme.Scheme})
+	rawClient, err := client.NewWithWatch(suite.Cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
-	Expect(suite.Client).NotTo(BeNil())
+	Expect(rawClient).NotTo(BeNil())
+
+	suite.Client = interceptor.NewClient(rawClient, interceptor.Funcs{
+		Update: validateUpdate,
+	})
 
 	return suite
+}
+
+// validateUpdate rejects resource updates to mimic real API server behavior.
+func validateUpdate(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+	if updatedPVC, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+		var pvc corev1.PersistentVolumeClaim
+
+		if err := c.Get(ctx, client.ObjectKeyFromObject(updatedPVC), &pvc); err != nil {
+			return fmt.Errorf("get existing PVC: %w", err)
+		}
+
+		if !gcmp.Equal(updatedPVC.Spec, pvc.Spec, gcmp.FilterPath(func(p gcmp.Path) bool {
+			return p.Last().String() == "Resources"
+		}, gcmp.Ignore())) {
+			return k8serrors.NewForbidden(schema.GroupResource{}, updatedPVC.GetName(), errors.New("immutable field changed"))
+		}
+	}
+
+	return c.Update(ctx, obj, opts...) //nolint:wrapcheck
 }
 
 // ReconcileStatefulSets updates the status of all StatefulSets associated with the given Cluster.
@@ -86,11 +114,54 @@ func ReconcileStatefulSets[T interface {
 	var stsList appsv1.StatefulSetList
 	ExpectWithOffset(1, suite.Client.List(ctx, &stsList, listOpts)).To(Succeed())
 
+	var podList corev1.PodList
+	ExpectWithOffset(1, suite.Client.List(ctx, &podList, listOpts)).To(Succeed())
+
+	foundPods := map[string]struct{}{}
+	for _, pod := range podList.Items {
+		foundPods[pod.Name] = struct{}{}
+	}
+
 	for _, sts := range stsList.Items {
 		sts.Status.ObservedGeneration = sts.Generation
 		sts.Status.UpdateRevision = sts.Status.CurrentRevision
 
 		ExpectWithOffset(1, suite.Client.Status().Update(ctx, &sts)).To(Succeed())
+
+		podName := sts.Name + "-0"
+		if _, ok := foundPods[podName]; !ok {
+			pod := corev1.Pod{
+				ObjectMeta: sts.Spec.Template.ObjectMeta,
+				Spec:       sts.Spec.Template.Spec,
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
+			}
+			pod.Name = podName
+
+			pod.Namespace = sts.Namespace
+			for _, pvcTemplate := range sts.Spec.VolumeClaimTemplates {
+				pvc := pvcTemplate.DeepCopy()
+				pvcName := fmt.Sprintf("%s-%s", pvc.Name, pod.Name)
+				pvc.Name = pvcName
+
+				pvc.Namespace = sts.Namespace
+				if err := suite.Client.Create(ctx, pvc); err != nil && !k8serrors.IsAlreadyExists(err) {
+					Fail(err.Error())
+				}
+
+				pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+					Name: pvcTemplate.Name,
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+						},
+					},
+				})
+			}
+
+			ExpectWithOffset(1, suite.Client.Create(ctx, &pod)).To(Succeed())
+		}
 	}
 }
 

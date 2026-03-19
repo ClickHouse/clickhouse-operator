@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -297,6 +298,41 @@ var _ = Describe("PDB", func() {
 		pdb := templatePodDisruptionBudget(cr, 0)
 
 		Expect(pdb.Spec.UnhealthyPodEvictionPolicy).To(BeNil())
+	})
+})
+
+var _ = Describe("getStatefulSetRevision", func() {
+	It("should not depend on data disk spec", func() {
+		r := clickhouseReconciler{
+			reconcilerBase: reconcilerBase{
+				Cluster: &v1.ClickHouseCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test",
+					},
+					Spec: v1.ClickHouseClusterSpec{
+						Replicas: ptr.To[int32](1),
+						DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("10Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		rev, err := getStatefulSetRevision(&r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rev).ToNot(BeEmpty())
+
+		r.Cluster.Spec.DataVolumeClaimSpec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
+		rev2, err := getStatefulSetRevision(&r)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(rev2).To(Equal(rev), "StatefulSet revision should not change when data disk spec changes")
 	})
 })
 
