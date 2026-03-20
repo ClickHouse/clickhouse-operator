@@ -35,10 +35,10 @@ var _ = DescribeTable("Parse version", func(raw string, version ClickHouseVersio
 	numericPart := strings.Split(raw, "-")[0][1:]
 	Expect(parsedVersion.Version()).To(Equal(numericPart))
 },
-	Entry("lts version", "v25.8.16.34-lts", ClickHouseVersion{25, 8, 16, 34}, channelLTS),
-	Entry("stable version", "v25.12.5.44-stable", ClickHouseVersion{25, 12, 5, 44}, channelStable),
-	Entry("without build info", "v19.3.6-stable", ClickHouseVersion{19, 3, 6, 0}, channelStable),
-	Entry("before date semantics", "v1.1.54011-stable", ClickHouseVersion{1, 1, 54011, 0}, channelStable),
+	Entry("lts version", "v25.8.16.34-lts", ClickHouseVersion{25, 8, 16, 34}, ChannelLTS),
+	Entry("stable version", "v25.12.5.44-stable", ClickHouseVersion{25, 12, 5, 44}, ChannelStable),
+	Entry("without build info", "v19.3.6-stable", ClickHouseVersion{19, 3, 6, 0}, ChannelStable),
+	Entry("before date semantics", "v1.1.54011-stable", ClickHouseVersion{1, 1, 54011, 0}, ChannelStable),
 )
 
 var _ = DescribeTable("Parse bare version", func(raw string, expected ClickHouseVersion) {
@@ -80,12 +80,12 @@ var _ = Describe("URL version fetcher", func() {
 
 		releases, err := fetcher.FetchReleases(ctx)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(slices.Collect(maps.Keys(releases))).To(ContainElements(channelLTS, channelStable))
-		Expect(releases[channelLTS]).To(ConsistOf(
+		Expect(slices.Collect(maps.Keys(releases))).To(ContainElements(ChannelLTS, ChannelStable))
+		Expect(releases[ChannelLTS]).To(ConsistOf(
 			ClickHouseVersion{25, 8, 3, 16},
 			ClickHouseVersion{25, 8, 2, 15},
 		))
-		Expect(releases[channelStable]).To(ConsistOf(
+		Expect(releases[ChannelStable]).To(ConsistOf(
 			ClickHouseVersion{26, 1, 2, 42},
 			ClickHouseVersion{26, 2, 1, 3},
 		))
@@ -108,7 +108,7 @@ var _ = Describe("URL version fetcher", func() {
 
 var _ = Describe("Version Checker", func() {
 	fetcher := &StaticFetcher{Releases: map[string][]ClickHouseVersion{
-		channelStable: {
+		ChannelStable: {
 			{25, 1, 2, 3},
 			{25, 2, 1, 21},
 			{25, 10, 5, 12},
@@ -116,7 +116,7 @@ var _ = Describe("Version Checker", func() {
 			{26, 1, 2, 42},
 			{26, 2, 1, 3},
 		},
-		channelLTS: {
+		ChannelLTS: {
 			{25, 3, 4, 11},
 			{25, 8, 1, 5},
 			{25, 8, 2, 15},
@@ -156,14 +156,14 @@ var _ = Describe("Version Checker", func() {
 		Expect(data).ToNot(BeNil())
 
 		releases := releaseMap{
-			channelStable: {
+			ChannelStable: {
 				{25, 1}:  {25, 1, 2, 3},
 				{25, 2}:  {25, 2, 1, 21},
 				{25, 10}: {25, 10, 5, 12},
 				{26, 1}:  {26, 1, 2, 42},
 				{26, 2}:  {26, 2, 1, 3},
 			},
-			channelLTS: {
+			ChannelLTS: {
 				{25, 3}: {25, 3, 4, 11},
 				{25, 8}: {25, 8, 3, 16},
 				{26, 3}: {26, 3, 1, 1},
@@ -199,7 +199,7 @@ var _ = Describe("Version Checker", func() {
 				OnChannel:   true,
 			},
 		),
-		Entry("stable and lts updates on stable channel", "25.10.5.12", channelStable,
+		Entry("stable and lts updates on stable channel", "25.10.5.12", ChannelStable,
 			CheckResult{
 				MajorUpdates: []ClickHouseVersion{
 					{26, 1, 2, 42},
@@ -210,7 +210,7 @@ var _ = Describe("Version Checker", func() {
 				OnChannel: true,
 			},
 		),
-		Entry("lts updates on lts channel", "25.3.4.11", channelLTS,
+		Entry("lts updates on lts channel", "25.3.4.11", ChannelLTS,
 			CheckResult{
 				MajorUpdates: []ClickHouseVersion{
 					{25, 8, 3, 16},
@@ -232,7 +232,7 @@ var _ = Describe("Version Checker", func() {
 				OnChannel: true,
 			},
 		),
-		Entry("not on lts channel if stable version", "26.1.2.42", channelLTS,
+		Entry("not on lts channel if stable version", "26.1.2.42", ChannelLTS,
 			CheckResult{
 				MajorUpdates: []ClickHouseVersion{
 					{26, 3, 1, 1},
@@ -241,7 +241,7 @@ var _ = Describe("Version Checker", func() {
 				OnChannel: false,
 			},
 		),
-		Entry("on stable channel if lts version", "26.3.1.1", channelStable,
+		Entry("on stable channel if lts version", "26.3.1.1", ChannelStable,
 			CheckResult{
 				Outdated:  false,
 				OnChannel: true,

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -53,16 +55,18 @@ type commander struct {
 	log     controllerutil.Logger
 	cluster *v1.ClickHouseCluster
 	auth    clickhouse.Auth
+	dialer  controllerutil.DialContextFunc
 
 	lock  sync.RWMutex
 	conns map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
 
-func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret) *commander {
+func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc) *commander {
 	return &commander{
 		log:     log.Named("commander"),
 		conns:   map[v1.ClickHouseReplicaID]clickhouse.Conn{},
 		cluster: cluster,
+		dialer:  dialer,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
 			Password: string(secret.Data[SecretKeyManagementPassword]),
@@ -409,8 +413,9 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 	cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr: []string{fmt.Sprintf("%s:%d", cmd.cluster.HostnameByID(id), PortManagement)},
-		Auth: cmd.auth,
+		Addr:        []string{net.JoinHostPort(cmd.cluster.HostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
+		Auth:        cmd.auth,
+		DialContext: cmd.dialer,
 		Debugf: func(format string, args ...any) {
 			cmd.log.Debug(fmt.Sprintf(format, args...))
 		},

@@ -103,6 +103,10 @@ linters:
               - "github.com/onsi/gomega"
         - name: package-comments
           disabled: true
+    staticcheck:
+      dot-import-whitelist:
+        - "github.com/onsi/ginkgo/v2"
+        - "github.com/onsi/gomega"
     gosec:
       excludes:
         - G204

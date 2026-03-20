@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
@@ -29,6 +30,7 @@ type controller interface {
 	GetScheme() *k8sruntime.Scheme
 	GetRecorder() events.EventRecorder
 	GetVersionChecker() *upgrade.Checker
+	GetDialer() controllerutil.DialContextFunc
 }
 
 // ResourceReconcilerBase provides a base class for cluster reconcilers.

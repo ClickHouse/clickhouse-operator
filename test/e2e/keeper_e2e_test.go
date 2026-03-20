@@ -3,7 +3,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand/v2"
 	"time"
 
@@ -14,31 +13,30 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
-const (
-	KeeperBaseVersion   = "26.2"
-	KeeperUpdateVersion = "26.3"
-)
-
 var _ = Describe("Keeper controller", Label("keeper"), func() {
 	DescribeTable("standalone keeper updates", func(ctx context.Context, specUpdate v1.KeeperClusterSpec) {
+		ns := testNamespace(ctx)
+
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: ns,
 				Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
+						Tag: BaseVersion,
 					},
 				},
 				DataVolumeClaimSpec: &defaultStorage,
@@ -75,22 +73,24 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			)},
 		}}),
 		Entry("upgrade version", v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
-			Image: v1.ContainerImage{Tag: KeeperUpdateVersion},
+			Image: v1.ContainerImage{Tag: UpdateVersion},
 		}}),
-		Entry("scale up to 3 replicas", v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
+		Entry("scale up to 3 replicas", v1.KeeperClusterSpec{Replicas: new(int32(3))}),
 	)
 
 	DescribeTable("keeper cluster updates", func(ctx context.Context, baseReplicas int, specUpdate v1.KeeperClusterSpec) {
+		ns := testNamespace(ctx)
+
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: ns,
 				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To(int32(baseReplicas)),
+				Replicas: new(int32(baseReplicas)),
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
+						Tag: BaseVersion,
 					},
 				},
 				DataVolumeClaimSpec: &defaultStorage,
@@ -125,72 +125,74 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			)},
 		}}),
 		Entry("upgrade version", 3, v1.KeeperClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
-			Image: v1.ContainerImage{Tag: KeeperUpdateVersion},
+			Image: v1.ContainerImage{Tag: UpdateVersion},
 		}}),
-		Entry("scale up to 5 replicas", 3, v1.KeeperClusterSpec{Replicas: ptr.To[int32](5)}),
-		Entry("scale down to 3 replicas", 5, v1.KeeperClusterSpec{Replicas: ptr.To[int32](3)}),
+		Entry("scale up to 5 replicas", 3, v1.KeeperClusterSpec{Replicas: new(int32(5))}),
+		Entry("scale down to 3 replicas", 5, v1.KeeperClusterSpec{Replicas: new(int32(3))}),
 	)
 
 	Describe("secure keeper cluster", func() {
-		suffix := rand.Uint32() //nolint:gosec
-		certName := fmt.Sprintf("keeper-cert-%d", suffix)
+		It("should create secure cluster", func(ctx context.Context) {
+			ns := testNamespace(ctx)
 
-		cr := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](3),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
-					},
+			suffix := rand.Uint32() //nolint:gosec
+			certName := fmt.Sprintf("keeper-cert-%d", suffix)
+
+			cr := v1.KeeperCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
 				},
-				DataVolumeClaimSpec: &defaultStorage,
-				Settings: v1.KeeperSettings{
-					TLS: v1.ClusterTLSSpec{
-						Enabled:  true,
-						Required: true,
-						ServerCertSecret: &corev1.LocalObjectReference{
-							Name: certName,
+				Spec: v1.KeeperClusterSpec{
+					Replicas: new(int32(3)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{
+							Tag: BaseVersion,
+						},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					Settings: v1.KeeperSettings{
+						TLS: v1.ClusterTLSSpec{
+							Enabled:  true,
+							Required: true,
+							ServerCertSecret: &corev1.LocalObjectReference{
+								Name: certName,
+							},
 						},
 					},
 				},
-			},
-		}
+			}
 
-		issuer := &certv1.Issuer{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-test-issuer-%d", suffix),
-			},
-			Spec: certv1.IssuerSpec{
-				IssuerConfig: certv1.IssuerConfig{
-					SelfSigned: &certv1.SelfSignedIssuer{},
+			issuer := &certv1.Issuer{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("keeper-test-issuer-%d", suffix),
 				},
-			},
-		}
+				Spec: certv1.IssuerSpec{
+					IssuerConfig: certv1.IssuerConfig{
+						SelfSigned: &certv1.SelfSignedIssuer{},
+					},
+				},
+			}
 
-		cert := &certv1.Certificate{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
-				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
-			},
-			Spec: certv1.CertificateSpec{
-				IssuerRef: mcertv1.IssuerReference{
-					Kind: "Issuer",
-					Name: issuer.Name,
+			cert := &certv1.Certificate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("keeper-cert-%d", suffix),
 				},
-				DNSNames: []string{
-					fmt.Sprintf("*.%s.%s.svc", cr.HeadlessServiceName(), cr.Namespace),
-					fmt.Sprintf("*.%s.%s.svc.cluster.local", cr.HeadlessServiceName(), cr.Namespace),
+				Spec: certv1.CertificateSpec{
+					IssuerRef: mcertv1.IssuerReference{
+						Kind: "Issuer",
+						Name: issuer.Name,
+					},
+					DNSNames: []string{
+						fmt.Sprintf("*.%s.%s.svc", cr.HeadlessServiceName(), cr.Namespace),
+						fmt.Sprintf("*.%s.%s.svc.cluster.local", cr.HeadlessServiceName(), cr.Namespace),
+					},
+					SecretName: certName,
 				},
-				SecretName: certName,
-			},
-		}
+			}
 
-		It("should create secure cluster", func(ctx context.Context) {
 			DeferCleanup(func(ctx context.Context) {
 				By("deleting all resources")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
@@ -205,21 +207,23 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
 			WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
-			KeeperRWChecks(ctx, &cr, ptr.To(0))
+			KeeperRWChecks(ctx, &cr, new(int(0)))
 		})
 	})
 
 	It("should work with custom data folder mount", func(ctx context.Context) {
+		ns := testNamespace(ctx)
+
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: ns,
 				Name:      fmt.Sprintf("custom-disk-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					Image: v1.ContainerImage{
-						Tag: KeeperBaseVersion,
+						Tag: BaseVersion,
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      "custom-data",
@@ -249,13 +253,15 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 
 		By("verifying keeper is functional with basic read/write")
-		KeeperRWChecks(ctx, &cr, ptr.To(0))
+		KeeperRWChecks(ctx, &cr, new(int(0)))
 	})
 
 	It("should recreate stuck pods", func(ctx context.Context) {
+		ns := testNamespace(ctx)
+
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: testNamespace,
+				Namespace: ns,
 				Name:      fmt.Sprintf("stuck-pod-%d", rand.Uint32()), //nolint:gosec
 			},
 			Spec: v1.KeeperClusterSpec{
@@ -268,18 +274,20 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-		Eventually(func() bool {
-			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 			cond := meta.FindStatusCondition(cr.Status.Conditions, string(v1.ConditionTypeReplicaStartupSucceeded))
-			return cond != nil && cond.Status == metav1.ConditionFalse && cond.Reason == string(v1.ConditionReasonReplicaError)
-		}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(BeTrue())
+			g.Expect(cond).ToNot(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(cond.Reason).To(BeEquivalentTo(v1.ConditionReasonReplicaError))
+		}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(Succeed())
 
 		cr.Spec.ContainerTemplate.Image = v1.ContainerImage{
-			Tag: KeeperBaseVersion,
+			Tag: BaseVersion,
 		}
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
-		KeeperRWChecks(ctx, &cr, ptr.To(0))
+		KeeperRWChecks(ctx, &cr, new(int(0)))
 	})
 })
 
@@ -288,32 +296,36 @@ func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeou
 	defer cancel()
 
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
-	EventuallyWithOffset(1, func() bool {
+	EventuallyWithOffset(1, func(g Gomega) {
 		var cluster v1.KeeperCluster
-		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-
-		if cluster.Generation != cluster.Status.ObservedGeneration ||
-			cluster.Status.CurrentRevision != cluster.Status.UpdateRevision ||
-			cluster.Status.ReadyReplicas != cluster.Replicas() {
-			return false
-		}
-
-		for _, cond := range cluster.Status.Conditions {
-			if cond.Status != metav1.ConditionTrue {
-				return false
-			}
-		}
+		g.Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
+		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
 
 		if isUpdate {
-			CheckKeeperUpdateOrder(ctx, cluster)
+			// Intentional global assertion to fail suite if update order is wrong.
+			Expect(CheckUpdateOrder(ctx, &client.ListOptions{
+				Namespace: cluster.Namespace,
+				LabelSelector: labels.SelectorFromSet(map[string]string{
+					controllerutil.LabelAppKey: cluster.SpecificName(),
+				}),
+			}, controllerutil.LabelKeeperReplicaID, cluster.Status.StatefulSetRevision,
+				cluster.Status.ConfigurationRevision)).To(Succeed())
 		}
 
-		return true
-	}, timeout).WithPolling(pollingInterval).Should(BeTrue())
+		g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
+		g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas()))
+
+		for _, cond := range cluster.Status.Conditions {
+			g.Expect(cond.Status).To(
+				Equal(metav1.ConditionTrue),
+				fmt.Sprintf("condition %s is false: %s", cond.Type, cond.Message),
+			)
+		}
+	}, timeout).WithPolling(pollingInterval).Should(Succeed())
 	// Needed for replica deletion to not forward deleting pods.
 	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
 	count := int(cr.Replicas())
-	ExpectWithOffset(1, testutil.WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)).To(Succeed())
+	WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)
 }
 
 func KeeperRWChecks(ctx context.Context, cr *v1.KeeperCluster, checksDone *int) {
@@ -321,75 +333,18 @@ func KeeperRWChecks(ctx context.Context, cr *v1.KeeperCluster, checksDone *int) 
 
 	By("connecting to cluster")
 
-	client, err := testutil.NewKeeperClient(ctx, config, cr)
+	cli, err := testutil.NewKeeperClient(ctx, podDialer, cr)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 
-	defer client.Close()
+	defer cli.Close()
 
 	By("writing new test data")
-	ExpectWithOffset(1, client.CheckWrite(*checksDone)).To(Succeed())
+	ExpectWithOffset(1, cli.CheckWrite(*checksDone)).To(Succeed())
 	*checksDone++
 
 	By("reading all test data")
 
 	for i := range *checksDone {
-		ExpectWithOffset(1, client.CheckRead(i)).To(Succeed(), "check read %d failed", i)
-	}
-}
-
-// Validates that updates are applied in the correct order and for single replica at a time.
-// Allows to the single replica to be in updating state (not ready but updated).
-// Which id must be between the latest not updated and earliest updated replicas.
-func CheckKeeperUpdateOrder(ctx context.Context, cluster v1.KeeperCluster) {
-	var pods corev1.PodList
-
-	err := k8sClient.List(ctx, &pods, controllerutil.AppRequirements(cluster.Namespace, cluster.SpecificName()))
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-
-	maxNotUpdated := v1.KeeperReplicaID(-1)
-	minUpdated := v1.KeeperReplicaID(math.MaxInt32)
-
-	updatingReplica := v1.KeeperReplicaID(-1)
-	for _, pod := range pods.Items {
-		replicaID, err := v1.KeeperReplicaIDFromLabels(pod.Labels)
-		Expect(err).NotTo(HaveOccurred())
-
-		ready := CheckPodReady(&pod)
-		updated := CheckReplicaUpdated(
-			ctx,
-			cluster.ConfigMapNameByReplicaID(replicaID),
-			cluster.Status.ConfigurationRevision,
-			cluster.StatefulSetNameByReplicaID(replicaID),
-			cluster.Status.StatefulSetRevision,
-		)
-
-		switch {
-		// Replica waiting for update
-		case !updated && ready:
-			maxNotUpdated = max(maxNotUpdated, replicaID)
-		// Broken before update
-		case !updated:
-			Fail(fmt.Sprintf("pod %q is broken before update", pod.Name))
-		// Not ready after update, allow one
-		case !ready:
-			Expect(updatingReplica).To(Equal(v1.KeeperReplicaID(-1)),
-				"more than one replica is updating: %d and %d", updatingReplica, replicaID)
-			updatingReplica = replicaID
-
-		// Successfully updated replica
-		default:
-			minUpdated = min(minUpdated, replicaID)
-		}
-	}
-
-	formatErr := func(r1 v1.KeeperReplicaID, r2 v1.KeeperReplicaID) string {
-		return fmt.Sprintf("replica %d updated before replica %d", r1, r2)
-	}
-
-	Expect(maxNotUpdated < minUpdated).To(BeTrue(), formatErr(minUpdated, maxNotUpdated))
-
-	if updatingReplica != -1 {
-		Expect(maxNotUpdated < updatingReplica).To(BeTrue(), formatErr(updatingReplica, maxNotUpdated))
-		Expect(updatingReplica < minUpdated).To(BeTrue(), formatErr(minUpdated, updatingReplica))
+		ExpectWithOffset(1, cli.CheckRead(i)).To(Succeed(), "check read %d failed", i)
 	}
 }

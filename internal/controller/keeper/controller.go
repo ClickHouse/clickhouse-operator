@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
@@ -34,6 +33,7 @@ type ClusterController struct {
 	Logger   controllerutil.Logger
 	Webhook  webhookv1.KeeperClusterWebhook
 	Checker  *upgrade.Checker
+	Dialer   controllerutil.DialContextFunc
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -72,7 +72,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if _, err := cc.Webhook.ValidateCreate(ctx, cluster); err != nil {
-		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+		chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
 			Type:               string(v1.ConditionTypeSpecValid),
 			Status:             metav1.ConditionFalse,
 			Reason:             string(v1.ConditionReasonSpecInvalid),
@@ -87,7 +87,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+	chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
 		Type:               string(v1.ConditionTypeSpecValid),
 		Status:             metav1.ConditionTrue,
 		Reason:             string(v1.ConditionReasonSpecValid),
@@ -127,8 +127,13 @@ func (cc *ClusterController) GetVersionChecker() *upgrade.Checker {
 	return cc.Checker
 }
 
+// GetDialer returns the custom dialer, or nil.
+func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
+	return cc.Dialer
+}
+
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
@@ -138,6 +143,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Logger:   namedLogger,
 		Webhook:  webhookv1.KeeperClusterWebhook{Log: namedLogger},
 		Checker:  checker,
+		Dialer:   dialer,
 	}
 
 	err := ctrl.NewControllerManagedBy(mgr).

@@ -12,7 +12,6 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal"
@@ -222,7 +221,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 		},
 		ServiceName:         r.Cluster.HeadlessServiceName(),
 		PodManagementPolicy: appsv1.ParallelPodManagement,
-		Replicas:            ptr.To[int32](1),
+		Replicas:            new(int32(1)),
 		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 			Type:          appsv1.RollingUpdateStatefulSetStrategyType,
 			RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{},
@@ -237,7 +236,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 			},
 			Spec: podSpec,
 		},
-		RevisionHistoryLimit: ptr.To[int32](DefaultRevisionHistory),
+		RevisionHistoryLimit: new(int32(DefaultRevisionHistory)),
 	}
 
 	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
@@ -684,7 +683,7 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  r.Cluster.Spec.Settings.TLS.ServerCertSecret.Name,
-					DefaultMode: ptr.To(controller.TLSFileMode),
+					DefaultMode: new(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
 						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
@@ -707,7 +706,7 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  r.Cluster.Spec.Settings.TLS.CABundle.Name,
-					DefaultMode: ptr.To(controller.TLSFileMode),
+					DefaultMode: new(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
 						{Key: r.Cluster.Spec.Settings.TLS.CABundle.Key, Path: CustomCAFilename},
 					},

@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	gcmp "github.com/google/go-cmp/cmp"
@@ -40,7 +39,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) SetConditions(
 
 	hasChanges := false
 	for _, condition := range conditions {
-		if setStatusCondition(clusterCond, condition) {
+		if SetStatusCondition(clusterCond, condition) {
 			log.Debug("condition changed", "condition", condition.Type, "condition_value", condition.Status)
 
 			hasChanges = true
@@ -62,17 +61,22 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertCondition(
 	log util.Logger,
 	condition metav1.Condition,
 ) (bool, error) {
+	first := true
 	changed := false
+	cli := r.GetClient()
 	crdInstance := r.Cluster.DeepCopyObject().(clusterObject[Status]) //nolint:forcetypeassert // safe cast
-	setStatusCondition(r.Cluster.Conditions(), condition)
+	SetStatusCondition(r.Cluster.Conditions(), condition)
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		cli := r.GetClient()
-		if err := cli.Get(ctx, r.Cluster.NamespacedName(), crdInstance); err != nil {
-			return fmt.Errorf("upsert condition %s: get resource %s: %w", condition.Type, r.Cluster.GetName(), err)
+		if !first {
+			if err := cli.Get(ctx, r.Cluster.NamespacedName(), crdInstance); err != nil {
+				return fmt.Errorf("upsert condition %s: get resource %s: %w", condition.Type, r.Cluster.GetName(), err)
+			}
 		}
 
-		if changed = setStatusCondition(crdInstance.Conditions(), condition); !changed {
+		first = false
+
+		if changed = SetStatusCondition(crdInstance.Conditions(), condition); !changed {
 			log.Debug("condition is up to date", "condition", condition.Type, "condition_value", condition.Status)
 			return nil
 		}
@@ -126,12 +130,11 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertStatus(
 
 		preStatus := crdInstance.GetStatus()
 
-		if reflect.DeepEqual(*preStatus, *r.Cluster.GetStatus()) {
+		diff := gcmp.Diff(*preStatus, *r.Cluster.GetStatus())
+		if diff == "" {
 			log.Info("statuses are equal, nothing to do")
 			return nil
 		}
-
-		diff := gcmp.Diff(*preStatus, *r.Cluster.GetStatus())
 
 		*crdInstance.GetStatus() = *r.Cluster.GetStatus()
 		if err := cli.Status().Update(ctx, crdInstance); err != nil {
@@ -151,21 +154,21 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpsertStatus(
 
 // SetStatusCondition sets the given condition in conditions and returns true if the condition was changed.
 // Differs from meta.SetStatusCondition as it checks only Status changes.
-func setStatusCondition(conditions *[]metav1.Condition, newCondition metav1.Condition) bool {
+func SetStatusCondition(conditions *[]metav1.Condition, newCondition metav1.Condition) bool {
 	if conditions == nil {
 		return false
 	}
 
 	existingCondition := meta.FindStatusCondition(*conditions, newCondition.Type)
 	if existingCondition == nil {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now().UTC().Truncate(time.Second))
 		*conditions = append(*conditions, newCondition)
 		return true
 	}
 
 	changed := existingCondition.Status != newCondition.Status || existingCondition.Reason != newCondition.Reason
 	if changed {
-		newCondition.LastTransitionTime = metav1.NewTime(time.Now())
+		newCondition.LastTransitionTime = metav1.NewTime(time.Now().UTC().Truncate(time.Second))
 	} else {
 		newCondition.LastTransitionTime = existingCondition.LastTransitionTime
 	}

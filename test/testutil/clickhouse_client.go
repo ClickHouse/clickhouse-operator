@@ -6,38 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/onsi/ginkgo/v2"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chcontrol "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
-// ClickHouseClient is a ClickHouse client for testing ClickHouse clusters. Forwards ports to ClickHouse pods.
+// ClickHouseClient is a ClickHouse client for testing ClickHouse clusters.
 type ClickHouseClient struct {
-	cluster *ForwardedCluster
 	clients map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
 
 // NewClickHouseClient creates a new ClickHouseClient connected to the specified ClickHouseCluster.
 func NewClickHouseClient(
 	ctx context.Context,
-	config *rest.Config,
+	dialer controllerutil.DialContextFunc,
 	cr *v1.ClickHouseCluster,
 	auth ...clickhouse.Auth,
 ) (*ClickHouseClient, error) {
 	var port uint16 = chcontrol.PortNative
 	if cr.Spec.Settings.TLS.Enabled {
 		port = chcontrol.PortNativeSecure
-	}
-
-	cluster, err := NewForwardedCluster(ctx, config, cr.Namespace, cr.SpecificName(), port)
-	if err != nil {
-		return nil, fmt.Errorf("forwarding ch nodes failed: %w", err)
 	}
 
 	created := false
@@ -48,8 +43,6 @@ func NewClickHouseClient(
 			for _, client := range clients {
 				_ = client.Close()
 			}
-
-			cluster.Close()
 		}
 	}()
 
@@ -66,24 +59,36 @@ func NewClickHouseClient(
 		opts.Auth = auth[0]
 	}
 
-	if cr.Spec.Settings.TLS.Enabled {
-		opts.TLS = &tls.Config{
-			//nolint:gosec // Test certs are self-signed, so we skip verification.
-			InsecureSkipVerify: true,
+	opts.DialContext = func(ctx context.Context, addr string) (net.Conn, error) {
+		conn, err := dialer(ctx, addr)
+		if err != nil {
+			return nil, err
 		}
+
+		if cr.Spec.Settings.TLS.Enabled {
+			return tls.Client(conn, &tls.Config{
+				//nolint:gosec // Test certs are self-signed, so we skip verification.
+				InsecureSkipVerify: true,
+			}), nil
+		}
+
+		return conn, nil
 	}
 
-	for pod, addr := range cluster.PodToAddr {
-		id, err := v1.ClickHouseIDFromLabels(pod.Labels)
-		if err != nil {
-			return nil, fmt.Errorf("get replica id from pod %s labels: %w", pod.Name, err)
-		}
+	for id := range cr.ReplicaIDs() {
+		addr := fmt.Sprintf("%s:%d", cr.HostnameByID(id), port)
 
 		opts.Addr = []string{addr}
 
 		conn, err := clickhouse.Open(&opts)
 		if err != nil {
-			return nil, fmt.Errorf("connect node %s: %w", pod.Name, err)
+			return nil, fmt.Errorf("connect replica %v: %w", id, err)
+		}
+
+		if err := conn.Ping(ctx); err != nil {
+			_ = conn.Close()
+
+			return nil, fmt.Errorf("ping replica %v: %w", id, err)
 		}
 
 		clients[id] = conn
@@ -92,9 +97,8 @@ func NewClickHouseClient(
 	created = true
 
 	return &ClickHouseClient{
-		cluster: cluster,
 		clients: clients,
-	}, err
+	}, nil
 }
 
 // Close closes the ClickHouseClient and releases all resources.
@@ -102,8 +106,6 @@ func (c *ClickHouseClient) Close() {
 	for _, client := range c.clients {
 		_ = client.Close()
 	}
-
-	c.cluster.Close()
 }
 
 // CreateDatabase creates the test database on the ClickHouse cluster.

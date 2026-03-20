@@ -15,7 +15,7 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
-    - description: ClickHouseCluster is the Schema for the clickhouseclusters API.
+    - description: ClickHouseCluster is the Schema for the `clickhouseclusters` API.
       displayName: ClickHouse Cluster
       kind: ClickHouseCluster
       name: clickhouseclusters.clickhouse.com
@@ -42,15 +42,13 @@ spec:
         name: ""
         version: v1
       specDescriptors:
-      - description: Settings for the replicas storage.
+      - description: Specification of persistent storage for ClickHouse data.
         displayName: Data Volume Claim Spec
         path: dataVolumeClaimSpec
       - description: Reference to the KeeperCluster that is used for ClickHouse coordination.
         displayName: Keeper Cluster Reference
         path: keeperClusterRef
-      - description: |-
-          Number of replicas in the single shard
-          This is a pointer to distinguish between explicit zero and unspecified.
+      - description: Number of replicas in the single shard.
         displayName: Replica count in shard
         path: replicas
       statusDescriptors:
@@ -67,7 +65,7 @@ spec:
       - description: ObservedGeneration indicates latest generation observed by controller.
         displayName: Observed Generation
         path: observedGeneration
-      - description: ReadyReplicas Total number of replicas ready to server requests.
+      - description: ReadyReplicas Total number of replicas ready to serve requests.
         displayName: Ready Replicas
         path: readyReplicas
       - description: StatefulSetRevision indicates target StatefulSet revision for
@@ -78,8 +76,11 @@ spec:
           revision.
         displayName: Update Revision
         path: updateRevision
+      - description: Version indicates the version reported by the container image.
+        displayName: Version
+        path: version
       version: v1alpha1
-    - description: KeeperCluster is the Schema for the keeperclusters API.
+    - description: KeeperCluster is the Schema for the `keeperclusters` API.
       displayName: Keeper Cluster
       kind: KeeperCluster
       name: keeperclusters.clickhouse.com
@@ -103,12 +104,10 @@ spec:
         name: ""
         version: v1
       specDescriptors:
-      - description: Settings for the replicas storage.
+      - description: Specification of persistent storage for ClickHouse Keeper data.
         displayName: Data Volume Claim Spec
         path: dataVolumeClaimSpec
-      - description: |-
-          Number of replicas in the cluster
-          This is a pointer to distinguish between explicit zero and unspecified.
+      - description: Number of replicas in the cluster
         displayName: Replica count
         path: replicas
       statusDescriptors:
@@ -124,7 +123,7 @@ spec:
       - description: ObservedGeneration indicates latest generation observed by controller.
         displayName: Observed Generation
         path: observedGeneration
-      - description: ReadyReplicas Total number of replicas ready to server requests.
+      - description: ReadyReplicas Total number of replicas ready to serve requests.
         displayName: Ready Replicas
         path: readyReplicas
       - description: StatefulSetRevision indicates target StatefulSet revision for
@@ -135,6 +134,9 @@ spec:
           revision.
         displayName: Update Revision
         path: updateRevision
+      - description: Version indicates the version reported by the container image.
+        displayName: Version
+        path: version
       version: v1alpha1
   description: |
     The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.

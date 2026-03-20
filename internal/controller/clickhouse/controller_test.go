@@ -2,6 +2,8 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
+	"net"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -51,8 +52,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 				Namespace: "default",
 			},
 			Spec: v1.ClickHouseClusterSpec{
-				Replicas:         ptr.To[int32](2),
-				Shards:           ptr.To[int32](2),
+				Replicas:         new(int32(2)),
+				Shards:           new(int32(2)),
 				KeeperClusterRef: &corev1.LocalObjectReference{Name: keeperName},
 				Labels: map[string]string{
 					"test-label": "test-val",
@@ -74,6 +75,9 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Recorder: recorder,
 			Webhook: webhookv1.ClickHouseClusterWebhook{
 				Log: suite.Log.Named("clickhouse-webhook"),
+			},
+			Dialer: func(context.Context, string) (net.Conn, error) {
+				return nil, errors.New("disabled")
 			},
 		}
 
@@ -149,8 +153,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			APIVersion:         "clickhouse.com/v1alpha1",
 			UID:                cr.UID,
 			Name:               cr.Name,
-			Controller:         ptr.To(true),
-			BlockOwnerDeletion: ptr.To(true),
+			Controller:         new(bool(true)),
+			BlockOwnerDeletion: new(bool(true)),
 		}
 
 		By("setting meta attributes for service")
@@ -284,10 +288,10 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 		updatedCR.Spec.PodTemplate.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](7),
+			RunAsUser: new(int64(7)),
 		}
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
-			Privileged: ptr.To(true),
+			Privileged: new(bool(true)),
 		}
 		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
@@ -351,8 +355,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 				Namespace: "default",
 			},
 			Spec: v1.ClickHouseClusterSpec{
-				Replicas:         ptr.To[int32](2),
-				Shards:           ptr.To[int32](1),
+				Replicas:         new(int32(2)),
+				Shards:           new(int32(1)),
 				KeeperClusterRef: &corev1.LocalObjectReference{Name: keeperName},
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},

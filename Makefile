@@ -56,7 +56,7 @@ endif
 
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
-OPERATOR_SDK_VERSION ?= v1.42.0
+OPERATOR_SDK_VERSION ?= v1.42.2
 OPERATOR_MANAGER_VERSION ?= v1.62.0
 # Image URL to use all building/pushing image targets
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
@@ -124,12 +124,12 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /helm) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy) \
 	--ginkgo.v
 
 .PHONY: test-ci
 test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /helm) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy) \
 	-v -count=1 -race -coverprofile cover.out --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 fuzz-keeper: generate # Run keeper spec fuzz tests
@@ -143,23 +143,19 @@ fuzz: fuzz-keeper fuzz-clickhouse ## Run all fuzz tests
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e: ## Run all e2e tests.
-	go test ./test/e2e/ -test.timeout 30m --ginkgo.v
+	go test ./test/e2e/ -test.timeout 30m -v --ginkgo.v
 
 .PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-keeper-e2e: ## Run keeper e2e tests.
-	go test ./test/e2e/ --ginkgo.label-filter keeper -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
+	go test ./test/e2e/ --ginkgo.label-filter keeper -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-clickhouse-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-clickhouse-e2e: ## Run clickhouse e2e tests.
-	go test ./test/e2e/ --ginkgo.label-filter clickhouse -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
+	go test ./test/e2e/ --ginkgo.label-filter clickhouse -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-compat-e2e  # Run compatibility smoke tests across ClickHouse versions.
-test-compat-e2e: ## Run compatibility e2e tests.
-	go test ./test/e2e/ --ginkgo.label-filter compatibility -test.timeout 30m --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
-
-.PHONY: test-helm  # Run helm chart tests against a Kind k8s instance that is spun up.
-test-helm: ginkgo ## Run helm chart tests
-	$(GINKGO) run --nodes 4 -p -v --junit-report=report/junit-report.xml test/helm
+test-compat-e2e: ## Run compatibility e2e tests (requires CLICKHOUSE_VERSION env var).
+	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: lint
 lint: golangci-lint codespell actionlint ## Run golangci-lint linter, codespell, and actionlint
@@ -441,6 +437,9 @@ OPERATOR_SDK = $(shell which operator-sdk)
 endif
 endif
 
+operator-sdk-path: operator-sdk
+	@echo $(OPERATOR_SDK)
+
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
@@ -503,7 +502,8 @@ catalog-dockerfile: opm ## Generate catalog Dockerfile
 catalog-template: # Generate catalog template with all bundles from registry
 	./ci/generate-catalog-template.sh $(IMAGE_TAG_BASE)-bundle
 
-catalog-render: opm catalog-template ## Genermrate FBC catalog from template
+.PHONY: catalog-render
+catalog-render: opm catalog-template ## Generate FBC catalog from template
 	$(OPM) alpha render-template catalog/clickhouse-operator-template.yaml > catalog/catalog.yaml
 	$(OPM) validate catalog
 

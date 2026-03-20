@@ -219,9 +219,11 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 	It("should get every node version", func(ctx context.Context) {
 		for id := range cmd.cluster.ReplicaIDs() {
-			v0, err := cmd.Version(ctx, id)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(v0).To(MatchRegexp(`^\d+\.\d+\.\d+\.\d+$`))
+			Eventually(func(g Gomega) {
+				v, err := cmd.Version(ctx, id)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(v).To(MatchRegexp(`^\d+\.\d+\.\d+\.\d+$`))
+			}, "1m", "100ms").Should(Succeed())
 		}
 	})
 

@@ -383,6 +383,8 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
+	// PVC update failures are non-fatal: the next reconciliation will detect the mismatch
+	// via HasDiff and retry. This avoids blocking the STS update on transient PVC conflicts.
 	if err = r.UpdatePVC(ctx, log, input); err != nil {
 		log.Warn("failed to update replica PVC", "error", err)
 	}

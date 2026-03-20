@@ -215,7 +215,7 @@ func buildSupportedMap(allReleases releaseMap) map[ClickHouseRelease]bool {
 	supported := map[ClickHouseRelease]bool{}
 	regularCount := 0
 	ltsCount := 0
-	ltsMap := allReleases[channelLTS]
+	ltsMap := allReleases[ChannelLTS]
 
 	for _, release := range slices.SortedFunc(maps.Keys(allReleaseKeys), func(i, j ClickHouseRelease) int {
 		if c := cmp.Compare(i.Major, j.Major); c != 0 {

@@ -2,49 +2,82 @@ package testutil
 
 import (
 	"context"
+	"crypto/md5" //nolint:gosec
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck
-	. "github.com/onsi/gomega"    //nolint:staticcheck
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/portforward"
-	"k8s.io/client-go/transport/spdy"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 const (
-	prometheusOperatorVersion = "v0.89.0"
-	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
-		"releases/download/%s/bundle.yaml"
-
 	certmanagerVersion = "v1.19.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
+
+	logTailLines = 10
 )
 
-func warnError(err error) {
-	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
+var (
+	unsafeFileNameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+)
+
+// DumpResult holds a short summary and the full dump content.
+type DumpResult struct {
+	Short string
+	Full  string
 }
 
-// InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.
-func InstallPrometheusOperator(ctx context.Context) error {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
-	cmd := exec.CommandContext(ctx, "kubectl", "create", "-f", url)
-	_, err := Run(cmd)
-	return err
+// Empty returns true if no data dumped.
+func (d *DumpResult) Empty() bool {
+	return len(d.Full) == 0
+}
+
+// WriteFull writes the full dump to a file inside dir and returns the file path.
+func (d *DumpResult) WriteFull(dir, filename string) (string, error) {
+	if d.Full == "" {
+		return "", nil
+	}
+
+	filename = unsafeFileNameChars.ReplaceAllString(filename, "")
+
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("create dump dir %s: %w", dir, err)
+	}
+
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, []byte(d.Full), 0o600); err != nil {
+		return "", fmt.Errorf("write dump file %s: %w", path, err)
+	}
+
+	return path, nil
+}
+
+// CurrentSpecHash returns a stable hash for the currently running Ginkgo spec.
+func CurrentSpecHash() string {
+	hash := md5.Sum([]byte(CurrentSpecReport().FullText())) //nolint:gosec
+	return hex.EncodeToString(hash[:8])
 }
 
 // Run executes the provided command within this context.
@@ -53,12 +86,12 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	cmd.Dir = dir
 
 	if err := os.Chdir(cmd.Dir); err != nil {
-		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %s\n", err)
+		GinkgoWriter.Printf("chdir dir: %s\n", err)
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
 	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
+	GinkgoWriter.Printf("running: %s\n", command)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -68,14 +101,20 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	return output, nil
 }
 
-// UninstallPrometheusOperator uninstalls the prometheus.
-func UninstallPrometheusOperator(ctx context.Context) {
-	url := fmt.Sprintf(prometheusOperatorURL, prometheusOperatorVersion)
+// InstallCRDs installs the CRDs into the cluster using make install.
+func InstallCRDs(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "make", "install")
+	_, err := Run(cmd)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "delete", "-f", url)
-	if _, err := Run(cmd); err != nil {
-		warnError(err)
-	}
+	return err
+}
+
+// UninstallCRDs removes the CRDs from the cluster using make uninstall.
+func UninstallCRDs(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "make", "uninstall", "ignore-not-found=true")
+	_, err := Run(cmd)
+
+	return err
 }
 
 // InstallCertManager installs the cert manager bundle.
@@ -99,239 +138,257 @@ func InstallCertManager(ctx context.Context) error {
 	return err
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster.
-func LoadImageToKindClusterWithName(ctx context.Context, name string) error {
-	cluster := "kind"
-	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
-		cluster = v
-	}
-
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.CommandContext(ctx, "kind", kindOptions...)
-	_, err := Run(cmd)
-
-	return err
-}
-
-// GetNonEmptyLines converts given command output string into individual objects
-// according to line breakers, and ignores the empty elements in it.
-func GetNonEmptyLines(output string) []string {
-	var res []string
-
-	elements := strings.Split(output, "\n")
-	for _, element := range elements {
-		if element != "" {
-			res = append(res, element)
-		}
-	}
-
-	return res
-}
-
-// GetProjectDir will return the directory where the project is.
+// GetProjectDir will return the directory where the project is by walking
+// up from the current working directory until it finds a go.mod file.
 func GetProjectDir() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return wd, fmt.Errorf("get project dir: %w", err)
 	}
 
-	return strings.ReplaceAll(wd, "/test/e2e", ""), nil
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return wd, fmt.Errorf("could not find project root (go.mod) from %s", wd)
+		}
+
+		dir = parent
+	}
 }
 
-// GetFreePort returns a free port from the OS.
-func GetFreePort() (int, error) {
-	a, err := net.ResolveTCPAddr("tcp", "localhost:0")
+// DumpNamespaceDiagnostics dumps resources, pod logs and events from namespace.
+func DumpNamespaceDiagnostics(ctx context.Context, config *rest.Config, cli client.Client, ns, dir string) {
+	By("collecting diagnostics report")
+
+	report := CurrentSpecReport()
+
+	resDump, err := DumpNamespaceResources(ctx, cli, ns)
 	if err != nil {
-		return 0, fmt.Errorf("resolve localhost: %w", err)
+		GinkgoWriter.Printf("failed to dump namespace resources: %v\n", err)
 	}
 
-	l, err := net.ListenTCP("tcp", a)
+	if !resDump.Empty() {
+		path, writeErr := resDump.WriteFull(dir, fmt.Sprintf("resources-%s.log", report.FullText()))
+		if writeErr != nil {
+			GinkgoWriter.Printf("failed to write resources dump: %v\n", writeErr)
+		}
+
+		GinkgoWriter.Printf("\n=== Namespace Resources ===\n%s", resDump.Short)
+
+		if path != "" {
+			GinkgoWriter.Printf("Full resources dump: %s\n", path)
+		}
+	}
+
+	logsDump, err := DumpNamespacePodLogs(ctx, config, ns)
 	if err != nil {
-		return 0, fmt.Errorf("listen any port: %w", err)
+		GinkgoWriter.Printf("failed to dump pod logs: %v\n", err)
+	}
+
+	if !logsDump.Empty() {
+		path, writeErr := logsDump.WriteFull(dir, fmt.Sprintf("pod-logs-%s.log", report.FullText()))
+		if writeErr != nil {
+			GinkgoWriter.Printf("failed to write pod logs dump: %v\n", writeErr)
+		}
+
+		GinkgoWriter.Printf("\n=== Pod Logs (last 10 lines per container) ===\n%s", logsDump.Short)
+
+		if path != "" {
+			GinkgoWriter.Printf("Full pod logs dump: %s\n", path)
+		}
+	}
+
+	events, err := DumpNamespaceEvents(ctx, cli, ns, report.StartTime)
+	if err != nil {
+		GinkgoWriter.Printf("failed to dump namespace events: %v\n", err)
+	}
+
+	if strings.TrimSpace(events) != "" {
+		GinkgoWriter.Printf("\n=== Namespace Events (since test start) ===\n%s\n", events)
+	}
+}
+
+// DumpNamespaceResources collects all resources in the namespace.
+// The full dump contains the complete JSON representation of each resource,
+// while the short dump contains only the resource type and object names.
+func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace string) (DumpResult, error) {
+	resources := []client.ObjectList{
+		&corev1.ConfigMapList{},
+		&corev1.SecretList{},
+		&corev1.ServiceList{},
+		&corev1.PodList{},
+		&batchv1.JobList{},
+		&appsv1.StatefulSetList{},
+		&policyv1.PodDisruptionBudgetList{},
+	}
+
+	var errs []error
+
+	full := strings.Builder{}
+	short := strings.Builder{}
+
+	for _, resource := range resources {
+		if err := cli.List(ctx, resource, &client.ListOptions{
+			Namespace: namespace,
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("list %T: %w", resource, err))
+			continue
+		}
+
+		marshalled, err := json.MarshalIndent(resource, "", "  ")
+		if err != nil {
+			errs = append(errs, fmt.Errorf("marshal %T: %w", resource, err))
+			continue
+		}
+
+		full.WriteString(fmt.Sprintf("Dump %T:\n", resource))
+		full.Write(marshalled)
+		full.WriteString("\n\n")
+
+		// Short dump: resource type + object names only.
+		names := extractObjectNames(resource)
+		if len(names) > 0 {
+			short.WriteString(fmt.Sprintf("%T: %s\n", resource, strings.Join(names, ", ")))
+		}
+	}
+
+	return DumpResult{Short: short.String(), Full: full.String()}, errors.Join(errs...)
+}
+
+func extractObjectNames(list client.ObjectList) []string {
+	items := reflect.ValueOf(list).Elem().FieldByName("Items")
+
+	names := make([]string, 0, items.Len())
+	for i := range items.Len() {
+		names = append(names, items.Index(i).Addr().Interface().(client.Object).GetName()) //nolint:forcetypeassert
+	}
+
+	return names
+}
+
+func dumpPodLogs(ctx context.Context, clientset kubernetes.Clientset, ns, name, container string) (string, error) {
+	stream, err := clientset.CoreV1().Pods(ns).GetLogs(name, &corev1.PodLogOptions{
+		Container: container,
+	}).Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("get %s/%s/%s logs: %w", ns, name, container, err)
 	}
 
 	defer func() {
-		if err := l.Close(); err != nil {
-			GinkgoWriter.Printf("warning: close listener: %v\n", err)
-		}
+		_ = stream.Close()
 	}()
 
-	addr, ok := l.Addr().(*net.TCPAddr)
-	if !ok {
-		return 0, fmt.Errorf("unexpected addr type: %T", l.Addr())
+	logs, err := io.ReadAll(stream)
+	if err != nil {
+		return "", fmt.Errorf("read %s/%s/%s logs: %w", ns, name, container, err)
 	}
 
-	return addr.Port, nil
+	return string(logs), nil
 }
 
-// WaitReplicaCount waits until the number of pods with the given app label.
-func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) error {
-	var pods corev1.PodList
-	for {
-		if err := k8sClient.List(ctx, &pods,
-			client.InNamespace(namespace), client.MatchingLabels{controllerutil.LabelAppKey: app}); err != nil {
-			return fmt.Errorf("list app=%s pods failed: %w", app, err)
-		}
-
-		if len(pods.Items) == replicas {
-			return nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timed out waiting for %d replicas of %s, got %d", replicas, app, len(pods.Items))
-		case <-time.After(time.Second):
-			continue
-		}
-	}
-}
-
-// ForwardedCluster represents a set of port-forwarded pods.
-type ForwardedCluster struct {
-	PodToAddr map[*corev1.Pod]string
-	cancel    context.CancelFunc
-}
-
-// NewForwardedCluster creates a new ForwardedCluster by port-forwarding all pods with the given app label.
-func NewForwardedCluster(ctx context.Context, config *rest.Config,
-	namespace, app string, port uint16,
-) (*ForwardedCluster, error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	cluster := &ForwardedCluster{
-		cancel: cancel,
-	}
-	if err := cluster.forwardNodes(ctx, config, namespace, app, port); err != nil {
-		cancel()
-		return nil, fmt.Errorf("forwarding nodes failed: %w", err)
-	}
-
-	return cluster, nil
-}
-
-// Close stops all port-forwarding.
-func (c *ForwardedCluster) Close() {
-	c.cancel()
-}
-
-func (c *ForwardedCluster) forwardNodes(ctx context.Context, config *rest.Config,
-	namespace, app string, servicePort uint16,
-) error {
+// DumpNamespacePodLogs collects logs for all pod containers in the given namespace.
+// The short dump contains only the last logTailLines lines per container.
+func DumpNamespacePodLogs(ctx context.Context, config *rest.Config, namespace string) (DumpResult, error) {
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("unable to create k8s client: %w", err)
+		return DumpResult{}, fmt.Errorf("unable to create k8s client: %w", err)
 	}
 
-	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("%s=%s", controllerutil.LabelAppKey, app),
-	})
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("list app %s pods failed: %w", app, err)
+		return DumpResult{}, fmt.Errorf("list pods in namespace %s: %w", namespace, err)
 	}
 
-	transport, upgrader, err := spdy.RoundTripperFor(config)
-	if err != nil {
-		return fmt.Errorf("unable to create k8s round tripper: %w", err)
+	var errs []error
+
+	full := strings.Builder{}
+	short := strings.Builder{}
+
+	processContainer := func(name, container string) {
+		logs, err := dumpPodLogs(ctx, *clientset, namespace, name, container)
+		if err != nil {
+			errs = append(errs, err)
+			return
+		}
+
+		if len(logs) == 0 {
+			return
+		}
+
+		header := fmt.Sprintf("Container logs %s/%s/%s:\n", namespace, name, container)
+		full.WriteString(header)
+		full.WriteString(logs)
+		full.WriteString("\n\n")
+
+		short.WriteString(header)
+		short.WriteString(tailLines(logs, logTailLines))
+		short.WriteString("\n\n")
 	}
 
-	c.PodToAddr = make(map[*corev1.Pod]string, len(pods.Items))
 	for _, pod := range pods.Items {
-		reqURL := clientset.CoreV1().
-			RESTClient().
-			Post().
-			Resource("pods").
-			Namespace(namespace).
-			Name(pod.Name).
-			SubResource("portforward").URL()
-
-		dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, reqURL)
-
-		port, err := GetFreePort()
-		if err != nil {
-			return fmt.Errorf("failed to get free port: %w", err)
+		for _, container := range pod.Spec.InitContainers {
+			processContainer(pod.Name, container.Name)
 		}
 
-		readyCh := make(chan struct{})
-		portforwardErr := make(chan error)
-
-		forwarder, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", port, servicePort)},
-			ctx.Done(), readyCh, GinkgoWriter, GinkgoWriter,
-		)
-		if err != nil {
-			return fmt.Errorf("k8s: unable to start port forwarding: %w", err)
+		for _, container := range pod.Spec.Containers {
+			processContainer(pod.Name, container.Name)
 		}
 
-		go func() {
-			err = forwarder.ForwardPorts()
-			if err != nil {
-				portforwardErr <- fmt.Errorf("failed to port-forward: %w", err)
-			}
-		}()
-
-		select {
-		case <-ctx.Done():
-			return errors.New("context cancelled while waiting for port-forwarding to be ready")
-		case err := <-portforwardErr:
-			c.cancel()
-			return fmt.Errorf("port-forwarding error: %w", err)
-		case <-readyCh:
+		for _, container := range pod.Spec.EphemeralContainers {
+			processContainer(pod.Name, container.Name)
 		}
-
-		c.PodToAddr[&pod] = fmt.Sprintf("127.0.0.1:%d", port)
 	}
 
-	return nil
+	return DumpResult{Short: short.String(), Full: full.String()}, errors.Join(errs...)
 }
 
-// CapturePodLogs streams the logs of the given pod to the GinkgoWriter until the context is cancelled.
-func CapturePodLogs(ctx context.Context, config *rest.Config, namespace, pod string) error {
-	if ctx.Done() == nil {
-		return errors.New("context is not cancellable")
+// tailLines returns the last n lines from s.
+func tailLines(s string, n int) string {
+	if len(s) == 0 {
+		return ""
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("unable to create k8s client: %w", err)
-	}
-
-	res, err := clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get logs for pod %s in namespace %s: %w", pod, namespace, err)
-	}
-
-	go func() {
-		defer func() {
-			_ = res.Close()
-		}()
-
-		buffer := make([]byte, 4096)
-
-		var c int
-		for {
-			for c, err = res.Read(buffer); err == nil && c > 0; c, err = res.Read(buffer) {
-				GinkgoWriter.Printf(string(buffer[:c]))
-			}
-
-			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					GinkgoWriter.Printf("error while reading pod %s:%s logs: %v\n", namespace, pod, err)
-					return
-				}
-			}
-
-			select {
-			case <-ctx.Done():
-				GinkgoWriter.Printf("context cancelled, stopping log capture for pod %s:%s\n", namespace, pod)
-				return
-			case <-time.After(time.Millisecond * 100):
-			}
+	truncatePos := len(s) - 1
+	for ; truncatePos > 0 && n > 0; truncatePos-- {
+		if s[truncatePos] == '\n' {
+			n--
 		}
-	}()
+	}
 
-	return nil
+	if truncatePos == 0 {
+		return s
+	}
+
+	return "TRUNCATED" + s[truncatePos+1:]
+}
+
+// DumpNamespaceEvents fetches all events in the namespace that occurred since sinceTime.
+func DumpNamespaceEvents(ctx context.Context, cli client.Client, namespace string, since time.Time) (string, error) {
+	var events corev1.EventList
+	if err := cli.List(ctx, &events, client.InNamespace(namespace)); err != nil {
+		return "", fmt.Errorf("list events: %w", err)
+	}
+
+	var buf strings.Builder
+	for _, event := range events.Items {
+		if event.CreationTimestamp.After(since) {
+			buf.WriteString(fmt.Sprintf("%s\t%s\t%s/%s\t%s\t%s\n",
+				event.CreationTimestamp.Format(time.RFC3339),
+				event.Type,
+				event.InvolvedObject.Kind,
+				event.InvolvedObject.Name,
+				event.Reason,
+				event.Message,
+			))
+		}
+	}
+
+	return buf.String(), nil
 }
 
 // SetupCA sets up a self-signed CA issuer and a CA certificate in the given namespace.
@@ -350,7 +407,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 
 	By("creating self-signed issuer")
 	Expect(k8sClient.Create(ctx, &ssIssuer)).To(Succeed())
-	DeferCleanup(func() {
+	DeferCleanup(func(ctx context.Context) {
 		if err := k8sClient.Delete(ctx, &ssIssuer); err != nil {
 			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete self-signed issuer: %v\n", err)
 		}
@@ -374,7 +431,7 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 
 	By("creating CA cert")
 	Expect(k8sClient.Create(ctx, &caCert)).To(Succeed())
-	DeferCleanup(func() {
+	DeferCleanup(func(ctx context.Context) {
 		if err := k8sClient.Delete(ctx, &caCert); err != nil {
 			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CA certificate: %v\n", err)
 		}
@@ -396,9 +453,46 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 
 	By("creating Issuer")
 	Expect(k8sClient.Create(ctx, &issuer)).To(Succeed())
-	DeferCleanup(func() {
+	DeferCleanup(func(ctx context.Context) {
 		if err := k8sClient.Delete(ctx, &issuer); err != nil {
 			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CA issuer: %v\n", err)
 		}
 	})
+}
+
+// EnsureNamespace ensures the test namespace is created and active.
+func EnsureNamespace(ctx context.Context, k8sClient client.Client, name string) {
+	DeferCleanup(func(ctx context.Context) {
+		ns := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: name}, &ns)
+		if err != nil {
+			return
+		}
+
+		if err := k8sClient.Delete(ctx, &ns); err != nil {
+			GinkgoWriter.Printf("failed to delete namespace %s: %v\n", name, err)
+		}
+	})
+
+	ns := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: name}, &ns)
+
+	if k8serrors.IsNotFound(err) {
+		ExpectWithOffset(1, k8sClient.Create(ctx, &ns)).To(Succeed())
+		return
+	}
+
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+	if ns.Status.Phase != corev1.NamespaceTerminating {
+		return
+	}
+
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: name}, &ns)
+		return k8serrors.IsNotFound(err)
+	}, "5s", "100ms").Should(BeTrue())
+
+	ExpectWithOffset(1, k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})).To(Succeed())
 }

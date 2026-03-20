@@ -2,6 +2,8 @@ package keeper
 
 import (
 	"context"
+	"errors"
+	"net"
 	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -193,6 +195,9 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 			Client:   fakeClient,
 			Logger:   logger,
 			Recorder: eventRecorder,
+			Dialer: func(context.Context, string) (net.Conn, error) {
+				return nil, errors.New("disabled")
+			},
 		},
 			&v1.KeeperCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -200,7 +205,7 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 					Name:      "test",
 				},
 				Spec: v1.KeeperClusterSpec{
-					Replicas: ptr.To[int32](1),
+					Replicas: new(int32(1)),
 				},
 				Status: v1.KeeperClusterStatus{
 					ConfigurationRevision: "config-v1",

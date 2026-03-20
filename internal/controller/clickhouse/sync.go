@@ -118,6 +118,7 @@ type clickhouseReconciler struct {
 	commander *commander
 
 	versionProbe           chctrl.VersionProbeResult
+	readyReplicas          int
 	databasesInSync        bool
 	staleReplicasCleanedUp bool
 	pvcRevision            string
@@ -173,7 +174,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 				unknownConditions = append(unknownConditions, r.NewCondition(cond, metav1.ConditionUnknown, v1.ConditionReasonStepFailed, errMsg))
 			}
 
-			meta.SetStatusCondition(&unknownConditions, r.NewCondition(v1.ConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ConditionReasonStepFailed, errMsg))
+			chctrl.SetStatusCondition(&unknownConditions, r.NewCondition(v1.ConditionTypeReconcileSucceeded, metav1.ConditionFalse, v1.ConditionReasonStepFailed, errMsg))
 			r.SetConditions(log, unknownConditions)
 
 			if updateErr := r.UpsertStatus(ctx, log); updateErr != nil {
@@ -272,7 +273,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		log.Debug("cluster secret is up to date")
 	}
 
-	r.commander = newCommander(log, r.Cluster, &r.secret)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.GetDialer())
 
 	return nil, nil
 }
@@ -297,14 +298,20 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		Namespace: r.Cluster.Namespace,
 		Name:      r.Cluster.Spec.KeeperClusterRef.Name,
 	}, &r.keeper); err != nil {
+		if k8serrors.IsNotFound(err) {
+			log.Debug("keeper cluster not found, waiting")
+
+			return nil, fmt.Errorf("keeper cluster not found: %w", err)
+		}
+
 		return nil, fmt.Errorf("get keeper cluster: %w", err)
 	}
 
 	if cond := meta.FindStatusCondition(r.keeper.Status.Conditions, string(v1.ConditionTypeReady)); cond == nil || cond.Status != metav1.ConditionTrue {
 		if cond == nil {
-			log.Warn("keeper cluster is not ready")
+			log.Info("keeper cluster is not ready")
 		} else {
-			log.Warn("keeper cluster is not ready", "reason", cond.Reason, "message", cond.Message)
+			log.Info("keeper cluster is not ready", "reason", cond.Reason, "message", cond.Message)
 		}
 	}
 
@@ -377,7 +384,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		pinged := false
 		version := ""
 
-		if !hasError {
+		if !hasError && sts.Status.ReadyReplicas > 0 {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
@@ -419,6 +426,10 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	}
 
 	for id, state := range states {
+		if state.Ready() {
+			r.readyReplicas++
+		}
+
 		if exists := r.SetReplica(id, state); exists {
 			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
 				"replica_id", id, "statefulset", state.StatefulSet.Name)
@@ -491,7 +502,7 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 
 func (r *clickhouseReconciler) reconcileReplicateSchema(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
 	if !r.Cluster.Spec.Settings.EnableDatabaseSync {
-		log.Info("database sync is disabled, skipping")
+		log.Debug("database sync is disabled, skipping")
 		return nil, nil
 	}
 
@@ -500,11 +511,6 @@ func (r *clickhouseReconciler) reconcileReplicateSchema(ctx context.Context, log
 		if replica.Ready() {
 			readyReplicas = append(readyReplicas, id)
 		}
-	}
-
-	if readyReplicas == nil {
-		log.Info("no ready replicas to replicate schema, skipping")
-		return nil, nil
 	}
 
 	hasNotSynced := false
@@ -519,6 +525,11 @@ func (r *clickhouseReconciler) reconcileReplicateSchema(ctx context.Context, log
 
 		return id, databases, err
 	})
+
+	if r.readyReplicas < 2 {
+		log.Info("no ready replicas to replicate schema, skipping")
+		return nil, nil
+	}
 
 	databases := map[string]databaseDescriptor{}
 	for id, replDBs := range replicaDatabases {
@@ -675,7 +686,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	if r.Cluster.Spec.Settings.EnableDatabaseSync {
+	if r.Cluster.Spec.Settings.EnableDatabaseSync && r.readyReplicas > 0 {
 		if err := r.commander.CleanupDatabaseReplicas(ctx, log, runningStaleReplicas); err != nil {
 			log.Warn("failed to cleanup database replicas", "error", err)
 
@@ -803,6 +814,10 @@ func (r *clickhouseReconciler) reconcileConditions(ctx context.Context, log ctrl
 		condMessage := "Database schema sync is disabled"
 		if r.Cluster.Spec.Settings.EnableDatabaseSync {
 			switch {
+			case r.Cluster.Replicas() == 1 && r.Cluster.Shards() == 1 && r.readyReplicas == 1:
+				condType = metav1.ConditionTrue
+				condReason = v1.ClickHouseConditionReplicasInSync
+				condMessage = ""
 			case !r.databasesInSync:
 				condType = metav1.ConditionFalse
 				condReason = v1.ClickHouseConditionDatabasesNotCreated

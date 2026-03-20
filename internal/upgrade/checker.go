@@ -10,10 +10,11 @@ import (
 )
 
 const (
+	ChannelStable = "stable"
+	ChannelLTS    = "lts"
+
 	versionRegexpRaw     = `^v?(?P<Major>\d+)\.(?P<Minor>\d+)\.(?P<Patch>\d+)(\.(?P<Build>\d+))?-(?P<Channel>\w+)$`
 	bareVersionRegexpRaw = `^(?P<Major>\d+)\.(?P<Minor>\d+)\.(?P<Patch>\d+)(\.(?P<Build>\d+))?$`
-	channelStable        = "stable"
-	channelLTS           = "lts"
 	stableReleases       = 3
 	ltsReleases          = 2
 )
@@ -238,7 +239,7 @@ func getMinorUpdate(releases *ReleaseData, current ClickHouseVersion) (ClickHous
 // getMajorUpdates returns all latest versions of supported major releases newer than current. Within selected channel.
 func getMajorUpdates(releases *ReleaseData, current ClickHouseVersion, channel string) []ClickHouseVersion {
 	// No major updates for specific release channel (e.g. 26.1) or empty channel.
-	if channel != channelStable && channel != channelLTS {
+	if channel != ChannelStable && channel != ChannelLTS {
 		return nil
 	}
 
@@ -261,10 +262,10 @@ func getMajorUpdates(releases *ReleaseData, current ClickHouseVersion, channel s
 	}
 
 	// lts releases considered stable, but has distinct versions, check for newer versions in lts channel as well
-	findUpgrades(channelLTS)
+	findUpgrades(ChannelLTS)
 
-	if channel == channelStable {
-		findUpgrades(channelStable)
+	if channel == ChannelStable {
+		findUpgrades(ChannelStable)
 	}
 
 	slices.SortFunc(majorUpdates, compareVersions)
@@ -277,14 +278,14 @@ func isOnChannel(releases *ReleaseData, release ClickHouseRelease, channel strin
 	switch channel {
 	case "":
 		return true, nil
-	case channelStable:
-		if _, ok := releases.Releases[channelStable][release]; ok {
+	case ChannelStable:
+		if _, ok := releases.Releases[ChannelStable][release]; ok {
 			return true, nil
 		}
 		fallthrough // lts releases considered stable, but has distinct versions, check lts versions as well
 
-	case channelLTS:
-		if _, ok := releases.Releases[channelLTS][release]; ok {
+	case ChannelLTS:
+		if _, ok := releases.Releases[ChannelLTS][release]; ok {
 			return true, nil
 		}
 		return false, nil

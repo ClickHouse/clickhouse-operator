@@ -9,6 +9,7 @@ Dockerfile.cross
 dist/chart/*.tgz
 dist/chart/index.yaml
 dist/chart/charts
+dist/install.yaml
 clickhouse-operator-helm-*.tgz
 clickhouse-operator_*.tar.gz
 bundle

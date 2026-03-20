@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -211,8 +211,8 @@ var _ = Describe("PDB", func() {
 				Namespace: "default",
 			},
 			Spec: v1.ClickHouseClusterSpec{
-				Replicas: ptr.To[int32](3),
-				Shards:   ptr.To[int32](2),
+				Replicas: new(int32(3)),
+				Shards:   new(int32(2)),
 			},
 		}
 	})
@@ -226,7 +226,7 @@ var _ = Describe("PDB", func() {
 	})
 
 	It("should default to maxUnavailable=1 for single-replica shards", func() {
-		cr.Spec.Replicas = ptr.To[int32](1)
+		cr.Spec.Replicas = new(int32(1))
 		pdb := templatePodDisruptionBudget(cr, 0)
 
 		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
@@ -310,7 +310,7 @@ var _ = Describe("getStatefulSetRevision", func() {
 						Name: "test",
 					},
 					Spec: v1.ClickHouseClusterSpec{
-						Replicas: ptr.To[int32](1),
+						Replicas: new(int32(1)),
 						DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 							Resources: corev1.VolumeResourceRequirements{

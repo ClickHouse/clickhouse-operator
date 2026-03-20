@@ -50,7 +50,7 @@ local_resource(
 docker_build_with_restart(
     image_repo,
     ".",
-    dockerfile = "./Dockerfile.tilt",
+    dockerfile = "./dev.Dockerfile",
     entrypoint = ["/manager"],
     only = [
         "bin/manager_linux",

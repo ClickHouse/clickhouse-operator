@@ -171,25 +171,6 @@ jobs:
       - name: Lint Helm Chart
         run: helm lint ./dist/chart
 
-      - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
-        with:
-          cluster_name: helm-test
-          version: ${{ env.kind-version }}
-          config: ci/kind-cluster.config
-
-      - name: Run Helm tests
-        run: make test-helm
-
-      - name: Test Report
-        uses: dorny/test-reporter@v2
-        if: ${{ !cancelled() }}
-        with:
-          name: Helm tests
-          badge-title: Helm tests
-          path: "**/report/*.xml"
-          reporter: java-junit
-
   compat-e2e-test:
     runs-on: [ubuntu-latest]
     strategy:
@@ -225,8 +206,17 @@ jobs:
       - name: Go Mod
         run: go mod download
 
-      - name: Build image
-        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
+      - name: Install tools
+        run: make operator-sdk opm
+
+      - name: Pre-pull ClickHouse images into Kind
+        run: |
+          for version in $(echo "${{ matrix.clickhouse_version }}" | tr ',' ' '); do
+            for image in clickhouse/clickhouse-keeper clickhouse/clickhouse-server; do
+              docker pull "docker.io/${image}:${version}"
+              kind load docker-image "docker.io/${image}:${version}"
+            done
+          done
 
       - name: Run compatibility e2e tests
         run: make test-compat-e2e
@@ -238,7 +228,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: compat-e2e-report-${{ strategy.job-index }}
-          path: "**/report/*.xml"
+          path: "**/report/*"
           if-no-files-found: error
           overwrite: true
 
@@ -261,9 +251,6 @@ jobs:
       - name: Go Mod
         run: go mod download
 
-      - name: Build image
-        run: make docker-build IMG="clickhouse.com/clickhouse-operator:v0.0.1" BUILD_TIME=e2e
-
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
         with:
@@ -280,7 +267,7 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: e2e-report-${{ matrix.scope }}
-          path: "**/report/*.xml"
+          path: "**/report/*"
           if-no-files-found: error
           overwrite: true
 

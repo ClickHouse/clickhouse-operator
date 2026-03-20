@@ -290,11 +290,11 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		}
 
 		var status serverStatus
-		if !hasError {
+		if !hasError && sts.Status.ReadyReplicas > 0 {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
-			status = getServerStatus(ctx, log.With("replica_id", id), r.Cluster.HostnameByID(id), tlsRequired)
+			status = getServerStatus(ctx, log.With("replica_id", id), r.GetDialer(), r.Cluster.HostnameByID(id), tlsRequired)
 		}
 
 		var pvc *corev1.PersistentVolumeClaim

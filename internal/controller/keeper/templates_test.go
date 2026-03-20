@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -37,7 +37,7 @@ var _ = Describe("ServerRevision", func() {
 				Name: "test",
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 			},
 		}
 
@@ -52,7 +52,7 @@ var _ = Describe("ServerRevision", func() {
 
 	It("should not change config revision if only replica count changes", func() {
 		cr := baseCR.DeepCopy()
-		cr.Spec.Replicas = ptr.To[int32](3)
+		cr.Spec.Replicas = new(int32(3))
 		cfgRevisionUpdated, err := getConfigurationRevision(cr, nil)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(baseCfgRevision).ToNot(BeEmpty())
@@ -92,7 +92,7 @@ var _ = Describe("ExtraConfig", func() {
 				Name: "test",
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 			},
 		}
 
@@ -151,7 +151,7 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 				Namespace: "default",
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](3),
+				Replicas: new(int32(3)),
 			},
 		}
 	})
@@ -239,7 +239,7 @@ var _ = Describe("getStatefulSetRevision", func() {
 				Name: "test",
 			},
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](1),
+				Replicas: new(int32(1)),
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					Resources: corev1.VolumeResourceRequirements{

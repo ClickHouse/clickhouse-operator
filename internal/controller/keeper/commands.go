@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/proxy"
-
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
@@ -34,24 +32,30 @@ type serverStatus struct {
 	Version     string
 }
 
-func getConnection(ctx context.Context, hostname string, tlsRequired bool) (net.Conn, error) {
-	var d proxy.ContextDialer = &net.Dialer{}
-
+func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) (net.Conn, error) {
 	port := PortNative
 	if tlsRequired {
-		d = &tls.Dialer{
-			NetDialer: &net.Dialer{},
-			Config: &tls.Config{
-				//nolint:gosec // User managed certificate may be outdated or issued for other hostnames.
-				InsecureSkipVerify: true,
-			},
-		}
 		port = PortNativeSecure
 	}
 
-	conn, err := d.DialContext(ctx, "tcp", fmt.Sprintf("%s:%d", hostname, port))
+	addr := net.JoinHostPort(hostname, strconv.FormatInt(int64(port), 10))
+
+	if dialer == nil {
+		dialer = func(ctx context.Context, addr string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+		}
+	}
+
+	conn, err := dialer(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s: %w", hostname, err)
+	}
+
+	if tlsRequired {
+		return tls.Client(conn, &tls.Config{
+			//nolint:gosec // User managed certificate may be outdated or issued for other hostnames.
+			InsecureSkipVerify: true,
+		}), nil
 	}
 
 	return conn, nil
@@ -126,8 +130,8 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 	return result, nil
 }
 
-func getServerStatus(ctx context.Context, log controllerutil.Logger, hostname string, tlsRequired bool) serverStatus {
-	conn, err := getConnection(ctx, hostname, tlsRequired)
+func getServerStatus(ctx context.Context, log controllerutil.Logger, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) serverStatus {
+	conn, err := getConnection(ctx, dialer, hostname, tlsRequired)
 	if err != nil {
 		log.Info("failed to get keeper connection", "error", err)
 		return serverStatus{}

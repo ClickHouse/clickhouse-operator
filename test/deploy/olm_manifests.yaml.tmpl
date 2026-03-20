@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-catalog-data
+  namespace: {{ .namespace }}
+data:
+  "catalog.json": |
+    {{ .bundle }}
+    {"schema": "olm.package","name": "clickhouse-operator","defaultChannel": "stable"}
+    {"schema": "olm.channel","package": "clickhouse-operator", "name": "stable", "entries": [{"name": "{{ .bundleName }}"}]}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-catalog-server
+  namespace: {{ .namespace }}
+  labels:
+    app: test-catalog-server
+spec:
+  containers:
+  - name: opm
+    image: quay.io/operator-framework/opm:v1.62.0
+    command: ["opm", "serve", "/configs"]
+    ports:
+    - containerPort: 50051
+    volumeMounts:
+    - name: catalog
+      mountPath: /configs/catalog.json
+      subPath: catalog.json
+    readinessProbe:
+      grpc:
+        port: 50051
+      initialDelaySeconds: 5
+  volumes:
+  - name: catalog
+    configMap:
+      name: test-catalog-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-catalog-server
+  namespace: {{ .namespace }}
+spec:
+  selector:
+    app: test-catalog-server
+  ports:
+  - port: 50051
+    targetPort: 50051
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: clickhouse-operator-catalog
+  namespace: {{ .namespace }}
+spec:
+  sourceType: grpc
+  address: test-catalog-server.{{ .namespace }}.svc:50051
+  displayName: ClickHouse Test Catalog
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: clickhouse-operator
+  namespace: {{ .namespace }}
+spec:
+  targetNamespaces:
+    - {{ .namespace }}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: clickhouse-operator
+  namespace: {{ .namespace }}
+spec:
+  channel: stable
+  name: clickhouse-operator
+  source: clickhouse-operator-catalog
+  sourceNamespace: {{ .namespace }}
+  installPlanApproval: Automatic
