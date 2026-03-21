@@ -1726,6 +1726,12 @@ spec:
                                             More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
                                         type: object
                                         x-kubernetes-map-type: atomic
+                                    priorityClassName:
+                                        description: PriorityClassName is the name of the PriorityClass to use for this pod.
+                                        type: string
+                                    runtimeClassName:
+                                        description: RuntimeClassName is the name of the RuntimeClass to use for this pod.
+                                        type: string
                                     schedulerName:
                                         description: |-
                                             If specified, the pod will be dispatched by specified scheduler.
@@ -4177,6 +4183,80 @@ spec:
                                     When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
                                 pattern: ^(lts|stable|\d+\.\d+)?$
                                 type: string
+                            versionProbe:
+                                description: VersionProbe defines configuration for the version detection Job.
+                                properties:
+                                    annotations:
+                                        description: Additional annotations to apply specifically to the version probe Job and Pod.
+                                        items:
+                                            description: MetadataItem defines a single key-value pair for labels or annotations.
+                                            properties:
+                                                key:
+                                                    description: Key of the metadata item.
+                                                    type: string
+                                                value:
+                                                    description: Value of the metadata item.
+                                                    type: string
+                                            required:
+                                                - key
+                                                - value
+                                            type: object
+                                        type: array
+                                        x-kubernetes-list-map-keys:
+                                            - key
+                                        x-kubernetes-list-type: map
+                                    cpuLimit:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        default: 100m
+                                        description: CPULimit defines the CPU limit for the version probe container.
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                    cpuRequest:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        default: 100m
+                                        description: CPURequest defines the CPU request for the version probe container.
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                    labels:
+                                        description: Additional labels to apply specifically to the version probe Job and Pod.
+                                        items:
+                                            description: MetadataItem defines a single key-value pair for labels or annotations.
+                                            properties:
+                                                key:
+                                                    description: Key of the metadata item.
+                                                    type: string
+                                                value:
+                                                    description: Value of the metadata item.
+                                                    type: string
+                                            required:
+                                                - key
+                                                - value
+                                            type: object
+                                        type: array
+                                        x-kubernetes-list-map-keys:
+                                            - key
+                                        x-kubernetes-list-type: map
+                                    memoryLimit:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        default: 128Mi
+                                        description: MemoryLimit defines the memory limit for the version probe container.
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                    memoryRequest:
+                                        anyOf:
+                                            - type: integer
+                                            - type: string
+                                        default: 128Mi
+                                        description: MemoryRequest defines the memory request for the version probe container.
+                                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                        x-kubernetes-int-or-string: true
+                                type: object
                         required:
                             - keeperClusterRef
                         type: object

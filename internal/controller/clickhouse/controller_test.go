@@ -60,6 +60,13 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 				Annotations: map[string]string{
 					"test-annotation": "test-val",
 				},
+				VersionProbe: &v1.VersionProbeSpec{
+					Annotations: []v1.MetadataItem{
+						{Key: "sidecar.istio.io/inject", Value: "false"},
+					},
+					CPURequest: ptr.To(resource.MustParse("200m")),
+					CPULimit:   ptr.To(resource.MustParse("200m")),
+				},
 			},
 		}
 	)
@@ -134,9 +141,25 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(4))
 
+		By("verifying version probe job isolation")
 		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty()) // Should not be found with cluster app label
+
+		By("verifying version probe job metadata")
+		Expect(suite.Client.List(ctx, &jobs, client.InNamespace(cr.Namespace), client.MatchingLabels{
+			controllerutil.LabelAppKey:  cr.SpecificName() + "-version-probe",
+			controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
+		})).To(Succeed())
 		Expect(jobs.Items).To(HaveLen(1))
-		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
+		Expect(jobs.Items[0].Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
+		Expect(jobs.Items[0].Spec.Template.Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
+
+		By("verifying version probe job resources")
+
+		container := jobs.Items[0].Spec.Template.Spec.Containers[0]
+		Expect(container.Resources.Requests.Cpu().String()).To(Equal("200m"))   // Overridden
+		Expect(container.Resources.Limits.Cpu().String()).To(Equal("200m"))     // Overridden
+		Expect(container.Resources.Limits.Memory().String()).To(Equal("128Mi")) // Default
 
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ClusterNotReady": 1,

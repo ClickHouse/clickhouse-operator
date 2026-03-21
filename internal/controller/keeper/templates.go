@@ -415,6 +415,8 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 		Tolerations:                   podTemplate.Tolerations,
 		SchedulerName:                 podTemplate.SchedulerName,
 		ServiceAccountName:            podTemplate.ServiceAccountName,
+		PriorityClassName:             podTemplate.PriorityClassName,
+		RuntimeClassName:              controllerutil.ToPtrOrNil(podTemplate.RuntimeClassName),
 		SecurityContext:               podTemplate.SecurityContext,
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,

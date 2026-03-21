@@ -57,6 +57,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
+| `versionProbe` | [VersionProbeSpec](#versionprobespec) | VersionProbe defines configuration for the version detection Job. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -228,6 +229,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
+| `versionProbe` | [VersionProbeSpec](#versionprobespec) | VersionProbe defines configuration for the version detection Job. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)
@@ -284,6 +286,19 @@ Appears in:
 - [KeeperSettings](#keepersettings)
 
 
+## MetadataItem
+
+MetadataItem defines a single key-value pair for labels or annotations.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `key` | string | Key of the metadata item. | true |  |
+| `value` | string | Value of the metadata item. | true |  |
+
+Appears in:
+- [VersionProbeSpec](#versionprobespec)
+
+
 ## PDBPolicy
 
 PDBPolicy controls whether PodDisruptionBudgets are created.
@@ -330,6 +345,8 @@ PodTemplateSpec describes the pod configuration overrides for the cluster's pods
 | `tolerations` | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array | If specified, the pod's Tolerations. | false |  |
 | `schedulerName` | string | If specified, the pod will be dispatched by specified scheduler.<br />If not specified, the pod will be dispatched by default scheduler. | false |  |
 | `serviceAccountName` | string | ServiceAccountName is the name of the ServiceAccount to use to run this pod.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/ | false |  |
+| `priorityClassName` | string | PriorityClassName is the name of the PriorityClass to use for this pod. | false |  |
+| `runtimeClassName` | string | RuntimeClassName is the name of the RuntimeClass to use for this pod. | false |  |
 | `volumes` | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array | Volumes defines the list of volumes that can be mounted by containers belonging to the pod.<br />More info: https://kubernetes.io/docs/concepts/storage/volumes | false |  |
 | `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes and common container settings. | false |  |
 | `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology zone.<br />Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.<br />Recommended to be set to "topology.kubernetes.io/zone" | false |  |
@@ -352,4 +369,22 @@ SecretKeySelector selects a key of a Secret.
 Appears in:
 - [ClusterTLSSpec](#clustertlsspec)
 - [DefaultPasswordSelector](#defaultpasswordselector)
+
+
+## VersionProbeSpec
+
+VersionProbeSpec describes the configuration for the version probe task.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `labels` | [MetadataItem](#metadataitem) array | Additional labels to apply specifically to the version probe Job and Pod. | false |  |
+| `annotations` | [MetadataItem](#metadataitem) array | Additional annotations to apply specifically to the version probe Job and Pod. | false |  |
+| `cpuRequest` | [Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#quantity-resource-api) | CPURequest defines the CPU request for the version probe container. | false | 100m |
+| `cpuLimit` | [Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#quantity-resource-api) | CPULimit defines the CPU limit for the version probe container. | false | 100m |
+| `memoryRequest` | [Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#quantity-resource-api) | MemoryRequest defines the memory request for the version probe container. | false | 128Mi |
+| `memoryLimit` | [Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#quantity-resource-api) | MemoryLimit defines the memory limit for the version probe container. | false | 128Mi |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+- [KeeperClusterSpec](#keeperclusterspec)
 

@@ -10,6 +10,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -36,6 +37,8 @@ type VersionProbeConfig struct {
 	PodTemplate v1.PodTemplateSpec
 	// ContainerTemplate to apply to the Job, inherited from the cluster spec.
 	ContainerTemplate v1.ContainerTemplateSpec
+	// VersionProbe defines configuration for the version detection Job.
+	VersionProbe *v1.VersionProbeSpec
 }
 
 // VersionProbeResult holds the outcome of a version probe reconciliation.
@@ -160,15 +163,18 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) cleanupVersionProbeJob
 	var jobs batchv1.JobList
 
 	if err := cli.List(ctx, &jobs, client.InNamespace(r.Cluster.GetNamespace()), client.MatchingLabels(map[string]string{
-		controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
 		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
 	})); err != nil {
-		log.Warn("failed to list obsolete version probe jobs", "error", err)
+		log.Warn("failed to list version probe jobs", "error", err)
 		return
 	}
 
+	oldAppLabel := r.Cluster.SpecificName()
+	newAppLabel := r.Cluster.SpecificName() + "-version-probe"
+
 	for _, j := range jobs.Items {
-		if j.Name != job.Name {
+		app := j.Labels[controllerutil.LabelAppKey]
+		if j.Name != job.Name && (app == oldAppLabel || app == newAppLabel) {
 			log.Debug("deleting obsolete version probe job", "job", j.Name)
 
 			if err := cli.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
@@ -179,32 +185,79 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) cleanupVersionProbeJob
 }
 
 func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1.Job, error) {
+	labels := controllerutil.MergeMaps(cfg.Labels, map[string]string{
+		controllerutil.LabelAppKey:  r.Cluster.SpecificName() + "-version-probe",
+		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
+	})
+	annotations := cfg.Annotations
+
+	resources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(v1.DefaultVersionProbeCPU),
+			corev1.ResourceMemory: resource.MustParse(v1.DefaultVersionProbeMemory),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(v1.DefaultVersionProbeCPU),
+			corev1.ResourceMemory: resource.MustParse(v1.DefaultVersionProbeMemory),
+		},
+	}
+
+	if cfg.VersionProbe != nil {
+		labels = controllerutil.MergeMaps(labels, controllerutil.MetadataToMap(cfg.VersionProbe.Labels,
+			func(m v1.MetadataItem) string { return m.Key },
+			func(m v1.MetadataItem) string { return m.Value }))
+		annotations = controllerutil.MergeMaps(annotations, controllerutil.MetadataToMap(cfg.VersionProbe.Annotations,
+			func(m v1.MetadataItem) string { return m.Key },
+			func(m v1.MetadataItem) string { return m.Value }))
+
+		if cfg.VersionProbe.CPURequest != nil {
+			resources.Requests[corev1.ResourceCPU] = *cfg.VersionProbe.CPURequest
+		}
+
+		if cfg.VersionProbe.MemoryRequest != nil {
+			resources.Requests[corev1.ResourceMemory] = *cfg.VersionProbe.MemoryRequest
+		}
+
+		if cfg.VersionProbe.CPULimit != nil {
+			resources.Limits[corev1.ResourceCPU] = *cfg.VersionProbe.CPULimit
+		}
+
+		if cfg.VersionProbe.MemoryLimit != nil {
+			resources.Limits[corev1.ResourceMemory] = *cfg.VersionProbe.MemoryLimit
+		}
+	}
+
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.Cluster.GetNamespace(),
-			Labels: controllerutil.MergeMaps(cfg.Labels, map[string]string{
-				controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
-				controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
-			}),
-			Annotations: cfg.Annotations,
+			Namespace:   r.Cluster.GetNamespace(),
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: ptr.To[int32](0),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      cfg.Labels,
-					Annotations: cfg.Annotations,
+					Labels:      labels,
+					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy:    corev1.RestartPolicyNever,
-					ImagePullSecrets: cfg.PodTemplate.ImagePullSecrets,
-					SecurityContext:  cfg.PodTemplate.SecurityContext,
+					RestartPolicy:             corev1.RestartPolicyNever,
+					ImagePullSecrets:          cfg.PodTemplate.ImagePullSecrets,
+					SecurityContext:           cfg.PodTemplate.SecurityContext,
+					NodeSelector:              cfg.PodTemplate.NodeSelector,
+					Tolerations:               cfg.PodTemplate.Tolerations,
+					Affinity:                  cfg.PodTemplate.Affinity,
+					ServiceAccountName:        cfg.PodTemplate.ServiceAccountName,
+					PriorityClassName:         cfg.PodTemplate.PriorityClassName,
+					RuntimeClassName:          controllerutil.ToPtrOrNil(cfg.PodTemplate.RuntimeClassName),
+					TopologySpreadConstraints: cfg.PodTemplate.TopologySpreadConstraints,
 					Containers: []corev1.Container{
 						{
 							Name:            versionProbeContainerName,
 							Image:           cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
 							SecurityContext: cfg.ContainerTemplate.SecurityContext,
+							Resources:       resources,
 							Command:         []string{"sh", "-c", cfg.Binary + " --version > /dev/termination-log 2>&1"},
 						},
 					},

@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -210,6 +211,14 @@ type PodTemplateSpec struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// PriorityClassName is the name of the PriorityClass to use for this pod.
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+
+	// RuntimeClassName is the name of the RuntimeClass to use for this pod.
+	// +optional
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+
 	// Volumes defines the list of volumes that can be mounted by containers belonging to the pod.
 	// More info: https://kubernetes.io/docs/concepts/storage/volumes
 	// +optional
@@ -346,6 +355,56 @@ type DefaultPasswordSelector struct {
 	// Select password value from a ConfigMap key
 	// +optional
 	ConfigMap *ConfigMapKeySelector `json:"configMap,omitempty"`
+}
+
+const (
+	// DefaultVersionProbeCPU is the default CPU request and limit for the version probe Job.
+	DefaultVersionProbeCPU = "100m"
+	// DefaultVersionProbeMemory is the default memory request and limit for the version probe Job.
+	DefaultVersionProbeMemory = "128Mi"
+)
+
+// MetadataItem defines a single key-value pair for labels or annotations.
+type MetadataItem struct {
+	// Key of the metadata item.
+	Key string `json:"key"`
+	// Value of the metadata item.
+	Value string `json:"value"`
+}
+
+// VersionProbeSpec describes the configuration for the version probe task.
+type VersionProbeSpec struct {
+	// Additional labels to apply specifically to the version probe Job and Pod.
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+	Labels []MetadataItem `json:"labels,omitempty"`
+
+	// Additional annotations to apply specifically to the version probe Job and Pod.
+	// +optional
+	// +listType=map
+	// +listMapKey=key
+	Annotations []MetadataItem `json:"annotations,omitempty"`
+
+	// CPURequest defines the CPU request for the version probe container.
+	// +optional
+	// +kubebuilder:default:="100m"
+	CPURequest *resource.Quantity `json:"cpuRequest,omitempty"`
+
+	// CPULimit defines the CPU limit for the version probe container.
+	// +optional
+	// +kubebuilder:default:="100m"
+	CPULimit *resource.Quantity `json:"cpuLimit,omitempty"`
+
+	// MemoryRequest defines the memory request for the version probe container.
+	// +optional
+	// +kubebuilder:default:="128Mi"
+	MemoryRequest *resource.Quantity `json:"memoryRequest,omitempty"`
+
+	// MemoryLimit defines the memory limit for the version probe container.
+	// +optional
+	// +kubebuilder:default:="128Mi"
+	MemoryLimit *resource.Quantity `json:"memoryLimit,omitempty"`
 }
 
 // Validate validates the DefaultPasswordSelector configuration.

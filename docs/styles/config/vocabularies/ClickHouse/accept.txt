@@ -15,3 +15,7 @@ Env
 ANDed
 boolean
 lts
+CPURequest
+CPULimit
+MemoryRequest
+MemoryLimit

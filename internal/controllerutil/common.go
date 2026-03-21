@@ -284,6 +284,29 @@ func ShouldEmitEvent(err error) bool {
 	return false
 }
 
+// MetadataToMap converts a slice of metadata items (labels or annotations) to a map.
+func MetadataToMap[T any](items []T, getKey func(T) string, getValue func(T) string) map[string]string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	res := make(map[string]string, len(items))
+	for _, item := range items {
+		res[getKey(item)] = getValue(item)
+	}
+
+	return res
+}
+
+// ToPtrOrNil returns a pointer to the given string, or nil if the string is empty.
+func ToPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+
+	return &s
+}
+
 var versionRegex = regexp.MustCompile(`\d+(\.\d+){2,3}`)
 
 // ParseVersion extracts a version string from the given raw input.

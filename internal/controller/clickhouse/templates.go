@@ -309,6 +309,8 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		Tolerations:                   podTemplate.Tolerations,
 		SchedulerName:                 podTemplate.SchedulerName,
 		ServiceAccountName:            podTemplate.ServiceAccountName,
+		PriorityClassName:             podTemplate.PriorityClassName,
+		RuntimeClassName:              controllerutil.ToPtrOrNil(podTemplate.RuntimeClassName),
 		SecurityContext:               podTemplate.SecurityContext,
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,
