@@ -215,7 +215,7 @@ func (g *storageJbodConfigGenerator) ConfigKey() string {
 	return controllerutil.PathToName(path.Join(g.path, g.filename))
 }
 
-func (g *storageJbodConfigGenerator) Exists(r *clickhouseReconciler) bool {
+func (g *storageJbodConfigGenerator) Enabled(r *clickhouseReconciler) bool {
 	return len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs) > 0
 }
 
@@ -225,33 +225,44 @@ func (g *storageJbodConfigGenerator) RequiresRestart() bool {
 
 func (g *storageJbodConfigGenerator) Generate(r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	additionalDisks := make([]struct {
-		Name string
-		Path string
+		Name     string
+		DiskName string
+		Path     string
 	}, 0, len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs))
 	for _, addl := range r.Cluster.Spec.AdditionalDataVolumeClaimSpecs {
 		diskPath := addl.MountPath
 		if !strings.HasSuffix(diskPath, "/") {
 			diskPath += "/"
 		}
+
 		additionalDisks = append(additionalDisks, struct {
-			Name string
-			Path string
-		}{Name: addl.Name, Path: diskPath})
+			Name     string
+			DiskName string
+			Path     string
+		}{
+			Name:     addl.Name,
+			DiskName: strings.ReplaceAll(addl.Name, "-", "_"),
+			Path:     diskPath,
+		})
 	}
+
 	params := struct {
 		DefaultDiskPath string
 		AdditionalDisks []struct {
-			Name string
-			Path string
+			Name     string
+			DiskName string
+			Path     string
 		}
 	}{
 		DefaultDiskPath: internal.ClickHouseDataPath + "/",
 		AdditionalDisks: additionalDisks,
 	}
+
 	builder := strings.Builder{}
 	if err := g.template.Execute(&builder, params); err != nil {
 		return "", fmt.Errorf("template storage JBOD config: %w", err)
 	}
+
 	return builder.String(), nil
 }
 

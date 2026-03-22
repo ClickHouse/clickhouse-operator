@@ -22,6 +22,19 @@ AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and t
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 
+## AdditionalVolumeClaimSpec {#additionalvolumeclaimspec}
+
+AdditionalVolumeClaimSpec defines an additional persistent volume claim for a ClickHouse pod.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `name` | string | Name used as the volumeClaimTemplate name and the volume/volumeMount name.<br />Must be unique and not collide with the primary data volume name.<br />Must consist of lowercase alphanumeric characters or hyphens, and start and end with an alphanumeric character.<br />Hyphens are automatically converted to underscores in the ClickHouse disk configuration. | true |  |
+| `spec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | PVC spec for this additional volume. | true |  |
+| `mountPath` | string | MountPath inside the ClickHouse container.<br />If empty, defaults to /var/lib/clickhouse/disks/<name>. | false |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+
 ## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster is the Schema for the `clickhouseclusters` API.
@@ -68,6 +81,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `podTemplate` | [PodTemplateSpec](#podtemplatespec) | Parameters passed to the ClickHouse pod spec. | false |  |
 | `containerTemplate` | [ContainerTemplateSpec](#containertemplatespec) | Parameters passed to the ClickHouse container spec. | false |  |
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse data. | false |  |
+| `additionalDataVolumeClaimSpecs` | [AdditionalVolumeClaimSpec](#additionalvolumeclaimspec) array | Additional persistent volume claims attached to each ClickHouse pod.<br />Each entry creates a volumeClaimTemplate on the StatefulSet, producing<br />per-pod PVCs named <name>-<statefulset>-<ordinal>.<br />Use for JBOD / multi-disk storage layouts. | false |  |
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |

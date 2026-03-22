@@ -422,6 +422,7 @@ func (rm *ResourceManager) ReconcilePVC(
 	action v1.EventAction,
 ) (bool, error) {
 	const kind = "PersistentVolumeClaim"
+
 	log = log.With(kind, pvc.GetName())
 
 	if err := ctrlruntime.SetControllerReference(rm.owner, pvc, rm.ctrl.GetScheme()); err != nil {
@@ -436,7 +437,9 @@ func (rm *ResourceManager) ReconcilePVC(
 		if !k8serrors.IsNotFound(err) {
 			return false, fmt.Errorf("get %s/%s: %w", kind, pvc.GetName(), err)
 		}
+
 		log.Info("PVC not found, creating")
+
 		return true, rm.Create(ctx, pvc, action)
 	}
 
@@ -452,11 +455,14 @@ func (rm *ResourceManager) ReconcilePVC(
 
 	base := existing.DeepCopy()
 	existing.SetLabels(pvc.GetLabels())
+
 	if storageChanged {
 		log.Info("resizing PVC storage", "from", existingStorage.String(), "to", desiredStorage.String())
+
 		if existing.Spec.Resources.Requests == nil {
 			existing.Spec.Resources.Requests = make(corev1.ResourceList)
 		}
+
 		existing.Spec.Resources.Requests[corev1.ResourceStorage] = desiredStorage
 	}
 
@@ -465,6 +471,7 @@ func (rm *ResourceManager) ReconcilePVC(
 			rm.ctrl.GetRecorder().Eventf(rm.owner, existing, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
 				"Update %s %s failed: %s", kind, existing.GetName(), err.Error())
 		}
+
 		return false, fmt.Errorf("patch %s/%s: %w", kind, existing.GetName(), err)
 	}
 

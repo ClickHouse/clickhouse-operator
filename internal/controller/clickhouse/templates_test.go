@@ -89,10 +89,12 @@ var _ = Describe("BuildVolumes", func() {
 		mounts := buildMounts(&ctx)
 		Expect(mounts).To(HaveLen(7)) // 5 from data+config + 2 additional
 		checkVolumeMounts(volumes, mounts)
+
 		mountPaths := make(map[string]string)
 		for _, m := range mounts {
 			mountPaths[m.MountPath] = m.Name
 		}
+
 		Expect(mountPaths["/var/lib/clickhouse/disks/disk1"]).To(Equal("disk1"))
 		Expect(mountPaths["/var/lib/clickhouse/disks/disk2"]).To(Equal("disk2"))
 
@@ -102,6 +104,7 @@ var _ = Describe("BuildVolumes", func() {
 				pvcClaimNames[v.Name] = v.PersistentVolumeClaim.ClaimName
 			}
 		}
+
 		Expect(pvcClaimNames).To(HaveKeyWithValue("disk1", "disk1-test-clickhouse-0-0-0"))
 		Expect(pvcClaimNames).To(HaveKeyWithValue("disk2", "disk2-test-clickhouse-0-0-0"))
 	})
@@ -578,12 +581,14 @@ var _ = Describe("TemplateStatefulSet", func() {
 
 		podSpec, err := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 0, Index: 0})
 		Expect(err).To(Not(HaveOccurred()))
+
 		mountPaths := make(map[string]string)
 		for _, c := range podSpec.Containers {
 			for _, m := range c.VolumeMounts {
 				mountPaths[m.MountPath] = m.Name
 			}
 		}
+
 		Expect(mountPaths["/var/lib/clickhouse/disks/disk1"]).To(Equal("disk1"))
 		Expect(mountPaths["/var/lib/clickhouse/disks/disk2"]).To(Equal("disk2"))
 
@@ -593,16 +598,14 @@ var _ = Describe("TemplateStatefulSet", func() {
 				pvcVolumes[volume.Name] = volume.PersistentVolumeClaim.ClaimName
 			}
 		}
+
 		Expect(pvcVolumes).To(HaveKeyWithValue("disk1", "disk1-jbod-clickhouse-0-0-0"))
 		Expect(pvcVolumes).To(HaveKeyWithValue("disk2", "disk2-jbod-clickhouse-0-0-0"))
 	})
 })
 
-func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount, vctVolumeNames ...string) {
+func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
 	volumeMap := map[string]struct{}{}
-	for _, name := range vctVolumeNames {
-		volumeMap[name] = struct{}{}
-	}
 	for _, volume := range volumes {
 		ExpectWithOffset(1, volumeMap).NotTo(HaveKey(volume.Name))
 		volumeMap[volume.Name] = struct{}{}

@@ -120,6 +120,9 @@ type AdditionalPort struct {
 type AdditionalVolumeClaimSpec struct {
 	// Name used as the volumeClaimTemplate name and the volume/volumeMount name.
 	// Must be unique and not collide with the primary data volume name.
+	// Must consist of lowercase alphanumeric characters or hyphens, and start and end with an alphanumeric character.
+	// Hyphens are automatically converted to underscores in the ClickHouse disk configuration.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
 	Name string `json:"name"`
 	// PVC spec for this additional volume.
 	Spec corev1.PersistentVolumeClaimSpec `json:"spec"`
@@ -182,6 +185,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 		if len(s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes) == 0 {
 			s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 		}
+
 		if s.AdditionalDataVolumeClaimSpecs[i].MountPath == "" {
 			// Keep in sync with internal.AdditionalDiskBasePath.
 			s.AdditionalDataVolumeClaimSpecs[i].MountPath = "/var/lib/clickhouse/disks/" + s.AdditionalDataVolumeClaimSpecs[i].Name

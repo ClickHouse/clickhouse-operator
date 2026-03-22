@@ -46,6 +46,7 @@ var _ = Describe("ConfigGenerator", func() {
 			if !generator.Enabled(&ctx) {
 				Skip("generator does not apply to this cluster spec")
 			}
+
 			data, err := generator.Generate(&ctx, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
 
@@ -90,16 +91,18 @@ var _ = Describe("ConfigGenerator", func() {
 		// as a YAML list (round-robin distribution), not as separate per-disk volumes.
 		parsed := map[any]any{}
 		Expect(yaml.Unmarshal([]byte(storageConfig), &parsed)).To(Succeed())
-		policies := parsed["storage_configuration"].(map[any]any)["policies"].(map[any]any)
-		volumes := policies["default"].(map[any]any)["volumes"].(map[any]any)
+		policies := parsed["storage_configuration"].(map[any]any)["policies"].(map[any]any) //nolint:forcetypeassert
+		volumes := policies["default"].(map[any]any)["volumes"].(map[any]any)               //nolint:forcetypeassert
 		Expect(volumes).To(HaveLen(1), "true JBOD has exactly one volume containing all disks")
-		mainVolume := volumes["main"].(map[any]any)
+		mainVolume := volumes["main"].(map[any]any) //nolint:forcetypeassert
 		diskList, ok := mainVolume["disk"].([]any)
 		Expect(ok).To(BeTrue(), "disks under main volume must be a list")
+
 		diskNames := make([]string, len(diskList))
 		for i, d := range diskList {
-			diskNames[i] = d.(string)
+			diskNames[i] = d.(string) //nolint:forcetypeassert
 		}
+
 		Expect(diskNames).To(ContainElements("default", "disk1", "disk2"))
 	})
 })

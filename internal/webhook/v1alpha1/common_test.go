@@ -19,8 +19,41 @@ var _ = Describe("validateAdditionalDataVolumeClaimSpecs", func() {
 				Spec:      corev1.PersistentVolumeClaimSpec{},
 			},
 		})
+		Expect(errs).NotTo(BeEmpty())
+		Expect(errs).To(ContainElement(MatchError(ContainSubstring("collides with primary data volume name"))))
+	})
+
+	It("should accept names with hyphens", func() {
+		errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+			{Name: "disk-backfill-1", MountPath: "/var/lib/clickhouse/disks/disk-backfill-1", Spec: corev1.PersistentVolumeClaimSpec{}},
+		})
+		Expect(errs).To(BeEmpty())
+	})
+
+	It("should reject names with underscores", func() {
+		errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+			{Name: "disk_backfill_1", MountPath: "/var/lib/clickhouse/disks/disk_backfill_1", Spec: corev1.PersistentVolumeClaimSpec{}},
+		})
 		Expect(errs).To(HaveLen(1))
-		Expect(errs[0].Error()).To(ContainSubstring("collides with primary data volume name"))
+		Expect(errs[0].Error()).To(ContainSubstring("must consist of lowercase alphanumeric characters or hyphens"))
+	})
+
+	It("should reject names with uppercase letters", func() {
+		errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+			{Name: "Disk1", MountPath: "/var/lib/clickhouse/disks/Disk1", Spec: corev1.PersistentVolumeClaimSpec{}},
+		})
+		Expect(errs).To(HaveLen(1))
+		Expect(errs[0].Error()).To(ContainSubstring("must consist of lowercase alphanumeric characters or hyphens"))
+	})
+
+	It("should reject names starting or ending with a hyphen", func() {
+		for _, name := range []string{"-disk1", "disk1-"} {
+			errs := validateAdditionalDataVolumeClaimSpecs([]v1alpha1.AdditionalVolumeClaimSpec{
+				{Name: name, MountPath: "/path", Spec: corev1.PersistentVolumeClaimSpec{}},
+			})
+			Expect(errs).To(HaveLen(1), "expected error for name %q", name)
+			Expect(errs[0].Error()).To(ContainSubstring("must consist of lowercase alphanumeric characters or hyphens"))
+		}
 	})
 
 	It("should reject duplicate names", func() {

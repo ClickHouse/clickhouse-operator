@@ -126,6 +126,7 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	for _, addl := range obj.Spec.AdditionalDataVolumeClaimSpecs {
 		reservedNames = append(reservedNames, addl.Name)
 	}
+
 	volumeWarns, volumeErrs := validateVolumes(
 		obj.Spec.PodTemplate.Volumes,
 		obj.Spec.ContainerTemplate.VolumeMounts,
@@ -166,7 +167,7 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		reservedClickHousePortManagement:       "management",
 	}
 
-	reservedNames := map[string]struct{}{
+	reservedPortNames := map[string]struct{}{
 		"http":        {},
 		"http-secure": {},
 		"tcp":         {},
@@ -184,7 +185,7 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 			))
 		}
 
-		if _, taken := reservedNames[p.Name]; taken {
+		if _, taken := reservedPortNames[p.Name]; taken {
 			errs = append(errs, fmt.Errorf(
 				"spec.additionalPorts[%d].name: %q is reserved by the operator",
 				i, p.Name,

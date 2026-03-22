@@ -804,6 +804,7 @@ func additionalPVCName(cluster *v1.ClickHouseCluster, id v1.ClickHouseReplicaID,
 
 func templateAdditionalPVCs(r *clickhouseReconciler, id v1.ClickHouseReplicaID) []*corev1.PersistentVolumeClaim {
 	resourceLabels := replicaResourceLabels(r.Cluster, id)
+
 	pvcs := make([]*corev1.PersistentVolumeClaim, 0, len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs))
 	for _, addl := range r.Cluster.Spec.AdditionalDataVolumeClaimSpecs {
 		pvcs = append(pvcs, &corev1.PersistentVolumeClaim{
