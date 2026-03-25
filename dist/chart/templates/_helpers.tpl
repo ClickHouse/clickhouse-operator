@@ -48,3 +48,15 @@ Dynamically calculates safe truncation to ensure total name length <= 63 chars.
 {{- printf "%s-%s" $fullname $suffix | trunc 63 | trimSuffix "-" }}
 {{- end }}
 {{- end }}
+
+{{/*
+Util function for generating the image URL based on the provided options.
+Cribbed from the cert-manager organization.
+*/}}
+{{- define "clickhouse-operator.image" -}}
+{{- $defaultTag := index . 1 -}}
+{{- with index . 0 -}}
+{{ printf .repository }}
+{{- if .digest -}}{{ printf "@%s" .digest }}{{- else -}}{{ printf ":%s" (default $defaultTag .tag) }}{{- end -}}
+{{- end }}
+{{- end }}
