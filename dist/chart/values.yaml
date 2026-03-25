@@ -17,6 +17,9 @@ manager:
 
     image:
         repository: ghcr.io/clickhouse/clickhouse-operator
+        ## Digest of the image to use. Tag is used if unset.
+        ##
+        ## digest: sha256:abc123
         ## Tag of the image to use. Defaults to the chart's appVersion if not set.
         ##
         ## tag: latest
