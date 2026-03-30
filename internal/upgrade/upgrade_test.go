@@ -172,11 +172,10 @@ var _ = Describe("Version Checker", func() {
 		Expect(data.Releases).To(Equal(releases), "diff:\n"+cmp.Diff(data.Releases, releases))
 
 		supported := map[ClickHouseRelease]bool{
-			{26, 3}:  true,
-			{25, 8}:  true,
-			{26, 2}:  true,
-			{26, 1}:  true,
-			{25, 10}: true,
+			{25, 8}: true,
+			{26, 1}: true,
+			{26, 2}: true,
+			{26, 3}: true,
 		}
 		Expect(data.Supported).To(Equal(supported), "diff:\n"+cmp.Diff(data.Supported, supported))
 	})
@@ -207,7 +206,7 @@ var _ = Describe("Version Checker", func() {
 					{26, 2, 1, 3},
 					{26, 3, 1, 1},
 				},
-				Outdated:  false,
+				Outdated:  true,
 				OnChannel: true,
 			},
 		),

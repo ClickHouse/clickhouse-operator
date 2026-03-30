@@ -204,26 +204,39 @@ func filterLatestVersions(versions map[string][]ClickHouseVersion) releaseMap {
 // buildSupportedMap builds the supported releases map.
 // Should follow the same logic as https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/security-generator/generate_security.py
 func buildSupportedMap(allReleases releaseMap) map[ClickHouseRelease]bool {
+	// Collect all unique releases across both channels.
+	allReleaseKeys := map[ClickHouseRelease]bool{}
+	for _, releases := range allReleases {
+		for release := range releases {
+			allReleaseKeys[release] = true
+		}
+	}
+
 	supported := map[ClickHouseRelease]bool{}
-	for channel, maxReleases := range map[string]int{
-		channelStable: stableReleases,
-		channelLTS:    ltsReleases,
-	} {
-		releases := allReleases[channel]
+	regularCount := 0
+	ltsCount := 0
+	ltsMap := allReleases[channelLTS]
 
-		releasesLeft := maxReleases
-		for _, release := range slices.SortedFunc(maps.Keys(releases), func(i ClickHouseRelease, j ClickHouseRelease) int {
-			if c := cmp.Compare(i.Major, j.Major); c != 0 {
-				return -c
-			}
-			return -cmp.Compare(i.Minor, j.Minor)
-		}) {
+	for _, release := range slices.SortedFunc(maps.Keys(allReleaseKeys), func(i, j ClickHouseRelease) int {
+		if c := cmp.Compare(i.Major, j.Major); c != 0 {
+			return -c
+		}
+		return -cmp.Compare(i.Minor, j.Minor)
+	}) {
+		_, isLTS := ltsMap[release]
+
+		if regularCount < stableReleases {
 			supported[release] = true
+			regularCount++
+		}
 
-			releasesLeft--
-			if releasesLeft == 0 {
-				break
-			}
+		if isLTS && ltsCount < ltsReleases {
+			supported[release] = true
+			ltsCount++
+		}
+
+		if regularCount >= stableReleases && ltsCount >= ltsReleases {
+			break
 		}
 	}
 
