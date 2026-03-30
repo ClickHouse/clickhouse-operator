@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	ClickHouseBaseVersion   = "26.1"
-	ClickHouseUpdateVersion = "26.2"
+	ClickHouseBaseVersion   = "26.2"
+	ClickHouseUpdateVersion = "26.3"
 )
 
 var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
