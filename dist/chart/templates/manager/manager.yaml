@@ -1,108 +1,108 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-    labels:
-        app.kubernetes.io/managed-by: {{ .Release.Service }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+  name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.manager.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+        {{- if .Values.prometheus.scraping_annotations }}
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "{{ .Values.metrics.port }}"
+        {{- end}}
+      labels:
         app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
         app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
         control-plane: controller-manager
-    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
-    namespace: {{ .Release.Namespace }}
-spec:
-    replicas: {{ .Values.manager.replicas }}
-    selector:
-        matchLabels:
-            app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
-            control-plane: controller-manager
-    template:
-        metadata:
-          annotations:
-              kubectl.kubernetes.io/default-container: manager
-              {{- if .Values.prometheus.scraping_annotations }}
-              prometheus.io/scrape: "true"
-              prometheus.io/path: "/metrics"
-              prometheus.io/port: "{{ .Values.metrics.port }}"
-              {{- end}}
-          labels:
-              app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
-              helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-              app.kubernetes.io/instance: {{ .Release.Name }}
-              app.kubernetes.io/managed-by: {{ .Release.Service }}
-              control-plane: controller-manager
-        spec:
-            {{- with .Values.manager.tolerations }}
-            tolerations: {{ toYaml . | nindent 16 }}
+    spec:
+      {{- with .Values.manager.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.podSecurityContext }}
+      securityContext: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: manager
+          {{- $args := .Values.manager.args }}
+          {{- if .Values.metrics.enable }}
+          {{-   $args = append $args (printf "--metrics-bind-address=:%v" .Values.metrics.port) }}
+          {{-   $args = append $args (printf "--metrics-secure=%t" .Values.metrics.secure) }}
+          {{- end }}
+          {{- if .Values.certManager.enable }}
+          {{-   $args = append $args "--webhook-cert-path=/tmp/k8s-server/serving-certs" }}
+          {{-   $args = append $args "--metrics-cert-path=/tmp/k8s-server/serving-certs" }}
+          {{- end }}
+          args: {{ toYaml $args | nindent 22 }}
+          command:
+            - /manager
+          {{- $env := append .Values.manager.env (dict "name" "ENABLE_WEBHOOKS" "value" (printf "%t" .Values.webhook.enable)) }}
+          {{- if not (empty .Values.watchNamespaces) }}
+          {{-   $env = append $env (dict "name" "WATCH_NAMESPACE" "value" (join "," .Values.watchNamespaces)) }}
+          {{- end }}
+          env: {{ toYaml $env | nindent 22 }}
+          image: "{{ .Values.manager.image.repository }}:{{ default .Chart.AppVersion .Values.manager.image.tag }}"
+          imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          ports:
+            {{- if .Values.webhook.enable }}
+            - containerPort: {{ .Values.webhook.port }}
+              name: webhook-server
+              protocol: TCP
             {{- end }}
-            {{- with .Values.manager.nodeSelector }}
-            nodeSelector: {{ toYaml . | nindent 16 }}
+            {{- if .Values.metrics.enable }}
+            - containerPort: {{ .Values.metrics.port }}
+              name: metrics-server
+              protocol: TCP
             {{- end }}
-            {{- with .Values.manager.affinity }}
-            affinity: {{ toYaml . | nindent 16 }}
-            {{- end }}
-            {{- with .Values.manager.imagePullSecrets }}
-            imagePullSecrets: {{ toYaml . | nindent 16}}
-            {{- end }}
-            {{- with .Values.manager.podSecurityContext }}
-            securityContext: {{ toYaml . | nindent 16 }}
-            {{- end }}
-            containers:
-                - name: manager
-                  {{- $args := .Values.manager.args }}
-                  {{- if .Values.metrics.enable }}
-                  {{-   $args = append $args (printf "--metrics-bind-address=:%v" .Values.metrics.port) }}
-                  {{-   $args = append $args (printf "--metrics-secure=%t" .Values.metrics.secure) }}
-                  {{- end }}
-                  {{- if .Values.certManager.enable }}
-                  {{-   $args = append $args "--webhook-cert-path=/tmp/k8s-server/serving-certs" }}
-                  {{-   $args = append $args "--metrics-cert-path=/tmp/k8s-server/serving-certs" }}
-                  {{- end }}
-                  args: {{ toYaml $args | nindent 22 }}
-                  command:
-                      - /manager
-                  {{- $env := append .Values.manager.env (dict "name" "ENABLE_WEBHOOKS" "value" (printf "%t" .Values.webhook.enable)) }}
-                  {{- if not (empty .Values.watchNamespaces) }}
-                  {{-   $env = append $env (dict "name" "WATCH_NAMESPACE" "value" (join "," .Values.watchNamespaces)) }}
-                  {{- end }}
-                  env: {{ toYaml $env | nindent 22 }}
-                  image: "{{ .Values.manager.image.repository }}:{{ default .Chart.AppVersion .Values.manager.image.tag }}"
-                  imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
-                  livenessProbe:
-                      httpGet:
-                          path: /healthz
-                          port: 8081
-                      initialDelaySeconds: 15
-                      periodSeconds: 20
-                  readinessProbe:
-                      httpGet:
-                          path: /readyz
-                          port: 8081
-                      initialDelaySeconds: 5
-                      periodSeconds: 10
-                  ports:
-                      {{- if .Values.webhook.enable }}
-                      - containerPort: {{ .Values.webhook.port }}
-                        name: webhook-server
-                        protocol: TCP
-                      {{- end }}
-                      {{- if .Values.metrics.enable }}
-                      - containerPort: {{ .Values.metrics.port }}
-                        name: metrics-server
-                        protocol: TCP
-                      {{- end }}
-                  resources: {{ toYaml .Values.manager.resources | nindent 22 }}
-                  securityContext: {{ toYaml .Values.manager.containerSecurityContext | nindent 22 }}
-                  {{- if .Values.certManager.enable }}
-                  volumeMounts:
-                      - mountPath: /tmp/k8s-server/serving-certs
-                        name: serving-certs
-                        readOnly: true
-                  {{- end }}
-            serviceAccountName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
-            terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
-            {{- if .Values.certManager.enable }}
-            volumes:
-                - name: serving-certs
-                  secret:
-                      secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
-            {{- end }}
+          resources: {{ toYaml .Values.manager.resources | nindent 22 }}
+          securityContext: {{ toYaml .Values.manager.containerSecurityContext | nindent 22 }}
+          {{- if .Values.certManager.enable }}
+          volumeMounts:
+            - mountPath: /tmp/k8s-server/serving-certs
+              name: serving-certs
+              readOnly: true
+          {{- end }}
+      serviceAccountName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+      terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
+      {{- if .Values.certManager.enable }}
+      volumes:
+        - name: serving-certs
+          secret:
+            secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+      {{- end }}

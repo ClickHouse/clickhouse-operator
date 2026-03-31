@@ -57,7 +57,7 @@ endif
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
 OPERATOR_SDK_VERSION ?= v1.42.2
-OPERATOR_MANAGER_VERSION ?= v1.62.0
+OPERATOR_MANAGER_VERSION ?= v1.65.0
 # Image URL to use all building/pushing image targets
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
@@ -321,13 +321,13 @@ ACTIONLINT ?= $(LOCALBIN)/actionlint
 KUSTOMIZE_VERSION ?= v5.7.1
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
 ENVTEST_VERSION ?= release-0.22
-GOLANGCI_LINT_VERSION ?= v2.9.0
+GOLANGCI_LINT_VERSION ?= v2.11.4
 GINKGO_VERSION ?= v2.28.1
-KUBEBUILDER_VERSION ?= v4.12.0
-CODESPELL_VERSION ?= 2.4.1
+KUBEBUILDER_VERSION ?= v4.13.1
+CODESPELL_VERSION ?= 2.4.2
 CRD_SCHEMA_CHECKER_VERSION ?= latest
 CRD_REF_DOCS_VERSION ?= v0.3.0
-ACTIONLINT_VERSION ?= v1.7.7
+ACTIONLINT_VERSION ?= v1.7.12
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.

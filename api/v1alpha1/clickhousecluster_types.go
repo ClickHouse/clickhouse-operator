@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -82,8 +81,8 @@ type ClickHouseClusterSpec struct {
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
 func (s *ClickHouseClusterSpec) WithDefaults() {
 	defaultSpec := ClickHouseClusterSpec{
-		Replicas: ptr.To[int32](DefaultClickHouseReplicaCount),
-		Shards:   ptr.To[int32](DefaultClickHouseShardCount),
+		Replicas: new(int32(DefaultClickHouseReplicaCount)),
+		Shards:   new(int32(DefaultClickHouseShardCount)),
 		ContainerTemplate: ContainerTemplateSpec{
 			Image: ContainerImage{
 				Repository: DefaultClickHouseContainerRepository,

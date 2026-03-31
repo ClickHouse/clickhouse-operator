@@ -18,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -131,8 +130,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 			APIVersion:         "clickhouse.com/v1alpha1",
 			UID:                cr.UID,
 			Name:               cr.Name,
-			Controller:         new(bool(true)),
-			BlockOwnerDeletion: new(bool(true)),
+			Controller:         new(true),
+			BlockOwnerDeletion: new(true),
 		}
 
 		By("setting meta attributes for service")
@@ -249,7 +248,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 			RunAsUser: new(int64(7)),
 		}
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
-			Privileged: new(bool(true)),
+			Privileged: new(true),
 		}
 		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())

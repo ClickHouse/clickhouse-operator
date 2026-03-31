@@ -84,7 +84,7 @@ func init() {
 				indentation := strings.Repeat(" ", count)
 
 				for line := range strings.SplitSeq(str, "\n") {
-					if _, err := builder.WriteString(fmt.Sprintf("%s%s\n", indentation, line)); err != nil {
+					if _, err := fmt.Fprintf(&builder, "%s%s\n", indentation, line); err != nil {
 						return "", fmt.Errorf("failed to write indented line: %w", err)
 					}
 				}

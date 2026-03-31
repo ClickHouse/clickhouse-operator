@@ -153,8 +153,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			APIVersion:         "clickhouse.com/v1alpha1",
 			UID:                cr.UID,
 			Name:               cr.Name,
-			Controller:         new(bool(true)),
-			BlockOwnerDeletion: new(bool(true)),
+			Controller:         new(true),
+			BlockOwnerDeletion: new(true),
 		}
 
 		By("setting meta attributes for service")
@@ -291,7 +291,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			RunAsUser: new(int64(7)),
 		}
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
-			Privileged: new(bool(true)),
+			Privileged: new(true),
 		}
 		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())

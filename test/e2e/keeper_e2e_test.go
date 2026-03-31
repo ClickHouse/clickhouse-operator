@@ -15,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -207,7 +206,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
 			WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
-			KeeperRWChecks(ctx, &cr, new(int(0)))
+			KeeperRWChecks(ctx, &cr, new(0))
 		})
 	})
 
@@ -253,7 +252,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 
 		By("verifying keeper is functional with basic read/write")
-		KeeperRWChecks(ctx, &cr, new(int(0)))
+		KeeperRWChecks(ctx, &cr, new(0))
 	})
 
 	It("should recreate stuck pods", func(ctx context.Context) {
@@ -287,7 +286,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		}
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
-		KeeperRWChecks(ctx, &cr, new(int(0)))
+		KeeperRWChecks(ctx, &cr, new(0))
 	})
 })
 

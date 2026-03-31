@@ -375,7 +375,8 @@ func testDeployment(namespace string) {
 			"clickhousecluster/"+ch.Name)
 	}
 
-	tableArgs := []any{body}
+	tableArgs := make([]any, 1, len(versionEntries)+1)
+	tableArgs[0] = body
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
 }
 

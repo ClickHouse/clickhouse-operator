@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -70,7 +69,7 @@ type KeeperClusterSpec struct {
 // WithDefaults sets default values for KeeperClusterSpec fields.
 func (s *KeeperClusterSpec) WithDefaults() {
 	defaultSpec := KeeperClusterSpec{
-		Replicas: ptr.To[int32](DefaultKeeperReplicaCount),
+		Replicas: new(int32(DefaultKeeperReplicaCount)),
 		ContainerTemplate: ContainerTemplateSpec{
 			Image: ContainerImage{
 				Repository: DefaultKeeperContainerRepository,

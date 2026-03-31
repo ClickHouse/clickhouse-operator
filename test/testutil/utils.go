@@ -246,14 +246,14 @@ func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace st
 			continue
 		}
 
-		full.WriteString(fmt.Sprintf("Dump %T:\n", resource))
+		_, _ = fmt.Fprintf(&full, "Dump %T:\n", resource)
 		full.Write(marshalled)
 		full.WriteString("\n\n")
 
 		// Short dump: resource type + object names only.
 		names := extractObjectNames(resource)
 		if len(names) > 0 {
-			short.WriteString(fmt.Sprintf("%T: %s\n", resource, strings.Join(names, ", ")))
+			_, _ = fmt.Fprintf(&short, "%T: %s\n", resource, strings.Join(names, ", "))
 		}
 	}
 
@@ -377,14 +377,14 @@ func DumpNamespaceEvents(ctx context.Context, cli client.Client, namespace strin
 	var buf strings.Builder
 	for _, event := range events.Items {
 		if event.CreationTimestamp.After(since) {
-			buf.WriteString(fmt.Sprintf("%s\t%s\t%s/%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(&buf, "%s\t%s\t%s/%s\t%s\t%s\n",
 				event.CreationTimestamp.Format(time.RFC3339),
 				event.Type,
 				event.InvolvedObject.Kind,
 				event.InvolvedObject.Name,
 				event.Reason,
 				event.Message,
-			))
+			)
 		}
 	}
 

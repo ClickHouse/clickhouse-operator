@@ -12,7 +12,6 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -189,7 +188,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 			Annotations: cfg.Annotations,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: ptr.To[int32](0),
+			BackoffLimit: new(int32(0)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      cfg.Labels,

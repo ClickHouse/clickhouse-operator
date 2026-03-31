@@ -1,4 +1,4 @@
-package version //nolint:revive
+package version
 
 import (
 	"fmt"

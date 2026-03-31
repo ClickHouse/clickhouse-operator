@@ -86,14 +86,13 @@ func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) (admission.
 		errs = append(errs, err)
 	}
 
-	volumeWarns, volumeErrs := validateVolumes(
+	warns, volumeErrs := validateVolumes(
 		obj.Spec.PodTemplate.Volumes,
 		obj.Spec.ContainerTemplate.VolumeMounts,
 		internal.ReservedKeeperVolumeNames,
 		internal.KeeperDataPath,
 		obj.Spec.DataVolumeClaimSpec != nil,
 	)
-	warns = append(warns, volumeWarns...)
 	errs = append(errs, volumeErrs...)
 
 	if err := obj.Spec.Settings.TLS.Validate(); err != nil {

@@ -2,23 +2,23 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    labels:
-        app.kubernetes.io/managed-by: {{ .Release.Service }}
-        app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
-        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
-    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "keepercluster-admin-role" "context" $) }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "keepercluster-admin-role" "context" $) }}
 rules:
-    - apiGroups:
-        - clickhouse.com
-      resources:
-        - keeperclusters
-      verbs:
-        - '*'
-    - apiGroups:
-        - clickhouse.com
-      resources:
-        - keeperclusters/status
-      verbs:
-        - get
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - keeperclusters
+  verbs:
+  - '*'
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - keeperclusters/status
+  verbs:
+  - get
 {{- end }}

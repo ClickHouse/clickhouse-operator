@@ -1,94 +1,94 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-    name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
+  name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
-    - apiGroups:
-        - ""
-      resources:
-        - configmaps
-        - persistentvolumeclaims
-        - pods
-        - secrets
-        - services
-      verbs:
-        - create
-        - delete
-        - get
-        - list
-        - update
-        - watch
-    - apiGroups:
-        - apps
-      resources:
-        - statefulsets
-      verbs:
-        - create
-        - delete
-        - get
-        - list
-        - update
-        - watch
-    - apiGroups:
-        - apps
-      resources:
-        - statefulsets/status
-      verbs:
-        - get
-    - apiGroups:
-        - batch
-      resources:
-        - jobs
-      verbs:
-        - create
-        - delete
-        - get
-        - list
-        - watch
-    - apiGroups:
-        - clickhouse.com
-      resources:
-        - clickhouseclusters
-        - keeperclusters
-      verbs:
-        - create
-        - delete
-        - get
-        - list
-        - patch
-        - update
-        - watch
-    - apiGroups:
-        - clickhouse.com
-      resources:
-        - clickhouseclusters/finalizers
-        - keeperclusters/finalizers
-      verbs:
-        - update
-    - apiGroups:
-        - clickhouse.com
-      resources:
-        - clickhouseclusters/status
-        - keeperclusters/status
-      verbs:
-        - get
-        - patch
-        - update
-    - apiGroups:
-        - events.k8s.io
-      resources:
-        - events
-      verbs:
-        - create
-        - patch
-    - apiGroups:
-        - policy
-      resources:
-        - poddisruptionbudgets
-      verbs:
-        - create
-        - delete
-        - get
-        - list
-        - update
-        - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets/status
+  verbs:
+  - get
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - clickhouseclusters
+  - keeperclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - clickhouseclusters/finalizers
+  - keeperclusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - clickhouseclusters/status
+  - keeperclusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch

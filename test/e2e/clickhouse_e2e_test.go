@@ -20,7 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -207,7 +206,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			})
 
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
-			ClickHouseRWChecks(ctx, &cr, new(int(0)))
+			ClickHouseRWChecks(ctx, &cr, new(0))
 		})
 
 		It("should recreate stuck pods", func(ctx context.Context) {
@@ -697,7 +696,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			})
 
 			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, false)
-			ClickHouseRWChecks(ctx, cr, new(int(0)))
+			ClickHouseRWChecks(ctx, cr, new(0))
 		})
 
 		It("should use custom ca bundle to connect to the keeper", func(ctx context.Context) {
@@ -716,7 +715,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			})
 
 			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, false)
-			ClickHouseRWChecks(ctx, cr, new(int(0)))
+			ClickHouseRWChecks(ctx, cr, new(0))
 		})
 	})
 
@@ -758,8 +757,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
 				PodTemplate: v1.PodTemplateSpec{
-					TopologyZoneKey: new(string("topology.kubernetes.io/zone")),
-					NodeHostnameKey: new(string("kubernetes.io/hostname")),
+					TopologyZoneKey: new("topology.kubernetes.io/zone"),
+					NodeHostnameKey: new("kubernetes.io/hostname"),
 				},
 			},
 		}
@@ -801,8 +800,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Name: keeperName,
 				},
 				PodTemplate: v1.PodTemplateSpec{
-					TopologyZoneKey: new(string("topology.kubernetes.io/zone")),
-					NodeHostnameKey: new(string("kubernetes.io/hostname")),
+					TopologyZoneKey: new("topology.kubernetes.io/zone"),
+					NodeHostnameKey: new("kubernetes.io/hostname"),
 				},
 			},
 		}

@@ -6,7 +6,6 @@ import (
 	"gopkg.in/yaml.v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
@@ -20,8 +19,8 @@ var _ = Describe("ConfigGenerator", func() {
 					Namespace: "test-namespace",
 				},
 				Spec: v1.ClickHouseClusterSpec{
-					Replicas: ptr.To[int32](3),
-					Shards:   ptr.To[int32](2),
+					Replicas: new(int32(3)),
+					Shards:   new(int32(2)),
 					Settings: v1.ClickHouseSettings{
 						ExtraConfig: runtime.RawExtension{
 							Raw: []byte(`{"test": "value"}`),
@@ -35,7 +34,7 @@ var _ = Describe("ConfigGenerator", func() {
 		},
 		keeper: v1.KeeperCluster{
 			Spec: v1.KeeperClusterSpec{
-				Replicas: ptr.To[int32](3),
+				Replicas: new(int32(3)),
 			},
 		},
 	}
