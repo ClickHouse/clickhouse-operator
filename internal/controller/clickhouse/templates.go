@@ -122,12 +122,20 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (c
 		existingData = existing.Data
 	}
 
-	for key, template := range secretsToGenerate {
-		if data, ok := existingData[key]; ok {
-			secret.Data[key] = data
+	knownKeys := make(map[string]struct{}, len(clusterSecrets))
+	for i := range clusterSecrets {
+		spec := &clusterSecrets[i]
+		knownKeys[spec.Key] = struct{}{}
+
+		if !spec.enabled(cr) {
+			continue
+		}
+
+		if data, ok := existingData[spec.Key]; ok {
+			secret.Data[spec.Key] = data
 		} else {
 			changed = true
-			secret.Data[key] = fmt.Appendf(nil, template, controllerutil.GeneratePassword())
+			secret.Data[spec.Key] = spec.generate()
 		}
 	}
 
@@ -263,7 +271,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 func generateConfigForSingleReplica(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (map[string]string, error) {
 	configFiles := map[string]string{}
 	for _, generator := range generators {
-		if !generator.Exists(r) {
+		if !generator.Enabled(r) {
 			continue
 		}
 
@@ -435,15 +443,20 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 		},
 	}
 
-	for _, secret := range secretsToEnvMapping {
+	for i := range clusterSecrets {
+		spec := &clusterSecrets[i]
+		if spec.Env == "" || !spec.enabled(r.Cluster) {
+			continue
+		}
+
 		container.Env = append(container.Env, corev1.EnvVar{
-			Name: secret.Env,
+			Name: spec.Env,
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: cr.SecretName(),
 					},
-					Key: secret.Key,
+					Key: spec.Key,
 				},
 			},
 		})
@@ -575,7 +588,7 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) []corev1.V
 
 	configVolumes := map[string]corev1.Volume{}
 	for _, generator := range generators {
-		if !generator.Exists(r) {
+		if !generator.Enabled(r) {
 			continue
 		}
 
@@ -664,7 +677,7 @@ func buildMounts(r *clickhouseReconciler) []corev1.VolumeMount {
 
 	seenPaths := map[string]struct{}{}
 	for _, generator := range generators {
-		if !generator.Exists(r) {
+		if !generator.Enabled(r) {
 			continue
 		}
 

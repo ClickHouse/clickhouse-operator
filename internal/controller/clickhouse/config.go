@@ -19,7 +19,9 @@ import (
 
 var (
 	//go:embed templates/base.yaml.tmpl
-	baseConfigTemplateStr string
+	baseTemplateStr string
+	//go:embed templates/named_collections.yaml.tmpl
+	namedCollectionsTemplateStr string
 	//go:embed templates/network.yaml.tmpl
 	networkConfigTemplateStr string
 	//go:embed templates/log_tables.yaml.tmpl
@@ -33,17 +35,51 @@ var (
 )
 
 func init() {
+	templateFuncs := template.FuncMap{
+		"yaml": func(v any) (string, error) {
+			data, err := yaml.Marshal(v)
+			return string(data), err
+		},
+		"indent": func(countRaw any, strRaw any) (string, error) {
+			count, ok := countRaw.(int)
+			if !ok {
+				return "", fmt.Errorf("indent: expected int for indentation value, got %T", countRaw)
+			}
+
+			str, ok := strRaw.(string)
+			if !ok {
+				return "", fmt.Errorf("indent: expected string for content value, got %T", strRaw)
+			}
+
+			builder := strings.Builder{}
+			indentation := strings.Repeat(" ", count)
+
+			for line := range strings.SplitSeq(str, "\n") {
+				if _, err := builder.WriteString(fmt.Sprintf("%s%s\n", indentation, line)); err != nil {
+					return "", fmt.Errorf("failed to write indented line: %w", err)
+				}
+			}
+
+			return builder.String(), nil
+		},
+	}
+
+	baseTmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(baseTemplateStr))
+
+	generators = append(generators, &templateConfigGenerator{
+		path:      ConfigPath,
+		filename:  ConfigFileName,
+		template:  baseTmpl,
+		generator: executeBaseConfig,
+	})
+
 	for _, templateSpec := range []struct {
 		Path      string
 		Filename  string
 		Raw       string
 		Generator configGeneratorFunc
+		Enabled   func(r *clickhouseReconciler) bool
 	}{{
-		Path:      ConfigPath,
-		Filename:  ConfigFileName,
-		Raw:       baseConfigTemplateStr,
-		Generator: baseConfigGenerator,
-	}, {
 		Path:      path.Join(ConfigPath, ConfigDPath),
 		Filename:  "00-network.yaml",
 		Raw:       networkConfigTemplateStr,
@@ -53,6 +89,14 @@ func init() {
 		Filename:  "00-logs-tables.yaml",
 		Raw:       logTablesConfigTemplateStr,
 		Generator: logTablesConfigGenerator,
+	}, {
+		Path:      path.Join(ConfigPath, ConfigDPath),
+		Filename:  "00-named-collections.yaml",
+		Raw:       namedCollectionsTemplateStr,
+		Generator: namedCollectionsConfigGenerator,
+		Enabled: func(r *clickhouseReconciler) bool {
+			return versionAtLeast(r.Cluster.Status.Version, MinVersionNamedCollections)
+		},
 	}, {
 		Path:      ConfigPath,
 		Filename:  UsersFileName,
@@ -64,43 +108,14 @@ func init() {
 		Raw:       clientConfigTemplateStr,
 		Generator: clientConfigGenerator,
 	}} {
-		tmpl := template.New("").Funcs(template.FuncMap{
-			"yaml": func(v any) (string, error) {
-				data, err := yaml.Marshal(v)
-				return string(data), err
-			},
-			"indent": func(countRaw any, strRaw any) (string, error) {
-				count, ok := countRaw.(int)
-				if !ok {
-					return "", fmt.Errorf("indent: expected int for indentation value, got %T", countRaw)
-				}
-
-				str, ok := strRaw.(string)
-				if !ok {
-					return "", fmt.Errorf("indent: expected string for content value, got %T", strRaw)
-				}
-
-				builder := strings.Builder{}
-				indentation := strings.Repeat(" ", count)
-
-				for line := range strings.SplitSeq(str, "\n") {
-					if _, err := fmt.Fprintf(&builder, "%s%s\n", indentation, line); err != nil {
-						return "", fmt.Errorf("failed to write indented line: %w", err)
-					}
-				}
-
-				return builder.String(), nil
-			},
-		})
-		if _, err := tmpl.Parse(templateSpec.Raw); err != nil {
-			panic(fmt.Sprintf("failed to parse template %s: %v", templateSpec.Filename, err))
-		}
+		tmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(templateSpec.Raw))
 
 		generators = append(generators, &templateConfigGenerator{
 			filename:  templateSpec.Filename,
 			path:      templateSpec.Path,
 			template:  tmpl,
 			generator: templateSpec.Generator,
+			enabled:   templateSpec.Enabled,
 		})
 	}
 
@@ -108,16 +123,12 @@ func init() {
 		&extraConfigGenerator{
 			Name:          ExtraConfigFileName,
 			ConfigSubPath: ConfigDPath,
-			Getter: func(r *clickhouseReconciler) []byte {
-				return r.Cluster.Spec.Settings.ExtraConfig.Raw
-			},
+			Getter:        func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraConfig.Raw },
 		},
 		&extraConfigGenerator{
 			Name:          ExtraUsersConfigFileName,
 			ConfigSubPath: UsersDPath,
-			Getter: func(r *clickhouseReconciler) []byte {
-				return r.Cluster.Spec.Settings.ExtraUsersConfig.Raw
-			},
+			Getter:        func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraUsersConfig.Raw },
 		})
 }
 
@@ -125,7 +136,7 @@ type configGenerator interface {
 	Filename() string
 	Path() string
 	ConfigKey() string
-	Exists(r *clickhouseReconciler) bool
+	Enabled(r *clickhouseReconciler) bool
 	Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
 }
 
@@ -134,6 +145,7 @@ type templateConfigGenerator struct {
 	path      string
 	template  *template.Template
 	generator configGeneratorFunc
+	enabled   func(r *clickhouseReconciler) bool
 }
 
 func (g *templateConfigGenerator) Filename() string {
@@ -148,8 +160,8 @@ func (g *templateConfigGenerator) ConfigKey() string {
 	return controllerutil.PathToName(path.Join(g.path, g.filename))
 }
 
-func (g *templateConfigGenerator) Exists(*clickhouseReconciler) bool {
-	return true
+func (g *templateConfigGenerator) Enabled(r *clickhouseReconciler) bool {
+	return g.enabled == nil || g.enabled(r)
 }
 
 func (g *templateConfigGenerator) Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
@@ -194,7 +206,7 @@ type keeperNode struct {
 	Secure bool
 }
 
-func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+func executeBaseConfig(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
 	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
 	for _, host := range r.keeper.Hostnames() {
 		if r.keeper.Spec.Settings.TLS.Enabled {
@@ -389,6 +401,25 @@ func clientConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v
 	return builder.String(), nil
 }
 
+type namedCollectionsConfigParams struct {
+	NamedCollectionsKeyEnv string
+	NamedCollectionsPath   string
+}
+
+func namedCollectionsConfigGenerator(tmpl *template.Template, _ *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+	params := namedCollectionsConfigParams{
+		NamedCollectionsKeyEnv: EnvNamedCollectionsKey,
+		NamedCollectionsPath:   KeeperPathNamedCollections,
+	}
+
+	builder := strings.Builder{}
+	if err := tmpl.Execute(&builder, params); err != nil {
+		return "", fmt.Errorf("template named collections config: %w", err)
+	}
+
+	return builder.String(), nil
+}
+
 type extraConfigGenerator struct {
 	Name          string
 	ConfigSubPath string
@@ -407,12 +438,12 @@ func (g *extraConfigGenerator) ConfigKey() string {
 	return g.Name
 }
 
-func (g *extraConfigGenerator) Exists(r *clickhouseReconciler) bool {
+func (g *extraConfigGenerator) Enabled(r *clickhouseReconciler) bool {
 	return len(g.Getter(r)) > 0
 }
 
 func (g *extraConfigGenerator) Generate(r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
-	if !g.Exists(r) {
+	if !g.Enabled(r) {
 		return "", errors.New("extra config generator called, but no extra config provided")
 	}
 

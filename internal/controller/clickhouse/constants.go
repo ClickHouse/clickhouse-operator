@@ -1,8 +1,17 @@
 package clickhouse
 
 import (
+	"fmt"
+
 	"github.com/blang/semver/v4"
+
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
+
+// MinVersionNamedCollections is the minimum ClickHouse version that supports keeper_encrypted for named collections.
+var MinVersionNamedCollections = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
 
 const (
 	PortManagement   = 9001
@@ -32,10 +41,11 @@ const (
 
 	LogPath = "/var/log/clickhouse-server/"
 
-	DefaultClusterName       = "default"
-	KeeperPathUsers          = "/clickhouse/access"
-	KeeperPathUDF            = "/clickhouse/user_defined"
-	KeeperPathDistributedDDL = "/clickhouse/task_queue/ddl"
+	DefaultClusterName         = "default"
+	KeeperPathUsers            = "/clickhouse/access"
+	KeeperPathUDF              = "/clickhouse/user_defined"
+	KeeperPathDistributedDDL   = "/clickhouse/task_queue/ddl"
+	KeeperPathNamedCollections = "/clickhouse/named_collections"
 
 	ContainerName          = "clickhouse-server"
 	DefaultRevisionHistory = 10
@@ -49,27 +59,64 @@ const (
 	EnvDefaultUserPassword = "CLICKHOUSE_DEFAULT_USER_PASSWORD"
 	EnvKeeperIdentity      = "CLICKHOUSE_KEEPER_IDENTITY"
 	EnvClusterSecret       = "CLICKHOUSE_CLUSTER_SECRET"
+	EnvNamedCollectionsKey = "CLICKHOUSE_NAMED_COLLECTIONS_KEY"
 
 	SecretKeyInterserverPassword = "interserver-password"
 	SecretKeyManagementPassword  = "management-password"
 	SecretKeyKeeperIdentity      = "keeper-identity"
 	SecretKeyClusterSecret       = "cluster-secret"
+	SecretKeyNamedCollectionsKey = "named-collections-key"
+
+	// NamedCollectionsKeyByteLen is the AES-128 key size in bytes (16 bytes = 32 hex chars).
+	NamedCollectionsKeyByteLen = 16
 )
+
+// versionAtLeast returns true if the actual version string is >= min.
+// Returns false for empty, unparsable, or unknown version strings.
+func versionAtLeast(actual string, minVersion upgrade.ClickHouseVersion) bool {
+	v, err := upgrade.ParseBareVersion(actual)
+	if err != nil {
+		return false
+	}
+
+	return v.Compare(minVersion) >= 0
+}
+
+type secretSpec struct {
+	Key      string
+	Env      string
+	Format   string
+	Generate func() any
+	Enabled  func(status *v1.ClickHouseCluster) bool
+}
+
+func (s *secretSpec) generate() []byte {
+	var arg any
+	if s.Generate != nil {
+		arg = s.Generate()
+	} else {
+		arg = controllerutil.GeneratePassword()
+	}
+
+	return fmt.Appendf(nil, s.Format, arg)
+}
+
+func (s *secretSpec) enabled(cluster *v1.ClickHouseCluster) bool {
+	return s.Enabled == nil || s.Enabled(cluster)
+}
 
 var (
 	breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
-	secretsToGenerate             = map[string]string{
-		SecretKeyInterserverPassword: "%s",
-		SecretKeyManagementPassword:  "%s",
-		SecretKeyKeeperIdentity:      "clickhouse:%s",
-		SecretKeyClusterSecret:       "%s",
-	}
-	secretsToEnvMapping = []struct {
-		Key string
-		Env string
-	}{
-		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword},
-		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity},
-		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret},
+	clusterSecrets                = []secretSpec{
+		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword, Format: "%s"},
+		{Key: SecretKeyManagementPassword, Format: "%s"},
+		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity, Format: "clickhouse:%s"},
+		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret, Format: "%s"},
+		{Key: SecretKeyNamedCollectionsKey, Env: EnvNamedCollectionsKey, Format: "%x",
+			Generate: func() any { return controllerutil.GenerateRandomBytes(NamedCollectionsKeyByteLen) },
+			Enabled: func(status *v1.ClickHouseCluster) bool {
+				return versionAtLeast(status.Spec.ClusterDomain, MinVersionNamedCollections)
+			},
+		},
 	}
 )

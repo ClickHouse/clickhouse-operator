@@ -170,6 +170,16 @@ const (
 	length   = 32
 )
 
+// GenerateRandomBytes generates n cryptographically random bytes.
+func GenerateRandomBytes(n int) []byte {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("read random source: %v", err))
+	}
+
+	return b
+}
+
 // GeneratePassword generates a random password of fixed length using a predefined alphabet.
 func GeneratePassword() string {
 	password := make([]byte, length)

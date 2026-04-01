@@ -69,6 +69,11 @@ func (ch ClickHouseVersion) Release() ClickHouseRelease {
 	}
 }
 
+// Compare returns -1, 0, or 1 comparing v to other.
+func (ch ClickHouseVersion) Compare(other ClickHouseVersion) int {
+	return compareVersions(ch, other)
+}
+
 func compareVersions(a, b ClickHouseVersion) int {
 	if c := cmp.Compare(a.Major, b.Major); c != 0 {
 		return c

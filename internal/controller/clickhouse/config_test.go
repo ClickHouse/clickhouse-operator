@@ -29,6 +29,9 @@ var _ = Describe("ConfigGenerator", func() {
 					},
 				},
 			},
+			Status: v1.ClickHouseClusterStatus{
+				Version: "25.12.1.1",
+			},
 		},
 		keeper: v1.KeeperCluster{
 			Spec: v1.KeeperClusterSpec{
@@ -39,7 +42,7 @@ var _ = Describe("ConfigGenerator", func() {
 
 	for _, generator := range generators {
 		It("should generate config: "+generator.Filename(), func() {
-			Expect(generator.Exists(&ctx)).To(BeTrue())
+			Expect(generator.Enabled(&ctx)).To(BeTrue())
 			data, err := generator.Generate(&ctx, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
 

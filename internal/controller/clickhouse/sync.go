@@ -352,7 +352,9 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 	}
 
 	r.versionProbe = probeResult
-	r.Cluster.Status.Version = r.versionProbe.Version
+	if probeResult.Version != "" {
+		r.Cluster.Status.Version = probeResult.Version
+	}
 
 	if r.Checker != nil {
 		cond, event := chctrl.GetUpgradeCondition(*r.Checker, r.versionProbe, r.Cluster.Spec.UpgradeChannel)
