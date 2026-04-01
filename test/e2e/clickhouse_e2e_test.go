@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -110,71 +111,6 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}}),
 			Entry("scale up to 2 replicas", v1.ClickHouseClusterSpec{Replicas: new(int32(2))}),
 		)
-
-		It("should support named collections in Keeper with encryption", func(ctx context.Context) {
-			cr := v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
-					Name:      fmt.Sprintf("named-colls-%d", rand.Uint32()), //nolint:gosec
-				},
-				Spec: v1.ClickHouseClusterSpec{
-					Replicas: ptr.To[int32](1),
-					ContainerTemplate: v1.ContainerTemplateSpec{
-						Image: v1.ContainerImage{Tag: ClickHouseBaseVersion},
-					},
-					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    &corev1.LocalObjectReference{Name: keeper.Name},
-				},
-			}
-
-			By("creating cluster CR")
-			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
-			DeferCleanup(func(ctx context.Context) {
-				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
-			})
-			WaitClickHouseUpdatedAndReady(ctx, &cr, time.Minute, false)
-
-			By("verifying named collections secret key exists")
-
-			var secret corev1.Secret
-			Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Namespace: cr.Namespace,
-				Name:      cr.SecretName(),
-			}, &secret)).To(Succeed())
-			Expect(secret.Data).To(HaveKey(chctrl.SecretKeyNamedCollectionsKey))
-			Expect(secret.Data[chctrl.SecretKeyNamedCollectionsKey]).NotTo(BeEmpty())
-
-			By("verifying named collections config exists")
-
-			var configMap corev1.ConfigMap
-
-			cfgName := cr.ConfigMapNameByReplicaID(v1.ClickHouseReplicaID{ShardID: 0, Index: 0})
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: cfgName}, &configMap)).To(Succeed())
-
-			ncConfigKey := controllerutil.PathToName(
-				path.Join(chctrl.ConfigPath, chctrl.ConfigDPath, "00-named-collections.yaml"),
-			)
-			Expect(configMap.Data).To(HaveKey(ncConfigKey))
-			Expect(configMap.Data[ncConfigKey]).NotTo(BeEmpty())
-
-			By("connecting to cluster")
-
-			chClient, err := testutil.NewClickHouseClient(ctx, config, &cr)
-			Expect(err).NotTo(HaveOccurred())
-
-			defer chClient.Close()
-
-			By("creating named collection")
-			Expect(chClient.Exec(ctx, "CREATE NAMED COLLECTION e2e_test_named_coll AS test_key = 'test_value'")).To(Succeed())
-
-			By("verifying named collection exists")
-
-			var name string
-
-			query := "SELECT name FROM system.named_collections WHERE name = 'e2e_test_named_coll'"
-			Expect(chClient.QueryRow(ctx, query, &name)).To(Succeed())
-			Expect(name).To(Equal("e2e_test_named_coll"))
-		})
 
 		DescribeTable("ClickHouse cluster updates", func(
 			ctx context.Context,
@@ -625,6 +561,71 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					"1": 25,
 				})
 			}, "10s").WithPolling(pollingInterval).Should(BeEmpty())
+		})
+
+		It("should support named collections in Keeper with encryption", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("named-colls-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: ptr.To[int32](1),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    &corev1.LocalObjectReference{Name: keeper.Name},
+				},
+			}
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cr, time.Minute, false)
+
+			By("verifying named collections secret key exists")
+
+			var secret corev1.Secret
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: cr.Namespace,
+				Name:      cr.SecretName(),
+			}, &secret)).To(Succeed())
+			Expect(secret.Data).To(HaveKey(chctrl.SecretKeyNamedCollectionsKey))
+			Expect(secret.Data[chctrl.SecretKeyNamedCollectionsKey]).NotTo(BeEmpty())
+
+			By("verifying named collections config exists")
+
+			var configMap corev1.ConfigMap
+
+			cfgName := cr.ConfigMapNameByReplicaID(v1.ClickHouseReplicaID{ShardID: 0, Index: 0})
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: cr.Namespace, Name: cfgName}, &configMap)).To(Succeed())
+
+			ncConfigKey := controllerutil.PathToName(
+				path.Join(chctrl.ConfigPath, chctrl.ConfigDPath, "00-named-collections.yaml"),
+			)
+			Expect(configMap.Data).To(HaveKey(ncConfigKey))
+			Expect(configMap.Data[ncConfigKey]).NotTo(BeEmpty())
+
+			By("connecting to cluster")
+
+			chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer chClient.Close()
+
+			By("creating named collection")
+			Expect(chClient.Exec(ctx, "CREATE NAMED COLLECTION e2e_test_named_coll AS test_key = 'test_value'")).To(Succeed())
+
+			By("verifying named collection exists")
+
+			var name string
+
+			query := "SELECT name FROM system.named_collections WHERE name = 'e2e_test_named_coll'"
+			Expect(chClient.QueryRow(ctx, query, &name)).To(Succeed())
+			Expect(name).To(Equal("e2e_test_named_coll"))
 		})
 	})
 

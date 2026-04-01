@@ -10,9 +10,6 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
-// MinVersionNamedCollections is the minimum ClickHouse version that supports keeper_encrypted for named collections.
-var MinVersionNamedCollections = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
-
 const (
 	PortManagement   = 9001
 	PortNative       = 9000
@@ -71,23 +68,12 @@ const (
 	NamedCollectionsKeyByteLen = 16
 )
 
-// versionAtLeast returns true if the actual version string is >= min.
-// Returns false for empty, unparsable, or unknown version strings.
-func versionAtLeast(actual string, minVersion upgrade.ClickHouseVersion) bool {
-	v, err := upgrade.ParseBareVersion(actual)
-	if err != nil {
-		return false
-	}
-
-	return v.Compare(minVersion) >= 0
-}
-
 type secretSpec struct {
 	Key      string
 	Env      string
 	Format   string
 	Generate func() any
-	Enabled  func(status *v1.ClickHouseCluster) bool
+	Enabled  func(cluster *v1.ClickHouseCluster) bool
 }
 
 func (s *secretSpec) generate() []byte {
@@ -106,6 +92,8 @@ func (s *secretSpec) enabled(cluster *v1.ClickHouseCluster) bool {
 }
 
 var (
+	// minVersionNamedCollections is the minimum ClickHouse version that supports keeper_encrypted for named collections.
+	minVersionNamedCollections    = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
 	breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
 	clusterSecrets                = []secretSpec{
 		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword, Format: "%s"},
@@ -114,8 +102,8 @@ var (
 		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret, Format: "%s"},
 		{Key: SecretKeyNamedCollectionsKey, Env: EnvNamedCollectionsKey, Format: "%x",
 			Generate: func() any { return controllerutil.GenerateRandomBytes(NamedCollectionsKeyByteLen) },
-			Enabled: func(status *v1.ClickHouseCluster) bool {
-				return versionAtLeast(status.Spec.ClusterDomain, MinVersionNamedCollections)
+			Enabled: func(cluster *v1.ClickHouseCluster) bool {
+				return upgrade.VersionAtLeast(cluster.Status.Version, minVersionNamedCollections)
 			},
 		},
 	}

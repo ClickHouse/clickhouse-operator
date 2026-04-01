@@ -122,11 +122,7 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (c
 		existingData = existing.Data
 	}
 
-	knownKeys := make(map[string]struct{}, len(clusterSecrets))
-	for i := range clusterSecrets {
-		spec := &clusterSecrets[i]
-		knownKeys[spec.Key] = struct{}{}
-
+	for _, spec := range clusterSecrets {
 		if !spec.enabled(cr) {
 			continue
 		}
@@ -445,7 +441,7 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 
 	for i := range clusterSecrets {
 		spec := &clusterSecrets[i]
-		if spec.Env == "" || !spec.enabled(r.Cluster) {
+		if spec.Env == "" || !spec.enabled(cr) {
 			continue
 		}
 

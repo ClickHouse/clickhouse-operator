@@ -15,11 +15,12 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
 var (
 	//go:embed templates/base.yaml.tmpl
-	baseTemplateStr string
+	baseConfigTemplateStr string
 	//go:embed templates/named_collections.yaml.tmpl
 	namedCollectionsTemplateStr string
 	//go:embed templates/network.yaml.tmpl
@@ -64,15 +65,6 @@ func init() {
 		},
 	}
 
-	baseTmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(baseTemplateStr))
-
-	generators = append(generators, &templateConfigGenerator{
-		path:      ConfigPath,
-		filename:  ConfigFileName,
-		template:  baseTmpl,
-		generator: executeBaseConfig,
-	})
-
 	for _, templateSpec := range []struct {
 		Path      string
 		Filename  string
@@ -80,6 +72,11 @@ func init() {
 		Generator configGeneratorFunc
 		Enabled   func(r *clickhouseReconciler) bool
 	}{{
+		Path:      ConfigPath,
+		Filename:  ConfigFileName,
+		Raw:       baseConfigTemplateStr,
+		Generator: baseConfigGenerator,
+	}, {
 		Path:      path.Join(ConfigPath, ConfigDPath),
 		Filename:  "00-network.yaml",
 		Raw:       networkConfigTemplateStr,
@@ -95,7 +92,7 @@ func init() {
 		Raw:       namedCollectionsTemplateStr,
 		Generator: namedCollectionsConfigGenerator,
 		Enabled: func(r *clickhouseReconciler) bool {
-			return versionAtLeast(r.Cluster.Status.Version, MinVersionNamedCollections)
+			return upgrade.VersionAtLeast(r.Cluster.Status.Version, minVersionNamedCollections)
 		},
 	}, {
 		Path:      ConfigPath,
@@ -206,7 +203,7 @@ type keeperNode struct {
 	Secure bool
 }
 
-func executeBaseConfig(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
 	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
 	for _, host := range r.keeper.Hostnames() {
 		if r.keeper.Spec.Settings.TLS.Enabled {

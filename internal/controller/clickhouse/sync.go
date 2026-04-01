@@ -351,6 +351,8 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		return chctrl.StepResult{}, fmt.Errorf("run version probe: %w", err)
 	}
 
+	// TODO block templating
+
 	r.versionProbe = probeResult
 	if probeResult.Version != "" {
 		r.Cluster.Status.Version = probeResult.Version

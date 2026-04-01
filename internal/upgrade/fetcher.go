@@ -189,7 +189,7 @@ func filterLatestVersions(versions map[string][]ClickHouseVersion) releaseMap {
 		latest[channel] = map[ClickHouseRelease]ClickHouseVersion{}
 		for _, v := range vers {
 			if s, ok := latest[channel][v.Release()]; ok {
-				if compareVersions(s, v) < 0 {
+				if CompareVersions(s, v) < 0 {
 					latest[channel][v.Release()] = v
 				}
 			} else {

@@ -98,8 +98,6 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Status: metav1.ConditionTrue,
 			Reason: v1.KeeperConditionReasonStandaloneReady,
 		})
-		// Unblocks CommonResources (secrets/commander); version-gated ClickHouse config uses ClickHouseCluster.status.version.
-		keeper.Status.Version = "26.1.1.1"
 		Expect(suite.Client.Status().Update(ctx, keeper)).To(Succeed())
 	})
 
@@ -293,7 +291,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	It("should generate all secret values", func() {
 		for _, spec := range clusterSecrets {
-			if spec.Enabled != nil {
+			if !spec.enabled(cr) {
 				continue
 			}
 
