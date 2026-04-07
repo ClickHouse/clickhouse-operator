@@ -154,6 +154,8 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		// VolumeMounts are handled separately
 		Env:             t.Env,
 		SecurityContext: t.SecurityContext,
+		// LivenessProbe is handled manually
+		// ReadinessProbe is handled manually
 	}
 
 	patchJSON, err := json.Marshal(patchContainer)
@@ -177,6 +179,14 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 	}
 
 	mergedContainer.VolumeMounts = append(mergedContainer.VolumeMounts, t.VolumeMounts...)
+
+	if t.LivenessProbe != nil {
+		mergedContainer.LivenessProbe = t.LivenessProbe.DeepCopy()
+	}
+
+	if t.ReadinessProbe != nil {
+		mergedContainer.ReadinessProbe = t.ReadinessProbe.DeepCopy()
+	}
 
 	return mergedContainer, nil
 }

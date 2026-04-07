@@ -156,6 +156,8 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 | `volumeMounts` | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array | VolumeMounts is the list of volume mounts for the container.<br />Concatenated with operator-generated mounts. Entries sharing a `mountPath` with an operator<br />mount are merged into a projected volume. | false |  |
 | `env` | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array | Env is the list of environment variables to set in the container.<br />Merged with operator defaults by name. | false |  |
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options the container should be run with.<br />Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |  |
+| `livenessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | LivenessProbe overrides the operator's default liveness probe. | false |  |
+| `readinessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | ReadinessProbe overrides the operator's default readiness probe. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
@@ -330,10 +332,13 @@ PodTemplateSpec describes the pod configuration overrides for the cluster's pods
 | `tolerations` | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array | If specified, the pod's Tolerations. | false |  |
 | `schedulerName` | string | If specified, the pod will be dispatched by specified scheduler.<br />If not specified, the pod will be dispatched by default scheduler. | false |  |
 | `serviceAccountName` | string | ServiceAccountName is the name of the ServiceAccount to use to run this pod.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/ | false |  |
+| `priorityClassName` | string | PriorityClassName is the name of the PriorityClass to use for the pod. | false |  |
+| `runtimeClassName` | string | RuntimeClassName is the name of the RuntimeClass to use for the pod. | false |  |
 | `volumes` | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) array | Volumes defines the list of volumes that can be mounted by containers belonging to the pod.<br />More info: https://kubernetes.io/docs/concepts/storage/volumes<br />Merged with operator defaults by name; a user volume replaces any operator volume with the same name. | false |  |
 | `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes and common container settings.<br />Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved. | false |  |
 | `topologyZoneKey` | string | TopologyZoneKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be in the same topology zone.<br />Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.<br />Recommended to be set to "topology.kubernetes.io/zone" | false |  |
 | `nodeHostnameKey` | string | NodeHostnameKey is the key of node labels.<br />Nodes that have a label with this key and identical values are considered to be on the same node.<br />Set it to enable default AntiAffinity rules to spread replicas from the different shards across nodes.<br />Recommended to be set to "kubernetes.io/hostname" | false |  |
+| `initContainers` | [Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core) array | InitContainers is the list of init containers to run before the main server container starts.<br />Merged with operator defaults by name.<br />with the same name. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)

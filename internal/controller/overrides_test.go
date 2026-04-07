@@ -102,6 +102,76 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			Expect(*container.SecurityContext.RunAsUser).To(Equal(int64(1000)), "user RunAsUser should be applied")
 		})
 	})
+
+	Describe("Probes", func() {
+		It("should preserve operator liveness probe when user LivenessProbe is nil", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							Exec: &corev1.ExecAction{},
+						},
+					},
+				},
+				&v1.ContainerTemplateSpec{},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.LivenessProbe).NotTo(BeNil())
+			Expect(container.LivenessProbe.Exec).NotTo(BeNil())
+		})
+
+		It("should replace operator liveness probe when user provides a httpGet probe", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							Exec: &corev1.ExecAction{},
+						},
+					},
+				},
+				&v1.ContainerTemplateSpec{
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{},
+						},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.LivenessProbe).NotTo(BeNil())
+			Expect(container.LivenessProbe.HTTPGet).NotTo(BeNil(), "user httpGet probe should replace operator exec probe")
+			Expect(container.LivenessProbe.Exec).To(BeNil(), "operator exec probe must be removed")
+		})
+
+		It("should replace operator readiness probe when user provides a httpGet probe", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							Exec: &corev1.ExecAction{},
+						},
+					},
+				},
+				&v1.ContainerTemplateSpec{
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{},
+						},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.ReadinessProbe).NotTo(BeNil())
+			Expect(container.ReadinessProbe.HTTPGet).NotTo(BeNil(), "user httpGet probe should replace operator exec probe")
+			Expect(container.ReadinessProbe.Exec).To(BeNil(), "operator exec probe must be removed")
+		})
+	})
 })
 
 var _ = Describe("ApplyPodTemplateOverrides", func() {
@@ -222,6 +292,67 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 			Expect(*podSpec.SecurityContext.FSGroup).To(Equal(int64(1000)), "operator FSGroup should be preserved")
 			Expect(podSpec.SecurityContext.RunAsUser).NotTo(BeNil())
 			Expect(*podSpec.SecurityContext.RunAsUser).To(Equal(int64(500)), "user RunAsUser should be applied")
+		})
+	})
+
+	Describe("InitContainers", func() {
+		It("should add user init containers", func() {
+			podSpec, err := ApplyPodTemplateOverrides(
+				&corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "server"}},
+				},
+				&v1.PodTemplateSpec{
+					InitContainers: []corev1.Container{
+						{Name: "user-init", Image: "busybox"},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			Expect(podSpec.InitContainers[0].Name).To(Equal("user-init"))
+			Expect(podSpec.InitContainers[0].Image).To(Equal("busybox"))
+		})
+
+		It("should preserve existing init containers", func() {
+			podSpec, err := ApplyPodTemplateOverrides(
+				&corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{Name: "operator-init", Image: "busybox"},
+					},
+				},
+				&v1.PodTemplateSpec{
+					InitContainers: []corev1.Container{
+						{Name: "user-init", Image: "busybox"},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(podSpec.InitContainers).To(ContainElements(
+				corev1.Container{Name: "operator-init", Image: "busybox"},
+				corev1.Container{Name: "user-init", Image: "busybox"},
+			))
+		})
+
+		It("should merge containers with the same name", func() {
+			podSpec, err := ApplyPodTemplateOverrides(
+				&corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{Name: "operator-init", Image: "busybox"},
+					},
+				},
+				&v1.PodTemplateSpec{
+					InitContainers: []corev1.Container{
+						{Name: "operator-init", Image: "another"},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			Expect(podSpec.InitContainers[0].Name).To(Equal("operator-init"))
+			Expect(podSpec.InitContainers[0].Image).To(Equal("another"))
 		})
 	})
 })

@@ -10,6 +10,7 @@ const (
 	RequeueOnRefreshTimeout       = time.Second
 	LoadReplicaStateTimeout       = 10 * time.Second
 	TLSFileMode             int32 = 0444
+	DefaultUser             int64 = 101
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 		TimeoutSeconds:      10,
 		PeriodSeconds:       5,
 		FailureThreshold:    10,
+		SuccessThreshold:    1,
 	}
 
 	// DefaultReadinessProbeSettings defines default settings for Kubernetes liveness probes.

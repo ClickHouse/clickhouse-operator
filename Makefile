@@ -397,7 +397,8 @@ check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against
 			rm -f "$$BASELINE"; \
 			continue; \
 		fi; \
-		if ! $(CRD_SCHEMA_CHECKER) check-manifests --existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd"; then \
+		if ! $(CRD_SCHEMA_CHECKER) check-manifests --existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd" \
+			--disabled-validators NoBools,NoMaps; then ## TODO remove it after merge of the violating k8s-owned objects\
 			FAILED=1; \
 		fi; \
 		rm -f "$$BASELINE"; \

@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"fmt"
-	"net"
 	"path"
 	"slices"
 	"strconv"
@@ -407,6 +406,11 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 		DNSPolicy:     corev1.DNSClusterFirst,
 		Volumes:       volumes,
 		Containers:    []corev1.Container{container},
+		SecurityContext: &corev1.PodSecurityContext{
+			FSGroup:    new(controller.DefaultUser),
+			RunAsUser:  new(controller.DefaultUser),
+			RunAsGroup: new(controller.DefaultUser),
+		},
 	}
 
 	podTemplate := cr.Spec.PodTemplate
@@ -487,22 +491,24 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 }
 
 func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
-	probeAction := corev1.ExecAction{
-		Command: []string{"/bin/bash", "-c",
-			fmt.Sprintf("wget -qO- http://%s/ready | grep -o '\"status\":\"ok\"'",
-				net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTPControl)),
-			),
+	livenessProbe := controller.DefaultLivenessProbeSettings
+	livenessProbe.ProbeHandler = corev1.ProbeHandler{
+		TCPSocket: &corev1.TCPSocketAction{
+			Port: intstr.FromInt32(PortNative),
 		},
 	}
 
-	livenessProbe := controller.DefaultLivenessProbeSettings
-	livenessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &probeAction,
+	if cr.Spec.Settings.TLS.Enabled && cr.Spec.Settings.TLS.Required {
+		livenessProbe.TCPSocket.Port.IntVal = PortNativeSecure
 	}
 
 	readinessProbe := controller.DefaultReadinessProbeSettings
 	readinessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &probeAction,
+		HTTPGet: &corev1.HTTPGetAction{
+			Path:   "/ready",
+			Port:   intstr.FromInt32(PortHTTPControl),
+			Scheme: corev1.URISchemeHTTP,
+		},
 	}
 
 	container := corev1.Container{
@@ -523,6 +529,11 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 				Protocol:      corev1.ProtocolTCP,
 				Name:          "prometheus",
 				ContainerPort: PortPrometheusScrape,
+			},
+			{
+				Protocol:      corev1.ProtocolTCP,
+				Name:          "http-control",
+				ContainerPort: PortHTTPControl,
 			},
 		},
 		VolumeMounts:             buildMounts(cr),

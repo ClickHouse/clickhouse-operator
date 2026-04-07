@@ -213,6 +213,14 @@ type PodTemplateSpec struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// PriorityClassName is the name of the PriorityClass to use for the pod.
+	// +optional
+	PriorityClassName *string `json:"priorityClassName,omitempty"`
+
+	// RuntimeClassName is the name of the RuntimeClass to use for the pod.
+	// +optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
 	// Volumes defines the list of volumes that can be mounted by containers belonging to the pod.
 	// More info: https://kubernetes.io/docs/concepts/storage/volumes
 	// Merged with operator defaults by name; a user volume replaces any operator volume with the same name.
@@ -241,6 +249,16 @@ type PodTemplateSpec struct {
 	// Recommended to be set to "kubernetes.io/hostname"
 	// +optional
 	NodeHostnameKey *string `json:"nodeHostnameKey,omitempty"`
+
+	// InitContainers is the list of init containers to run before the main server container starts.
+	// Merged with operator defaults by name.
+	// with the same name.
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	InitContainers []corev1.Container `json:"initContainers,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 }
 
 // ContainerTemplateSpec describes the container configuration overrides for the cluster's containers.
@@ -283,6 +301,14 @@ type ContainerTemplateSpec struct {
 	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
 	// +optional
 	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
+
+	// LivenessProbe overrides the operator's default liveness probe.
+	// +optional
+	LivenessProbe *corev1.Probe `json:"livenessProbe,omitempty"`
+
+	// ReadinessProbe overrides the operator's default readiness probe.
+	// +optional
+	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
 }
 
 // ClusterTLSSpec defines cluster TLS configuration.

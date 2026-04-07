@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"fmt"
 	"maps"
-	"net"
 	"path"
 	"strconv"
 
@@ -288,7 +287,7 @@ func generateConfigForSingleReplica(r *clickhouseReconciler, id v1.ClickHouseRep
 func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1.PodSpec, error) {
 	cr := r.Cluster
 
-	container, err := templateContainer(r, id)
+	container, err := templateContainer(r)
 	if err != nil {
 		return corev1.PodSpec{}, fmt.Errorf("template container: %w", err)
 	}
@@ -301,6 +300,11 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		DNSPolicy:     corev1.DNSClusterFirst,
 		Volumes:       volumes,
 		Containers:    []corev1.Container{container},
+		SecurityContext: &corev1.PodSecurityContext{
+			FSGroup:    new(controller.DefaultUser),
+			RunAsUser:  new(controller.DefaultUser),
+			RunAsGroup: new(controller.DefaultUser),
+		},
 	}
 
 	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
@@ -389,35 +393,27 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 	return podSpec, nil
 }
 
-func templateContainer(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1.Container, error) {
+func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 	cr := r.Cluster
 	protocols := buildProtocols(cr)
 
-	var probeCommand []string
-	if proto, ok := protocols["http"]; ok && proto.Port != 0 {
-		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
-			"wget -qO- http://%s | grep -o Ok.",
-			net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTP)),
-		)}
-	} else {
-		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
-			"wget --ca-certificate=%s -qO- https://%s | grep -o Ok.",
-			path.Join(TLSConfigPath, CABundleFilename),
-			net.JoinHostPort(cr.HostnameByID(id), strconv.Itoa(PortHTTPSecure)),
-		)}
-	}
-
 	livenessProbe := controller.DefaultLivenessProbeSettings
 	livenessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &corev1.ExecAction{
-			Command: probeCommand,
+		TCPSocket: &corev1.TCPSocketAction{
+			Port: intstr.FromInt32(PortNative),
 		},
+	}
+
+	if cr.Spec.Settings.TLS.Enabled && cr.Spec.Settings.TLS.Required {
+		livenessProbe.TCPSocket.Port.IntVal = PortNativeSecure
 	}
 
 	readinessProbe := controller.DefaultReadinessProbeSettings
 	readinessProbe.ProbeHandler = corev1.ProbeHandler{
-		Exec: &corev1.ExecAction{
-			Command: probeCommand,
+		HTTPGet: &corev1.HTTPGetAction{
+			Path:   "/ping",
+			Port:   intstr.FromInt32(PortInterserver),
+			Scheme: corev1.URISchemeHTTP,
 		},
 	}
 
