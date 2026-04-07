@@ -31,8 +31,9 @@ var _ = Describe("BuildVolumes", func() {
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
-		Expect(err).To(Not(HaveOccurred()))
+		volumes := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		mounts := buildMounts(&ctx)
+
 		Expect(volumes).To(HaveLen(3))
 		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
@@ -54,8 +55,9 @@ var _ = Describe("BuildVolumes", func() {
 				},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
-		Expect(err).To(Not(HaveOccurred()))
+		volumes := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		mounts := buildMounts(&ctx)
+
 		Expect(volumes).To(HaveLen(4))
 		Expect(mounts).To(HaveLen(4))
 		checkVolumeMounts(volumes, mounts)
@@ -88,11 +90,11 @@ var _ = Describe("BuildVolumes", func() {
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(4))
-		Expect(mounts).To(HaveLen(6))
-		checkVolumeMounts(volumes, mounts)
+		Expect(podSpec.Volumes).To(HaveLen(4))
+		Expect(podSpec.Containers[0].VolumeMounts).To(HaveLen(6))
+		checkVolumeMounts(podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
 	})
 
 	It("should project volumes with colliding path", func() {
@@ -122,16 +124,16 @@ var _ = Describe("BuildVolumes", func() {
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(3))
-		Expect(mounts).To(HaveLen(5))
-		checkVolumeMounts(volumes, mounts)
+		Expect(podSpec.Volumes).To(HaveLen(3))
+		Expect(podSpec.Containers[0].VolumeMounts).To(HaveLen(5))
+		checkVolumeMounts(podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
 
 		projectedVolumeFound := false
 
 		volumeName := controllerutil.PathToName("/etc/clickhouse-server/config.d/")
-		for _, volume := range volumes {
+		for _, volume := range podSpec.Volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())
 
@@ -178,16 +180,16 @@ var _ = Describe("BuildVolumes", func() {
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
 		}
-		volumes, mounts, err := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
 		Expect(err).To(Not(HaveOccurred()))
-		Expect(volumes).To(HaveLen(4))
-		Expect(mounts).To(HaveLen(6))
-		checkVolumeMounts(volumes, mounts)
+		Expect(podSpec.Volumes).To(HaveLen(4))
+		Expect(podSpec.Containers[0].VolumeMounts).To(HaveLen(6))
+		checkVolumeMounts(podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
 
 		projectedVolumeFound := false
 
 		volumeName := controllerutil.PathToName("/etc/clickhouse-server/tls/")
-		for _, volume := range volumes {
+		for _, volume := range podSpec.Volumes {
 			if volume.Name == volumeName {
 				Expect(volume.Projected).ToNot(BeNil())
 
@@ -197,6 +199,33 @@ var _ = Describe("BuildVolumes", func() {
 		}
 
 		Expect(projectedVolumeFound).To(BeTrue())
+	})
+
+	It("should work with custom volume", func() {
+		ctx.Cluster = &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				PodTemplate: v1.PodTemplateSpec{
+					Volumes: []corev1.Volume{{
+						Name: "custom-data",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					}},
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      "custom-data",
+						MountPath: "/var/lib/clickhouse",
+					}},
+				},
+			},
+		}
+		podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
+		Expect(err).To(Not(HaveOccurred()))
+		checkVolumeMounts(podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
 	})
 })
 

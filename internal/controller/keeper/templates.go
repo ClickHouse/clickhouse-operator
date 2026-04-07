@@ -394,34 +394,22 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 }
 
 func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpec, error) {
-	volumes, volumeMounts, err := buildVolumes(cr, id)
-	if err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("build volumes: %w", err)
-	}
-
-	container, err := templateContainer(cr, volumeMounts)
+	container, err := templateContainer(cr)
 	if err != nil {
 		return corev1.PodSpec{}, fmt.Errorf("template container: %w", err)
 	}
 
-	podTemplate := cr.Spec.PodTemplate.DeepCopy()
+	volumes := buildVolumes(cr, id)
+	controllerutil.SortKey(volumes, func(v corev1.Volume) string { return v.Name })
+
 	podSpec := corev1.PodSpec{
-		TerminationGracePeriodSeconds: podTemplate.TerminationGracePeriodSeconds,
-		TopologySpreadConstraints:     podTemplate.TopologySpreadConstraints,
-		ImagePullSecrets:              podTemplate.ImagePullSecrets,
-		NodeSelector:                  podTemplate.NodeSelector,
-		Affinity:                      podTemplate.Affinity,
-		Tolerations:                   podTemplate.Tolerations,
-		SchedulerName:                 podTemplate.SchedulerName,
-		ServiceAccountName:            podTemplate.ServiceAccountName,
-		SecurityContext:               podTemplate.SecurityContext,
-		RestartPolicy:                 corev1.RestartPolicyAlways,
-		DNSPolicy:                     corev1.DNSClusterFirst,
-		Volumes:                       volumes,
-		Containers: []corev1.Container{
-			container,
-		},
+		RestartPolicy: corev1.RestartPolicyAlways,
+		DNSPolicy:     corev1.DNSClusterFirst,
+		Volumes:       volumes,
+		Containers:    []corev1.Container{container},
 	}
+
+	podTemplate := cr.Spec.PodTemplate
 
 	if podTemplate.TopologyZoneKey != nil && *podTemplate.TopologyZoneKey != "" {
 		if podSpec.Affinity == nil {
@@ -484,12 +472,21 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 			})
 	}
 
+	podSpec, err = controller.ApplyPodTemplateOverrides(&podSpec, &cr.Spec.PodTemplate)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("apply pod template overrides: %w", err)
+	}
+
+	podSpec.Volumes, podSpec.Containers[0].VolumeMounts, err = controller.ProjectVolumes(
+		podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("project volumes: %w", err)
+	}
+
 	return podSpec, nil
 }
 
-func templateContainer(cr *v1.KeeperCluster, volumeMounts []corev1.VolumeMount) (corev1.Container, error) {
-	containerTemplate := cr.Spec.ContainerTemplate.DeepCopy()
-
+func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 	probeAction := corev1.ExecAction{
 		Command: []string{"/bin/bash", "-c",
 			fmt.Sprintf("wget -qO- http://%s/ready | grep -o '\"status\":\"ok\"'",
@@ -509,16 +506,13 @@ func templateContainer(cr *v1.KeeperCluster, volumeMounts []corev1.VolumeMount) 
 	}
 
 	container := corev1.Container{
-		Name:            ContainerName,
-		Image:           containerTemplate.Image.String(),
-		ImagePullPolicy: containerTemplate.ImagePullPolicy,
-		Resources:       containerTemplate.Resources,
-		Env: append([]corev1.EnvVar{
+		Name: ContainerName,
+		Env: []corev1.EnvVar{
 			{
 				Name:  "KEEPER_CONFIG",
 				Value: QuorumConfigPath + QuorumConfigFileName,
 			},
-		}, containerTemplate.Env...),
+		},
 		Ports: []corev1.ContainerPort{
 			{
 				Protocol:      corev1.ProtocolTCP,
@@ -531,7 +525,7 @@ func templateContainer(cr *v1.KeeperCluster, volumeMounts []corev1.VolumeMount) 
 				ContainerPort: PortPrometheusScrape,
 			},
 		},
-		VolumeMounts:             volumeMounts,
+		VolumeMounts:             buildMounts(cr),
 		LivenessProbe:            &livenessProbe,
 		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
@@ -578,46 +572,18 @@ func templateContainer(cr *v1.KeeperCluster, volumeMounts []corev1.VolumeMount) 
 		})
 	}
 
-	if containerTemplate.SecurityContext != nil {
-		securityContext := containerTemplate.SecurityContext
-		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
-			return corev1.Container{}, fmt.Errorf("apply container security context overrides: %w", err)
-		}
-
-		container.SecurityContext = securityContext
+	container, err := controller.ApplyContainerTemplateOverrides(&container, &cr.Spec.ContainerTemplate)
+	if err != nil {
+		return corev1.Container{}, fmt.Errorf("apply container template overrides: %w", err)
 	}
 
 	return container, nil
 }
 
-func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
-	volumeMounts := []corev1.VolumeMount{
-		{
-			Name:      internal.QuorumConfigVolumeName,
-			MountPath: QuorumConfigPath,
-			ReadOnly:  true,
-		},
-		{
-			Name:      internal.ConfigVolumeName,
-			MountPath: ConfigPath,
-			ReadOnly:  true,
-		},
-	}
-
-	if cr.Spec.DataVolumeClaimSpec != nil {
-		volumeMounts = append(volumeMounts,
-			corev1.VolumeMount{
-				Name:      internal.PersistentVolumeName,
-				MountPath: internal.KeeperDataPath,
-				SubPath:   "var-lib-clickhouse",
-			},
-			corev1.VolumeMount{
-				Name:      internal.PersistentVolumeName,
-				MountPath: "/var/log/clickhouse-keeper",
-				SubPath:   "var-log-clickhouse",
-			})
-	}
-
+// buildVolumes returns the operator-generated volumes for the pod.
+// User volumes from PodTemplate are NOT included here; they are merged
+// by ApplyPodTemplateOverrides in templatePodSpec.
+func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
 	volumes := []corev1.Volume{
 		{
@@ -651,12 +617,6 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) ([]corev1.Volume,
 	}
 
 	if cr.Spec.Settings.TLS.Enabled {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      internal.TLSVolumeName,
-			MountPath: TLSConfigPath,
-			ReadOnly:  true,
-		})
-
 		volumes = append(volumes, corev1.Volume{
 			Name: internal.TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
@@ -673,25 +633,47 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) ([]corev1.Volume,
 		})
 	}
 
-	for _, volume := range cr.Spec.PodTemplate.Volumes {
-		volumes = append(volumes, *volume.DeepCopy())
+	return volumes
+}
+
+// buildMounts returns the operator-generated volume mounts for the main container.
+// User mounts from ContainerTemplate are NOT included here; they are merged
+// by ApplyContainerTemplateOverrides in templatePodSpec.
+func buildMounts(cr *v1.KeeperCluster) []corev1.VolumeMount {
+	volumeMounts := []corev1.VolumeMount{
+		{
+			Name:      internal.QuorumConfigVolumeName,
+			MountPath: QuorumConfigPath,
+			ReadOnly:  true,
+		},
+		{
+			Name:      internal.ConfigVolumeName,
+			MountPath: ConfigPath,
+			ReadOnly:  true,
+		},
 	}
 
-	for _, volumeMount := range cr.Spec.ContainerTemplate.VolumeMounts {
-		volumeMounts = append(volumeMounts, *volumeMount.DeepCopy())
+	if cr.Spec.DataVolumeClaimSpec != nil {
+		volumeMounts = append(volumeMounts,
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: internal.KeeperDataPath,
+				SubPath:   "var-lib-clickhouse",
+			},
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: "/var/log/clickhouse-keeper",
+				SubPath:   "var-log-clickhouse",
+			})
 	}
 
-	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("create projected volumes: %w", err)
+	if cr.Spec.Settings.TLS.Enabled {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      internal.TLSVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		})
 	}
 
-	controllerutil.SortKey(volumes, func(volume corev1.Volume) string {
-		return volume.Name
-	})
-	controllerutil.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
-		return mount.MountPath
-	})
-
-	return volumes, volumeMounts, nil
+	return volumeMounts
 }

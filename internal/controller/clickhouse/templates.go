@@ -23,16 +23,16 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 	protocols := buildProtocols(cr)
 
 	ports := make([]corev1.ServicePort, 0, len(protocols))
-	for name, protocol := range protocols {
-		if protocol.Port == 0 {
+	for name, proto := range protocols {
+		if proto.Port == 0 {
 			continue
 		}
 
 		ports = append(ports, corev1.ServicePort{
 			Protocol:   corev1.ProtocolTCP,
 			Name:       name,
-			Port:       int32(protocol.Port),
-			TargetPort: intstr.FromInt32(int32(protocol.Port)),
+			Port:       proto.Port,
+			TargetPort: intstr.FromInt32(proto.Port),
 		})
 	}
 
@@ -288,95 +288,72 @@ func generateConfigForSingleReplica(r *clickhouseReconciler, id v1.ClickHouseRep
 func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1.PodSpec, error) {
 	cr := r.Cluster
 
-	volumes, volumeMounts, err := buildVolumes(r, id)
-	if err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("build volumes: %w", err)
-	}
-
-	container, err := templateContainer(cr, id, volumeMounts)
+	container, err := templateContainer(r, id)
 	if err != nil {
 		return corev1.PodSpec{}, fmt.Errorf("template container: %w", err)
 	}
 
-	podTemplate := cr.Spec.PodTemplate.DeepCopy()
+	volumes := buildVolumes(r, id)
+	controllerutil.SortKey(volumes, func(v corev1.Volume) string { return v.Name })
+
 	podSpec := corev1.PodSpec{
-		TerminationGracePeriodSeconds: podTemplate.TerminationGracePeriodSeconds,
-		TopologySpreadConstraints:     podTemplate.TopologySpreadConstraints,
-		ImagePullSecrets:              podTemplate.ImagePullSecrets,
-		NodeSelector:                  podTemplate.NodeSelector,
-		Affinity:                      podTemplate.Affinity,
-		Tolerations:                   podTemplate.Tolerations,
-		SchedulerName:                 podTemplate.SchedulerName,
-		ServiceAccountName:            podTemplate.ServiceAccountName,
-		SecurityContext:               podTemplate.SecurityContext,
-		RestartPolicy:                 corev1.RestartPolicyAlways,
-		DNSPolicy:                     corev1.DNSClusterFirst,
-		Volumes:                       volumes,
-		Containers: []corev1.Container{
-			container,
-		},
+		RestartPolicy: corev1.RestartPolicyAlways,
+		DNSPolicy:     corev1.DNSClusterFirst,
+		Volumes:       volumes,
+		Containers:    []corev1.Container{container},
 	}
 
-	if podTemplate.TopologyZoneKey != nil && *podTemplate.TopologyZoneKey != "" {
-		if podSpec.Affinity == nil {
-			podSpec.Affinity = &corev1.Affinity{}
-		}
-
-		if podSpec.Affinity.PodAntiAffinity == nil {
-			podSpec.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-		}
-
-		if podSpec.Affinity.PodAffinity == nil {
-			podSpec.Affinity.PodAffinity = &corev1.PodAffinity{}
-		}
+	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
+		zoneKey := *cr.Spec.PodTemplate.TopologyZoneKey
 
 		shardID := strconv.Itoa(int(id.ShardID))
-		podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
-			podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
-			corev1.WeightedPodAffinityTerm{
-				Weight: MaximalAffinityWeight,
-				PodAffinityTerm: corev1.PodAffinityTerm{
-					TopologyKey: *podTemplate.TopologyZoneKey,
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							controllerutil.LabelAppKey:            cr.SpecificName(),
-							controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
-							controllerutil.LabelClickHouseShardID: shardID,
+		podSpec.Affinity = &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+					Weight: MaximalAffinityWeight,
+					PodAffinityTerm: corev1.PodAffinityTerm{
+						TopologyKey: zoneKey,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								controllerutil.LabelAppKey:            cr.SpecificName(),
+								controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+								controllerutil.LabelClickHouseShardID: shardID,
+							},
 						},
 					},
-				},
-			})
-		podSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
-			podSpec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
-			corev1.WeightedPodAffinityTerm{
-				PodAffinityTerm: corev1.PodAffinityTerm{
-					TopologyKey: *podTemplate.TopologyZoneKey,
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							controllerutil.LabelAppKey:  r.keeper.SpecificName(),
-							controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+				}},
+			},
+			PodAffinity: &corev1.PodAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+					PodAffinityTerm: corev1.PodAffinityTerm{
+						TopologyKey: zoneKey,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								controllerutil.LabelAppKey:  r.keeper.SpecificName(),
+								controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+							},
 						},
 					},
+					Weight: 1,
+				}},
+			},
+		}
+
+		podSpec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{{
+			MaxSkew:           1,
+			TopologyKey:       zoneKey,
+			WhenUnsatisfiable: corev1.DoNotSchedule,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					controllerutil.LabelAppKey:            cr.SpecificName(),
+					controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
+					controllerutil.LabelClickHouseShardID: shardID,
 				},
-				Weight: 1,
-			})
-		podSpec.TopologySpreadConstraints = append(
-			podSpec.TopologySpreadConstraints,
-			corev1.TopologySpreadConstraint{
-				MaxSkew:           1,
-				TopologyKey:       *podTemplate.TopologyZoneKey,
-				WhenUnsatisfiable: corev1.DoNotSchedule,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						controllerutil.LabelAppKey:            cr.SpecificName(),
-						controllerutil.LabelRoleKey:           controllerutil.LabelClickHouseValue,
-						controllerutil.LabelClickHouseShardID: shardID,
-					},
-				},
-			})
+			},
+		}}
 	}
 
-	if podTemplate.NodeHostnameKey != nil && *podTemplate.NodeHostnameKey != "" {
+	if cr.Spec.PodTemplate.NodeHostnameKey != nil && *cr.Spec.PodTemplate.NodeHostnameKey != "" {
 		if podSpec.Affinity == nil {
 			podSpec.Affinity = &corev1.Affinity{}
 		}
@@ -388,7 +365,7 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(
 			podSpec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
 			corev1.PodAffinityTerm{
-				TopologyKey: *podTemplate.NodeHostnameKey,
+				TopologyKey: *cr.Spec.PodTemplate.NodeHostnameKey,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						controllerutil.LabelAppKey:  cr.SpecificName(),
@@ -398,15 +375,26 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 			})
 	}
 
+	podSpec, err = controller.ApplyPodTemplateOverrides(&podSpec, &cr.Spec.PodTemplate)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("apply pod template overrides: %w", err)
+	}
+
+	podSpec.Volumes, podSpec.Containers[0].VolumeMounts, err = controller.ProjectVolumes(
+		podSpec.Volumes, podSpec.Containers[0].VolumeMounts)
+	if err != nil {
+		return corev1.PodSpec{}, fmt.Errorf("project volumes: %w", err)
+	}
+
 	return podSpec, nil
 }
 
-func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volumeMounts []corev1.VolumeMount) (corev1.Container, error) {
-	containerTemplate := cr.Spec.ContainerTemplate.DeepCopy()
+func templateContainer(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1.Container, error) {
+	cr := r.Cluster
 	protocols := buildProtocols(cr)
 
 	var probeCommand []string
-	if protocol, ok := protocols["http"]; ok && protocol.Port > 0 {
+	if proto, ok := protocols["http"]; ok && proto.Port != 0 {
 		probeCommand = []string{"/bin/bash", "-c", fmt.Sprintf(
 			"wget -qO- http://%s | grep -o Ok.",
 			net.JoinHostPort("127.0.0.1", strconv.Itoa(PortHTTP)),
@@ -434,11 +422,8 @@ func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volu
 	}
 
 	container := corev1.Container{
-		Name:            ContainerName,
-		Image:           containerTemplate.Image.String(),
-		ImagePullPolicy: containerTemplate.ImagePullPolicy,
-		Resources:       containerTemplate.Resources,
-		Env: append([]corev1.EnvVar{
+		Name: ContainerName,
+		Env: []corev1.EnvVar{
 			{
 				Name:  "CLICKHOUSE_CONFIG",
 				Value: path.Join(ConfigPath, ConfigFileName),
@@ -447,20 +432,8 @@ func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volu
 				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
 				Value: "1",
 			},
-		}, containerTemplate.Env...),
-		Ports: []corev1.ContainerPort{
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "prometheus",
-				ContainerPort: PortPrometheusScrape,
-			},
-			{
-				Protocol:      corev1.ProtocolTCP,
-				Name:          "interserver",
-				ContainerPort: PortInterserver,
-			},
 		},
-		VolumeMounts:             volumeMounts,
+		VolumeMounts:             buildMounts(r),
 		LivenessProbe:            &livenessProbe,
 		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
@@ -487,30 +460,21 @@ func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volu
 	}
 
 	container.Ports = make([]corev1.ContainerPort, 0, len(protocols))
-	for name, protocol := range protocols {
-		if protocol.Port == 0 {
+	for name, proto := range protocols {
+		if proto.Port == 0 {
 			continue
 		}
 
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
 			Name:          name,
-			ContainerPort: int32(protocol.Port),
+			ContainerPort: proto.Port,
 		})
 	}
 
 	controllerutil.SortKey(container.Ports, func(port corev1.ContainerPort) string {
 		return port.Name
 	})
-
-	if containerTemplate.SecurityContext != nil {
-		securityContext := containerTemplate.SecurityContext
-		if err := controllerutil.ApplyDefault(securityContext, *container.SecurityContext); err != nil {
-			return corev1.Container{}, fmt.Errorf("apply container security context overrides: %w", err)
-		}
-
-		container.SecurityContext = securityContext
-	}
 
 	if cr.Spec.Settings.DefaultUserPassword != nil {
 		var (
@@ -545,12 +509,17 @@ func templateContainer(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID, volu
 		})
 	}
 
+	container, err := controller.ApplyContainerTemplateOverrides(&container, &cr.Spec.ContainerTemplate)
+	if err != nil {
+		return corev1.Container{}, fmt.Errorf("apply container template overrides: %w", err)
+	}
+
 	return container, nil
 }
 
 type protocol struct {
 	Type        string `yaml:"type"`
-	Port        uint16 `yaml:"port,omitempty"`
+	Port        int32  `yaml:"port,omitempty"`
 	Impl        string `yaml:"impl,omitempty"`
 	Description string `yaml:"description,omitempty"`
 }
@@ -611,23 +580,7 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[string]protocol {
 	return protocols
 }
 
-func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.Volume, []corev1.VolumeMount, error) {
-	var volumeMounts []corev1.VolumeMount
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		volumeMounts = append(volumeMounts,
-			corev1.VolumeMount{
-				Name:      internal.PersistentVolumeName,
-				MountPath: internal.ClickHouseDataPath,
-				SubPath:   "var-lib-clickhouse",
-			},
-			corev1.VolumeMount{
-				Name:      internal.PersistentVolumeName,
-				MountPath: "/var/log/clickhouse-server",
-				SubPath:   "var-log-clickhouse",
-			},
-		)
-	}
-
+func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) []corev1.Volume {
 	defaultConfigMapMode := corev1.ConfigMapVolumeSourceDefaultMode
 
 	configVolumes := map[string]corev1.Volume{}
@@ -649,11 +602,6 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 					},
 				},
 			}
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      volume.Name,
-				MountPath: generator.Path(),
-				ReadOnly:  true,
-			})
 		}
 
 		volume.ConfigMap.Items = append(volume.ConfigMap.Items, corev1.KeyToPath{
@@ -672,12 +620,6 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 	}
 
 	if r.Cluster.Spec.Settings.TLS.Enabled {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      internal.TLSVolumeName,
-			MountPath: TLSConfigPath,
-			ReadOnly:  true,
-		})
-
 		volumes = append(volumes, corev1.Volume{
 			Name: internal.TLSVolumeName,
 			VolumeSource: corev1.VolumeSource{
@@ -695,12 +637,6 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 	}
 
 	if r.Cluster.Spec.Settings.TLS.CABundle != nil {
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      internal.CustomCAVolumeName,
-			MountPath: TLSConfigPath,
-			ReadOnly:  true,
-		})
-
 		volumes = append(volumes, corev1.Volume{
 			Name: internal.CustomCAVolumeName,
 			VolumeSource: corev1.VolumeSource{
@@ -715,25 +651,58 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) ([]corev1.
 		})
 	}
 
-	for _, volume := range r.Cluster.Spec.PodTemplate.Volumes {
-		volumes = append(volumes, *volume.DeepCopy())
+	return volumes
+}
+
+func buildMounts(r *clickhouseReconciler) []corev1.VolumeMount {
+	var volumeMounts []corev1.VolumeMount
+
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		volumeMounts = append(volumeMounts,
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: internal.ClickHouseDataPath,
+				SubPath:   "var-lib-clickhouse",
+			},
+			corev1.VolumeMount{
+				Name:      internal.PersistentVolumeName,
+				MountPath: "/var/log/clickhouse-server",
+				SubPath:   "var-log-clickhouse",
+			},
+		)
 	}
 
-	for _, volumeMount := range r.Cluster.Spec.ContainerTemplate.VolumeMounts {
-		volumeMounts = append(volumeMounts, *volumeMount.DeepCopy())
+	seenPaths := map[string]struct{}{}
+	for _, generator := range generators {
+		if !generator.Exists(r) {
+			continue
+		}
+
+		if _, ok := seenPaths[generator.Path()]; !ok {
+			seenPaths[generator.Path()] = struct{}{}
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      controllerutil.PathToName(generator.Path()),
+				MountPath: generator.Path(),
+				ReadOnly:  true,
+			})
+		}
 	}
 
-	volumes, volumeMounts, err := controller.ProjectVolumes(volumes, volumeMounts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("project volumes: %w", err)
+	if r.Cluster.Spec.Settings.TLS.Enabled {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      internal.TLSVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		})
 	}
 
-	controllerutil.SortKey(volumes, func(volume corev1.Volume) string {
-		return volume.Name
-	})
-	controllerutil.SortKey(volumeMounts, func(mount corev1.VolumeMount) string {
-		return mount.MountPath
-	})
+	if r.Cluster.Spec.Settings.TLS.CABundle != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      internal.CustomCAVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		})
+	}
 
-	return volumes, volumeMounts, nil
+	return volumeMounts
 }

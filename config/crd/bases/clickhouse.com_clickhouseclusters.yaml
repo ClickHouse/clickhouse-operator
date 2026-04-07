@@ -76,8 +76,9 @@ spec:
                 description: Parameters passed to the ClickHouse container spec.
                 properties:
                   env:
-                    description: Env is the list of environment variables to set in
-                      the container.
+                    description: |-
+                      Env is the list of environment variables to set in the container.
+                      Merged with operator defaults by name.
                     items:
                       description: EnvVar represents an environment variable present
                         in a Container.
@@ -264,8 +265,10 @@ spec:
                     - IfNotPresent
                     type: string
                   resources:
-                    description: Resources is the resource requirements for the server
-                      container.
+                    description: |-
+                      Resources is the resource requirements for the server container.
+                      Deep-merged with operator defaults via SMP. Individual limits and requests override only matching
+                      keys; unset fields preserve operator defaults.
                     properties:
                       claims:
                         description: |-
@@ -326,7 +329,7 @@ spec:
                   securityContext:
                     description: |-
                       SecurityContext defines the security options the container should be run with.
-                      If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+                      Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
                       More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
                     properties:
                       allowPrivilegeEscalation:
@@ -519,8 +522,10 @@ spec:
                         type: object
                     type: object
                   volumeMounts:
-                    description: VolumeMounts is the list of volume mounts for the
-                      container.
+                    description: |-
+                      VolumeMounts is the list of volume mounts for the container.
+                      Concatenated with operator-generated mounts. Entries sharing a `mountPath` with an operator
+                      mount are merged into a projected volume.
                     items:
                       description: VolumeMount describes a mounting of a Volume within
                         a container.
@@ -843,7 +848,9 @@ spec:
                 description: Parameters passed to the ClickHouse pod spec.
                 properties:
                   affinity:
-                    description: If specified, the pod's scheduling constraints
+                    description: |-
+                      If specified, the pod's scheduling constraints.
+                      Appended to operator defaults: scheduling term lists are concatenated.
                     properties:
                       nodeAffinity:
                         description: Describes node affinity scheduling rules for
@@ -1766,6 +1773,7 @@ spec:
                       ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.
                       If specified, these secrets will be passed to individual puller implementations for them to use.
                       More info: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod
+                      Merged with operator defaults by name.
                     items:
                       description: |-
                         LocalObjectReference contains enough information to let you locate the
@@ -1808,8 +1816,9 @@ spec:
                       If not specified, the pod will be dispatched by default scheduler.
                     type: string
                   securityContext:
-                    description: SecurityContext holds pod-level security attributes
-                      and common container settings.
+                    description: |-
+                      SecurityContext holds pod-level security attributes and common container settings.
+                      Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
                     properties:
                       appArmorProfile:
                         description: |-
@@ -2103,6 +2112,7 @@ spec:
                       TopologySpreadConstraints describes how a group of pods ought to spread across topology
                       domains. Scheduler will schedule pods in a way which abides by the constraints.
                       All topologySpreadConstraints are ANDed.
+                      Merged with operator defaults by `topologyKey`.
                     items:
                       description: TopologySpreadConstraint specifies how to spread
                         matching pods among the given topology.
@@ -2290,6 +2300,7 @@ spec:
                     description: |-
                       Volumes defines the list of volumes that can be mounted by containers belonging to the pod.
                       More info: https://kubernetes.io/docs/concepts/storage/volumes
+                      Merged with operator defaults by name; a user volume replaces any operator volume with the same name.
                     items:
                       description: Volume represents a named volume in a pod that
                         may be accessed by any container in the pod.

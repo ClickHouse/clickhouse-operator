@@ -166,6 +166,7 @@ type PodTemplateSpec struct {
 	// TopologySpreadConstraints describes how a group of pods ought to spread across topology
 	// domains. Scheduler will schedule pods in a way which abides by the constraints.
 	// All topologySpreadConstraints are ANDed.
+	// Merged with operator defaults by `topologyKey`.
 	// +optional
 	// +patchMergeKey=topologyKey
 	// +patchStrategy=merge
@@ -177,6 +178,7 @@ type PodTemplateSpec struct {
 	// ImagePullSecrets is an optional list of references to secrets in the same namespace to use for pulling any of the images used by this PodSpec.
 	// If specified, these secrets will be passed to individual puller implementations for them to use.
 	// More info: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod
+	// Merged with operator defaults by name.
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
@@ -191,7 +193,8 @@ type PodTemplateSpec struct {
 	// +mapType=atomic
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// If specified, the pod's scheduling constraints
+	// If specified, the pod's scheduling constraints.
+	// Appended to operator defaults: scheduling term lists are concatenated.
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
@@ -212,6 +215,7 @@ type PodTemplateSpec struct {
 
 	// Volumes defines the list of volumes that can be mounted by containers belonging to the pod.
 	// More info: https://kubernetes.io/docs/concepts/storage/volumes
+	// Merged with operator defaults by name; a user volume replaces any operator volume with the same name.
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
@@ -220,6 +224,7 @@ type PodTemplateSpec struct {
 	Volumes []corev1.Volume `json:"volumes,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// SecurityContext holds pod-level security attributes and common container settings.
+	// Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
 	// +optional
 	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 
@@ -249,10 +254,14 @@ type ContainerTemplateSpec struct {
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
 	// Resources is the resource requirements for the server container.
+	// Deep-merged with operator defaults via SMP. Individual limits and requests override only matching
+	// keys; unset fields preserve operator defaults.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// VolumeMounts is the list of volume mounts for the container.
+	// Concatenated with operator-generated mounts. Entries sharing a `mountPath` with an operator
+	// mount are merged into a projected volume.
 	// +optional
 	// +patchMergeKey=mountPath
 	// +patchStrategy=merge
@@ -261,6 +270,7 @@ type ContainerTemplateSpec struct {
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty" patchMergeKey:"mountPath" patchStrategy:"merge"`
 
 	// Env is the list of environment variables to set in the container.
+	// Merged with operator defaults by name.
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
@@ -269,7 +279,7 @@ type ContainerTemplateSpec struct {
 	Env []corev1.EnvVar `json:"env,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// SecurityContext defines the security options the container should be run with.
-	// If set, the fields of SecurityContext override the equivalent fields of PodSecurityContext.
+	// Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
 	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
 	// +optional
 	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`

@@ -94,6 +94,8 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 	}
 
 	if !hasIntersection {
+		controllerutil.SortKey(volumes, func(v corev1.Volume) string { return v.Name })
+		controllerutil.SortKey(volumeMounts, func(m corev1.VolumeMount) string { return m.MountPath })
 		return volumes, volumeMounts, nil
 	}
 
@@ -113,6 +115,7 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 			if volume, ok := volumeMap[mounts[0].Name]; ok {
 				if _, exists := addedVolumes[volume.Name]; !exists {
 					newVolumes = append(newVolumes, volume)
+					addedVolumes[volume.Name] = struct{}{}
 				}
 			}
 
@@ -167,6 +170,9 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 
 		newVolumeMounts = append(newVolumeMounts, volumeMount)
 	}
+
+	controllerutil.SortKey(newVolumes, func(v corev1.Volume) string { return v.Name })
+	controllerutil.SortKey(newVolumeMounts, func(m corev1.VolumeMount) string { return m.MountPath })
 
 	return newVolumes, newVolumeMounts, nil
 }
