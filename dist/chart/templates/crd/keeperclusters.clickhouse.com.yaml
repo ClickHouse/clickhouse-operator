@@ -6167,6 +6167,13 @@ spec:
                   When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
                 pattern: ^(lts|stable|\d+\.\d+)?$
                 type: string
+              versionProbe:
+                description: |-
+                  VersionProbe overrides for the version detection Job.
+                  Applied as a strategic merge patch on top of the operator-generated Job.
+                  Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),
+                  labels, resource overrides, Tolerations, or any other Job/Pod fields.
+                x-kubernetes-preserve-unknown-fields: true
             type: object
           status:
             description: KeeperClusterStatus defines the observed state of KeeperCluster.

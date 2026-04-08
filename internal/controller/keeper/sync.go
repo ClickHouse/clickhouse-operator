@@ -237,6 +237,7 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		Annotations:       r.Cluster.Spec.Annotations,
 		PodTemplate:       r.Cluster.Spec.PodTemplate,
 		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
+		VersionProbe:      r.Cluster.Spec.VersionProbe,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("run version probe: %w", err)

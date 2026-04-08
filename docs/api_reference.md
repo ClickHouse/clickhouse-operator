@@ -57,6 +57,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
+| `versionProbe` | [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#jobtemplatespec-v1-batch) | VersionProbe overrides for the version detection Job.<br />Applied as a strategic merge patch on top of the operator-generated Job.<br />Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),<br />labels, resource overrides, Tolerations, or any other Job/Pod fields. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -230,6 +231,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
+| `versionProbe` | [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#jobtemplatespec-v1-batch) | VersionProbe overrides for the version detection Job.<br />Applied as a strategic merge patch on top of the operator-generated Job.<br />Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),<br />labels, resource overrides, Tolerations, or any other Job/Pod fields. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)
