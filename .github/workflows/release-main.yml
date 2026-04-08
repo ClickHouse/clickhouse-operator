@@ -1,4 +1,4 @@
-name: Build and push docker image with latest tag
+name: Publish main branch artifact
 on:
   push:
     branches: [ main ]
@@ -33,3 +33,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build operator image
         run: make docker-buildx-latest
+      - name: Install Helm
+        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      - name: Set VERSION
+        run: |
+          FULL_VER=$(make -s print-full-version)
+          echo "VERSION=${FULL_VER#v}" >> "$GITHUB_ENV" # strips 'v' → 0.0.3-d33b34f
+      - name: Package and push helm chart
+        run: |
+          helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          make push-helmchart

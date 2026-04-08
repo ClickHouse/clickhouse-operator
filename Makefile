@@ -13,6 +13,10 @@ else
 FULL_VERSION := v$(VERSION)
 endif
 
+.PHONY: print-full-version
+print-full-version: ## Print the computed full version
+	@echo $(FULL_VERSION)
+
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
