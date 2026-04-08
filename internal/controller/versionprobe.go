@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,6 +23,11 @@ import (
 
 const (
 	versionProbeContainerName = "version-probe"
+
+	DefaultProbeCPULimit      = "1"
+	DefaultProbeCPURequest    = "250m"
+	DefaultProbeMemoryLimit   = "1Gi"
+	DefaultProbeMemoryRequest = "256Mi"
 )
 
 // VersionProbeConfig holds parameters for the version probe Job.
@@ -81,6 +88,18 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) VersionProbe(
 
 	if c, ok := getJobCondition(&existingJob, batchv1.JobFailed); ok && c.Status == corev1.ConditionTrue {
 		log.Warn("version probe job failed")
+
+		// Recreate the failed job with the same image only if spec changed
+		if controllerutil.GetSpecHashFromObject(&job) != controllerutil.GetSpecHashFromObject(&existingJob) {
+			log.Debug("spec changed, deleting failed version probe job for recreation")
+
+			if delErr := cli.Delete(ctx, &existingJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !k8serrors.IsNotFound(delErr) {
+				return VersionProbeResult{}, fmt.Errorf("delete failed version probe job: %w", delErr)
+			}
+
+			return VersionProbeResult{Pending: true}, nil
+		}
+
 		return VersionProbeResult{Err: errors.New(c.Message)}, nil
 	}
 
@@ -191,8 +210,8 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 			BackoffLimit: new(int32(0)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels:      cfg.Labels,
-					Annotations: cfg.Annotations,
+					Labels:      maps.Clone(cfg.Labels),
+					Annotations: maps.Clone(cfg.Annotations),
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:    corev1.RestartPolicyNever,
@@ -200,11 +219,23 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 					SecurityContext:  cfg.PodTemplate.SecurityContext,
 					Containers: []corev1.Container{
 						{
-							Name:            versionProbeContainerName,
-							Image:           cfg.ContainerTemplate.Image.String(),
-							ImagePullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
-							SecurityContext: cfg.ContainerTemplate.SecurityContext,
-							Command:         []string{"sh", "-c", cfg.Binary + " --version > /dev/termination-log 2>&1"},
+							Name:                     versionProbeContainerName,
+							Image:                    cfg.ContainerTemplate.Image.String(),
+							ImagePullPolicy:          cfg.ContainerTemplate.ImagePullPolicy,
+							SecurityContext:          cfg.ContainerTemplate.SecurityContext,
+							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
+							Command:                  []string{"sh", "-c", fmt.Sprintf("%s --version > %s 2>&1", cfg.Binary, corev1.TerminationMessagePathDefault)},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(DefaultProbeCPURequest),
+									corev1.ResourceMemory: resource.MustParse(DefaultProbeMemoryRequest),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse(DefaultProbeCPULimit),
+									corev1.ResourceMemory: resource.MustParse(DefaultProbeMemoryLimit),
+								},
+							},
 						},
 					},
 				},
@@ -215,12 +246,28 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 		return batchv1.Job{}, fmt.Errorf("set version probe job controller reference: %w", err)
 	}
 
+	// Recreate successful probe only on Image or PullPolicy changes
+	type imageKey struct {
+		Image      string
+		PullPolicy corev1.PullPolicy
+	}
+
+	imageHash, err := controllerutil.DeepHashObject(imageKey{
+		Image:      cfg.ContainerTemplate.Image.String(),
+		PullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
+	})
+	if err != nil {
+		return batchv1.Job{}, fmt.Errorf("hash version probe job image: %w", err)
+	}
+
+	job.Name = fmt.Sprintf("%s-version-probe-%s", r.Cluster.SpecificName(), imageHash[:8])
+
 	specHash, err := controllerutil.DeepHashObject(job.Spec)
 	if err != nil {
 		return batchv1.Job{}, fmt.Errorf("hash version probe job spec: %w", err)
 	}
 
-	job.Name = fmt.Sprintf("%s-version-probe-%s", r.Cluster.SpecificName(), specHash[:8])
+	controllerutil.AddSpecHashToObject(&job, specHash)
 
 	return job, nil
 }
