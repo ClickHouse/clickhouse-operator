@@ -223,9 +223,31 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 			_ = testutil.UninstallCRDs(ctx)
 		})
 
+		DeferCleanup(func(ctx context.Context) {
+			if !CurrentSpecReport().Failed() {
+				return
+			}
+
+			By("dumping OLM state for debugging")
+
+			for _, resource := range []string{"catalogsources", "subscriptions", "installplans", "clusterserviceversions"} {
+				out, _ := testutil.Run(exec.CommandContext(ctx, "kubectl", "get", resource,
+					"-n", namespace, "-o", "wide"))
+				AddReportEntry("=== OLM "+resource, string(out))
+			}
+		})
+
 		By("waiting for catalog server to be ready")
 		runCmd(ctx, "kubectl", "wait", "-n", namespace, "--timeout=120s",
 			"--for=condition=Ready", "pod/test-catalog-server")
+
+		By("waiting for ClusterServiceVersion to succeed")
+		Eventually(func(g Gomega) {
+			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "get", "csv",
+				"-n", namespace, "--no-headers", "-o", "custom-columns=PHASE:.status.phase"))
+			g.Expect(err).ToNot(HaveOccurred(), string(out))
+			g.Expect(strings.TrimSpace(string(out))).To(Equal("Succeeded"), "CSV phase: %s", strings.TrimSpace(string(out)))
+		}, "5m", "5s").Should(Succeed())
 
 		By("Waiting controller to be ready")
 		Eventually(func(g Gomega) {

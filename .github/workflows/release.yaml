@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.0
       - name: Log in to the Container registry
         uses: docker/login-action@v4
         with:
@@ -38,6 +40,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.0
       - name: Log in to the Container registry
         uses: docker/login-action@v4
         with:

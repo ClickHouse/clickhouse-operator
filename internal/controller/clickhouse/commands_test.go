@@ -140,6 +140,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		})
 
 		chPort := strconv.FormatInt(PortNative, 10) + "/tcp"
+		chHTTPPort := strconv.FormatInt(PortHTTP, 10) + "/tcp"
 		conns := map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 
 		for i := range testReplicas {
@@ -164,8 +165,8 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 							FileMode:          0o644,
 						},
 					},
-					ExposedPorts: []string{chPort},
-					WaitingFor:   wait.ForListeningPort(nat.Port(chPort)),
+					ExposedPorts: []string{chPort, chHTTPPort},
+					WaitingFor:   wait.ForHTTP("/").WithPort(nat.Port(chHTTPPort)).WithStartupTimeout(2 * time.Minute),
 				},
 				Started: true,
 			})

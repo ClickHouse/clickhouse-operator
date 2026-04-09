@@ -190,6 +190,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.0
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -233,7 +236,7 @@ jobs:
           overwrite: true
 
   e2e-test:
-    needs: [ lint, build_and_test ]
+    needs: [ lint ]
     strategy:
       fail-fast: false
       matrix:
@@ -277,13 +280,13 @@ jobs:
     if: ${{ !cancelled() }}
     steps:
       - name: Download all compat test reports
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: compat-e2e-report-*
 
 
       - name: Download all e2e test reports
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           pattern: e2e-report-*
 
