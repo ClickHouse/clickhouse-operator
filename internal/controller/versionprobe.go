@@ -275,8 +275,14 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 			job.Labels = map[string]string{}
 		}
 
+		if job.Spec.Template.Labels == nil {
+			job.Spec.Template.Labels = map[string]string{}
+		}
+
 		job.Labels[controllerutil.LabelAppKey] = r.Cluster.SpecificName()
 		job.Labels[controllerutil.LabelRoleKey] = controllerutil.LabelVersionProbe
+		job.Spec.Template.Labels[controllerutil.LabelAppKey] = r.Cluster.SpecificName()
+		job.Spec.Template.Labels[controllerutil.LabelRoleKey] = controllerutil.LabelVersionProbe
 	}
 
 	if err := ctrl.SetControllerReference(r.Cluster, &job, r.GetScheme()); err != nil {
