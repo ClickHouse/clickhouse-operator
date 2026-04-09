@@ -314,7 +314,14 @@ func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeou
 		g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
 		g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas()))
 
-		for _, cond := range cluster.Status.Conditions {
+		for _, conditionType := range []v1.ConditionType{
+			v1.ConditionTypeReady,
+			v1.ConditionTypeHealthy,
+			v1.ConditionTypeClusterSizeAligned,
+			v1.ConditionTypeConfigurationInSync,
+		} {
+			cond := meta.FindStatusCondition(cluster.Status.Conditions, string(conditionType))
+			g.Expect(cond).ToNot(BeNil())
 			g.Expect(cond.Status).To(
 				Equal(metav1.ConditionTrue),
 				fmt.Sprintf("condition %s is false: %s", cond.Type, cond.Message),

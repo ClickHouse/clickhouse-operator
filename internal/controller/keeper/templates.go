@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"dario.cat/mergo"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -204,13 +203,13 @@ type keeperServer struct {
 	HTTPControl          httpControl    `yaml:"http_control"`
 }
 
-func getConfigurationRevision(cr *v1.KeeperCluster, extraConfig map[string]any) (string, error) {
-	config, err := generateConfigForSingleReplica(cr, extraConfig, 0)
+func getConfigurationRevision(cr *v1.KeeperCluster) (string, error) {
+	cfg, err := generateConfigForSingleReplica(cr, 0)
 	if err != nil {
 		return "", fmt.Errorf("generate template configuration: %w", err)
 	}
 
-	hash, err := controllerutil.DeepHashObject(config)
+	hash, err := controllerutil.DeepHashObject(cfg)
 	if err != nil {
 		return "", fmt.Errorf("hash template configuration: %w", err)
 	}
@@ -234,8 +233,8 @@ func getStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, id v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
-	config, err := generateConfigForSingleReplica(cr, extraConfig, id)
+func templateConfigMap(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*corev1.ConfigMap, error) {
+	cfg, err := generateConfigForSingleReplica(cr, id)
 	if err != nil {
 		return nil, fmt.Errorf("generate configmap for replica %q: %w", id, err)
 	}
@@ -251,9 +250,7 @@ func templateConfigMap(cr *v1.KeeperCluster, extraConfig map[string]any, id v1.K
 			Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, id)),
 			Annotations: cr.Spec.Annotations,
 		},
-		Data: map[string]string{
-			ConfigFileName: config,
-		},
+		Data: cfg,
 	}, nil
 }
 
@@ -327,7 +324,7 @@ func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]strin
 	return labels
 }
 
-func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string]any, id v1.KeeperReplicaID) (string, error) {
+func generateConfigForSingleReplica(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (map[string]string, error) {
 	config := config{
 		ListenHost: "0.0.0.0",
 		Path:       internal.KeeperDataPath,
@@ -370,26 +367,18 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, extraConfig map[string
 
 	yamlConfig, err := yaml.Marshal(config)
 	if err != nil {
-		return "", fmt.Errorf("error marshalling config to yaml: %w", err)
+		return nil, fmt.Errorf("error marshalling config to yaml: %w", err)
 	}
 
-	if len(extraConfig) > 0 {
-		configMap := map[string]any{}
-		if err := yaml.Unmarshal(yamlConfig, &configMap); err != nil {
-			return "", fmt.Errorf("error unmarshalling config from yaml: %w", err)
-		}
-
-		if err := mergo.Merge(&configMap, extraConfig, mergo.WithOverride); err != nil {
-			return "", fmt.Errorf("error merging config with extraConfig: %w", err)
-		}
-
-		yamlConfig, err = yaml.Marshal(configMap)
-		if err != nil {
-			return "", fmt.Errorf("error marshalling merged config to yaml: %w", err)
-		}
+	data := map[string]string{
+		ConfigFileName: string(yamlConfig),
 	}
 
-	return string(yamlConfig), nil
+	if len(cr.Spec.Settings.ExtraConfig.Raw) > 0 {
+		data[ExtraConfigFileName] = string(cr.Spec.Settings.ExtraConfig.Raw)
+	}
+
+	return data, nil
 }
 
 func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpec, error) {

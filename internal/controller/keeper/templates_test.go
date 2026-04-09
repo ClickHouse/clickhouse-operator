@@ -6,11 +6,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/randfill"
 
@@ -18,8 +18,6 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
-
-type confMap map[any]any
 
 var _ = Describe("ServerRevision", func() {
 	var (
@@ -40,7 +38,7 @@ var _ = Describe("ServerRevision", func() {
 			},
 		}
 
-		baseCfgRevision, err = getConfigurationRevision(baseCR, nil)
+		baseCfgRevision, err = getConfigurationRevision(baseCR)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(baseCfgRevision).ToNot(BeEmpty())
 
@@ -52,7 +50,7 @@ var _ = Describe("ServerRevision", func() {
 	It("should not change config revision if only replica count changes", func() {
 		cr := baseCR.DeepCopy()
 		cr.Spec.Replicas = new(int32(3))
-		cfgRevisionUpdated, err := getConfigurationRevision(cr, nil)
+		cfgRevisionUpdated, err := getConfigurationRevision(cr)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(baseCfgRevision).ToNot(BeEmpty())
 		Expect(cfgRevisionUpdated).To(Equal(baseCfgRevision), "server config revision shouldn't depend on replica count")
@@ -66,7 +64,7 @@ var _ = Describe("ServerRevision", func() {
 	It("should not change sts revision if only config changes", func() {
 		cr := baseCR.DeepCopy()
 		cr.Spec.Settings.Logger.Level = "warning"
-		cfgRevisionUpdated, err := getConfigurationRevision(cr, nil)
+		cfgRevisionUpdated, err := getConfigurationRevision(cr)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfgRevisionUpdated).ToNot(BeEmpty())
 		Expect(cfgRevisionUpdated).ToNot(Equal(baseCfgRevision), "configuration change should update config revision")
@@ -79,64 +77,32 @@ var _ = Describe("ServerRevision", func() {
 })
 
 var _ = Describe("ExtraConfig", func() {
-	var (
-		cr             *v1.KeeperCluster
-		baseConfigYAML string
-		baseConfig     confMap
-	)
-
-	BeforeEach(func() {
-		cr = &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+	It("should add extra config as a separate ConfigMap key", func() {
+		cr := &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
+				Settings: v1.KeeperSettings{
+					ExtraConfig: runtime.RawExtension{Raw: []byte(`{"keeper_server": {"coordination_settings": {"quorum_reads": true}}}`)},
+				},
 			},
 		}
-
-		var err error
-
-		baseConfigYAML, err = generateConfigForSingleReplica(cr, nil, 1)
+		data, err := generateConfigForSingleReplica(cr, 1)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(yaml.Unmarshal([]byte(baseConfigYAML), &baseConfig)).To(Succeed())
+		Expect(data).To(HaveKey(ConfigFileName))
+		Expect(data).To(HaveKey(ExtraConfigFileName))
+		Expect(data[ExtraConfigFileName]).To(ContainSubstring("quorum_reads"))
 	})
 
-	It("should reflect config changes in generated config", func() {
-		configYAML, err := generateConfigForSingleReplica(cr, map[string]any{
-			"keeper_server": confMap{
-				"coordination_settings": confMap{
-					"quorum_reads": true,
-				},
-			},
-		}, 1)
+	It("should not include extra config key when empty", func() {
+		cr := &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec:       v1.KeeperClusterSpec{Replicas: new(int32(1))},
+		}
+		data, err := generateConfigForSingleReplica(cr, 1)
 		Expect(err).NotTo(HaveOccurred())
-
-		var config confMap
-		Expect(yaml.Unmarshal([]byte(configYAML), &config)).To(Succeed())
-		Expect(config).ToNot(Equal(baseConfig), cmp.Diff(config, baseConfig))
-		//nolint:forcetypeassert
-		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
-	})
-
-	It("should override existing setting by extra config", func() {
-		configYAML, err := generateConfigForSingleReplica(cr, map[string]any{
-			"keeper_server": confMap{
-				"coordination_settings": confMap{
-					"compress_logs": true,
-				},
-			},
-		}, 1)
-		Expect(err).NotTo(HaveOccurred())
-
-		var config confMap
-
-		err = yaml.Unmarshal([]byte(configYAML), &config)
-		Expect(err).NotTo(HaveOccurred())
-
-		Expect(config).ToNot(Equal(baseConfig), cmp.Diff(config, baseConfig))
-		//nolint:forcetypeassert
-		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["compress_logs"]).To(BeTrue())
+		Expect(data).To(HaveKey(ConfigFileName))
+		Expect(data).ToNot(HaveKey(ExtraConfigFileName))
 	})
 })
 

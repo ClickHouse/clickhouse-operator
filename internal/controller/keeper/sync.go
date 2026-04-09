@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -109,8 +108,6 @@ type keeperReconciler struct {
 	reconcilerBase
 
 	versionProbe chctrl.VersionProbeResult
-	// Should be populated after reconcileClusterRevisions with parsed extra config.
-	ExtraConfig map[string]any
 	// Computed by reconcileActiveReplicaStatus
 	HorizontalScaleAllowed bool
 	pvcRevision            string
@@ -207,16 +204,7 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		log.Debug(fmt.Sprintf("observed new CR revision %q", updateRevision))
 	}
 
-	var extraConfig map[string]any
-	if len(r.Cluster.Spec.Settings.ExtraConfig.Raw) > 0 {
-		if err := json.Unmarshal(r.Cluster.Spec.Settings.ExtraConfig.Raw, &extraConfig); err != nil {
-			return nil, fmt.Errorf("unmarshal extra config: %w", err)
-		}
-
-		r.ExtraConfig = extraConfig
-	}
-
-	configRevision, err := getConfigurationRevision(r.Cluster, r.ExtraConfig)
+	configRevision, err := getConfigurationRevision(r.Cluster)
 	if err != nil {
 		return nil, fmt.Errorf("get configuration revision: %w", err)
 	}
@@ -761,7 +749,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 	log = log.With("replica_id", replicaID)
 	log.Info("updating replica")
 
-	configMap, err := templateConfigMap(r.Cluster, r.ExtraConfig, replicaID)
+	configMap, err := templateConfigMap(r.Cluster, replicaID)
 	if err != nil {
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", replicaID, err)
 	}

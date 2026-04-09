@@ -8,7 +8,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -234,11 +233,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		}, &configmap)).To(Succeed())
 
 		Expect(configmap.Data).To(HaveKey(ConfigFileName))
-
-		var config confMap
-		Expect(yaml.Unmarshal([]byte(configmap.Data[ConfigFileName]), &config)).To(Succeed())
-		//nolint:forcetypeassert
-		Expect(config["keeper_server"].(confMap)["coordination_settings"].(confMap)["quorum_reads"]).To(BeTrue())
+		Expect(configmap.Data).To(HaveKey(ExtraConfigFileName))
+		Expect(configmap.Data[ExtraConfigFileName]).To(ContainSubstring("quorum_reads"))
 	})
 
 	It("should use security context overrides from spec", func(ctx context.Context) {

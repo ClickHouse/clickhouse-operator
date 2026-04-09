@@ -16,8 +16,9 @@ const (
 	QuorumConfigPath     = "/etc/clickhouse-keeper/"
 	QuorumConfigFileName = "config.yaml"
 
-	ConfigPath     = QuorumConfigPath + "config.d/"
-	ConfigFileName = "00-config.yaml"
+	ConfigPath          = QuorumConfigPath + "config.d/"
+	ConfigFileName      = "00-config.yaml"
+	ExtraConfigFileName = "99-extra-config.yaml"
 
 	TLSConfigPath       = "/etc/clickhouse-keeper/tls/"
 	CABundleFilename    = "ca-bundle.crt"

@@ -101,7 +101,6 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 			v1.KeeperReplicaID,
 			replicaState,
 		](cc, cluster),
-		ExtraConfig: map[string]any{},
 	}
 
 	return reconciler.sync(ctx, logger)

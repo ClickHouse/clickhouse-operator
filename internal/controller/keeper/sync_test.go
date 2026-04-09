@@ -210,7 +210,6 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 					StatefulSetRevision:   "sts-v1",
 				},
 			}),
-		ExtraConfig: map[string]any{},
 	}
 
 	eventContext, cancel := context.WithCancel(context.Background())

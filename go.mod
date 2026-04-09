@@ -3,7 +3,6 @@ module github.com/ClickHouse/clickhouse-operator
 go 1.26.0
 
 require (
-	dario.cat/mergo v1.0.2
 	github.com/ClickHouse/clickhouse-go/v2 v2.43.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/cert-manager/cert-manager v1.20.1
@@ -30,6 +29,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
+	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
