@@ -553,7 +553,7 @@ docs-generate-api-ref: crd-ref-docs ## Generate API reference documentation from
 .PHONY: docs-lint-vale
 docs-lint-vale: ## Run Vale linter on documentation
 	@command -v vale >/dev/null 2>&1 || { echo "Vale is required but not installed. https://vale.sh/docs/install"; exit 1; }
-	vale --config='.vale.ini' README.md docs
+	vale --config='.vale.ini' *.md docs
 
 .PHONY: docs-link-check
 docs-link-check: ## Run markdown-link-check on documentation

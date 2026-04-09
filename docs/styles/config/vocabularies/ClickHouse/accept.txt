@@ -16,3 +16,10 @@ ANDed
 boolean
 lts
 liveness
+codespell
+actionlint
+goimports
+gofmt
+Gomega
+matchers
+configs
