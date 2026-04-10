@@ -1,4 +1,4 @@
-{{- if .Values.prometheus.service_monitor }}
+{{- if .Values.prometheus.enable }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -13,28 +13,25 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: metrics
+      port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+      scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+      {{- if .Values.metrics.secure }}
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-      interval: "5s"
-      {{- if not .Values.metrics.secure }}
-      scheme: http
-      {{- else }}
-      scheme: https
       tlsConfig:
         {{- if .Values.certManager.enable }}
-        serverName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
+        serverName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
         # Apply secure TLS configuration with cert-manager
         insecureSkipVerify: false
         ca:
           secret:
-            name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+            name: metrics-server-cert
             key: ca.crt
         cert:
           secret:
-            name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+            name: metrics-server-cert
             key: tls.crt
         keySecret:
-          name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+          name: metrics-server-cert
           key: tls.key
         {{- else }}
         # Development/Test mode (insecure configuration)

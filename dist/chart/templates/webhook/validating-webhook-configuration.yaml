@@ -8,44 +8,44 @@ metadata:
     {{- end }}
   name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "validating-webhook-configuration" "context" $) }}
 webhooks:
-  - admissionReviewVersions:
-      - v1
-    clientConfig:
-      service:
-        name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-        namespace: {{ .Release.Namespace }}
-        path: /validate-clickhouse-com-v1alpha1-clickhousecluster
-    failurePolicy: Ignore
-    name: vclickhousecluster-v1alpha1.kb.io
-    rules:
-      - apiGroups:
-          - clickhouse.com
-        apiVersions:
-          - v1alpha1
-        operations:
-          - CREATE
-          - UPDATE
-        resources:
-          - clickhouseclusters
-    sideEffects: None
-  - admissionReviewVersions:
-      - v1
-    clientConfig:
-      service:
-        name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-        namespace: {{ .Release.Namespace }}
-        path: /validate-clickhouse-com-v1alpha1-keepercluster
-    failurePolicy: Ignore
-    name: vkeepercluster.kb.io
-    rules:
-      - apiGroups:
-          - clickhouse.com
-        apiVersions:
-          - v1alpha1
-        operations:
-          - CREATE
-          - UPDATE
-        resources:
-          - keeperclusters
-    sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /validate-clickhouse-com-v1alpha1-clickhousecluster
+  failurePolicy: Ignore
+  name: vclickhousecluster-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - clickhouse.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - clickhouseclusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /validate-clickhouse-com-v1alpha1-keepercluster
+  failurePolicy: Ignore
+  name: vkeepercluster.kb.io
+  rules:
+  - apiGroups:
+    - clickhouse.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - keeperclusters
+  sideEffects: None
 {{- end }}

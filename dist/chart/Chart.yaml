@@ -19,4 +19,4 @@ dependencies:
   - name: cert-manager
     version: "v1.19.2"
     repository: "oci://quay.io/jetstack/charts"
-    condition: certManager.install
+    condition: certManager.enable

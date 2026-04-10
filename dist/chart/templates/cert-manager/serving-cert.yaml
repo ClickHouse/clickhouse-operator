@@ -3,24 +3,18 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   labels:
-   app.kubernetes.io/managed-by: {{ .Release.Service }}
-   app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
-   helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-   app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
   name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
   dnsNames:
-    - {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}.{{ .Release.Namespace }}.svc
-    - {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}.{{ .Release.Namespace }}.svc.cluster.local
-    - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
-    - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc.cluster.local
+  - {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}.{{ .Release.Namespace }}.svc
+  - {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-service" "context" $) }}.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef:
-  {{- if .Values.certManager.issuerRef}}
-    {{ .Values.certManager.issuerRef | toYaml | nindent 4 }}
-  {{- else }}
     kind: Issuer
     name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "selfsigned-issuer" "context" $) }}
-  {{- end }}
-  secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+  secretName: serving-cert
 {{- end }}

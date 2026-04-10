@@ -11,10 +11,9 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   ports:
-    - name: webhook
-      port: 443
-      protocol: TCP
-      targetPort: {{ .Values.webhook.port }}
+  - port: 443
+    protocol: TCP
+    targetPort: {{ .Values.webhook.port }}
   selector:
     app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
     control-plane: controller-manager

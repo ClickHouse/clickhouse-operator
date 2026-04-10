@@ -2,8 +2,8 @@
 Expand the name of the chart.
 */}}
 {{- define "clickhouse-operator.name" -}}
-{{- default (trimSuffix "-helm" .Chart.Name) .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}q
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
 
 {{/*
 Create a default fully qualified app name.
@@ -14,7 +14,7 @@ If release name contains chart name it will be used as a full name.
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- $name := include "clickhouse-operator.name" . }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
 {{- .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -46,17 +46,5 @@ Dynamically calculates safe truncation to ensure total name length <= 63 chars.
 {{- printf "%s-%s" (trunc $maxLen $fullname | trimSuffix "-") $suffix | trunc 63 | trimSuffix "-" }}
 {{- else }}
 {{- printf "%s-%s" $fullname $suffix | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
-
-{{/*
-Util function for generating the image URL based on the provided options.
-Cribbed from the cert-manager organization.
-*/}}
-{{- define "clickhouse-operator.image" -}}
-{{- $defaultTag := index . 1 -}}
-{{- with index . 0 -}}
-{{ printf .repository }}
-{{- if .digest -}}{{ printf "@%s" .digest }}{{- else -}}{{ printf ":%s" (default $defaultTag .tag) }}{{- end -}}
 {{- end }}
 {{- end }}

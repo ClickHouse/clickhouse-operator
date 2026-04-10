@@ -12,10 +12,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   ports:
-    - name: metrics
-      port: {{ .Values.metrics.port }}
-      protocol: TCP
-      targetPort: {{ .Values.metrics.port }}
+  - name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
   selector:
     app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
     control-plane: controller-manager
