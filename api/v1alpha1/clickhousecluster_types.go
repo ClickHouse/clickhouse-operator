@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/go-logr/logr"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -79,13 +78,8 @@ type ClickHouseClusterSpec struct {
 	UpgradeChannel string `json:"upgradeChannel,omitempty"`
 
 	// VersionProbe overrides for the version detection Job.
-	// Applied as a strategic merge patch on top of the operator-generated Job.
-	// Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),
-	// labels, resource overrides, Tolerations, or any other Job/Pod fields.
 	// +optional
-	// +kubebuilder:validation:Schemaless
-	// +kubebuilder:pruning:PreserveUnknownFields
-	VersionProbe *batchv1.JobTemplateSpec `json:"versionProbe,omitempty"`
+	VersionProbe *VersionProbeOverride `json:"versionProbe,omitempty"`
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.

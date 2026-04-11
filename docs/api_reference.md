@@ -57,7 +57,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
-| `versionProbe` | [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#jobtemplatespec-v1-batch) | VersionProbe overrides for the version detection Job.<br />Applied as a strategic merge patch on top of the operator-generated Job.<br />Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),<br />labels, resource overrides, Tolerations, or any other Job/Pod fields. | false |  |
+| `versionProbe` | [VersionProbeOverride](#versionprobeoverride) | VersionProbe overrides for the version detection Job. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -231,7 +231,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
-| `versionProbe` | [JobTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#jobtemplatespec-v1-batch) | VersionProbe overrides for the version detection Job.<br />Applied as a strategic merge patch on top of the operator-generated Job.<br />Use this to add annotations (e.g. sidecar.istio.io/inject: "false"),<br />labels, resource overrides, Tolerations, or any other Job/Pod fields. | false |  |
+| `versionProbe` | [VersionProbeOverride](#versionprobeoverride) | VersionProbe overrides for the version detection Job. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)
@@ -359,4 +359,21 @@ SecretKeySelector selects a key of a Secret.
 Appears in:
 - [ClusterTLSSpec](#clustertlsspec)
 - [DefaultPasswordSelector](#defaultpasswordselector)
+
+
+## VersionProbeOverride
+
+VersionProbeOverride defines overrides for the version detection Job.
+Fields apply to the version probe Pod template unless noted otherwise.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `podLabels` | object (keys:string, values:string) | PodLabels are additional labels applied to the version probe Pod. | false |  |
+| `podAnnotations` | object (keys:string, values:string) | PodAnnotations are additional annotations applied to the version probe Pod. | false |  |
+| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources overrides for the version probe container. | false |  |
+| `ttlSecondsAfterFinished` | integer | TTLSecondsAfterFinished limits the lifetime of a completed Job. | false |  |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+- [KeeperClusterSpec](#keeperclusterspec)
 

@@ -152,14 +152,12 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		updatedCR.Spec.VersionProbe = &batchv1.JobTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{
-					"sidecar.istio.io/inject": "false",
-				},
-				Labels: map[string]string{
-					"probe-label": "probe-value",
-				},
+		updatedCR.Spec.VersionProbe = &v1.VersionProbeOverride{
+			PodAnnotations: map[string]string{
+				"sidecar.istio.io/inject": "false",
+			},
+			PodLabels: map[string]string{
+				"probe-label": "probe-value",
 			},
 		}
 		updatedCR.Spec.PodTemplate.Tolerations = []corev1.Toleration{
@@ -180,12 +178,10 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
 		Expect(jobs.Items).To(HaveLen(1))
 
-		By("verifying annotations on Job and Pod template")
-		Expect(jobs.Items[0].Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
+		By("verifying annotations on Pod template only")
 		Expect(jobs.Items[0].Spec.Template.Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
 
-		By("verifying probe-specific labels")
-		Expect(jobs.Items[0].Labels).To(HaveKeyWithValue("probe-label", "probe-value"))
+		By("verifying probe-specific labels on Pod template only")
 		Expect(jobs.Items[0].Spec.Template.Labels).To(HaveKeyWithValue("probe-label", "probe-value"))
 
 		By("verifying operator-reserved labels are preserved")

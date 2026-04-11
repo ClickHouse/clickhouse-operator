@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -44,8 +42,8 @@ type VersionProbeConfig struct {
 	PodTemplate v1.PodTemplateSpec
 	// ContainerTemplate to apply to the Job, inherited from the cluster spec.
 	ContainerTemplate v1.ContainerTemplateSpec
-	// VersionProbe is the user-provided override applied via strategic merge patch.
-	VersionProbe *batchv1.JobTemplateSpec
+	// VersionProbe is the user-provided override for the version probe Job.
+	VersionProbe *v1.VersionProbeOverride
 }
 
 // VersionProbeResult holds the outcome of a version probe reconciliation.
@@ -218,15 +216,13 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 					Annotations: maps.Clone(cfg.Annotations),
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy:             corev1.RestartPolicyNever,
-					ImagePullSecrets:          cfg.PodTemplate.ImagePullSecrets,
-					SecurityContext:           cfg.PodTemplate.SecurityContext,
-					NodeSelector:              cfg.PodTemplate.NodeSelector,
-					Tolerations:               cfg.PodTemplate.Tolerations,
-					Affinity:                  cfg.PodTemplate.Affinity,
-					ServiceAccountName:        cfg.PodTemplate.ServiceAccountName,
-					TopologySpreadConstraints: cfg.PodTemplate.TopologySpreadConstraints,
-					SchedulerName:             cfg.PodTemplate.SchedulerName,
+					RestartPolicy:      corev1.RestartPolicyNever,
+					ImagePullSecrets:   cfg.PodTemplate.ImagePullSecrets,
+					SecurityContext:    cfg.PodTemplate.SecurityContext,
+					NodeSelector:       cfg.PodTemplate.NodeSelector,
+					Tolerations:        cfg.PodTemplate.Tolerations,
+					ServiceAccountName: cfg.PodTemplate.ServiceAccountName,
+					SchedulerName:      cfg.PodTemplate.SchedulerName,
 					Containers: []corev1.Container{
 						{
 							Name:                     versionProbeContainerName,
@@ -253,36 +249,9 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 		},
 	}
 
-	if cfg.PodTemplate.PriorityClassName != nil {
-		job.Spec.Template.Spec.PriorityClassName = *cfg.PodTemplate.PriorityClassName
-	}
-
-	if cfg.PodTemplate.RuntimeClassName != nil {
-		job.Spec.Template.Spec.RuntimeClassName = cfg.PodTemplate.RuntimeClassName
-	}
-
-	// Apply user-provided version probe overrides via strategic merge patch.
+	// Apply user-provided version probe overrides.
 	if cfg.VersionProbe != nil {
-		var err error
-
-		job, err = applyVersionProbeOverrides(job, cfg.VersionProbe)
-		if err != nil {
-			return batchv1.Job{}, fmt.Errorf("apply version probe overrides: %w", err)
-		}
-
-		// Re-apply operator-reserved labels after SMP to prevent user overrides.
-		if job.Labels == nil {
-			job.Labels = map[string]string{}
-		}
-
-		if job.Spec.Template.Labels == nil {
-			job.Spec.Template.Labels = map[string]string{}
-		}
-
-		job.Labels[controllerutil.LabelAppKey] = r.Cluster.SpecificName()
-		job.Labels[controllerutil.LabelRoleKey] = controllerutil.LabelVersionProbe
-		job.Spec.Template.Labels[controllerutil.LabelAppKey] = r.Cluster.SpecificName()
-		job.Spec.Template.Labels[controllerutil.LabelRoleKey] = controllerutil.LabelVersionProbe
+		applyVersionProbeOverrides(&job, cfg.VersionProbe)
 	}
 
 	if err := ctrl.SetControllerReference(r.Cluster, &job, r.GetScheme()); err != nil {
@@ -315,69 +284,30 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 	return job, nil
 }
 
-// applyVersionProbeOverrides merges the user-provided JobTemplateSpec onto the operator-generated Job.
-// Metadata (labels/annotations) is merged at both Job-level and Pod-level.
-// The JobSpec is merged via strategic merge patch, allowing users to override resources,
-// Tolerations, activeDeadlineSeconds, ttlSecondsAfterFinished, and any other JobSpec fields.
-func applyVersionProbeOverrides(job batchv1.Job, override *batchv1.JobTemplateSpec) (batchv1.Job, error) {
-	// Merge metadata: Job-level labels/annotations.
-	job.Labels = controllerutil.MergeMaps(job.Labels, override.Labels)
-	job.Annotations = controllerutil.MergeMaps(job.Annotations, override.Annotations)
+// applyVersionProbeOverrides applies the user-provided VersionProbeOverride fields
+// directly onto the operator-generated Job.
+func applyVersionProbeOverrides(job *batchv1.Job, override *v1.VersionProbeOverride) {
+	// Pod-level metadata.
+	job.Spec.Template.Labels = controllerutil.MergeMaps(job.Spec.Template.Labels, override.PodLabels)
+	job.Spec.Template.Annotations = controllerutil.MergeMaps(job.Spec.Template.Annotations, override.PodAnnotations)
 
-	// Merge metadata: Pod-level labels/annotations.
-	job.Spec.Template.Labels = controllerutil.MergeMaps(job.Spec.Template.Labels, override.Labels)
-	job.Spec.Template.Annotations = controllerutil.MergeMaps(job.Spec.Template.Annotations, override.Annotations)
-
-	// If the override includes additional Pod-level metadata, merge those too.
-	if override.Spec.Template.Labels != nil {
-		job.Spec.Template.Labels = controllerutil.MergeMaps(job.Spec.Template.Labels, override.Spec.Template.Labels)
+	// Job-level overrides.
+	if override.TTLSecondsAfterFinished != nil {
+		job.Spec.TTLSecondsAfterFinished = override.TTLSecondsAfterFinished
 	}
 
-	if override.Spec.Template.Annotations != nil {
-		job.Spec.Template.Annotations = controllerutil.MergeMaps(job.Spec.Template.Annotations, override.Spec.Template.Annotations)
+	// Container-level overrides.
+	if override.Resources != nil {
+		container := &job.Spec.Template.Spec.Containers[0]
+
+		if override.Resources.Requests != nil {
+			maps.Copy(container.Resources.Requests, override.Resources.Requests)
+		}
+
+		if override.Resources.Limits != nil {
+			maps.Copy(container.Resources.Limits, override.Resources.Limits)
+		}
 	}
-
-	// Apply strategic merge patch on the JobSpec for deeper overrides (resources, tolerations, etc.).
-	// We use a two-way merge patch (empty → override) to produce a minimal patch containing
-	// only user-specified fields. This avoids the issue where fields without omitempty tags
-	// (e.g. PodSpec.Containers) would serialize as null and delete the base value.
-	patchSpec := override.Spec
-	patchSpec.Template.Labels = nil
-	patchSpec.Template.Annotations = nil
-
-	emptyJSON, err := json.Marshal(batchv1.JobSpec{})
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("marshal empty job spec: %w", err)
-	}
-
-	overrideJSON, err := json.Marshal(patchSpec)
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("marshal version probe override spec: %w", err)
-	}
-
-	patchJSON, err := strategicpatch.CreateTwoWayMergePatch(emptyJSON, overrideJSON, batchv1.JobSpec{})
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("create two-way merge patch for version probe: %w", err)
-	}
-
-	baseJSON, err := json.Marshal(job.Spec)
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("marshal job spec: %w", err)
-	}
-
-	mergedJSON, err := strategicpatch.StrategicMergePatch(baseJSON, patchJSON, batchv1.JobSpec{})
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("strategic merge patch job spec: %w", err)
-	}
-
-	var mergedSpec batchv1.JobSpec
-	if err := json.Unmarshal(mergedJSON, &mergedSpec); err != nil {
-		return batchv1.Job{}, fmt.Errorf("unmarshal merged job spec: %w", err)
-	}
-
-	job.Spec = mergedSpec
-
-	return job, nil
 }
 
 func getJobCondition(job *batchv1.Job, conditionType batchv1.JobConditionType) (batchv1.JobCondition, bool) {

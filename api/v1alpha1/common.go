@@ -426,3 +426,23 @@ func formatPodHostname(stsName, serviceName, namespace, domain string) string {
 
 	return fmt.Sprintf("%s-0.%s.%s.svc.%s", stsName, serviceName, namespace, domain)
 }
+
+// VersionProbeOverride defines overrides for the version detection Job.
+// Fields apply to the version probe Pod template unless noted otherwise.
+type VersionProbeOverride struct {
+	// PodLabels are additional labels applied to the version probe Pod.
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+
+	// PodAnnotations are additional annotations applied to the version probe Pod.
+	// +optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+
+	// Resources overrides for the version probe container.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// TTLSecondsAfterFinished limits the lifetime of a completed Job.
+	// +optional
+	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
+}
