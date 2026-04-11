@@ -361,23 +361,27 @@ $(GINKGO): $(LOCALBIN)
 .PHONY: kubebuilder
 kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
 $(KUBEBUILDER): $(LOCALBIN)
-	@test -f $(KUBEBUILDER) || { \
+	@test -f $(KUBEBUILDER)-$(KUBEBUILDER_VERSION) || { \
 		echo "Downloading kubebuilder $(KUBEBUILDER_VERSION)" ;\
-		curl -L -o ${KUBEBUILDER} "https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$(shell go env GOOS)_$(shell go env GOARCH)" ;\
-		chmod +x $(KUBEBUILDER) ;\
+		rm -f $(KUBEBUILDER) || true ;\
+		curl -L -o $(KUBEBUILDER)-$(KUBEBUILDER_VERSION) "https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$(shell go env GOOS)_$(shell go env GOARCH)" ;\
+		chmod +x $(KUBEBUILDER)-$(KUBEBUILDER_VERSION) ;\
 	}
+	@ln -sf $(KUBEBUILDER)-$(KUBEBUILDER_VERSION) $(KUBEBUILDER)
 
 .PHONY: codespell
 codespell: $(CODESPELL) ## Install codespell locally if necessary.
 $(CODESPELL): $(LOCALBIN)
-	@test -f $(CODESPELL) || { \
+	@test -f $(CODESPELL)-$(CODESPELL_VERSION) || { \
 		echo "Installing codespell $(CODESPELL_VERSION)" ;\
-		python3 -m pip install --target=$(LOCALBIN)/codespell-deps codespell==$(CODESPELL_VERSION) ;\
-		echo '#!/bin/bash' > $(CODESPELL) ;\
-		echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(CODESPELL) ;\
-		echo 'PYTHONPATH="$$DIR/codespell-deps" "$$DIR/codespell-deps/bin/codespell" "$$@"' >> $(CODESPELL) ;\
-		chmod +x $(CODESPELL) ;\
+		rm -f $(CODESPELL) || true ;\
+		python3 -m pip install --target=$(LOCALBIN)/codespell-deps-$(CODESPELL_VERSION) codespell==$(CODESPELL_VERSION) ;\
+		echo '#!/bin/bash' > $(CODESPELL)-$(CODESPELL_VERSION) ;\
+		echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(CODESPELL)-$(CODESPELL_VERSION) ;\
+		echo 'PYTHONPATH="$$DIR/codespell-deps-$(CODESPELL_VERSION)" "$$DIR/codespell-deps-$(CODESPELL_VERSION)/bin/codespell" "$$@"' >> $(CODESPELL)-$(CODESPELL_VERSION) ;\
+		chmod +x $(CODESPELL)-$(CODESPELL_VERSION) ;\
 	}
+	@ln -sf $(CODESPELL)-$(CODESPELL_VERSION) $(CODESPELL)
 
 .PHONY: crd-schema-checker
 crd-schema-checker: $(CRD_SCHEMA_CHECKER) ## Download crd-schema-checker locally if necessary.
@@ -427,18 +431,22 @@ endef
 .PHONY: operator-sdk
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
-ifeq (,$(wildcard $(OPERATOR_SDK)))
+ifeq (,$(wildcard $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION)))
 ifeq (, $(shell which operator-sdk 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPERATOR_SDK)) ;\
+	rm -f $(OPERATOR_SDK) || true ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OPERATOR_SDK) ;\
+	curl -sSLo $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+	chmod +x $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) ;\
+	ln -sf $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) $(OPERATOR_SDK) ;\
 	}
 else
 OPERATOR_SDK = $(shell which operator-sdk)
 endif
+else
+	@ln -sf $(OPERATOR_SDK)-$(OPERATOR_SDK_VERSION) $(OPERATOR_SDK)
 endif
 
 operator-sdk-path: operator-sdk
@@ -476,18 +484,22 @@ scorecard: operator-sdk
 .PHONY: opm
 OPM = $(LOCALBIN)/opm
 opm: ## Download opm locally if necessary.
-ifeq (,$(wildcard $(OPM)))
+ifeq (,$(wildcard $(OPM)-$(OPERATOR_MANAGER_VERSION)))
 ifeq (,$(shell which opm 2>/dev/null))
 	@{ \
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
+	rm -f $(OPM) || true ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/${OPERATOR_MANAGER_VERSION}/$${OS}-$${ARCH}-opm ;\
-	chmod +x $(OPM) ;\
+	curl -sSLo $(OPM)-$(OPERATOR_MANAGER_VERSION) https://github.com/operator-framework/operator-registry/releases/download/${OPERATOR_MANAGER_VERSION}/$${OS}-$${ARCH}-opm ;\
+	chmod +x $(OPM)-$(OPERATOR_MANAGER_VERSION) ;\
+	ln -sf $(OPM)-$(OPERATOR_MANAGER_VERSION) $(OPM) ;\
 	}
 else
 OPM = $(shell which opm)
 endif
+else
+	@ln -sf $(OPM)-$(OPERATOR_MANAGER_VERSION) $(OPM)
 endif
 
 # The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
