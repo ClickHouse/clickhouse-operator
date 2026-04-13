@@ -82,7 +82,9 @@ func DeepHashResource(obj client.Object, specFields []string) (string, error) {
 func MergeMaps[Value any](mapsToMerge ...map[string]Value) map[string]Value {
 	result := map[string]Value{}
 	for _, m := range mapsToMerge {
-		maps.Copy(result, m)
+		if m != nil {
+			maps.Copy(result, m)
+		}
 	}
 
 	return result

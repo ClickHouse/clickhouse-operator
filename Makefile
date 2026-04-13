@@ -390,6 +390,10 @@ $(ACTIONLINT): $(LOCALBIN)
 	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 CRD_BASE_REF ?= origin/main
+# Violations from embedded Kubernetes core types (securityContext bools, resource maps, etc.)
+# that are structural to the k8s API, not operator design choices. These are automatically
+# suppressed by ratcheting for existing fields, but appear when adding new fields that embed core types.
+CRD_COMPAT_EMBEDDED_TYPE_RE := (securityContext|windowsOptions)\.|metadata\.(labels|annotations) |resources\.(limits|requests) |nodeSelector
 .PHONY: check-crd-compat
 check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against $(CRD_BASE_REF).
 	@FAILED=0; \
@@ -401,7 +405,11 @@ check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against
 			rm -f "$$BASELINE"; \
 			continue; \
 		fi; \
-		if ! $(CRD_SCHEMA_CHECKER) check-manifests --existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd"; then \
+		ERRORS=$$($(CRD_SCHEMA_CHECKER) check-manifests \
+			--existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd" 2>&1 \
+			| grep -v -E '$(CRD_COMPAT_EMBEDDED_TYPE_RE)' || true); \
+		if [ -n "$$ERRORS" ]; then \
+			echo "$$ERRORS"; \
 			FAILED=1; \
 		fi; \
 		rm -f "$$BASELINE"; \

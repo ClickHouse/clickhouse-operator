@@ -348,7 +348,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		Annotations:       r.Cluster.Spec.Annotations,
 		PodTemplate:       r.Cluster.Spec.PodTemplate,
 		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
-		VersionProbe:      r.Cluster.Spec.VersionProbe,
+		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("run version probe: %w", err)

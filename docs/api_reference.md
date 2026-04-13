@@ -57,7 +57,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
-| `versionProbe` | [VersionProbeOverride](#versionprobeoverride) | VersionProbe overrides for the version detection Job. | false |  |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -231,7 +231,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
-| `versionProbe` | [VersionProbeOverride](#versionprobeoverride) | VersionProbe overrides for the version detection Job. | false |  |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)
@@ -361,17 +361,86 @@ Appears in:
 - [DefaultPasswordSelector](#defaultpasswordselector)
 
 
-## VersionProbeOverride
+## TemplateMeta
 
-VersionProbeOverride defines overrides for the version detection Job.
-Fields apply to the version probe Pod template unless noted otherwise.
+TemplateMeta defines supported metadata settings for template objects.
 
 | Field | Type | Description | Required | Default |
 |-------|------|-------------|----------|---------|
-| `podLabels` | object (keys:string, values:string) | PodLabels are additional labels applied to the version probe Pod. | false |  |
-| `podAnnotations` | object (keys:string, values:string) | PodAnnotations are additional annotations applied to the version probe Pod. | false |  |
-| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources overrides for the version probe container. | false |  |
+| `labels` | object (keys:string, values:string) | Labels are labels applied to the template objects. | false |  |
+| `annotations` | object (keys:string, values:string) | Annotations are annotations applied to the template objects. | false |  |
+
+Appears in:
+- [VersionProbePodTemplate](#versionprobepodtemplate)
+- [VersionProbeTemplate](#versionprobetemplate)
+
+
+## VersionProbeContainer
+
+VersionProbeContainer defines container-level overrides for the version probe.
+Field names and JSON tags match corev1.Container so that SMP merges by name.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `name` | string | Name of the container. If empty, the operator sets it to the version probe container name. | true | version-probe |
+| `resources` | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | Resources are the compute resource requirements for the version probe container.<br />Deep-merged with operator defaults via SMP. | false |  |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options for the version probe container.<br />Deep-merged with operator defaults via SMP. | false |  |
+
+Appears in:
+- [VersionProbePodSpec](#versionprobepodspec)
+
+
+## VersionProbeJobSpec
+
+VersionProbeJobSpec defines Job-level overrides for the version probe.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
 | `ttlSecondsAfterFinished` | integer | TTLSecondsAfterFinished limits the lifetime of a completed Job. | false |  |
+| `template` | [VersionProbePodTemplate](#versionprobepodtemplate) | Template describes the pod that will be created for the version probe Job. | false |  |
+
+Appears in:
+- [VersionProbeTemplate](#versionprobetemplate)
+
+
+## VersionProbePodSpec
+
+VersionProbePodSpec defines Pod-level overrides for the version probe.
+Field names and JSON tags match corev1.PodSpec for strategic merge patch compatibility.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `nodeSelector` | object (keys:string, values:string) | NodeSelector constrains the version probe Pod to nodes with matching labels. | false |  |
+| `tolerations` | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array | Tolerations for the version probe Pod. | false |  |
+| `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | SecurityContext holds pod-level security attributes for the version probe Pod. | false |  |
+| `containers` | [VersionProbeContainer](#versionprobecontainer) array | Containers overrides for the version probe Pod.<br />The name field is optional — the operator fills it with default container.<br />Additional container with the different name may be specified. | false |  |
+
+Appears in:
+- [VersionProbePodTemplate](#versionprobepodtemplate)
+
+
+## VersionProbePodTemplate
+
+VersionProbePodTemplate describes overrides for the version probe Pod.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `metadata` | [TemplateMeta](#templatemeta) | Refer to Kubernetes API documentation for fields of `metadata`. | false |  |
+| `spec` | [VersionProbePodSpec](#versionprobepodspec) | Specification of the desired behavior of the version probe Pod. | false |  |
+
+Appears in:
+- [VersionProbeJobSpec](#versionprobejobspec)
+
+
+## VersionProbeTemplate
+
+VersionProbeTemplate defines overrides for the version detection Job.
+The structure mirrors batchv1.JobTemplateSpec, exposing only supported fields.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `metadata` | [TemplateMeta](#templatemeta) | Refer to Kubernetes API documentation for fields of `metadata`. | false |  |
+| `spec` | [VersionProbeJobSpec](#versionprobejobspec) | Specification of the desired behavior of the version probe Job. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)

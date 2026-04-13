@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/clickhouse/clickhouse-operator
-  newTag: v0.0.3-ac65e72
+  newTag: v0.0.1

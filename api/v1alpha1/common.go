@@ -427,22 +427,90 @@ func formatPodHostname(stsName, serviceName, namespace, domain string) string {
 	return fmt.Sprintf("%s-0.%s.%s.svc.%s", stsName, serviceName, namespace, domain)
 }
 
-// VersionProbeOverride defines overrides for the version detection Job.
-// Fields apply to the version probe Pod template unless noted otherwise.
-type VersionProbeOverride struct {
-	// PodLabels are additional labels applied to the version probe Pod.
+// TemplateMeta defines supported metadata settings for template objects.
+type TemplateMeta struct {
+	// Labels are labels applied to the template objects.
 	// +optional
-	PodLabels map[string]string `json:"podLabels,omitempty"`
-
-	// PodAnnotations are additional annotations applied to the version probe Pod.
+	Labels map[string]string `json:"labels,omitempty"`
+	// Annotations are annotations applied to the template objects.
 	// +optional
-	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
 
-	// Resources overrides for the version probe container.
+// VersionProbeTemplate defines overrides for the version detection Job.
+// The structure mirrors batchv1.JobTemplateSpec, exposing only supported fields.
+type VersionProbeTemplate struct {
+	// Metadata applied to the version probe Job.
 	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Metadata TemplateMeta `json:"metadata,omitempty"`
 
+	// Specification of the desired behavior of the version probe Job.
+	// +optional
+	Spec VersionProbeJobSpec `json:"spec,omitempty"`
+}
+
+// VersionProbeJobSpec defines Job-level overrides for the version probe.
+type VersionProbeJobSpec struct {
 	// TTLSecondsAfterFinished limits the lifetime of a completed Job.
 	// +optional
 	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
+
+	// Template describes the pod that will be created for the version probe Job.
+	// +optional
+	Template VersionProbePodTemplate `json:"template,omitempty"`
+}
+
+// VersionProbePodTemplate describes overrides for the version probe Pod.
+type VersionProbePodTemplate struct {
+	// Metadata applied to version probe Pods.
+	// +optional
+	Metadata TemplateMeta `json:"metadata,omitempty"`
+
+	// Specification of the desired behavior of the version probe Pod.
+	// +optional
+	Spec VersionProbePodSpec `json:"spec,omitempty"`
+}
+
+// VersionProbePodSpec defines Pod-level overrides for the version probe.
+// Field names and JSON tags match corev1.PodSpec for strategic merge patch compatibility.
+type VersionProbePodSpec struct {
+	// NodeSelector constrains the version probe Pod to nodes with matching labels.
+	// +optional
+	// +mapType=atomic
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// Tolerations for the version probe Pod.
+	// +optional
+	// +listType=atomic
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// SecurityContext holds pod-level security attributes for the version probe Pod.
+	// +optional
+	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
+
+	// Containers overrides for the version probe Pod.
+	// The name field is optional — the operator fills it with default container.
+	// Additional container with the different name may be specified.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Containers []VersionProbeContainer `json:"containers,omitempty"`
+}
+
+// VersionProbeContainer defines container-level overrides for the version probe.
+// Field names and JSON tags match corev1.Container so that SMP merges by name.
+type VersionProbeContainer struct {
+	// Name of the container. If empty, the operator sets it to the version probe container name.
+	// +kubebuilder:default:=version-probe
+	Name string `json:"name"`
+
+	// Resources are the compute resource requirements for the version probe container.
+	// Deep-merged with operator defaults via SMP.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// SecurityContext defines the security options for the version probe container.
+	// Deep-merged with operator defaults via SMP.
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }

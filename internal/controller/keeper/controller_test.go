@@ -129,12 +129,18 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		updatedCR.Spec.VersionProbe = &v1.VersionProbeOverride{
-			PodAnnotations: map[string]string{
-				"sidecar.istio.io/inject": "false",
-			},
-			PodLabels: map[string]string{
-				"probe-label": "probe-value",
+		updatedCR.Spec.VersionProbeTemplate = &v1.VersionProbeTemplate{
+			Spec: v1.VersionProbeJobSpec{
+				Template: v1.VersionProbePodTemplate{
+					Metadata: v1.TemplateMeta{
+						Annotations: map[string]string{
+							"sidecar.istio.io/inject": "false",
+						},
+						Labels: map[string]string{
+							"probe-label": "probe-value",
+						},
+					},
+				},
 			},
 		}
 		updatedCR.Spec.PodTemplate.Tolerations = []corev1.Toleration{

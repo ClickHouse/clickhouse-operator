@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 
@@ -13,6 +14,7 @@ import (
 var (
 	podSchema       strategicpatch.LookupPatchMeta
 	containerSchema strategicpatch.LookupPatchMeta
+	jobSchema       strategicpatch.LookupPatchMeta
 )
 
 func init() {
@@ -24,6 +26,11 @@ func init() {
 	}
 
 	containerSchema, err = strategicpatch.NewPatchMetaFromStruct(corev1.Container{})
+	if err != nil {
+		panic(err)
+	}
+
+	jobSchema, err = strategicpatch.NewPatchMetaFromStruct(batchv1.Job{})
 	if err != nil {
 		panic(err)
 	}
@@ -58,24 +65,9 @@ func ApplyPodTemplateOverrides(podSpec *corev1.PodSpec, t *v1.PodTemplateSpec) (
 	patch.Volumes = nil
 	patch.Affinity = nil
 
-	baseJSON, err := json.Marshal(podSpec)
+	mergedSpec, err := patchResource(podSpec, patch, podSchema)
 	if err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("marshal pod spec: %w", err)
-	}
-
-	patchJSON, err := json.Marshal(&patch)
-	if err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("marshal pod template: %w", err)
-	}
-
-	mergedJSON, err := strategicpatch.StrategicMergePatchUsingLookupPatchMeta(baseJSON, patchJSON, podSchema)
-	if err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("strategic merge patch pod spec: %w", err)
-	}
-
-	var mergedSpec corev1.PodSpec
-	if err := json.Unmarshal(mergedJSON, &mergedSpec); err != nil {
-		return corev1.PodSpec{}, fmt.Errorf("unmarshal merged pod spec: %w", err)
+		return corev1.PodSpec{}, fmt.Errorf("patch pod spec: %w", err)
 	}
 
 	return mergedSpec, nil
@@ -158,24 +150,9 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		// ReadinessProbe is handled manually
 	}
 
-	patchJSON, err := json.Marshal(patchContainer)
+	mergedContainer, err := patchResource(container, patchContainer, containerSchema)
 	if err != nil {
-		return corev1.Container{}, fmt.Errorf("marshal container template: %w", err)
-	}
-
-	baseJSON, err := json.Marshal(container)
-	if err != nil {
-		return corev1.Container{}, fmt.Errorf("marshal container: %w", err)
-	}
-
-	mergedJSON, err := strategicpatch.StrategicMergePatchUsingLookupPatchMeta(baseJSON, patchJSON, containerSchema)
-	if err != nil {
-		return corev1.Container{}, fmt.Errorf("strategic merge patch container: %w", err)
-	}
-
-	var mergedContainer corev1.Container
-	if err := json.Unmarshal(mergedJSON, &mergedContainer); err != nil {
-		return corev1.Container{}, fmt.Errorf("unmarshal merged container: %w", err)
+		return corev1.Container{}, fmt.Errorf("patch container: %w", err)
 	}
 
 	mergedContainer.VolumeMounts = append(mergedContainer.VolumeMounts, t.VolumeMounts...)
@@ -189,4 +166,29 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 	}
 
 	return mergedContainer, nil
+}
+
+func patchResource[B any, P any](base *B, patch P, schema strategicpatch.LookupPatchMeta) (B, error) {
+	var result B
+
+	baseJSON, err := json.Marshal(base)
+	if err != nil {
+		return result, fmt.Errorf("marshal base: %w", err)
+	}
+
+	patchJSON, err := json.Marshal(patch)
+	if err != nil {
+		return result, fmt.Errorf("marshal patch: %w", err)
+	}
+
+	mergedJSON, err := strategicpatch.StrategicMergePatchUsingLookupPatchMeta(baseJSON, patchJSON, schema)
+	if err != nil {
+		return result, fmt.Errorf("strategic merge patch: %w", err)
+	}
+
+	if err := json.Unmarshal(mergedJSON, &result); err != nil {
+		return result, fmt.Errorf("unmarshal merged: %w", err)
+	}
+
+	return result, nil
 }

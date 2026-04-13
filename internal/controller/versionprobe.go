@@ -22,8 +22,6 @@ import (
 )
 
 const (
-	versionProbeContainerName = "version-probe"
-
 	DefaultProbeCPULimit      = "1"
 	DefaultProbeCPURequest    = "250m"
 	DefaultProbeMemoryLimit   = "1Gi"
@@ -43,7 +41,7 @@ type VersionProbeConfig struct {
 	// ContainerTemplate to apply to the Job, inherited from the cluster spec.
 	ContainerTemplate v1.ContainerTemplateSpec
 	// VersionProbe is the user-provided override for the version probe Job.
-	VersionProbe *v1.VersionProbeOverride
+	VersionProbe *v1.VersionProbeTemplate
 }
 
 // VersionProbeResult holds the outcome of a version probe reconciliation.
@@ -201,12 +199,9 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) cleanupVersionProbeJob
 func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1.Job, error) {
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.Cluster.GetNamespace(),
-			Labels: controllerutil.MergeMaps(cfg.Labels, map[string]string{
-				controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
-				controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
-			}),
-			Annotations: cfg.Annotations,
+			Namespace:   r.Cluster.GetNamespace(),
+			Labels:      maps.Clone(cfg.Labels),
+			Annotations: maps.Clone(cfg.Annotations),
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: new(int32(0)),
@@ -225,7 +220,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 					SchedulerName:      cfg.PodTemplate.SchedulerName,
 					Containers: []corev1.Container{
 						{
-							Name:                     versionProbeContainerName,
+							Name:                     v1.VersionProbeContainerName,
 							Image:                    cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy:          cfg.ContainerTemplate.ImagePullPolicy,
 							SecurityContext:          cfg.ContainerTemplate.SecurityContext,
@@ -251,7 +246,10 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 
 	// Apply user-provided version probe overrides.
 	if cfg.VersionProbe != nil {
-		applyVersionProbeOverrides(&job, cfg.VersionProbe)
+		var err error
+		if job, err = patchResource(&job, cfg.VersionProbe, jobSchema); err != nil {
+			return batchv1.Job{}, fmt.Errorf("patch version probe job: %w", err)
+		}
 	}
 
 	if err := ctrl.SetControllerReference(r.Cluster, &job, r.GetScheme()); err != nil {
@@ -274,6 +272,12 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 
 	job.Name = fmt.Sprintf("%s-version-probe-%s", r.Cluster.SpecificName(), imageHash[:8])
 
+	// Set reserved labels after overrides to ensure they are not modified by user overrides.
+	job.Labels = controllerutil.MergeMaps(job.Labels, map[string]string{
+		controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
+		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
+	})
+
 	specHash, err := controllerutil.DeepHashObject(job.Spec)
 	if err != nil {
 		return batchv1.Job{}, fmt.Errorf("hash version probe job spec: %w", err)
@@ -282,32 +286,6 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 	controllerutil.AddSpecHashToObject(&job, specHash)
 
 	return job, nil
-}
-
-// applyVersionProbeOverrides applies the user-provided VersionProbeOverride fields
-// directly onto the operator-generated Job.
-func applyVersionProbeOverrides(job *batchv1.Job, override *v1.VersionProbeOverride) {
-	// Pod-level metadata.
-	job.Spec.Template.Labels = controllerutil.MergeMaps(job.Spec.Template.Labels, override.PodLabels)
-	job.Spec.Template.Annotations = controllerutil.MergeMaps(job.Spec.Template.Annotations, override.PodAnnotations)
-
-	// Job-level overrides.
-	if override.TTLSecondsAfterFinished != nil {
-		job.Spec.TTLSecondsAfterFinished = override.TTLSecondsAfterFinished
-	}
-
-	// Container-level overrides.
-	if override.Resources != nil {
-		container := &job.Spec.Template.Spec.Containers[0]
-
-		if override.Resources.Requests != nil {
-			maps.Copy(container.Resources.Requests, override.Resources.Requests)
-		}
-
-		if override.Resources.Limits != nil {
-			maps.Copy(container.Resources.Limits, override.Resources.Limits)
-		}
-	}
 }
 
 func getJobCondition(job *batchv1.Job, conditionType batchv1.JobConditionType) (batchv1.JobCondition, bool) {
@@ -343,7 +321,7 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 
 	for _, pod := range podList.Items {
 		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Name == versionProbeContainerName && cs.State.Terminated != nil {
+			if cs.Name == v1.VersionProbeContainerName && cs.State.Terminated != nil {
 				version, err := controllerutil.ParseVersion(cs.State.Terminated.Message)
 				if err != nil {
 					return "", fmt.Errorf("parse version probe from job container output: %w", err)

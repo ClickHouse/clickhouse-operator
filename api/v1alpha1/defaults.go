@@ -33,4 +33,6 @@ const (
 	// DefaultClusterDomain is the default Kubernetes cluster domain suffix for DNS resolution.
 	DefaultClusterDomain = "cluster.local"
 	DefaultAccessMode    = corev1.ReadWriteOnce
+
+	VersionProbeContainerName = "version-probe"
 )
