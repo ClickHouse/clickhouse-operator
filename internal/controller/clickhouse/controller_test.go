@@ -90,9 +90,9 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Create(ctx, keeper)).To(Succeed())
 		Expect(suite.Client.Get(ctx, keeper.NamespacedName(), keeper)).To(Succeed())
 		meta.SetStatusCondition(&keeper.Status.Conditions, metav1.Condition{
-			Type:   string(v1.ConditionTypeReady),
+			Type:   v1.ConditionTypeReady,
 			Status: metav1.ConditionTrue,
-			Reason: string(v1.KeeperConditionReasonStandaloneReady),
+			Reason: v1.KeeperConditionReasonStandaloneReady,
 		})
 		Expect(suite.Client.Status().Update(ctx, keeper)).To(Succeed())
 	})

@@ -102,48 +102,42 @@ func templatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 	return pdb
 }
 
-func templateClusterSecrets(cr *v1.ClickHouseCluster, secret *corev1.Secret) bool {
+func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (corev1.Secret, bool) {
+	secret := corev1.Secret{
+		ObjectMeta: *existing.ObjectMeta.DeepCopy(),
+		Type:       corev1.SecretTypeOpaque,
+		Data:       map[string][]byte{},
+	}
+
 	secret.Name = cr.SecretName()
 	secret.Namespace = cr.Namespace
-	secret.Type = corev1.SecretTypeOpaque
-
-	changed := false
-
-	labels := controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+	secret.Labels = controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
 		controllerutil.LabelAppKey: cr.SpecificName(),
 	})
-	if !maps.Equal(labels, secret.Labels) {
-		changed = true
-		secret.Labels = labels
-	}
+	secret.Annotations = controllerutil.MergeMaps(cr.Spec.Annotations)
+	changed := !maps.Equal(secret.Labels, existing.Labels) || !maps.Equal(secret.Annotations, existing.Annotations)
 
-	annotations := controllerutil.MergeMaps(cr.Spec.Annotations)
-	if !maps.Equal(annotations, secret.Annotations) {
-		changed = true
-		secret.Annotations = annotations
-	}
-
-	if secret.Data == nil {
-		changed = true
-		secret.Data = map[string][]byte{}
+	existingData := map[string][]byte{}
+	if existing.Data != nil {
+		existingData = existing.Data
 	}
 
 	for key, template := range secretsToGenerate {
-		if _, ok := secret.Data[key]; !ok {
+		if data, ok := existingData[key]; ok {
+			secret.Data[key] = data
+		} else {
 			changed = true
 			secret.Data[key] = fmt.Appendf(nil, template, controllerutil.GeneratePassword())
 		}
 	}
 
-	for key := range secret.Data {
-		if _, ok := secretsToGenerate[key]; !ok {
+	for key := range existingData {
+		if _, ok := secret.Data[key]; !ok {
 			changed = true
-
-			delete(secret.Data, key)
 		}
 	}
 
-	return changed
+	return secret, changed
 }
 
 func getConfigurationRevision(r *clickhouseReconciler) (string, error) {

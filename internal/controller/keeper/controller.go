@@ -73,9 +73,9 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if _, err := cc.Webhook.ValidateCreate(ctx, cluster); err != nil {
 		chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-			Type:               string(v1.ConditionTypeSpecValid),
+			Type:               v1.ConditionTypeSpecValid,
 			Status:             metav1.ConditionFalse,
-			Reason:             string(v1.ConditionReasonSpecInvalid),
+			Reason:             v1.ConditionReasonSpecInvalid,
 			Message:            err.Error(),
 			ObservedGeneration: cluster.GetGeneration(),
 		})
@@ -88,19 +88,22 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-		Type:               string(v1.ConditionTypeSpecValid),
+		Type:               v1.ConditionTypeSpecValid,
 		Status:             metav1.ConditionTrue,
-		Reason:             string(v1.ConditionReasonSpecValid),
+		Reason:             v1.ConditionReasonSpecValid,
 		ObservedGeneration: cluster.GetGeneration(),
 	})
 
 	reconciler := keeperReconciler{
-		reconcilerBase: chctrl.NewReconcilerBase[
-			v1.KeeperClusterStatus,
-			*v1.KeeperCluster,
-			v1.KeeperReplicaID,
-			replicaState,
-		](cc, cluster),
+		Controller:      cc,
+		statusManager:   chctrl.NewStatusManager(cc, cluster),
+		ResourceManager: chctrl.NewResourceManager(cc, cluster),
+
+		Dialer:  cc.Dialer,
+		Checker: cc.Checker,
+
+		Cluster:      cluster,
+		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
 	}
 
 	return reconciler.sync(ctx, logger)

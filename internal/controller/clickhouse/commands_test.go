@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -228,24 +229,19 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}
 	})
 
-	Describe("EnsureDefaultDatabaseEngine", func() {
-		for i := range testReplicas {
-			It(fmt.Sprintf("converts default database from Atomic to Replicated on %d", i), func(ctx context.Context) {
-				id := v1.ClickHouseReplicaID{ShardID: 0, Index: i}
+	It("converts default database from Atomic to Replicated", func(ctx context.Context) {
+		By("running EnsureDefaultDatabaseEngine")
 
-				By("running EnsureDefaultDatabaseEngine")
+		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeTrue())
 
-				err := cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, id)
-				Expect(err).NotTo(HaveOccurred())
+		By("verifying default database is now Replicated")
 
-				By("verifying default database is now Replicated")
-
-				dbs, err := cmd.Databases(ctx, id)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(dbs).To(HaveKey("default"))
-				Expect(dbs["default"].IsReplicated).To(BeTrue())
-				Expect(dbs["default"].UUID).To(Equal(uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()))
-			})
+		for id := range cmd.cluster.ReplicaIDs() {
+			dbs, err := cmd.Databases(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(dbs).To(HaveKey("default"))
+			Expect(dbs["default"].IsReplicated).To(BeTrue())
+			Expect(dbs["default"].UUID).To(Equal(uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()))
 		}
 	})
 

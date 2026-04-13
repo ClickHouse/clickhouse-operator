@@ -184,8 +184,6 @@ type KeeperCluster struct {
 
 	Spec   KeeperClusterSpec   `json:"spec,omitempty"`
 	Status KeeperClusterStatus `json:"status,omitempty"`
-
-	specificName string `json:"-"`
 }
 
 // KeeperReplicaID represents ClickHouse Keeper replica ID. Used for naming resources and RAFT configuration.
@@ -226,22 +224,18 @@ func (v *KeeperCluster) GetStatus() *KeeperClusterStatus {
 	return &v.Status
 }
 
-// Conditions returns pointer to the conditions slice.
-func (v *KeeperCluster) Conditions() *[]metav1.Condition {
-	if v.Status.Conditions == nil {
-		v.Status.Conditions = []metav1.Condition{}
+// GetConditions returns pointer to the conditions slice.
+func (v *KeeperClusterStatus) GetConditions() *[]metav1.Condition {
+	if v.Conditions == nil {
+		v.Conditions = []metav1.Condition{}
 	}
 
-	return &v.Status.Conditions
+	return &v.Conditions
 }
 
 // SpecificName returns cluster name with resource suffix. Used to generate resource names.
 func (v *KeeperCluster) SpecificName() string {
-	if v.specificName == "" {
-		v.specificName = normalizeName(v.Name) + "-keeper"
-	}
-
-	return v.specificName
+	return normalizeName(v.Name) + "-keeper"
 }
 
 // Replicas returns requested number of replicas in the cluster.

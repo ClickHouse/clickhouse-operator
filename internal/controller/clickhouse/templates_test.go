@@ -332,19 +332,17 @@ var _ = Describe("PDB", func() {
 var _ = Describe("getStatefulSetRevision", func() {
 	It("should not depend on data disk spec", func() {
 		r := clickhouseReconciler{
-			reconcilerBase: reconcilerBase{
-				Cluster: &v1.ClickHouseCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "test",
-					},
-					Spec: v1.ClickHouseClusterSpec{
-						Replicas: new(int32(1)),
-						DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
-							AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-							Resources: corev1.VolumeResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceStorage: resource.MustParse("10Gi"),
-								},
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("10Gi"),
 							},
 						},
 					},
@@ -388,10 +386,8 @@ func FuzzClusterSpec(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		fill := testutil.NewSpecFiller(data)
 		r := &clickhouseReconciler{
-			reconcilerBase: reconcilerBase{
-				Cluster: newClickHouseCluster(fill),
-			},
-			keeper: v1.KeeperCluster{ObjectMeta: metav1.ObjectMeta{Name: "keeper"}},
+			Cluster: newClickHouseCluster(fill),
+			keeper:  v1.KeeperCluster{ObjectMeta: metav1.ObjectMeta{Name: "keeper"}},
 		}
 		id := v1.ClickHouseReplicaID{ShardID: 1, Index: 1}
 

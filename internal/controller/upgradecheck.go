@@ -1,44 +1,43 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
-	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
-// UpdateUpgradeCondition checks for available upgrades and sets the VersionUpgraded condition.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdateUpgradeCondition(
-	ctx context.Context,
-	log controllerutil.Logger,
+// GetUpgradeCondition checks for available upgrades and returns the VersionUpgraded condition to set.
+// Returns current condition and optional EventSpec that should be recorded if condition Status changed.
+func GetUpgradeCondition(
+	checker upgrade.Checker,
 	probe VersionProbeResult,
 	upgradeChannel string,
-) error {
-	if r.GetVersionChecker() == nil {
-		meta.RemoveStatusCondition(r.Cluster.Conditions(), string(v1.ConditionTypeVersionUpgraded))
-		return nil
+) (metav1.Condition, []EventSpec) {
+	newCond := func(status metav1.ConditionStatus, reason v1.ConditionReason, message string) metav1.Condition {
+		return metav1.Condition{
+			Type:    v1.ConditionTypeVersionUpgraded,
+			Status:  status,
+			Reason:  reason,
+			Message: message,
+		}
 	}
 
 	if probe.Pending {
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"))
-		return nil
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"), nil
 	}
 
 	if probe.Err != nil {
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, "Version probe failed"))
-		return nil //nolint:nilerr
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, "Version probe failed"), nil
 	}
 
-	result, err := r.GetVersionChecker().CheckUpdates(probe.Version, upgradeChannel)
+	result, err := checker.CheckUpdates(probe.Version, upgradeChannel)
 	if err != nil {
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionUnknown, v1.ConditionReasonUpgradeCheckFailed, fmt.Sprintf("Upgrade check failed: %v", err)))
-		return nil
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonUpgradeCheckFailed, fmt.Sprintf("Upgrade check failed: %v", err)), nil
 	}
 
 	var (
@@ -66,14 +65,15 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdateUpgradeCondition
 		reason = v1.ConditionReasonVersionOutdated
 		message = "Current version " + probe.Version + " is out of support"
 	default:
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""))
-		return nil
+		return newCond(metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""), nil
 	}
 
-	cond := r.NewCondition(v1.ConditionTypeVersionUpgraded, metav1.ConditionFalse, reason, message)
-	if _, err = r.UpsertConditionAndSendEvent(ctx, log, cond, corev1.EventTypeWarning, v1.EventReasonUpgradeAvailable, v1.EventActionVersionCheck, cond.Message); err != nil {
-		return fmt.Errorf("update VersionUpgraded condition: %w", err)
-	}
+	cond := newCond(metav1.ConditionFalse, reason, message)
 
-	return nil
+	return cond, []EventSpec{{
+		Type:    corev1.EventTypeWarning,
+		Reason:  v1.EventReasonUpgradeAvailable,
+		Action:  v1.EventActionVersionCheck,
+		Message: message,
+	}}
 }

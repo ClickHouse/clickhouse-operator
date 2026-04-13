@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"cmp"
 	"context"
 	"crypto/md5" //nolint:gosec
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -373,6 +375,10 @@ func DumpNamespaceEvents(ctx context.Context, cli client.Client, namespace strin
 	if err := cli.List(ctx, &events, client.InNamespace(namespace)); err != nil {
 		return "", fmt.Errorf("list events: %w", err)
 	}
+
+	slices.SortFunc(events.Items, func(a, b corev1.Event) int {
+		return cmp.Compare(a.CreationTimestamp.UnixNano(), b.CreationTimestamp.UnixNano())
+	})
 
 	var buf strings.Builder
 	for _, event := range events.Items {

@@ -106,6 +106,52 @@ func (cmd *commander) Version(ctx context.Context, id v1.ClickHouseReplicaID) (s
 	return version, nil
 }
 
+func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logger, replicas []v1.ClickHouseReplicaID) bool {
+	result := true
+
+	replicaDatabases := controllerutil.ExecuteParallel(replicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]databaseDescriptor, error) {
+		databases, err := cmd.Databases(ctx, id)
+		return id, databases, err
+	})
+
+	databases := map[string]databaseDescriptor{}
+	for id, dbs := range replicaDatabases {
+		if dbs.Err != nil {
+			log.Warn("failed to get databases from replica", "replica_id", id, "error", dbs.Err)
+
+			result = false
+			continue
+		}
+
+		databases = controllerutil.MergeMaps(databases, dbs.Result)
+	}
+
+	results := controllerutil.ExecuteParallel(replicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		if len(databases) == len(replicaDatabases[id].Result) {
+			return id, struct{}{}, nil
+		}
+
+		dbsToSync := map[string]databaseDescriptor{}
+		for name, desc := range databases {
+			if _, ok := replicaDatabases[id].Result[name]; !ok {
+				dbsToSync[name] = desc
+			}
+		}
+
+		return id, struct{}{}, cmd.CreateDatabases(ctx, log, id, dbsToSync)
+	})
+
+	for id, res := range results {
+		if res.Err != nil {
+			log.Info("failed to create databases", "replica_id", id, "error", res.Err)
+
+			result = false
+		}
+	}
+
+	return result
+}
+
 func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]databaseDescriptor, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {
@@ -169,55 +215,23 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 	return nil
 }
 
-// EnsureDefaultDatabaseEngine ensures that the default database engine is set to the Selected one.
-func (cmd *commander) EnsureDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, id v1.ClickHouseReplicaID) error {
-	log = log.With("replica_id", id)
+// EnsureDefaultDatabaseEngine ensures that the default database engine is set to the Replicated.
+func (cmd *commander) EnsureDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, replicas []v1.ClickHouseReplicaID) bool {
+	res := controllerutil.ExecuteParallel(replicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		err := cmd.ensureReplicaDefaultDatabaseEngine(ctx, log, id)
+		return id, struct{}{}, err
+	})
 
-	conn, err := cmd.getConn(id)
-	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
-	}
+	result := true
+	for id, repl := range res {
+		if repl.Err != nil {
+			log.Info("failed to recreate default database as Replicated", "replica_id", id, "error", repl.Err)
 
-	var engine string
-
-	rows := conn.QueryRow(ctx, "SELECT engine FROM system.databases WHERE name='default' ")
-	if err = rows.Scan(&engine); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("failed to scan default database engine for replica %s: %w", id, err)
-		}
-
-		log.Debug("no default database found")
-	} else {
-		if engine == "Replicated" {
-			log.Debug("default database already has the Replicated engine")
-			return nil
-		}
-
-		var count uint64
-		if err = conn.QueryRow(ctx, "SELECT COUNT() FROM system.tables WHERE database='default'").Scan(&count); err != nil {
-			log.Error(err, "error checking if database 'default' has tables")
-			return fmt.Errorf("check tables in  %s: %w", id, err)
-		}
-
-		if count > 0 {
-			log.Warn("database `default` has tables, but its engine is not Replicated, data loss is possible")
-		}
-
-		log.Debug("dropping default database")
-
-		if err := conn.Exec(ctx, "DROP DATABASE default SYNC"); err != nil {
-			return fmt.Errorf("failed to drop default database on replica %s: %w", id, err)
+			result = false
 		}
 	}
 
-	log.Debug("creating replicated default database")
-
-	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
-	if err = conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
-		return fmt.Errorf("create default replicated database %s: %w", id, err)
-	}
-
-	return nil
+	return result
 }
 
 func (cmd *commander) SyncShard(ctx context.Context, log controllerutil.Logger, shardID int32) error {
@@ -322,7 +336,7 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 func (cmd *commander) CleanupDatabaseReplicas(
 	ctx context.Context,
 	log controllerutil.Logger,
-	notInSync map[v1.ClickHouseReplicaID]struct{},
+	running map[v1.ClickHouseReplicaID]struct{},
 ) error {
 	id, conn, err := cmd.getAnyConn(ctx)
 	if err != nil {
@@ -357,8 +371,8 @@ func (cmd *commander) CleanupDatabaseReplicas(
 			continue
 		}
 
-		if _, ok := notInSync[toDrop]; ok {
-			log.Debug("skipping stale database replica cleanup that is not in sync", "database", database, "replica_id", toDrop)
+		if _, ok := running[toDrop]; ok {
+			log.Debug("skipping stale database replica cleanup that is still running", "database", database, "replica_id", toDrop)
 			continue
 		}
 
@@ -441,4 +455,53 @@ func (cmd *commander) getAnyConn(ctx context.Context) (v1.ClickHouseReplicaID, c
 	}
 
 	return v1.ClickHouseReplicaID{}, nil, errors.New("no available connections")
+}
+
+func (cmd *commander) ensureReplicaDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, id v1.ClickHouseReplicaID) error {
+	log = log.With("replica_id", id)
+
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+	}
+
+	var engine string
+
+	rows := conn.QueryRow(ctx, "SELECT engine FROM system.databases WHERE name='default' ")
+	if err = rows.Scan(&engine); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("failed to scan default database engine for replica %s: %w", id, err)
+		}
+
+		log.Debug("no default database found")
+	} else {
+		if engine == "Replicated" {
+			return nil
+		}
+
+		var count uint64
+		if err = conn.QueryRow(ctx, "SELECT COUNT() FROM system.tables WHERE database='default'").Scan(&count); err != nil {
+			log.Error(err, "error checking if database 'default' has tables")
+			return fmt.Errorf("check tables in  %s: %w", id, err)
+		}
+
+		if count > 0 {
+			log.Warn("database `default` has tables, but its engine is not Replicated, data loss is possible")
+		}
+
+		log.Debug("dropping default database")
+
+		if err := conn.Exec(ctx, "DROP DATABASE default SYNC"); err != nil {
+			return fmt.Errorf("failed to drop default database on replica %s: %w", id, err)
+		}
+	}
+
+	log.Debug("creating replicated default database")
+
+	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
+	if err = conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
+		return fmt.Errorf("create default replicated database %s: %w", id, err)
+	}
+
+	return nil
 }

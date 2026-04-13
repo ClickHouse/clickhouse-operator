@@ -52,7 +52,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 	})
 
 	It("should create replica resources", func(ctx context.Context) {
-		rec.SetReplica(1, replicaState{})
+		rec.ReplicaState[1] = replicaState{}
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
@@ -182,34 +182,31 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 	eventRecorder := events.NewFakeRecorder(32)
 	logger := util.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	reconciler := &keeperReconciler{
-		reconcilerBase: controller.NewReconcilerBase[
-			v1.KeeperClusterStatus,
-			*v1.KeeperCluster,
-			v1.KeeperReplicaID,
-			replicaState,
-		](&ClusterController{
-			Scheme:   scheme,
-			Client:   fakeClient,
-			Logger:   logger,
-			Recorder: eventRecorder,
-			Dialer: func(context.Context, string) (net.Conn, error) {
-				return nil, errors.New("disabled")
-			},
+	cluster := &v1.KeeperCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test",
 		},
-			&v1.KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test",
-				},
-				Spec: v1.KeeperClusterSpec{
-					Replicas: new(int32(1)),
-				},
-				Status: v1.KeeperClusterStatus{
-					ConfigurationRevision: "config-v1",
-					StatefulSetRevision:   "sts-v1",
-				},
-			}),
+		Spec: v1.KeeperClusterSpec{
+			Replicas: new(int32(1)),
+		},
+		Status: v1.KeeperClusterStatus{
+			ConfigurationRevision: "config-v1",
+			StatefulSetRevision:   "sts-v1",
+		},
+	}
+
+	cc := &ClusterController{Client: fakeClient, Scheme: scheme, Recorder: eventRecorder}
+
+	reconciler := &keeperReconciler{
+		Controller:      cc,
+		statusManager:   controller.NewStatusManager(cc, cluster),
+		ResourceManager: controller.NewResourceManager(cc, cluster),
+		Dialer: func(context.Context, string) (net.Conn, error) {
+			return nil, errors.New("disabled")
+		},
+		Cluster:      cluster,
+		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
 	}
 
 	eventContext, cancel := context.WithCancel(context.Background())

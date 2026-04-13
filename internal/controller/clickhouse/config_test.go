@@ -12,22 +12,20 @@ import (
 
 var _ = Describe("ConfigGenerator", func() {
 	ctx := clickhouseReconciler{
-		reconcilerBase: reconcilerBase{
-			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: "test-namespace",
-				},
-				Spec: v1.ClickHouseClusterSpec{
-					Replicas: new(int32(3)),
-					Shards:   new(int32(2)),
-					Settings: v1.ClickHouseSettings{
-						ExtraConfig: runtime.RawExtension{
-							Raw: []byte(`{"test": "value"}`),
-						},
-						ExtraUsersConfig: runtime.RawExtension{
-							Raw: []byte(`{}`),
-						},
+		Cluster: &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster",
+				Namespace: "test-namespace",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: new(int32(3)),
+				Shards:   new(int32(2)),
+				Settings: v1.ClickHouseSettings{
+					ExtraConfig: runtime.RawExtension{
+						Raw: []byte(`{"test": "value"}`),
+					},
+					ExtraUsersConfig: runtime.RawExtension{
+						Raw: []byte(`{}`),
 					},
 				},
 			},

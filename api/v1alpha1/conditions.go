@@ -1,10 +1,10 @@
 package v1alpha1
 
 // ConditionType represents the type of condition.
-type ConditionType string
+type ConditionType = string
 
 // ConditionReason represents the reason for a condition's Status.
-type ConditionReason string
+type ConditionReason = string
 
 // Common condition types and reasons for all resources.
 const (

@@ -199,7 +199,7 @@ type executionResultWithID[Id comparable, Result any] struct {
 }
 
 // ExecutionResult holds the result of task execution along with any error encountered.
-type ExecutionResult[Id comparable, Result any] struct {
+type ExecutionResult[Result any] struct {
 	Result Result
 	Err    error
 }
@@ -209,7 +209,7 @@ type ExecutionResult[Id comparable, Result any] struct {
 func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	tasks Tasks,
 	f func(Item) (Id, Result, error),
-) map[Id]ExecutionResult[Id, Result] {
+) map[Id]ExecutionResult[Result] {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -236,9 +236,9 @@ func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	wg.Wait()
 	close(results)
 
-	resultMap := make(map[Id]ExecutionResult[Id, Result], len(tasks))
+	resultMap := make(map[Id]ExecutionResult[Result], len(tasks))
 	for res := range results {
-		resultMap[res.id] = ExecutionResult[Id, Result]{
+		resultMap[res.id] = ExecutionResult[Result]{
 			Result: res.result,
 			Err:    res.err,
 		}

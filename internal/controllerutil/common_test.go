@@ -134,7 +134,7 @@ var _ = Describe("ExecuteParallel", func() {
 			func(item int) (int, int, error) {
 				return item, item * 2, nil
 			})
-		Expect(result).To(Equal(map[int]ExecutionResult[int, int]{
+		Expect(result).To(Equal(map[int]ExecutionResult[int]{
 			1: {Result: 2},
 			2: {Result: 4},
 			3: {Result: 6},
@@ -150,7 +150,7 @@ var _ = Describe("ExecuteParallel", func() {
 				}
 				return item, item * 2, nil
 			})
-		Expect(result).To(Equal(map[int]ExecutionResult[int, int]{
+		Expect(result).To(Equal(map[int]ExecutionResult[int]{
 			1: {Result: 2},
 			2: {Err: errors.New("failed")},
 			3: {Result: 6},

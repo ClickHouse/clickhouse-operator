@@ -56,30 +56,30 @@ type VersionProbeResult struct {
 
 // VersionProbe manages a one-time Job to detect the version from a container image.
 // Returns the version string when available, or empty string if the Job is pending/running.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) VersionProbe(
+func (rm *ResourceManager) VersionProbe(
 	ctx context.Context,
 	log controllerutil.Logger,
 	cfg VersionProbeConfig,
 ) (VersionProbeResult, error) {
-	job, err := r.buildVersionProbeJob(cfg)
+	job, err := rm.buildVersionProbeJob(cfg)
 	if err != nil {
 		return VersionProbeResult{}, fmt.Errorf("build version probe job: %w", err)
 	}
 
-	r.cleanupVersionProbeJobs(ctx, log, &job)
+	rm.cleanupVersionProbeJobs(ctx, log, &job)
 
-	cli := r.GetClient()
+	cli := rm.ctrl.GetClient()
 	log = log.With("job", job.Name)
 
 	var existingJob batchv1.Job
-	if err = cli.Get(ctx, types.NamespacedName{Namespace: r.Cluster.GetNamespace(), Name: job.Name}, &existingJob); err != nil {
+	if err = cli.Get(ctx, types.NamespacedName{Namespace: rm.owner.GetNamespace(), Name: job.Name}, &existingJob); err != nil {
 		if !k8serrors.IsNotFound(err) {
 			return VersionProbeResult{}, fmt.Errorf("get version probe job: %w", err)
 		}
 
 		log.Debug("creating version probe job")
 
-		if err = r.Create(ctx, &job, v1.EventActionVersionCheck); err != nil {
+		if err = rm.Create(ctx, &job, v1.EventActionVersionCheck); err != nil {
 			return VersionProbeResult{}, fmt.Errorf("create version probe job: %w", err)
 		}
 
@@ -93,7 +93,12 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) VersionProbe(
 		if controllerutil.GetSpecHashFromObject(&job) != controllerutil.GetSpecHashFromObject(&existingJob) {
 			log.Debug("spec changed, deleting failed version probe job for recreation")
 
-			if delErr := cli.Delete(ctx, &existingJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); delErr != nil && !k8serrors.IsNotFound(delErr) {
+			if delErr := rm.Delete(
+				ctx,
+				&existingJob,
+				v1.EventActionVersionCheck,
+				client.PropagationPolicy(metav1.DeletePropagationBackground),
+			); delErr != nil {
 				return VersionProbeResult{}, fmt.Errorf("delete failed version probe job: %w", delErr)
 			}
 
@@ -104,7 +109,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) VersionProbe(
 	}
 
 	if c, ok := getJobCondition(&existingJob, batchv1.JobComplete); !ok || c.Status != corev1.ConditionTrue {
-		log.Debug("version probe is not complete yet")
+		log.Debug("version probe has not completed yet")
 		return VersionProbeResult{Pending: true}, nil
 	}
 
@@ -117,29 +122,35 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) VersionProbe(
 	return VersionProbeResult{Version: version}, nil
 }
 
-// UpdateVersionSyncCondition sets the VersionInSync condition based on the probe result and replica versions.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdateVersionSyncCondition(
-	ctx context.Context,
-	log controllerutil.Logger,
+// GetVersionSyncCondition evaluates the VersionInSync condition based on the probe result and replica versions.
+// Returns current condition and optional EventSpec that should be recorded if condition Status changed.
+func GetVersionSyncCondition(
 	probe VersionProbeResult,
 	replicaVersions map[string]string,
 	isUpdating bool,
-) error {
+) (metav1.Condition, []EventSpec) {
+	newCond := func(status metav1.ConditionStatus, reason v1.ConditionReason, message string) metav1.Condition {
+		return metav1.Condition{
+			Type:    v1.ConditionTypeVersionInSync,
+			Status:  status,
+			Reason:  reason,
+			Message: message,
+		}
+	}
+
 	if probe.Err != nil {
 		message := fmt.Sprintf("Version probe failed: %v", probe.Err)
-		cond := r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, message)
 
-		_, err := r.UpsertConditionAndSendEvent(ctx, log, cond, corev1.EventTypeWarning, v1.EventReasonVersionProbeFailed, v1.EventActionVersionCheck, message)
-		if err != nil {
-			return fmt.Errorf("update VersionInSync condition: %w", err)
-		}
-
-		return nil
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, message), []EventSpec{{
+			Type:    corev1.EventTypeWarning,
+			Reason:  v1.EventReasonVersionProbeFailed,
+			Action:  v1.EventActionVersionCheck,
+			Message: message,
+		}}
 	}
 
 	if probe.Pending {
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"))
-		return nil
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"), nil
 	}
 
 	var mismatched []string
@@ -150,35 +161,32 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdateVersionSyncCondi
 	}
 
 	if len(mismatched) == 0 {
-		r.SetCondition(log, r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionTrue, v1.ConditionReasonVersionMatch, ""))
-		return nil
+		return newCond(metav1.ConditionTrue, v1.ConditionReasonVersionMatch, ""), nil
 	}
 
 	slices.Sort(mismatched)
-	cond := r.NewCondition(v1.ConditionTypeVersionInSync, metav1.ConditionFalse, v1.ConditionReasonVersionMismatch,
+	cond := newCond(metav1.ConditionFalse, v1.ConditionReasonVersionMismatch,
 		fmt.Sprintf("Replica version doesn't match version probe %s: %s", probe.Version, strings.Join(mismatched, ", ")))
 
 	if isUpdating {
-		r.SetCondition(log, cond)
-		return nil
+		return cond, nil
 	}
 
-	_, err := r.UpsertConditionAndSendEvent(ctx, log, cond, corev1.EventTypeWarning,
-		v1.EventReasonVersionDiverge, v1.EventActionVersionCheck, cond.Message)
-	if err != nil {
-		return fmt.Errorf("update VersionInSync condition: %w", err)
-	}
-
-	return nil
+	return cond, []EventSpec{{
+		Type:    corev1.EventTypeWarning,
+		Reason:  v1.EventReasonVersionDiverge,
+		Action:  v1.EventActionVersionCheck,
+		Message: cond.Message,
+	}}
 }
 
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) cleanupVersionProbeJobs(ctx context.Context, log controllerutil.Logger, job *batchv1.Job) {
-	cli := r.GetClient()
+func (rm *ResourceManager) cleanupVersionProbeJobs(ctx context.Context, log controllerutil.Logger, job *batchv1.Job) {
+	cli := rm.ctrl.GetClient()
 
 	var jobs batchv1.JobList
 
-	if err := cli.List(ctx, &jobs, client.InNamespace(r.Cluster.GetNamespace()), client.MatchingLabels(map[string]string{
-		controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
+	if err := cli.List(ctx, &jobs, client.InNamespace(rm.owner.GetNamespace()), client.MatchingLabels(map[string]string{
+		controllerutil.LabelAppKey:  rm.specificName,
 		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
 	})); err != nil {
 		log.Warn("failed to list obsolete version probe jobs", "error", err)
@@ -189,17 +197,17 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) cleanupVersionProbeJob
 		if j.Name != job.Name {
 			log.Debug("deleting obsolete version probe job", "job", j.Name)
 
-			if err := cli.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+			if err := rm.Delete(ctx, &j, v1.EventActionVersionCheck, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
 				log.Warn("failed to delete obsolete version probe job", "job", j.Name, "error", err)
 			}
 		}
 	}
 }
 
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1.Job, error) {
+func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1.Job, error) {
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:   r.Cluster.GetNamespace(),
+			Namespace:   rm.owner.GetNamespace(),
 			Labels:      maps.Clone(cfg.Labels),
 			Annotations: maps.Clone(cfg.Annotations),
 		},
@@ -252,7 +260,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 		}
 	}
 
-	if err := ctrl.SetControllerReference(r.Cluster, &job, r.GetScheme()); err != nil {
+	if err := ctrl.SetControllerReference(rm.owner, &job, rm.ctrl.GetScheme()); err != nil {
 		return batchv1.Job{}, fmt.Errorf("set version probe job controller reference: %w", err)
 	}
 
@@ -270,11 +278,11 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) buildVersionProbeJob(c
 		return batchv1.Job{}, fmt.Errorf("hash version probe job image: %w", err)
 	}
 
-	job.Name = fmt.Sprintf("%s-version-probe-%s", r.Cluster.SpecificName(), imageHash[:8])
+	job.Name = fmt.Sprintf("%s-version-probe-%s", rm.specificName, imageHash[:8])
 
 	// Set reserved labels after overrides to ensure they are not modified by user overrides.
 	job.Labels = controllerutil.MergeMaps(job.Labels, map[string]string{
-		controllerutil.LabelAppKey:  r.Cluster.SpecificName(),
+		controllerutil.LabelAppKey:  rm.specificName,
 		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
 	})
 

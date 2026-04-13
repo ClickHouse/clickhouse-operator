@@ -275,7 +275,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
-			cond := meta.FindStatusCondition(cr.Status.Conditions, string(v1.ConditionTypeReplicaStartupSucceeded))
+			cond := meta.FindStatusCondition(cr.Status.Conditions, v1.ConditionTypeReplicaStartupSucceeded)
 			g.Expect(cond).ToNot(BeNil())
 			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(cond.Reason).To(BeEquivalentTo(v1.ConditionReasonReplicaError))
@@ -320,7 +320,7 @@ func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeou
 			v1.ConditionTypeClusterSizeAligned,
 			v1.ConditionTypeConfigurationInSync,
 		} {
-			cond := meta.FindStatusCondition(cluster.Status.Conditions, string(conditionType))
+			cond := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
 			g.Expect(cond).ToNot(BeNil())
 			g.Expect(cond.Status).To(
 				Equal(metav1.ConditionTrue),

@@ -220,8 +220,6 @@ type ClickHouseCluster struct {
 
 	Spec   ClickHouseClusterSpec   `json:"spec,omitempty"`
 	Status ClickHouseClusterStatus `json:"status,omitempty"`
-
-	specificName string `json:"-"`
 }
 
 // ClickHouseReplicaID identifies a ClickHouse replica within the cluster.
@@ -291,22 +289,18 @@ func (v *ClickHouseCluster) GetStatus() *ClickHouseClusterStatus {
 	return &v.Status
 }
 
-// Conditions returns pointer to the conditions slice.
-func (v *ClickHouseCluster) Conditions() *[]metav1.Condition {
-	if v.Status.Conditions == nil {
-		v.Status.Conditions = []metav1.Condition{}
+// GetConditions returns pointer to the conditions slice.
+func (v *ClickHouseClusterStatus) GetConditions() *[]metav1.Condition {
+	if v.Conditions == nil {
+		v.Conditions = []metav1.Condition{}
 	}
 
-	return &v.Status.Conditions
+	return &v.Conditions
 }
 
 // SpecificName returns cluster name with resource suffix. Used to generate resource names that may be used in DNS.
 func (v *ClickHouseCluster) SpecificName() string {
-	if v.specificName == "" {
-		v.specificName = normalizeName(v.Name) + "-clickhouse"
-	}
-
-	return v.specificName
+	return normalizeName(v.Name) + "-clickhouse"
 }
 
 // Shards returns requested number of shards in the ClickHouseCluster.

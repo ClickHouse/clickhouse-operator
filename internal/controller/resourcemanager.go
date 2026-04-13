@@ -13,7 +13,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	ctrlruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,97 +24,47 @@ import (
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
-// ReplicaUpdateStage represents the stage of updating a ClickHouse replica. Used in reconciliation process.
-type ReplicaUpdateStage int
-
-const (
-	StageUpToDate ReplicaUpdateStage = iota
-	StageHasDiff
-	StageNotReadyUpToDate
-	StageUpdating
-	StageError
-	StageNotExists
-)
-
-var mapStatusText = map[ReplicaUpdateStage]string{
-	StageUpToDate:         "UpToDate",
-	StageHasDiff:          "HasDiff",
-	StageNotReadyUpToDate: "NotReadyUpToDate",
-	StageUpdating:         "Updating",
-	StageError:            "Error",
-	StageNotExists:        "NotExists",
+// Controller provides access to shared Kubernetes dependencies.
+type Controller interface {
+	GetClient() client.Client
+	GetScheme() *runtime.Scheme
+	GetRecorder() events.EventRecorder
 }
 
-func (s ReplicaUpdateStage) String() string {
-	return mapStatusText[s]
+// ResourceManager provides Kubernetes resource modification helpers.
+type ResourceManager struct {
+	ctrl         Controller
+	owner        client.Object
+	specificName string
 }
 
-var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
-
-// CheckPodError checks if the pod of the given StatefulSet have permanent errors preventing it from starting.
-func CheckPodError(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (bool, error) {
-	var pod corev1.Pod
-
-	podName := sts.Name + "-0"
-
-	if err := client.Get(ctx, types.NamespacedName{
-		Namespace: sts.Namespace,
-		Name:      podName,
-	}, &pod); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return false, fmt.Errorf("get clickhouse pod %q: %w", podName, err)
-		}
-
-		log.Info("pod does not exist", "pod", podName, "statefulset", sts.Name)
-
-		return false, nil
+// NewResourceManager creates a new ResourceManager instance.
+func NewResourceManager(
+	ctrl Controller,
+	owner interface {
+		client.Object
+		SpecificName() string
+	},
+) ResourceManager {
+	return ResourceManager{
+		ctrl:         ctrl,
+		owner:        owner,
+		specificName: owner.SpecificName(),
 	}
-
-	isError := false
-	for _, status := range pod.Status.ContainerStatuses {
-		if status.State.Waiting != nil && slices.Contains(podErrorStatuses, status.State.Waiting.Reason) {
-			log.Info("pod in error state", "pod", podName, "reason", status.State.Waiting.Reason)
-
-			isError = true
-			break
-		}
-	}
-
-	return isError, nil
 }
 
-func diffFilter(specFields []string) gcmp.Option {
-	return gcmp.FilterPath(func(path gcmp.Path) bool {
-		inMeta := false
-		for _, s := range path {
-			if f, ok := s.(gcmp.StructField); ok {
-				switch {
-				case inMeta:
-					return !slices.Contains([]string{"Labels", "Annotations"}, f.Name())
-				case f.Name() == "ObjectMeta":
-					inMeta = true
-				default:
-					return !slices.Contains(specFields, f.Name())
-				}
-			}
-		}
-
-		return false
-	}, gcmp.Ignore())
-}
-
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
+// ReconcileResource reconciles a Kubernetes resource by comparing spec hashes.
+func (rm *ResourceManager) ReconcileResource(
 	ctx context.Context,
 	log util.Logger,
 	resource client.Object,
 	specFields []string,
 	action v1.EventAction,
 ) (bool, error) {
-	cli := r.GetClient()
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 	log = log.With(kind, resource.GetName())
 
-	if err := ctrlruntime.SetControllerReference(r.Cluster, resource, r.GetScheme()); err != nil {
+	if err := ctrlruntime.SetControllerReference(rm.owner, resource, rm.ctrl.GetScheme()); err != nil {
 		return false, fmt.Errorf("set %s/%s Ctrl reference: %w", kind, resource.GetName(), err)
 	}
 
@@ -129,7 +81,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 
 	foundResource := resource.DeepCopyObject().(client.Object) //nolint:forcetypeassert // safe cast
 
-	err = cli.Get(ctx, types.NamespacedName{
+	err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{
 		Namespace: resource.GetNamespace(),
 		Name:      resource.GetName(),
 	}, foundResource)
@@ -140,7 +92,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 
 		log.Info("resource not found, creating")
 
-		return true, r.Create(ctx, resource, action)
+		return true, rm.Create(ctx, resource, action)
 	}
 
 	if util.GetSpecHashFromObject(foundResource) == resourceHash {
@@ -162,47 +114,46 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) reconcileResource(
 		field.Set(reflect.ValueOf(resource).Elem().FieldByName(fieldName))
 	}
 
-	return true, r.Update(ctx, foundResource, action)
+	return true, rm.Update(ctx, foundResource, action)
 }
 
 // ReconcileService reconciles a Kubernetes Service resource.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileService(
+func (rm *ResourceManager) ReconcileService(
 	ctx context.Context,
 	log util.Logger,
 	service *corev1.Service,
 	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, service, []string{"Spec"}, action)
+	return rm.ReconcileResource(ctx, log, service, []string{"Spec"}, action)
 }
 
 // ReconcilePodDisruptionBudget reconciles a Kubernetes PodDisruptionBudget resource.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcilePodDisruptionBudget(
+func (rm *ResourceManager) ReconcilePodDisruptionBudget(
 	ctx context.Context,
 	log util.Logger,
 	pdb *policyv1.PodDisruptionBudget,
 	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, pdb, []string{"Spec"}, action)
+	return rm.ReconcileResource(ctx, log, pdb, []string{"Spec"}, action)
 }
 
 // ReconcileConfigMap reconciles a Kubernetes ConfigMap resource.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileConfigMap(
+func (rm *ResourceManager) ReconcileConfigMap(
 	ctx context.Context,
 	log util.Logger,
 	configMap *corev1.ConfigMap,
 	action v1.EventAction,
 ) (bool, error) {
-	return r.reconcileResource(ctx, log, configMap, []string{"Data", "BinaryData"}, action)
+	return rm.ReconcileResource(ctx, log, configMap, []string{"Data", "BinaryData"}, action)
 }
 
 // Create creates the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Context, resource client.Object, action v1.EventAction) error {
-	recorder := r.GetRecorder()
+func (rm *ResourceManager) Create(ctx context.Context, resource client.Object, action v1.EventAction) error {
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
-	if err := r.GetClient().Create(ctx, resource); err != nil {
+	if err := rm.ctrl.GetClient().Create(ctx, resource); err != nil {
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedCreate, action,
+			rm.ctrl.GetRecorder().Eventf(rm.owner, resource, corev1.EventTypeWarning, v1.EventReasonFailedCreate, action,
 				"Create %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -213,16 +164,14 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Create(ctx context.Con
 }
 
 // Update updates the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Context, resource client.Object, action v1.EventAction) error {
-	cli := r.GetClient()
-	recorder := r.GetRecorder()
+func (rm *ResourceManager) Update(ctx context.Context, resource client.Object, action v1.EventAction) error {
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 	fetched := resource.DeepCopyObject().(client.Object) //nolint:forcetypeassert
 	first := true
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if !first {
-			if err := cli.Get(ctx, client.ObjectKeyFromObject(fetched), fetched); err != nil {
+			if err := rm.ctrl.GetClient().Get(ctx, client.ObjectKeyFromObject(fetched), fetched); err != nil {
 				return fmt.Errorf("get %s/%s: %w", kind, resource.GetName(), err)
 			}
 
@@ -231,11 +180,11 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Con
 
 		first = false
 
-		return cli.Update(ctx, resource)
+		return rm.ctrl.GetClient().Update(ctx, resource)
 	})
 	if err != nil {
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
+			rm.ctrl.GetRecorder().Eventf(rm.owner, resource, corev1.EventTypeWarning, v1.EventReasonFailedUpdate, action,
 				"Update %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -246,17 +195,16 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Update(ctx context.Con
 }
 
 // Delete deletes the given Kubernetes resource and emits events on failure.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Context, resource client.Object, action v1.EventAction) error {
-	recorder := r.GetRecorder()
+func (rm *ResourceManager) Delete(ctx context.Context, resource client.Object, action v1.EventAction, opts ...client.DeleteOption) error {
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
 
-	if err := r.GetClient().Delete(ctx, resource); err != nil {
+	if err := rm.ctrl.GetClient().Delete(ctx, resource, opts...); err != nil {
 		if k8serrors.IsNotFound(err) {
 			return nil
 		}
 
 		if util.ShouldEmitEvent(err) {
-			recorder.Eventf(r.Cluster, resource, corev1.EventTypeWarning, v1.EventReasonFailedDelete, action,
+			rm.ctrl.GetRecorder().Eventf(rm.owner, resource, corev1.EventTypeWarning, v1.EventReasonFailedDelete, action,
 				"Delete %s %s failed: %s", kind, resource.GetName(), err.Error())
 		}
 
@@ -267,7 +215,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) Delete(ctx context.Con
 }
 
 // GetPVCByStatefulSet returns the PersistentVolumeClaim created by given StatefulSet.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) GetPVCByStatefulSet(
+func (rm *ResourceManager) GetPVCByStatefulSet(
 	ctx context.Context,
 	log util.Logger,
 	sts *appsv1.StatefulSet,
@@ -276,10 +224,8 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) GetPVCByStatefulSet(
 		return nil, fmt.Errorf("StatefulSet %s does not have volume claim templates", sts.Name)
 	}
 
-	cli := r.GetClient()
-
 	var pvc corev1.PersistentVolumeClaim
-	if err := cli.Get(ctx, types.NamespacedName{
+	if err := rm.ctrl.GetClient().Get(ctx, types.NamespacedName{
 		Namespace: sts.Namespace,
 		Name:      fmt.Sprintf("%s-%s-0", sts.Spec.VolumeClaimTemplates[0].Name, sts.Name),
 	}, &pvc); err != nil {
@@ -311,7 +257,7 @@ type ReplicaUpdateInput struct {
 }
 
 // UpdatePVC updates the PersistentVolumeClaim for the given replica ID if it exists and differs from the provided spec.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(ctx context.Context, log util.Logger, input ReplicaUpdateInput) error {
+func (rm *ResourceManager) UpdatePVC(ctx context.Context, log util.Logger, input ReplicaUpdateInput) error {
 	if input.DesiredPVCSpec == nil {
 		return nil
 	}
@@ -342,7 +288,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(ctx context.
 
 	util.AddSpecHashToObject(pvc, input.PVCRevision)
 
-	if err := r.Update(ctx, pvc, v1.EventActionReconciling); err != nil {
+	if err := rm.Update(ctx, pvc, v1.EventActionReconciling); err != nil {
 		return fmt.Errorf("update PVC: %w", err)
 	}
 
@@ -351,19 +297,19 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) UpdatePVC(ctx context.
 
 // ReconcileReplicaResources reconciles a replica's ConfigMap, StatefulSet and PVC.
 // Handling Pod restarts on config changes.
-func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResources(
+func (rm *ResourceManager) ReconcileReplicaResources(
 	ctx context.Context,
 	log util.Logger,
 	input ReplicaUpdateInput,
 ) (*ctrlruntime.Result, error) {
-	configChanged, err := r.ReconcileConfigMap(ctx, log, input.DesiredConfigMap, v1.EventActionReconciling)
+	configChanged, err := rm.ReconcileConfigMap(ctx, log, input.DesiredConfigMap, v1.EventActionReconciling)
 	if err != nil {
 		return nil, fmt.Errorf("update replica ConfigMap: %w", err)
 	}
 
 	statefulSet := input.DesiredSTS
 
-	if err = ctrlruntime.SetControllerReference(r.Cluster, statefulSet, r.GetScheme()); err != nil {
+	if err = ctrlruntime.SetControllerReference(rm.owner, statefulSet, rm.ctrl.GetScheme()); err != nil {
 		return nil, fmt.Errorf("set replica StatefulSet controller reference: %w", err)
 	}
 
@@ -376,7 +322,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 			util.AddSpecHashToObject(&statefulSet.Spec.VolumeClaimTemplates[0], input.PVCRevision)
 		}
 
-		if err := r.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
+		if err := rm.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("create replica: %w", err)
 		}
 
@@ -385,7 +331,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 
 	// PVC update failures are non-fatal: the next reconciliation will detect the mismatch
 	// via HasDiff and retry. This avoids blocking the STS update on transient PVC conflicts.
-	if err = r.UpdatePVC(ctx, log, input); err != nil {
+	if err = rm.UpdatePVC(ctx, log, input); err != nil {
 		log.Warn("failed to update replica PVC", "error", err)
 	}
 
@@ -399,7 +345,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 			"expected_version", input.BreakingSTSVersion.String(),
 		)
 
-		if err := r.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
+		if err := rm.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
 			return nil, fmt.Errorf("recreate replica: %w", err)
 		}
 
@@ -437,7 +383,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 			podName := input.ExistingSTS.Name + "-0"
 			pod := &corev1.Pod{}
 
-			err = r.GetClient().Get(ctx, types.NamespacedName{Namespace: input.ExistingSTS.Namespace, Name: podName}, pod)
+			err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{Namespace: input.ExistingSTS.Namespace, Name: podName}, pod)
 			if err != nil {
 				if k8serrors.IsNotFound(err) {
 					return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
@@ -451,7 +397,7 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.ExistingSTS.Status.UpdateRevision {
 				log.Info("deleting pod stuck in error state", "pod", podName)
 
-				if err = r.GetClient().Delete(ctx, pod); err != nil {
+				if err = rm.ctrl.GetClient().Delete(ctx, pod); err != nil {
 					log.Warn("failed to delete stuck pod", "pod", podName, "error", err)
 				}
 
@@ -471,9 +417,29 @@ func (r *ResourceReconcilerBase[Status, T, ReplicaID, S]) ReconcileReplicaResour
 	util.AddSpecHashToObject(updatedSTS, input.StatefulSetRevision)
 	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS, updatedSTS))
 
-	if err = r.Update(ctx, updatedSTS, v1.EventActionReconciling); err != nil {
+	if err = rm.Update(ctx, updatedSTS, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("update replica: %w", err)
 	}
 
 	return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+}
+
+func diffFilter(specFields []string) gcmp.Option {
+	return gcmp.FilterPath(func(path gcmp.Path) bool {
+		inMeta := false
+		for _, s := range path {
+			if f, ok := s.(gcmp.StructField); ok {
+				switch {
+				case inMeta:
+					return !slices.Contains([]string{"Labels", "Annotations"}, f.Name())
+				case f.Name() == "ObjectMeta":
+					inMeta = true
+				default:
+					return !slices.Contains(specFields, f.Name())
+				}
+			}
+		}
+
+		return false
+	}, gcmp.Ignore())
 }
