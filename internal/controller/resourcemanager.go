@@ -242,16 +242,15 @@ func (rm *ResourceManager) GetPVCByStatefulSet(
 
 // ReplicaUpdateInput contains the parameters needed to reconcile a StatefulSet for a replica.
 type ReplicaUpdateInput struct {
-	ConfigurationRevision string
-	DesiredConfigMap      *corev1.ConfigMap
+	Revisions RevisionState
 
-	StatefulSetRevision string
-	ExistingSTS         *appsv1.StatefulSet
-	DesiredSTS          *appsv1.StatefulSet
-	HasError            bool
-	BreakingSTSVersion  semver.Version
+	DesiredConfigMap *corev1.ConfigMap
 
-	PVCRevision    string
+	ExistingSTS        *appsv1.StatefulSet
+	DesiredSTS         *appsv1.StatefulSet
+	HasError           bool
+	BreakingSTSVersion semver.Version
+
 	ExistingPVC    *corev1.PersistentVolumeClaim
 	DesiredPVCSpec *corev1.PersistentVolumeClaimSpec
 }
@@ -269,7 +268,7 @@ func (rm *ResourceManager) UpdatePVC(ctx context.Context, log util.Logger, input
 
 	log = log.With("pvc", input.ExistingPVC.Name)
 
-	if util.GetSpecHashFromObject(input.ExistingPVC) == input.PVCRevision {
+	if util.GetSpecHashFromObject(input.ExistingPVC) == input.Revisions.PVCRevision {
 		log.Debug("PVC is up to date")
 		return nil
 	}
@@ -286,7 +285,7 @@ func (rm *ResourceManager) UpdatePVC(ctx context.Context, log util.Logger, input
 		Spec:       *targetSpec,
 	}
 
-	util.AddSpecHashToObject(pvc, input.PVCRevision)
+	util.AddSpecHashToObject(pvc, input.Revisions.PVCRevision)
 
 	if err := rm.Update(ctx, pvc, v1.EventActionReconciling); err != nil {
 		return fmt.Errorf("update PVC: %w", err)
@@ -315,11 +314,11 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 
 	if input.ExistingSTS == nil {
 		log.Info("replica StatefulSet not found, creating", "statefulset", statefulSet.Name)
-		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
-		util.AddSpecHashToObject(statefulSet, input.StatefulSetRevision)
+		util.AddObjectConfigHash(statefulSet, input.Revisions.ConfigurationRevision)
+		util.AddSpecHashToObject(statefulSet, input.Revisions.StatefulSetRevision)
 
 		if input.DesiredPVCSpec != nil {
-			util.AddSpecHashToObject(&statefulSet.Spec.VolumeClaimTemplates[0], input.PVCRevision)
+			util.AddSpecHashToObject(&statefulSet.Spec.VolumeClaimTemplates[0], input.Revisions.PVCRevision)
 		}
 
 		if err := rm.Create(ctx, statefulSet, v1.EventActionReconciling); err != nil {
@@ -352,11 +351,11 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
-	stsNeedsUpdate := util.GetSpecHashFromObject(input.ExistingSTS) != input.StatefulSetRevision
+	stsNeedsUpdate := util.GetSpecHashFromObject(input.ExistingSTS) != input.Revisions.StatefulSetRevision
 
 	// Trigger Pod restart if config changed
 	// Always restarts on config changes, need to add check if it is needed.
-	if util.GetConfigHashFromObject(input.ExistingSTS) != input.ConfigurationRevision {
+	if util.GetConfigHashFromObject(input.ExistingSTS) != input.Revisions.ConfigurationRevision {
 		// Use same way as Kubernetes for force restarting Pods one by one
 		// (https://github.com/kubernetes/kubernetes/blob/22a21f974f5c0798a611987405135ab7e62502da/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/objectrestarter.go#L41)
 		// Not included by default in the StatefulSet so that hash-diffs work correctly
@@ -364,7 +363,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 
 		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
 
-		util.AddObjectConfigHash(statefulSet, input.ConfigurationRevision)
+		util.AddObjectConfigHash(statefulSet, input.Revisions.ConfigurationRevision)
 
 		stsNeedsUpdate = true
 	} else if restartedAt, ok := input.ExistingSTS.Spec.Template.Annotations[util.AnnotationRestartedAt]; ok {
@@ -414,7 +413,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 	updatedSTS.Spec = statefulSet.Spec
 	updatedSTS.Annotations = util.MergeMaps(updatedSTS.Annotations, statefulSet.Annotations)
 	updatedSTS.Labels = util.MergeMaps(updatedSTS.Labels, statefulSet.Labels)
-	util.AddSpecHashToObject(updatedSTS, input.StatefulSetRevision)
+	util.AddSpecHashToObject(updatedSTS, input.Revisions.StatefulSetRevision)
 	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS, updatedSTS))
 
 	if err = rm.Update(ctx, updatedSTS, v1.EventActionReconciling); err != nil {

@@ -7,7 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
-	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,33 +57,11 @@ func (r replicaState) Ready() bool {
 	return r.Pinged && r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
 }
 
-func (r replicaState) HasDiff(rec *clickhouseReconciler) bool {
-	if r.StatefulSet == nil {
-		return true
-	}
-
-	if ctrlutil.GetSpecHashFromObject(r.StatefulSet) != rec.Cluster.Status.StatefulSetRevision {
-		return true
-	}
-
-	if ctrlutil.GetConfigHashFromObject(r.StatefulSet) != rec.Cluster.Status.ConfigurationRevision {
-		return true
-	}
-
-	if rec.Cluster.Spec.DataVolumeClaimSpec != nil {
-		if r.PVC == nil {
-			return true
-		}
-
-		if ctrlutil.GetSpecHashFromObject(r.PVC) != rec.pvcRevision {
-			return true
-		}
-	}
-
-	return false
+func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
+	return rev.ReplicaHasDiff(r.StatefulSet, r.PVC)
 }
 
-func (r replicaState) UpdateStage(rec *clickhouseReconciler) chctrl.ReplicaUpdateStage {
+func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdateStage {
 	if r.StatefulSet == nil {
 		return chctrl.StageNotExists
 	}
@@ -96,7 +74,7 @@ func (r replicaState) UpdateStage(rec *clickhouseReconciler) chctrl.ReplicaUpdat
 		return chctrl.StageUpdating
 	}
 
-	if r.HasDiff(rec) {
+	if r.HasDiff(rev) {
 		return chctrl.StageHasDiff
 	}
 
@@ -128,11 +106,9 @@ type clickhouseReconciler struct {
 
 	versionProbe   chctrl.VersionProbeResult
 	readyReplicas  []v1.ClickHouseReplicaID
-	pvcRevision    string
+	revs           chctrl.RevisionState
 	unsyncedShards map[int32]bool // Populated by reconcileDatabaseSync, consumed by reconcileCleanUp.
 }
-
-type reconcileFunc func(context.Context, ctrlutil.Logger) (*ctrl.Result, error)
 
 func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter ClickHouse Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
@@ -155,57 +131,41 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		}
 	}()
 
-	reconcileSteps := []reconcileFunc{
-		r.reconcileCommonResources,
-		r.reconcileClusterRevisions,
-		r.reconcileActiveReplicaStatus,
-		r.reconcileReplicaResources,
-		r.reconcileDatabaseSync,
-		r.reconcileCleanUp,
+	steps := []chctrl.ReconcileStep{
+		{Name: "CommonResources", Fn: r.reconcileCommonResources},
+		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
+		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
+		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
+		{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
+		{Name: "CleanUp", Fn: r.reconcileCleanUp},
 	}
 
-	var result ctrl.Result
-	for _, fn := range reconcileSteps {
-		funcName := strings.TrimPrefix(ctrlutil.GetFunctionName(fn), "reconcile")
-		stepLog := log.With("reconcile_step", funcName)
-		stepLog.Debug("starting reconcile step")
-
-		stepResult, err := fn(ctx, stepLog)
-		if err != nil {
-			if k8serrors.IsConflict(err) {
-				stepLog.Error(err, "update conflict for resource, reschedule to retry")
-				// retry immediately, as just the update to the CR failed
-				return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-			}
-
-			if k8serrors.IsAlreadyExists(err) {
-				stepLog.Error(err, "create already existed resource, reschedule to retry")
-				// retry immediately, as just creating already existed resource
-				return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-			}
-
-			stepLog.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
-
-			r.SetCondition(metav1.Condition{
-				Type:    v1.ConditionTypeReconcileSucceeded,
-				Status:  metav1.ConditionFalse,
-				Reason:  v1.ConditionReasonStepFailed,
-				Message: "Reconcile returned error",
-			})
-
-			if updateErr := r.UpsertStatus(ctx, log); updateErr != nil {
-				log.Error(updateErr, "failed to update status")
-			}
-
-			return ctrl.Result{}, err
+	result, err := chctrl.RunSteps(ctx, log, steps)
+	if err != nil {
+		if k8serrors.IsConflict(err) {
+			log.Error(err, "update conflict for resource, reschedule to retry")
+			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
 		}
 
-		if !stepResult.IsZero() {
-			stepLog.Debug("reconcile step result", "result", stepResult)
-			ctrlutil.UpdateResult(&result, stepResult)
+		if k8serrors.IsAlreadyExists(err) {
+			log.Error(err, "create already existed resource, reschedule to retry")
+			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
 		}
 
-		stepLog.Debug("reconcile step completed")
+		log.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
+
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeReconcileSucceeded,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ConditionReasonStepFailed,
+			Message: "Reconcile returned error",
+		})
+
+		if updateErr := r.UpsertStatus(ctx, log); updateErr != nil {
+			log.Error(updateErr, "failed to update status")
+		}
+
+		return ctrl.Result{}, fmt.Errorf("reconcile steps: %w", err)
 	}
 
 	r.SetCondition(metav1.Condition{
@@ -223,10 +183,10 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 	return result, nil
 }
 
-func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	service := templateHeadlessService(r.Cluster)
 	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
-		return nil, fmt.Errorf("reconcile service resource: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	pdbIgnored := r.Cluster.Spec.PodDisruptionBudget.Ignored()
@@ -236,7 +196,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		for shard := range r.Cluster.Shards() {
 			pdb := templatePodDisruptionBudget(r.Cluster, shard)
 			if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
-				return nil, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
+				return chctrl.StepResult{}, fmt.Errorf("reconcile PodDisruptionBudget resource for shard %d: %w", shard, err)
 			}
 		}
 	}
@@ -245,7 +205,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		var disruptionBudgets policyv1.PodDisruptionBudgetList
 		if err := r.GetClient().List(ctx, &disruptionBudgets,
 			ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
-			return nil, fmt.Errorf("list PodDisruptionBudgets: %w", err)
+			return chctrl.StepResult{}, fmt.Errorf("list PodDisruptionBudgets: %w", err)
 		}
 
 		for _, pdb := range disruptionBudgets.Items {
@@ -259,7 +219,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 				log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
 
 				if err := r.Delete(ctx, &pdb, v1.EventActionReconciling); err != nil {
-					return nil, fmt.Errorf("remove shard %d: %w", shardID, err)
+					return chctrl.StepResult{}, fmt.Errorf("remove shard %d: %w", shardID, err)
 				}
 			}
 		}
@@ -270,7 +230,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		Name:      r.Cluster.SecretName(),
 	}, &r.secret)
 	if getErr != nil && !k8serrors.IsNotFound(getErr) {
-		return nil, fmt.Errorf("get ClickHouse cluster secret %q: %w", r.Cluster.SecretName(), getErr)
+		return chctrl.StepResult{}, fmt.Errorf("get ClickHouse cluster secret %q: %w", r.Cluster.SecretName(), getErr)
 	}
 
 	var isSecretUpdated bool
@@ -278,7 +238,7 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 	r.secret, isSecretUpdated = templateClusterSecrets(r.Cluster, r.secret)
 
 	if err := ctrl.SetControllerReference(r.Cluster, &r.secret, r.GetScheme()); err != nil {
-		return nil, fmt.Errorf("set controller reference for cluster secret %q: %w", r.Cluster.SecretName(), err)
+		return chctrl.StepResult{}, fmt.Errorf("set controller reference for cluster secret %q: %w", r.Cluster.SecretName(), err)
 	}
 
 	switch {
@@ -286,12 +246,12 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 		log.Info("cluster secret not found, creating", "secret", r.Cluster.SecretName())
 
 		if err := r.Create(ctx, &r.secret, v1.EventActionReconciling); err != nil {
-			return nil, fmt.Errorf("create cluster secret: %w", err)
+			return chctrl.StepResult{}, fmt.Errorf("create cluster secret: %w", err)
 		}
 
 	case isSecretUpdated:
 		if err := r.Update(ctx, &r.secret, v1.EventActionReconciling); err != nil {
-			return nil, fmt.Errorf("update cluster secret: %w", err)
+			return chctrl.StepResult{}, fmt.Errorf("update cluster secret: %w", err)
 		}
 	default:
 		log.Debug("cluster secret is up to date")
@@ -299,10 +259,10 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 
 	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
 
-	return nil, nil
+	return chctrl.StepContinue(), nil
 }
 
-func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	if r.Cluster.Status.ObservedGeneration != r.Cluster.Generation {
 		r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
 		log.Debug(fmt.Sprintf("observed new CR generation %d", r.Cluster.Generation))
@@ -310,7 +270,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 
 	updateRevision, err := ctrlutil.DeepHashObject(r.Cluster.Spec)
 	if err != nil {
-		return nil, fmt.Errorf("get current spec revision: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("get current spec revision: %w", err)
 	}
 
 	if updateRevision != r.Cluster.Status.UpdateRevision {
@@ -325,10 +285,10 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		if k8serrors.IsNotFound(err) {
 			log.Debug("keeper cluster not found, waiting")
 
-			return nil, fmt.Errorf("keeper cluster not found: %w", err)
+			return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
 		}
 
-		return nil, fmt.Errorf("get keeper cluster: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("get keeper cluster: %w", err)
 	}
 
 	if cond := meta.FindStatusCondition(r.keeper.Status.Conditions, v1.ConditionTypeReady); cond == nil || cond.Status != metav1.ConditionTrue {
@@ -339,30 +299,32 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		}
 	}
 
-	configRevision, err := getConfigurationRevision(r)
+	r.revs.ConfigurationRevision, err = getConfigurationRevision(r)
 	if err != nil {
-		return nil, fmt.Errorf("get configuration revision: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("get configuration revision: %w", err)
 	}
 
-	if configRevision != r.Cluster.Status.ConfigurationRevision {
-		r.Cluster.Status.ConfigurationRevision = configRevision
-		log.Debug(fmt.Sprintf("observed new configuration revision %q", configRevision))
+	if r.revs.ConfigurationRevision != r.Cluster.Status.ConfigurationRevision {
+		r.Cluster.Status.ConfigurationRevision = r.revs.ConfigurationRevision
+		log.Debug(fmt.Sprintf("observed new configuration revision %q", r.revs.ConfigurationRevision))
 	}
 
-	stsRevision, err := getStatefulSetRevision(r)
+	r.revs.StatefulSetRevision, err = getStatefulSetRevision(r)
 	if err != nil {
-		return nil, fmt.Errorf("get StatefulSet revision: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("get StatefulSet revision: %w", err)
 	}
 
-	if stsRevision != r.Cluster.Status.StatefulSetRevision {
-		r.Cluster.Status.StatefulSetRevision = stsRevision
-		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", stsRevision))
+	if r.revs.StatefulSetRevision != r.Cluster.Status.StatefulSetRevision {
+		r.Cluster.Status.StatefulSetRevision = r.revs.StatefulSetRevision
+		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", r.revs.StatefulSetRevision))
 	}
 
 	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		r.pvcRevision, err = ctrlutil.DeepHashObject(r.Cluster.Spec.DataVolumeClaimSpec)
+		r.revs.HasPVCSpec = true
+
+		r.revs.PVCRevision, err = ctrlutil.DeepHashObject(r.Cluster.Spec.DataVolumeClaimSpec)
 		if err != nil {
-			return nil, fmt.Errorf("get PVC revision: %w", err)
+			return chctrl.StepResult{}, fmt.Errorf("get PVC revision: %w", err)
 		}
 	}
 
@@ -375,7 +337,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("run version probe: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("run version probe: %w", err)
 	}
 
 	r.versionProbe = probeResult
@@ -388,15 +350,15 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
 	}
 
-	return nil, nil
+	return chctrl.StepContinue(), nil
 }
 
-func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
 
 	var statefulSets appsv1.StatefulSetList
 	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
-		return nil, fmt.Errorf("list StatefulSets: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
 	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, replicaState, error) {
@@ -463,20 +425,20 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 
 	r.evaluateReplicaConditions()
 
-	return nil, nil
+	return chctrl.StepContinue(), nil
 }
 
 // reconcileReplicaResources performs update on replicas ConfigMap and StatefulSet.
 // If there are replicas that has no created StatefulSet, creates immediately.
 // If all replicas exists performs rolling upgrade, with the following order preferences:
 // NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
-func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	highestStage := chctrl.StageUpToDate
 
 	var replicasInStatus []v1.ClickHouseReplicaID
 
 	for id := range r.Cluster.ReplicaIDs() {
-		stage := r.ReplicaState[id].UpdateStage(r)
+		stage := r.ReplicaState[id].UpdateStage(r.revs)
 		if stage == highestStage {
 			replicasInStatus = append(replicasInStatus, id)
 			continue
@@ -488,16 +450,16 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 		}
 	}
 
-	result := ctrl.Result{}
+	var requeueAfter time.Duration
 
 	switch highestStage {
 	case chctrl.StageUpToDate:
 		log.Info("all replicas are up to date")
-		return nil, nil
+		return chctrl.StepContinue(), nil
 	case chctrl.StageNotReadyUpToDate, chctrl.StageUpdating:
 		log.Info("waiting for updated replicas to become ready", "replicas", replicasInStatus, "priority", highestStage.String())
 
-		result = ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}
+		requeueAfter = chctrl.RequeueOnRefreshTimeout
 	case chctrl.StageHasDiff:
 		// Leave one replica to rolling update. replicasInStatus must not be empty.
 		// Prefer replicas with higher id.
@@ -518,16 +480,20 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 	for _, id := range replicasInStatus {
 		replicaResult, err := r.updateReplica(ctx, log, id)
 		if err != nil {
-			return nil, fmt.Errorf("update replica %s: %w", id, err)
+			return chctrl.StepResult{}, fmt.Errorf("update replica %s: %w", id, err)
 		}
 
-		ctrlutil.UpdateResult(&result, replicaResult)
+		if replicaResult != nil && replicaResult.RequeueAfter > 0 {
+			if requeueAfter == 0 || replicaResult.RequeueAfter < requeueAfter {
+				requeueAfter = replicaResult.RequeueAfter
+			}
+		}
 	}
 
-	return &result, nil
+	return chctrl.StepRequeue(requeueAfter), nil
 }
 
-func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	if !r.Cluster.Spec.Settings.EnableDatabaseSync {
 		log.Debug("database sync is disabled, skipping")
 		r.SetCondition(metav1.Condition{
@@ -537,7 +503,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Database schema sync is disabled",
 		})
 
-		return nil, nil
+		return chctrl.StepContinue(), nil
 	}
 
 	var (
@@ -610,7 +576,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Some databases are not created on all replicas",
 		})
 
-		return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
+		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
 
 	case !staleReplicasCleanedUp:
 		r.SetCondition(metav1.Condition{
@@ -620,7 +586,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Some stale replicas are not cleaned up",
 		})
 
-		return &ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
+		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
 
 	default:
 		r.SetCondition(metav1.Condition{
@@ -631,7 +597,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 		})
 	}
 
-	return nil, nil
+	return chctrl.StepContinue(), nil
 }
 
 type replicaResources struct {
@@ -639,9 +605,8 @@ type replicaResources struct {
 	sts *appsv1.StatefulSet
 }
 
-func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (*ctrl.Result, error) {
+func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	var (
-		result     *ctrl.Result
 		configMaps corev1.ConfigMapList
 
 		listOpts         = ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
@@ -649,7 +614,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 	)
 
 	if err := r.GetClient().List(ctx, &configMaps, listOpts); err != nil {
-		return nil, fmt.Errorf("list ConfigMaps: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
 
 	for _, configMap := range configMaps.Items {
@@ -674,7 +639,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 
 	var statefulSets appsv1.StatefulSetList
 	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
-		return nil, fmt.Errorf("list StatefulSets: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
 	for _, sts := range statefulSets.Items {
@@ -730,7 +695,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	return result, nil
+	return chctrl.StepContinue(), nil
 }
 
 func (r *clickhouseReconciler) evaluateReplicaConditions() {
@@ -759,7 +724,7 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 				hasReady = true
 			}
 
-			if replica.HasDiff(r) || !replica.Updated() {
+			if replica.HasDiff(r.revs) || !replica.Updated() {
 				notUpdatedIDs = append(notUpdatedIDs, id.String())
 			}
 
@@ -822,16 +787,15 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 	replica := r.ReplicaState[id]
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
-		ConfigurationRevision: r.Cluster.Status.ConfigurationRevision,
-		DesiredConfigMap:      configMap,
+		Revisions: r.revs,
 
-		StatefulSetRevision: r.Cluster.Status.StatefulSetRevision,
-		ExistingSTS:         replica.StatefulSet,
-		DesiredSTS:          statefulSet,
-		HasError:            replica.Error,
-		BreakingSTSVersion:  breakingStatefulSetVersion,
+		DesiredConfigMap: configMap,
 
-		PVCRevision:    r.pvcRevision,
+		ExistingSTS:        replica.StatefulSet,
+		DesiredSTS:         statefulSet,
+		HasError:           replica.Error,
+		BreakingSTSVersion: breakingStatefulSetVersion,
+
 		ExistingPVC:    replica.PVC,
 		DesiredPVCSpec: r.Cluster.Spec.DataVolumeClaimSpec,
 	})

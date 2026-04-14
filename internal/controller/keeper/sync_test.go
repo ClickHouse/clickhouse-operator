@@ -35,8 +35,13 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		stsKey       types.NamespacedName
 	)
 
-	BeforeAll(func() {
+	BeforeAll(func(ctx context.Context) {
 		log, rec, cancelEvents = setupReconciler()
+
+		// Populate revisions (normally done by reconcileClusterRevisions).
+		_, err := rec.reconcileClusterRevisions(ctx, log)
+		Expect(err).ToNot(HaveOccurred())
+
 		cfgKey = types.NamespacedName{
 			Namespace: rec.Cluster.Namespace,
 			Name:      rec.Cluster.ConfigMapNameByReplicaID(replicaID),
@@ -62,8 +67,8 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		Expect(configMap).ToNot(BeNil())
 		Expect(sts).ToNot(BeNil())
-		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(rec.Cluster.Status.ConfigurationRevision))
-		Expect(util.GetSpecHashFromObject(sts)).To(BeEquivalentTo(rec.Cluster.Status.StatefulSetRevision))
+		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(rec.revs.ConfigurationRevision))
+		Expect(util.GetSpecHashFromObject(sts)).To(BeEquivalentTo(rec.revs.StatefulSetRevision))
 	})
 
 	It("should do nothing if no changes", func(ctx context.Context) {
@@ -85,14 +90,14 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 	It("should update resources on spec changes", func(ctx context.Context) {
 		rec.Cluster.Spec.ContainerTemplate.Image.Repository = "custom-keeper"
 		rec.Cluster.Spec.ContainerTemplate.Image.Tag = "latest"
-		rec.Cluster.Status.StatefulSetRevision = "sts-v2"
+		rec.revs.StatefulSetRevision = "sts-v2"
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
 
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
 		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("custom-keeper:latest"))
-		Expect(sts.Annotations[util.AnnotationSpecHash]).To(Equal(rec.Cluster.Status.StatefulSetRevision))
+		Expect(sts.Annotations[util.AnnotationSpecHash]).To(Equal(rec.revs.StatefulSetRevision))
 	})
 
 	It("should restart server on config changes", func(ctx context.Context) {
@@ -106,7 +111,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 			},
 		}
 		rec.Cluster.Spec.Settings.Logger.Level = "info"
-		rec.Cluster.Status.ConfigurationRevision = "cfg-v2"
+		rec.revs.ConfigurationRevision = "cfg-v2"
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())

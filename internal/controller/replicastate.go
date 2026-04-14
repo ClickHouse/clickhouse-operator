@@ -40,6 +40,42 @@ func (s ReplicaUpdateStage) String() string {
 	return mapStatusText[s]
 }
 
+// RevisionState holds the target revision hashes for comparing replica state against desired state.
+// Constructed by the reconciler from cached revision fields and passed to replicaState methods.
+type RevisionState struct {
+	StatefulSetRevision   string
+	ConfigurationRevision string
+	PVCRevision           string
+	HasPVCSpec            bool
+}
+
+// ReplicaHasDiff checks whether a StatefulSet and optional PVC match the target revisions.
+func (rev RevisionState) ReplicaHasDiff(sts *appsv1.StatefulSet, pvc *corev1.PersistentVolumeClaim) bool {
+	if sts == nil {
+		return true
+	}
+
+	if util.GetSpecHashFromObject(sts) != rev.StatefulSetRevision {
+		return true
+	}
+
+	if util.GetConfigHashFromObject(sts) != rev.ConfigurationRevision {
+		return true
+	}
+
+	if rev.HasPVCSpec {
+		if pvc == nil {
+			return true
+		}
+
+		if util.GetSpecHashFromObject(pvc) != rev.PVCRevision {
+			return true
+		}
+	}
+
+	return false
+}
+
 var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
 
 // CheckPodError checks if the pod of the given StatefulSet have permanent errors preventing it from starting.
