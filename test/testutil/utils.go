@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -464,6 +466,37 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 			_, _ = fmt.Fprintf(GinkgoWriter, "failed to delete CA issuer: %v\n", err)
 		}
 	})
+}
+
+// PreloadImages pulls each image from the registry and loads it into the kind cluster.
+// All images are processed in parallel.
+func PreloadImages(ctx context.Context, images []string) *errgroup.Group {
+	g, ctx := errgroup.WithContext(ctx)
+
+	for _, image := range images {
+		g.Go(func() error {
+			// Remove any cached manifest-index
+			_ = exec.CommandContext(ctx, "docker", "image", "rm", image).Run()
+
+			By("pulling image:" + image)
+
+			pull := exec.CommandContext(ctx, "docker", "pull", "--platform", "linux/"+runtime.GOARCH, image)
+			if out, err := pull.CombinedOutput(); err != nil {
+				return fmt.Errorf("docker pull %s: %w\n%s", image, err, out)
+			}
+
+			By("loading image into kind: " + image)
+
+			load := exec.CommandContext(ctx, "kind", "load", "docker-image", image)
+			if out, err := load.CombinedOutput(); err != nil {
+				return fmt.Errorf("kind load %s: %w\n%s", image, err, out)
+			}
+
+			return nil
+		})
+	}
+
+	return g
 }
 
 // EnsureNamespace ensures the test namespace is created and active.

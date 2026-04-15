@@ -177,15 +177,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "Minimal supported kubernetes with LTS ClickHouse release"
+          - name: minimal-k8s-all-deploy-methods
             k8s_image: v1.28.15
             clickhouse_version: "26.3"
-          - name: "Latest kubernetes version with LTS ClickHouse release"
+            deploy_target: test-compat-e2e
+          - name: maximal-k8s-all-deploy-methods
             k8s_image: v1.35.1
             clickhouse_version: "26.3"
-          - name: "Supported ClickHouse versions"
+            deploy_target: test-compat-e2e
+          - name: supported-clickhouse-compatibility
             k8s_image: v1.30.13
             clickhouse_version: "26.3,26.2,26.1,25.8"
+            deploy_target: test-compat-e2e-manifest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -222,7 +225,7 @@ jobs:
           done
 
       - name: Run compatibility e2e tests
-        run: make test-compat-e2e
+        run: make ${{ matrix.deploy_target }}
         env:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse_version }}
 
@@ -230,7 +233,7 @@ jobs:
         uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
         with:
-          name: compat-e2e-report-${{ strategy.job-index }}
+          name: e2e-report-${{ matrix.name }}
           path: "**/report/*"
           if-no-files-found: error
           overwrite: true
@@ -241,7 +244,7 @@ jobs:
       fail-fast: false
       matrix:
         scope: [ test-keeper-e2e, test-clickhouse-e2e ]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, amd-medium]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -279,12 +282,6 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
-      - name: Download all compat test reports
-        uses: actions/download-artifact@v8
-        with:
-          pattern: compat-e2e-report-*
-
-
       - name: Download all e2e test reports
         uses: actions/download-artifact@v8
         with:

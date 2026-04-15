@@ -97,6 +97,15 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
+	By("pre-loading clickhouse images into kind")
+
+	imagePuller := testutil.PreloadImages(ctx, []string{
+		"docker.io/clickhouse/clickhouse-server:" + BaseVersion,
+		"docker.io/clickhouse/clickhouse-server:" + UpdateVersion,
+		"docker.io/clickhouse/clickhouse-keeper:" + BaseVersion,
+		"docker.io/clickhouse/clickhouse-keeper:" + UpdateVersion,
+	})
+
 	By("installing CRDs")
 	Expect(testutil.InstallCRDs(ctx)).To(Succeed())
 	DeferCleanup(func(ctx context.Context) {
@@ -139,6 +148,10 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	DeferCleanup(func() {
 		cancel()
 	})
+
+	if err = imagePuller.Wait(); err != nil {
+		GinkgoWriter.Printf("failed to pre pull images: %s", err)
+	}
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {

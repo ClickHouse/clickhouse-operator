@@ -130,7 +130,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, ns, reportDir)
 })
 
-var _ = Describe("Manifests deployment", Ordered, func() {
+var _ = Describe("Manifests deployment", Ordered, Label("manifest"), func() {
 	namespace := "clickhouse-operator-system"
 
 	BeforeAll(func(ctx context.Context) {

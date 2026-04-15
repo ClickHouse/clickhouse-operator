@@ -161,6 +161,10 @@ test-clickhouse-e2e: ## Run clickhouse e2e tests.
 test-compat-e2e: ## Run compatibility e2e tests (requires CLICKHOUSE_VERSION env var).
 	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
+.PHONY: test-compat-e2e-manifest  # Run compatibility smoke tests (manifests deployment only).
+test-compat-e2e-manifest: ## Run compatibility e2e tests using manifests deployment only (requires CLICKHOUSE_VERSION env var).
+	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=manifest --ginkgo.junit-report=report/junit-report.xml
+
 .PHONY: lint
 lint: golangci-lint codespell actionlint ## Run golangci-lint linter, codespell, and actionlint
 	$(GOLANGCI_LINT) run
