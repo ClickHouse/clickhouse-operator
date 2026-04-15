@@ -92,8 +92,9 @@ type clickhouseReconciler struct {
 	statusManager
 	chctrl.ResourceManager
 
-	Dialer  ctrlutil.DialContextFunc
-	Checker *upgrade.Checker
+	Dialer    ctrlutil.DialContextFunc
+	Checker   *upgrade.Checker
+	EnablePDB bool
 
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
@@ -133,12 +134,18 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "CommonResources", Fn: r.reconcileCommonResources},
-		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
-		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
-		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
-		{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
-		{Name: "CleanUp", Fn: r.reconcileCleanUp},
 	}
+	if r.EnablePDB {
+		steps = append(steps, chctrl.ReconcileStep{Name: "PodDisruptionBudget", Fn: r.reconcilePodDisruptionBudget})
+	}
+
+	steps = append(steps,
+		chctrl.ReconcileStep{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
+		chctrl.ReconcileStep{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
+		chctrl.ReconcileStep{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
+		chctrl.ReconcileStep{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
+		chctrl.ReconcileStep{Name: "CleanUp", Fn: r.reconcileCleanUp},
+	)
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
@@ -183,12 +190,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 	return result, nil
 }
 
-func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	service := templateHeadlessService(r.Cluster)
-	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
-	}
-
+func (r *clickhouseReconciler) reconcilePodDisruptionBudget(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	pdbIgnored := r.Cluster.Spec.PodDisruptionBudget.Ignored()
 	pdbEnabled := r.Cluster.Spec.PodDisruptionBudget.Enabled()
 
@@ -223,6 +225,15 @@ func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log
 				}
 			}
 		}
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *clickhouseReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	service := templateHeadlessService(r.Cluster)
+	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	getErr := r.GetClient().Get(ctx, types.NamespacedName{

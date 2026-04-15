@@ -28,12 +28,13 @@ import (
 type ClusterController struct {
 	client.Client
 
-	Scheme   *runtime.Scheme
-	Recorder events.EventRecorder
-	Logger   controllerutil.Logger
-	Webhook  webhookv1.KeeperClusterWebhook
-	Checker  *upgrade.Checker
-	Dialer   controllerutil.DialContextFunc
+	Scheme    *runtime.Scheme
+	Recorder  events.EventRecorder
+	Logger    controllerutil.Logger
+	Webhook   webhookv1.KeeperClusterWebhook
+	Checker   *upgrade.Checker
+	Dialer    controllerutil.DialContextFunc
+	EnablePDB bool
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -99,8 +100,9 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		statusManager:   chctrl.NewStatusManager(cc, cluster),
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
 
-		Dialer:  cc.Dialer,
-		Checker: cc.Checker,
+		Dialer:    cc.Dialer,
+		Checker:   cc.Checker,
+		EnablePDB: cc.EnablePDB,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
@@ -135,27 +137,33 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB bool) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorder("keeper-controller"),
-		Logger:   namedLogger,
-		Webhook:  webhookv1.KeeperClusterWebhook{Log: namedLogger},
-		Checker:  checker,
-		Dialer:   dialer,
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Recorder:  mgr.GetEventRecorder("keeper-controller"),
+		Logger:    namedLogger,
+		Webhook:   webhookv1.KeeperClusterWebhook{Log: namedLogger},
+		Checker:   checker,
+		Dialer:    dialer,
+		EnablePDB: enablePDB,
 	}
 
-	err := ctrl.NewControllerManagedBy(mgr).
+	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
-		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&corev1.Pod{}).
-		Owns(&batchv1.Job{}).
+		Owns(&batchv1.Job{})
+
+	if enablePDB {
+		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
+	}
+
+	err := controllerBuilder.
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(keeperController)
 	if err != nil {

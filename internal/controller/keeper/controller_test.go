@@ -73,6 +73,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 			Dialer: func(context.Context, string) (net.Conn, error) {
 				return nil, errors.New("disabled")
 			},
+			EnablePDB: true,
 		}
 	})
 

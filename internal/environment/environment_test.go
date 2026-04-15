@@ -26,33 +26,45 @@ var _ = DescribeTable("Environment variables parsing",
 	},
 	Entry("default values", nil, Environment{
 		EnableWebhooks: true,
+		EnablePDB:      true,
 		WatchNamespace: nil,
 	}),
 	Entry("explicit enabled webhook", map[string]string{
 		"ENABLE_WEBHOOKS": "true",
 	}, Environment{
 		EnableWebhooks: true,
+		EnablePDB:      true,
 	}),
 	Entry("explicit disabled webhook", map[string]string{
 		"ENABLE_WEBHOOKS": "false",
 	}, Environment{
 		EnableWebhooks: false,
+		EnablePDB:      true,
+	}),
+	Entry("explicit disabled PDB management", map[string]string{
+		"ENABLE_PDB": "false",
+	}, Environment{
+		EnableWebhooks: true,
+		EnablePDB:      false,
 	}),
 	Entry("parse single namespace", map[string]string{
 		"WATCH_NAMESPACE": "target_namespace",
 	}, Environment{
 		EnableWebhooks: true,
+		EnablePDB:      true,
 		WatchNamespace: []string{"target_namespace"},
 	}),
 	Entry("parse multiple namespace", map[string]string{
 		"WATCH_NAMESPACE": "target,namespace",
 	}, Environment{
 		EnableWebhooks: true,
+		EnablePDB:      true,
 		WatchNamespace: []string{"target", "namespace"},
 	}),
 	Entry("empty namespace behaves as not set", map[string]string{
 		"WATCH_NAMESPACE": "",
 	}, Environment{
 		EnableWebhooks: true,
+		EnablePDB:      true,
 	}),
 )

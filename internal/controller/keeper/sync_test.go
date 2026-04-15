@@ -201,7 +201,7 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 		},
 	}
 
-	cc := &ClusterController{Client: fakeClient, Scheme: scheme, Recorder: eventRecorder}
+	cc := &ClusterController{Client: fakeClient, Scheme: scheme, Recorder: eventRecorder, EnablePDB: true}
 
 	reconciler := &keeperReconciler{
 		Controller:      cc,

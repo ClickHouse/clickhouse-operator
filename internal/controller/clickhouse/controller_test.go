@@ -79,6 +79,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Dialer: func(context.Context, string) (net.Conn, error) {
 				return nil, errors.New("disabled")
 			},
+			EnablePDB: true,
 		}
 
 		keeper := &v1.KeeperCluster{

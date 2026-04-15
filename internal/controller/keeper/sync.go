@@ -88,8 +88,9 @@ type keeperReconciler struct {
 	statusManager
 	chctrl.ResourceManager
 
-	Dialer  ctrlutil.DialContextFunc
-	Checker *upgrade.Checker
+	Dialer    ctrlutil.DialContextFunc
+	Checker   *upgrade.Checker
+	EnablePDB bool
 
 	Cluster      *v1.KeeperCluster
 	ReplicaState map[v1.KeeperReplicaID]replicaState
@@ -120,9 +121,15 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
 		{Name: "QuorumMembership", Fn: r.reconcileQuorumMembership},
 		{Name: "CommonResources", Fn: r.reconcileCommonResources},
-		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
-		{Name: "CleanUp", Fn: r.reconcileCleanUp},
 	}
+	if r.EnablePDB {
+		steps = append(steps, chctrl.ReconcileStep{Name: "PodDisruptionBudget", Fn: r.reconcilePodDisruptionBudget})
+	}
+
+	steps = append(steps,
+		chctrl.ReconcileStep{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
+		chctrl.ReconcileStep{Name: "CleanUp", Fn: r.reconcileCleanUp},
+	)
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
@@ -437,12 +444,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(_ context.Context, log ctrl
 	return chctrl.StepContinue(), nil
 }
 
-func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	service := templateHeadlessService(r.Cluster)
-	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
-	}
-
+func (r *keeperReconciler) reconcilePodDisruptionBudget(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	if !r.Cluster.Spec.PodDisruptionBudget.Ignored() {
 		pdb := templatePodDisruptionBudget(r.Cluster)
 		if r.Cluster.Spec.PodDisruptionBudget.Enabled() {
@@ -454,6 +456,15 @@ func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctr
 				return chctrl.StepResult{}, fmt.Errorf("delete disabled PodDisruptionBudget resource: %w", err)
 			}
 		}
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	service := templateHeadlessService(r.Cluster)
+	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
 	}
 
 	configMap, err := templateQuorumConfig(r)

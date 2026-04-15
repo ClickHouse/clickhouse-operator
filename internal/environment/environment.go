@@ -10,6 +10,7 @@ import (
 // Environment holds all environment variables for the application.
 type Environment struct {
 	EnableWebhooks bool     `env:"ENABLE_WEBHOOKS, default=true"`
+	EnablePDB      bool     `env:"ENABLE_PDB, default=true"`
 	WatchNamespace []string `env:"WATCH_NAMESPACE"`
 }
 

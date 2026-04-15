@@ -124,8 +124,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	upgradeChecker := upgrade.NewChecker(updater)
 	podDialer = testutil.NewPortForwardDialer(config)
-	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer)).To(Succeed())
-	Expect(clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer)).To(Succeed())
+	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true)).To(Succeed())
+	Expect(clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true)).To(Succeed())
 	// +kubebuilder:scaffold:builder
 
 	mgrCtx, cancel := context.WithCancel(context.Background())

@@ -61,6 +61,7 @@ spec:
           command:
             - /manager
           {{- $env := append .Values.manager.env (dict "name" "ENABLE_WEBHOOKS" "value" (printf "%t" .Values.webhook.enable)) }}
+          {{- $env = append $env (dict "name" "ENABLE_PDB" "value" (printf "%t" .Values.pdbManagement.enable)) }}
           {{- if not (empty .Values.watchNamespaces) }}
           {{-   $env = append $env (dict "name" "WATCH_NAMESPACE" "value" (join "," .Values.watchNamespaces)) }}
           {{- end }}

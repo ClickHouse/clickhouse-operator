@@ -140,6 +140,13 @@ cert-manager:
     crds:
         enabled: true
 
+## Controls whether the operator creates and manages PodDisruptionBudgets
+## for ClickHouseCluster and KeeperCluster resources.
+## Disable means operator will not call any PDB related API.
+##
+pdbManagement:
+    enable: true
+
 ## Webhook server configuration
 ##
 webhook:
