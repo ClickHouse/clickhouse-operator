@@ -10,10 +10,9 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/go-connections/nat"
 	"github.com/go-logr/zapr"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/types/container"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/testcontainers/testcontainers-go"
@@ -129,7 +128,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 					},
 				},
 				ExposedPorts: []string{strconv.FormatInt(keeper.PortNative, 10) + "/tcp"},
-				WaitingFor:   wait.ForListeningPort(nat.Port(strconv.FormatInt(keeper.PortNative, 10) + "/tcp")),
+				WaitingFor:   wait.ForListeningPort(strconv.FormatInt(keeper.PortNative, 10) + "/tcp"),
 			},
 			Started: true,
 		})
@@ -167,7 +166,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 						},
 					},
 					ExposedPorts: []string{chPort, chHTTPPort},
-					WaitingFor:   wait.ForHTTP("/").WithPort(nat.Port(chHTTPPort)).WithStartupTimeout(2 * time.Minute),
+					WaitingFor:   wait.ForHTTP("/").WithPort(chHTTPPort).WithStartupTimeout(2 * time.Minute),
 				},
 				Started: true,
 			})
@@ -183,7 +182,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 			host, err := ctr.Host(ctx)
 			Expect(err).NotTo(HaveOccurred())
-			port, err := ctr.MappedPort(ctx, nat.Port(chPort))
+			port, err := ctr.MappedPort(ctx, chPort)
 			Expect(err).NotTo(HaveOccurred())
 
 			conn, err := clickhouse.Open(&clickhouse.Options{
