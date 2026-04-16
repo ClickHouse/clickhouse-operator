@@ -515,4 +515,83 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}, &sts)).To(Succeed())
 		Expect(sts.Annotations[controllerutil.AnnotationSpecHash]).ToNot(Equal(pvcCR.Status.StatefulSetRevision))
 	})
+
+	It("should correctly work with ExternalSecret", func(ctx context.Context) {
+		By("creating a new cluster with ExternalSecret")
+
+		secret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "eso-managed-secret",
+			},
+			Data: map[string][]byte{
+				SecretKeyInterserverPassword: []byte("interserver-pass"),
+			},
+		}
+
+		esoCR := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ext-secret",
+				Namespace: "default",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				KeeperClusterRef: &corev1.LocalObjectReference{Name: keeperName},
+				ExternalSecret: &v1.ExternalSecret{
+					Name: secret.Name,
+				},
+			},
+		}
+		Expect(suite.Client.Create(ctx, esoCR)).To(Succeed())
+
+		By("reconciling without secret")
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+
+		cond := meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(BeEquivalentTo(v1.ClickHouseConditionReasonExternalSecretNotFound))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ExternalSecretNotFound": 1,
+			"ClusterNotReady":        1,
+		})
+
+		testutil.CompleteVersionProbeJob(ctx, suite, esoCR.Namespace, esoCR.SpecificName(), "26.1.1.1")
+
+		By("creating partial secret and reconciling")
+		Expect(suite.Client.Create(ctx, &secret)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(BeEquivalentTo(v1.ClickHouseConditionReasonExternalSecretInvalid))
+		Expect(cond.Message).To(ContainSubstring("cluster-secret"))
+		Expect(cond.Message).To(ContainSubstring("keeper-identity"))
+		Expect(cond.Message).To(ContainSubstring("management-password"))
+		Expect(cond.Message).To(ContainSubstring("plaintext password"))
+		Expect(cond.Message).NotTo(ContainSubstring("interserver-password"))
+
+		By("reconciling with external secret manage policy")
+
+		esoCR.Spec.ExternalSecret.Policy = v1.ExternalSecretPolicyManage
+		Expect(suite.Client.Update(ctx, esoCR)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(BeEquivalentTo(v1.ClickHouseConditionReasonExternalSecretValid))
+
+		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(&secret), &secret)).To(Succeed())
+		Expect(secret.Data).To(HaveKey(SecretKeyManagementPassword))
+		Expect(secret.Data).To(HaveKey(SecretKeyClusterSecret))
+	})
 })

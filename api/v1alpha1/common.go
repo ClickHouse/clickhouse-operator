@@ -351,6 +351,34 @@ func (s *ClusterTLSSpec) Validate() error {
 	return nil
 }
 
+// ExternalSecretPolicy controls how the operator treats the external secret's content.
+// +kubebuilder:validation:Enum=Observe;Manage
+type ExternalSecretPolicy string
+
+const (
+	// ExternalSecretPolicyObserve is the default policy: the operator reads and validates the secret;
+	// reconciliation is blocked if any required key is absent.
+	// Missing required keys and their expected formats are reported via the ExternalSecretValid status condition at runtime.
+	ExternalSecretPolicyObserve ExternalSecretPolicy = "Observe"
+	// ExternalSecretPolicyManage is the policy where the operator fills in any missing required keys by generating
+	// values for them. The secret is updated but never owned or deleted by the operator.
+	ExternalSecretPolicyManage ExternalSecretPolicy = "Manage"
+)
+
+// ExternalSecret is a reference to a Secret in the same namespace.
+type ExternalSecret struct {
+	// Name of the Secret.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Policy controls how the operator treats the secret's content.
+	// Observe (default): blocks reconciliation if any required key is missing.
+	// Manage: generates missing required keys into the existing secret.
+	// +optional
+	// +kubebuilder:default:=Observe
+	Policy ExternalSecretPolicy `json:"policy,omitempty"`
+}
+
 // SecretKeySelector selects a key of a Secret.
 type SecretKeySelector struct {
 	// The name of the secret in the cluster's namespace to select from.

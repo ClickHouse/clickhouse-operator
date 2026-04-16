@@ -75,6 +75,13 @@ const (
 	ClickHouseConditionReplicasInSync       ConditionReason = "ReplicasInSync"
 	ClickHouseConditionDatabasesNotCreated  ConditionReason = "DatabasesNotCreated"
 	ClickHouseConditionReplicasNotCleanedUp ConditionReason = "ReplicasNotCleanedUp"
+
+	// ClickHouseConditionTypeExternalSecretValid indicates whether the externally managed Secret contains all required keys.
+	// This condition is present only when spec.externalSecret is configured; it is removed when externalSecret is unset.
+	ClickHouseConditionTypeExternalSecretValid      ConditionType   = "ExternalSecretValid"
+	ClickHouseConditionReasonExternalSecretValid    ConditionReason = "ExternalSecretValid"
+	ClickHouseConditionReasonExternalSecretNotFound ConditionReason = "ExternalSecretNotFound"
+	ClickHouseConditionReasonExternalSecretInvalid  ConditionReason = "ExternalSecretInvalid"
 )
 
 // KeeperCluster specific condition types and reasons.
@@ -87,34 +94,4 @@ const (
 	KeeperConditionReasonNoQuorum                 ConditionReason = "NoQuorum"
 	KeeperConditionReasonWaitingFollowers         ConditionReason = "WaitingFollowers"
 	KeeperConditionReasonReadyToScale             ConditionReason = "ReadyToScale"
-)
-
-var (
-	// AllClickHouseConditionTypes lists all ClickHouseCluster condition types.
-	AllClickHouseConditionTypes = []ConditionType{
-		ConditionTypeSpecValid,
-		ConditionTypeReconcileSucceeded,
-		ConditionTypeReplicaStartupSucceeded,
-		ConditionTypeHealthy,
-		ConditionTypeClusterSizeAligned,
-		ConditionTypeConfigurationInSync,
-		ConditionTypeVersionInSync,
-		ConditionTypeVersionUpgraded,
-		ConditionTypeReady,
-		ClickHouseConditionTypeSchemaInSync,
-	}
-
-	// AllKeeperConditionTypes lists all KeeperCluster condition types.
-	AllKeeperConditionTypes = []ConditionType{
-		ConditionTypeSpecValid,
-		ConditionTypeReconcileSucceeded,
-		ConditionTypeReplicaStartupSucceeded,
-		ConditionTypeHealthy,
-		ConditionTypeClusterSizeAligned,
-		ConditionTypeConfigurationInSync,
-		ConditionTypeVersionInSync,
-		ConditionTypeVersionUpgraded,
-		ConditionTypeReady,
-		KeeperConditionTypeScaleAllowed,
-	}
 )

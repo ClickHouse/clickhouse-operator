@@ -126,6 +126,10 @@ func (r *StatusManager[S, SP, C]) UpsertStatus(ctx context.Context, log util.Log
 			}
 		}
 
+		*mergedConditions = slices.DeleteFunc(*mergedConditions, func(c metav1.Condition) bool {
+			return meta.FindStatusCondition(*localStatus.GetConditions(), c.Type) == nil
+		})
+
 		preSnapshot := apiStatus.DeepCopy()
 		*apiStatus = *localStatus
 		*apiStatus.GetConditions() = *mergedConditions

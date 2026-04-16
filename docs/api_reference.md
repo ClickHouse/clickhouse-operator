@@ -58,6 +58,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
+| `externalSecret` | [ExternalSecret](#externalsecret) | ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.<br />The secret must reside in the same namespace as the cluster. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -179,6 +180,32 @@ Appears in:
 - [ClickHouseSettings](#clickhousesettings)
 
 
+
+
+## ExternalSecret
+
+ExternalSecret is a reference to a Secret in the same namespace.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `name` | string | Name of the Secret. | true |  |
+| `policy` | [ExternalSecretPolicy](#externalsecretpolicy) | Policy controls how the operator treats the secret's content.<br />Observe (default): blocks reconciliation if any required key is missing.<br />Manage: generates missing required keys into the existing secret. | false | Observe |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+
+## ExternalSecretPolicy
+
+ExternalSecretPolicy controls how the operator treats the external secret's content.
+
+| Field | Description |
+|-------|-------------|
+| `Observe` | ExternalSecretPolicyObserve is the default policy: the operator reads and validates the secret;<br />reconciliation is blocked if any required key is absent.<br />Missing required keys and their expected formats are reported via the ExternalSecretValid status condition at runtime.<br /> |
+| `Manage` | ExternalSecretPolicyManage is the policy where the operator fills in any missing required keys by generating<br />values for them. The secret is updated but never owned or deleted by the operator.<br /> |
+
+Appears in:
+- [ExternalSecret](#externalsecret)
 
 
 ## KeeperCluster

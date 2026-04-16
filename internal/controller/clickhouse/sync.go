@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -136,6 +137,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},
 		{Name: "Service", Fn: r.reconcileService, Always: true},
 		{Name: "ClusterSecret", Fn: r.reconcileClusterSecret, Always: true},
+		{Name: "ExternalSecret", Fn: r.reconcileExternalSecret, Always: true},
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
 		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
 		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
@@ -242,6 +244,10 @@ func (r *clickhouseReconciler) reconcilePodDisruptionBudget(ctx context.Context,
 }
 
 func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if r.Cluster.Spec.ExternalSecret != nil {
+		return chctrl.StepContinue(), nil
+	}
+
 	secretExists := true
 	if err := r.GetClient().Get(ctx, types.NamespacedName{
 		Namespace: r.Cluster.Namespace,
@@ -290,6 +296,112 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 	if err := r.Update(ctx, &r.secret, v1.EventActionReconciling); err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("update cluster secret: %w", err)
 	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if r.Cluster.Spec.ExternalSecret == nil {
+		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ClickHouseConditionTypeExternalSecretValid)
+
+		return chctrl.StepContinue(), nil
+	}
+
+	fail := func(reason v1.ConditionReason, eventReason v1.EventReason, message string) {
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ClickHouseConditionTypeExternalSecretValid,
+			Status:  metav1.ConditionFalse,
+			Reason:  reason,
+			Message: message,
+		}, chctrl.EventSpec{
+			Type:    "Warning",
+			Reason:  eventReason,
+			Action:  v1.EventActionReconciling,
+			Message: message,
+		})
+	}
+
+	if err := r.GetClient().Get(ctx, types.NamespacedName{
+		Namespace: r.Cluster.Namespace,
+		Name:      r.Cluster.SecretName(),
+	}, &r.secret); err != nil {
+		var msg string
+		if k8serrors.IsNotFound(err) {
+			msg = fmt.Sprintf("external secret %q not found", r.Cluster.SecretName())
+		} else {
+			msg = fmt.Sprintf("failed to get external secret %q: %v", r.Cluster.SecretName(), err)
+		}
+
+		fail(v1.ClickHouseConditionReasonExternalSecretNotFound, v1.EventReasonExternalSecretNotFound, msg)
+		log.Info(msg)
+
+		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+	}
+
+	if r.secret.Data == nil {
+		r.secret.Data = make(map[string][]byte)
+	}
+
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+
+	if !r.versionProbe.Completed() {
+		log.Info("version probe is not completed yet, skipping external secret validation")
+
+		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+	}
+
+	var missingKeys []int
+	for i, spec := range clusterSecrets {
+		if spec.enabled(r.Cluster) && len(r.secret.Data[spec.Key]) == 0 {
+			missingKeys = append(missingKeys, i)
+		}
+	}
+
+	if len(missingKeys) == 0 {
+		r.SetCondition(metav1.Condition{
+			Type:   v1.ClickHouseConditionTypeExternalSecretValid,
+			Status: metav1.ConditionTrue,
+			Reason: v1.ClickHouseConditionReasonExternalSecretValid,
+		})
+
+		return chctrl.StepContinue(), nil
+	}
+
+	if r.Cluster.Spec.ExternalSecret.Policy == v1.ExternalSecretPolicyObserve {
+		missingKeysWithHints := make([]string, 0, len(missingKeys))
+		for _, k := range missingKeys {
+			spec := clusterSecrets[k]
+			missingKeysWithHints = append(missingKeysWithHints, fmt.Sprintf("%s (%s)", spec.Key, spec.Hint))
+		}
+
+		slices.Sort(missingKeysWithHints)
+		message := fmt.Sprintf("external secret %q is missing required keys: %s",
+			r.Cluster.SecretName(), strings.Join(missingKeysWithHints, ", "))
+		fail(
+			v1.ClickHouseConditionReasonExternalSecretInvalid,
+			v1.EventReasonExternalSecretInvalid,
+			message,
+		)
+
+		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+	}
+
+	for _, k := range missingKeys {
+		spec := clusterSecrets[k]
+		r.secret.Data[spec.Key] = spec.generate()
+	}
+
+	if err := r.Update(ctx, &r.secret, v1.EventActionReconciling); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("fill external secret %q: %w", r.Cluster.SecretName(), err)
+	}
+
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+
+	r.SetCondition(metav1.Condition{
+		Type:   v1.ClickHouseConditionTypeExternalSecretValid,
+		Status: metav1.ConditionTrue,
+		Reason: v1.ClickHouseConditionReasonExternalSecretValid,
+	})
 
 	return chctrl.StepContinue(), nil
 }

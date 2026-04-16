@@ -25,6 +25,12 @@ const (
 	EventReasonClusterNotReady EventReason = "ClusterNotReady"
 )
 
+// Event reasons for external secret issues.
+const (
+	EventReasonExternalSecretInvalid  EventReason = "ExternalSecretInvalid"
+	EventReasonExternalSecretNotFound EventReason = "ExternalSecretNotFound"
+)
+
 // Event reasons for version checks.
 const (
 	EventReasonVersionDiverge     EventReason = "VersionDiverge"

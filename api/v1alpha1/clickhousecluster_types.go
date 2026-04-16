@@ -80,6 +80,11 @@ type ClickHouseClusterSpec struct {
 	// VersionProbeTemplate overrides for the version detection Job.
 	// +optional
 	VersionProbeTemplate *VersionProbeTemplate `json:"versionProbeTemplate,omitempty"`
+
+	// ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
+	// The secret must reside in the same namespace as the cluster.
+	// +optional
+	ExternalSecret *ExternalSecret `json:"externalSecret,omitempty"`
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
@@ -344,8 +349,13 @@ func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
 	return fmt.Sprintf("%s-%d", v.SpecificName(), shard)
 }
 
-// SecretName returns name of the Secret with operator generated values.
+// SecretName returns name of the Secret with cluster secret values.
+// When ExternalSecret is configured, returns the external secret name instead of the operator-generated one.
 func (v *ClickHouseCluster) SecretName() string {
+	if v.Spec.ExternalSecret != nil {
+		return v.Spec.ExternalSecret.Name
+	}
+
 	return v.SpecificName()
 }
 

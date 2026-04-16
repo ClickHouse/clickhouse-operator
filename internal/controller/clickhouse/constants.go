@@ -69,9 +69,11 @@ const (
 )
 
 type secretSpec struct {
-	Key      string
-	Env      string
-	Format   string
+	Key    string
+	Env    string
+	Format string
+	// Hint is a human-readable description of the expected value.
+	Hint     string
 	Generate func() any
 	Enabled  func(cluster *v1.ClickHouseCluster) bool
 }
@@ -96,11 +98,12 @@ var (
 	minVersionNamedCollections    = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
 	breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
 	clusterSecrets                = []secretSpec{
-		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword, Format: "%s"},
-		{Key: SecretKeyManagementPassword, Format: "%s"},
-		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity, Format: "clickhouse:%s"},
-		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret, Format: "%s"},
+		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword, Format: "%s", Hint: "plaintext password"},
+		{Key: SecretKeyManagementPassword, Format: "%s", Hint: "plaintext password"},
+		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity, Format: "clickhouse:%s", Hint: `"clickhouse:<password>"`},
+		{Key: SecretKeyClusterSecret, Env: EnvClusterSecret, Format: "%s", Hint: "plaintext password"},
 		{Key: SecretKeyNamedCollectionsKey, Env: EnvNamedCollectionsKey, Format: "%x",
+			Hint:     fmt.Sprintf("hex-encoded %d-byte AES key", NamedCollectionsKeyByteLen),
 			Generate: func() any { return controllerutil.GenerateRandomBytes(NamedCollectionsKeyByteLen) },
 			Enabled: func(cluster *v1.ClickHouseCluster) bool {
 				return upgrade.VersionAtLeast(cluster.Status.Version, minVersionNamedCollections)

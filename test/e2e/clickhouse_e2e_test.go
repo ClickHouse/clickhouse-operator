@@ -633,6 +633,86 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(chClient.QueryRow(ctx, query, &name)).To(Succeed())
 			Expect(name).To(Equal("e2e_test_named_coll"))
 		})
+
+		It("should use external secret instead of creating a managed one", func(ctx context.Context) {
+			secretName := fmt.Sprintf("ext-secret-%d", rand.Uint32()) //nolint:gosec
+
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("ext-secret-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(1)),
+					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    &corev1.LocalObjectReference{Name: keeper.Name},
+					ExternalSecret: &v1.ExternalSecret{
+						Name:   secretName,
+						Policy: v1.ExternalSecretPolicyObserve,
+					},
+				},
+			}
+
+			By("creating cluster CR referencing a not-yet-existing external secret")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+
+			By("verifying ExternalSecretValid=False while secret is absent")
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+				cond := meta.FindStatusCondition(cr.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+				g.Expect(cond).NotTo(BeNil())
+				g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+				g.Expect(cond.Reason).To(Equal(v1.ClickHouseConditionReasonExternalSecretNotFound))
+				g.Expect(cond.Message).To(ContainSubstring("not found"))
+			}).WithPolling(pollingInterval).WithTimeout(30 * time.Second).Should(Succeed())
+
+			By("verifying operator did not create a managed secret")
+
+			var secretList corev1.SecretList
+			Expect(k8sClient.List(ctx, &secretList, client.InNamespace(ns),
+				controllerutil.AppRequirements(ns, cr.SpecificName()))).To(Succeed())
+			Expect(secretList.Items).To(BeEmpty())
+
+			By("creating external secret with all required keys")
+
+			password := "e2e-test-password"
+			extSecret := corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      secretName,
+				},
+				Data: map[string][]byte{
+					chctrl.SecretKeyInterserverPassword: []byte(password),
+					chctrl.SecretKeyManagementPassword:  []byte(password),
+					chctrl.SecretKeyKeeperIdentity:      []byte("clickhouse:" + password),
+					chctrl.SecretKeyClusterSecret:       []byte(password),
+					chctrl.SecretKeyNamedCollectionsKey: []byte("0123456789abcdef0123456789abcdef"),
+				},
+			}
+			Expect(k8sClient.Create(ctx, &extSecret)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &extSecret)).To(Succeed())
+			})
+
+			By("waiting for cluster to become ready")
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			ClickHouseRWChecks(ctx, &cr, new(0))
+
+			By("verifying ExternalSecretValid=True")
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			cond := meta.FindStatusCondition(cr.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+			By("verifying operator still has not created a managed secret")
+			Expect(k8sClient.List(ctx, &secretList, client.InNamespace(ns),
+				controllerutil.AppRequirements(ns, cr.SpecificName()))).To(Succeed())
+			Expect(secretList.Items).To(BeEmpty())
+		})
 	})
 
 	Describe("is handling TLS settings correctly", Ordered, func() {

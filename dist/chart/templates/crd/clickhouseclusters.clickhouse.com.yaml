@@ -1094,6 +1094,27 @@ spec:
                       backing this claim.
                     type: string
                 type: object
+              externalSecret:
+                description: |-
+                  ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
+                  The secret must reside in the same namespace as the cluster.
+                properties:
+                  name:
+                    description: Name of the Secret.
+                    type: string
+                  policy:
+                    default: Observe
+                    description: |-
+                      Policy controls how the operator treats the secret's content.
+                      Observe (default): blocks reconciliation if any required key is missing.
+                      Manage: generates missing required keys into the existing secret.
+                    enum:
+                    - Observe
+                    - Manage
+                    type: string
+                required:
+                - name
+                type: object
               keeperClusterRef:
                 description: Reference to the KeeperCluster that is used for ClickHouse
                   coordination.
