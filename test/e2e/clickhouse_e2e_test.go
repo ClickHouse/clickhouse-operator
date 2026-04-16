@@ -21,7 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -224,9 +223,18 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Name: keeper.Name,
 					},
 					ContainerTemplate: v1.ContainerTemplateSpec{
-						Image: v1.ContainerImage{
-							Repository: "invalid",
-						},
+						Image: v1.ContainerImage{Tag: BaseVersion},
+						Env: []corev1.EnvVar{{
+							Name: "BROKEN_REF",
+							ValueFrom: &corev1.EnvVarSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "nonexistent-secret",
+									},
+									Key: "key",
+								},
+							},
+						}},
 					},
 				},
 			}
@@ -240,9 +248,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				g.Expect(cond.Reason).To(BeEquivalentTo(v1.ConditionReasonReplicaError))
 			}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(Succeed())
 
-			cr.Spec.ContainerTemplate.Image = v1.ContainerImage{
-				Tag: BaseVersion,
-			}
+			cr.Spec.ContainerTemplate.Env = nil
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
 			ClickHouseRWChecks(ctx, &cr, new(0))
@@ -570,7 +576,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Name:      fmt.Sprintf("named-colls-%d", rand.Uint32()), //nolint:gosec
 				},
 				Spec: v1.ClickHouseClusterSpec{
-					Replicas: ptr.To[int32](1),
+					Replicas: new(int32(1)),
 					ContainerTemplate: v1.ContainerTemplateSpec{
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},

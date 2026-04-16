@@ -135,9 +135,10 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (c
 		}
 	}
 
-	for key := range existingData {
+	// Preserve unknown keys from the existing secret
+	for key, value := range existingData {
 		if _, ok := secret.Data[key]; !ok {
-			changed = true
+			secret.Data[key] = value
 		}
 	}
 

@@ -8,14 +8,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/go-logr/zapr"
 	gcmp "github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -162,6 +165,65 @@ func ReconcileStatefulSets[T interface {
 
 			ExpectWithOffset(1, suite.Client.Create(ctx, &pod)).To(Succeed())
 		}
+	}
+}
+
+// CompleteVersionProbeJob finds the version probe Job for the given cluster and simulates its successful completion
+// by marking the Job as Complete and creating a Pod with the expected termination message.
+func CompleteVersionProbeJob(ctx context.Context, suite TestSuit, namespace, specificName, version string) {
+	listOpts := controllerutil.AppRequirements(namespace, specificName)
+
+	var jobs batchv1.JobList
+	ExpectWithOffset(1, suite.Client.List(ctx, &jobs, listOpts, client.MatchingLabels{
+		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
+	})).To(Succeed())
+	ExpectWithOffset(1, jobs.Items).NotTo(BeEmpty(), "expected at least one version probe job")
+
+	for _, job := range jobs.Items {
+		job.Status.StartTime = &metav1.Time{Time: time.Now()}
+		job.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}, {
+			Type:   batchv1.JobSuccessCriteriaMet,
+			Status: corev1.ConditionTrue,
+		}}
+
+		By("Completing the version probe job: " + job.Name)
+		ExpectWithOffset(1, suite.Client.Status().Update(ctx, &job)).To(Succeed())
+
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%s-%s-pod", job.Name, job.UID[:8]),
+				Namespace: namespace,
+				Labels: map[string]string{
+					batchv1.ControllerUidLabel: string(job.UID),
+					batchv1.JobNameLabel:       job.Name,
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name:  v1.VersionProbeContainerName,
+					Image: "stub",
+				}},
+			},
+		}
+
+		By("Creating version job pod: " + pod.Name)
+		ExpectWithOffset(1, suite.Client.Create(ctx, pod)).To(Succeed())
+		By("Setting version job pod status: " + pod.Name)
+		pod.Status = corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: v1.VersionProbeContainerName,
+				State: corev1.ContainerState{
+					Terminated: &corev1.ContainerStateTerminated{
+						Message: "ClickHouse server version " + version,
+					},
+				},
+			}},
+		}
+		ExpectWithOffset(1, suite.Client.Status().Update(ctx, pod)).To(Succeed())
 	}
 }
 

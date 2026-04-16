@@ -54,6 +54,11 @@ type VersionProbeResult struct {
 	Err error
 }
 
+// Completed returns true if probe completed successfully with a detected version, false otherwise.
+func (r *VersionProbeResult) Completed() bool {
+	return r.Err == nil && !r.Pending && r.Version != ""
+}
+
 // VersionProbe manages a one-time Job to detect the version from a container image.
 // Returns the version string when available, or empty string if the Job is pending/running.
 func (rm *ResourceManager) VersionProbe(
