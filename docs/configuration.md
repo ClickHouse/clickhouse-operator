@@ -342,6 +342,26 @@ spec:
   settings:
     extraConfig:
       background_pool_size: 20
+
+      # Required by the built-in ClickHouse dashboard. Not created by the operator by default.
+      metric_log:
+        database: system
+        table: metric_log
+        flush_interval_milliseconds: 7500
+        collect_interval_milliseconds: 1000
+        max_size_rows: 1048576
+        reserved_size_rows: 8192
+        buffer_size_rows_flush_threshold: 524288
+        flush_on_crash: false
+      asynchronous_metric_log:
+        database: system
+        table: asynchronous_metric_log
+        flush_interval_milliseconds: 7000
+        max_size_rows: 1048576
+        reserved_size_rows: 8192
+        buffer_size_rows_flush_threshold: 524288
+        flush_on_crash: false
+
 ```
 
 #### Useful links:
