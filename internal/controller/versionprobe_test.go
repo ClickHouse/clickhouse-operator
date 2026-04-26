@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"context"
+
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -8,8 +10,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // baseJob builds a minimal operator-generated Job for testing overrides.
@@ -259,5 +268,137 @@ var _ = Describe("patchResource with jobSchema (version probe overrides)", func(
 		Expect(merged.Spec.Template.Spec.Tolerations).To(ContainElement(corev1.Toleration{
 			Key: "dedicated", Value: "clickhouse", Effect: corev1.TaintEffectNoSchedule,
 		}))
+	})
+})
+
+// setupProbeTest creates a fake Controller, owner CR, and ResourceManager
+// for testing VersionProbe() with a fake Kubernetes client.
+func setupProbeTest() (ResourceManager, controllerutil.Logger) {
+	scheme := runtime.NewScheme()
+	Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	Expect(v1.AddToScheme(scheme)).To(Succeed())
+
+	builder := fake.NewClientBuilder().WithScheme(scheme)
+
+	fakeClient := builder.Build()
+	recorder := events.NewFakeRecorder(32)
+	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	owner := &v1.ClickHouseCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test",
+			UID:       "test-uid",
+		},
+	}
+
+	cc := &fakeController{client: fakeClient, scheme: scheme, recorder: recorder}
+
+	return NewResourceManager(cc, owner), log
+}
+
+// fakeController implements the Controller interface for unit tests.
+type fakeController struct {
+	client   client.Client
+	scheme   *runtime.Scheme
+	recorder events.EventRecorder
+}
+
+func (f *fakeController) GetClient() client.Client          { return f.client }
+func (f *fakeController) GetScheme() *runtime.Scheme        { return f.scheme }
+func (f *fakeController) GetRecorder() events.EventRecorder { return f.recorder }
+
+// probeCfg returns a VersionProbeConfig with the given image and cache values.
+func probeCfg(image, cachedVersion, cachedRevision string) VersionProbeConfig {
+	return VersionProbeConfig{
+		Binary: "clickhouse-server",
+		ContainerTemplate: v1.ContainerTemplateSpec{
+			Image: v1.ContainerImage{Repository: image, Tag: "latest"},
+		},
+		CachedVersion:  cachedVersion,
+		CachedRevision: cachedRevision,
+	}
+}
+
+var _ = Describe("VersionProbe caching", func() {
+	It("should return cached version on cache hit without creating a Job", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		By("running the first probe to get the revision")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("setting up cache fields as if a previous probe succeeded")
+
+		cfg.CachedVersion = "25.3.1.1"
+		cfg.CachedRevision = revision
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying it returned the cached version without creating a Job")
+		Expect(result.Version).To(Equal("25.3.1.1"))
+		Expect(result.Revision).To(Equal(revision))
+		Expect(result.Pending).To(BeFalse())
+		Expect(result.Completed()).To(BeTrue())
+
+		By("verifying no Jobs were created")
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty())
+	})
+
+	It("should miss cache when CachedVersion is empty even if revision matches", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("setting revision but leaving version empty (fresh CR)")
+
+		cfg.CachedRevision = revision
+		cfg.CachedVersion = ""
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying probe was created (cache miss)")
+		Expect(result.Pending).To(BeTrue())
+		Expect(result.Version).To(BeEmpty())
+
+		By("verifying a Job was created")
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+	})
+
+	It("should miss cache when image changes", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+
+		By("computing revision for the original image")
+
+		originalCfg := probeCfg("clickhouse/clickhouse-server", "", "")
+		originalRevision, err := imageRevision(originalCfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("creating config with a different image but the old revision cached")
+
+		cfg := probeCfg("custom-registry/clickhouse-server", "25.3.1.1", originalRevision)
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying a new probe Job was created (cache miss due to image change)")
+		Expect(result.Pending).To(BeTrue())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
 	})
 })

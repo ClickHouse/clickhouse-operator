@@ -199,6 +199,11 @@ type ClickHouseClusterStatus struct {
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Version string `json:"version,omitempty"`
+	// VersionProbeRevision is the image hash of the last successful version probe.
+	// When this matches the current image hash, the cached Version is used directly.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=status
+	VersionProbeRevision string `json:"versionProbeRevision,omitempty"`
 }
 
 // ClickHouseCluster is the Schema for the `clickhouseclusters` API.

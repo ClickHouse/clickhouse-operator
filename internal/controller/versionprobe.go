@@ -42,6 +42,10 @@ type VersionProbeConfig struct {
 	ContainerTemplate v1.ContainerTemplateSpec
 	// VersionProbe is the user-provided override for the version probe Job.
 	VersionProbe *v1.VersionProbeTemplate
+	// CachedVersion is the previously detected version stored in CR Status.
+	CachedVersion string
+	// CachedRevision is the image hash that produced CachedVersion.
+	CachedRevision string
 }
 
 // VersionProbeResult holds the outcome of a version probe reconciliation.
@@ -52,6 +56,8 @@ type VersionProbeResult struct {
 	Pending bool
 	// Err if version probe failed it contains the error.
 	Err error
+	// Revision is the image hash of the probe, set on successful completion.
+	Revision string
 }
 
 // Completed returns true if probe completed successfully with a detected version, false otherwise.
@@ -61,12 +67,27 @@ func (r *VersionProbeResult) Completed() bool {
 
 // VersionProbe manages a one-time Job to detect the version from a container image.
 // Returns the version string when available, or empty string if the Job is pending/running.
+// When CachedRevision matches the current image hash and CachedVersion is non-empty,
+// returns the cached version immediately without creating or reading a Job.
 func (rm *ResourceManager) VersionProbe(
 	ctx context.Context,
 	log controllerutil.Logger,
 	cfg VersionProbeConfig,
 ) (VersionProbeResult, error) {
-	job, err := rm.buildVersionProbeJob(cfg)
+	// Compute revision once — used for cache check, Job name, and result.
+	revision, err := imageRevision(cfg)
+	if err != nil {
+		return VersionProbeResult{}, fmt.Errorf("compute image revision: %w", err)
+	}
+
+	// Fast path: return cached version when image hasn't changed.
+	// Intentionally skips cleanupVersionProbeJobs and Job/Pod API calls.
+	// Orphaned Jobs from previous images are cleaned on next cache miss.
+	if cfg.CachedRevision == revision && cfg.CachedVersion != "" {
+		return VersionProbeResult{Version: cfg.CachedVersion, Revision: revision}, nil
+	}
+
+	job, err := rm.buildVersionProbeJob(cfg, revision)
 	if err != nil {
 		return VersionProbeResult{}, fmt.Errorf("build version probe job: %w", err)
 	}
@@ -124,7 +145,7 @@ func (rm *ResourceManager) VersionProbe(
 		return VersionProbeResult{Err: err}, nil
 	}
 
-	return VersionProbeResult{Version: version}, nil
+	return VersionProbeResult{Version: version, Revision: revision}, nil
 }
 
 // GetVersionSyncCondition evaluates the VersionInSync condition based on the probe result and replica versions.
@@ -209,7 +230,27 @@ func (rm *ResourceManager) cleanupVersionProbeJobs(ctx context.Context, log cont
 	}
 }
 
-func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1.Job, error) {
+// imageRevision computes a hash of the image and pull policy to use as the cache key
+// and Job name suffix. Extracted from buildVersionProbeJob to allow VersionProbe to
+// compute it once and pass it through.
+func imageRevision(cfg VersionProbeConfig) (string, error) {
+	type imageKey struct {
+		Image      string
+		PullPolicy corev1.PullPolicy
+	}
+
+	hash, err := controllerutil.DeepHashObject(imageKey{
+		Image:      cfg.ContainerTemplate.Image.String(),
+		PullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
+	})
+	if err != nil {
+		return "", fmt.Errorf("hash image key: %w", err)
+	}
+
+	return hash, nil
+}
+
+func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision string) (batchv1.Job, error) {
 	job := batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   rm.owner.GetNamespace(),
@@ -269,21 +310,7 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig) (batchv1
 		return batchv1.Job{}, fmt.Errorf("set version probe job controller reference: %w", err)
 	}
 
-	// Recreate successful probe only on Image or PullPolicy changes
-	type imageKey struct {
-		Image      string
-		PullPolicy corev1.PullPolicy
-	}
-
-	imageHash, err := controllerutil.DeepHashObject(imageKey{
-		Image:      cfg.ContainerTemplate.Image.String(),
-		PullPolicy: cfg.ContainerTemplate.ImagePullPolicy,
-	})
-	if err != nil {
-		return batchv1.Job{}, fmt.Errorf("hash version probe job image: %w", err)
-	}
-
-	job.Name = fmt.Sprintf("%s-version-probe-%s", rm.specificName, imageHash[:8])
+	job.Name = fmt.Sprintf("%s-version-probe-%s", rm.specificName, revision[:8])
 
 	// Set reserved labels after overrides to ensure they are not modified by user overrides.
 	job.Labels = controllerutil.MergeMaps(job.Labels, map[string]string{

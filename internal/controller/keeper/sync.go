@@ -216,13 +216,18 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		PodTemplate:       r.Cluster.Spec.PodTemplate,
 		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
 		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate,
+		CachedVersion:     r.Cluster.Status.Version,
+		CachedRevision:    r.Cluster.Status.VersionProbeRevision,
 	})
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("run version probe: %w", err)
 	}
 
 	r.versionProbe = probeResult
-	r.Cluster.Status.Version = r.versionProbe.Version
+	if probeResult.Completed() {
+		r.Cluster.Status.Version = probeResult.Version
+		r.Cluster.Status.VersionProbeRevision = probeResult.Revision
+	}
 
 	if r.Checker != nil {
 		cond, event := chctrl.GetUpgradeCondition(*r.Checker, r.versionProbe, r.Cluster.Spec.UpgradeChannel)

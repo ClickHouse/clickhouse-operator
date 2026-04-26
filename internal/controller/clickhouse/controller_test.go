@@ -182,6 +182,12 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
 
+		// Clear the cached version probe revision to force the probe to re-run,
+		// since the image didn't change but the overrides did.
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		updatedCR.Status.VersionProbeRevision = ""
+		Expect(suite.Client.Status().Update(ctx, updatedCR)).To(Succeed())
+
 		// Delete old job so new one is created with overrides.
 		for _, j := range jobs.Items {
 			Expect(suite.Client.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground))).To(Succeed())

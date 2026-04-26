@@ -78,6 +78,7 @@ ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 | `updateRevision` | string | UpdateRevision indicates latest requested ClickHouseCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
 | `version` | string | Version indicates the version reported by the container image. | false |  |
+| `versionProbeRevision` | string | VersionProbeRevision is the image hash of the last successful version probe.<br />When this matches the current image hash, the cached Version is used directly. | false |  |
 
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
@@ -278,6 +279,7 @@ KeeperClusterStatus defines the observed state of KeeperCluster.
 | `updateRevision` | string | CurrentRevision indicates latest requested KeeperCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
 | `version` | string | Version indicates the version reported by the container image. | false |  |
+| `versionProbeRevision` | string | VersionProbeRevision is the image hash of the last successful version probe.<br />When this matches the current image hash, the cached Version is used directly. | false |  |
 
 Appears in:
 - [KeeperCluster](#keepercluster)

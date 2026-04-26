@@ -6878,6 +6878,11 @@ spec:
                 description: Version indicates the version reported by the container
                   image.
                 type: string
+              versionProbeRevision:
+                description: |-
+                  VersionProbeRevision is the image hash of the last successful version probe.
+                  When this matches the current image hash, the cached Version is used directly.
+                type: string
             type: object
         type: object
     served: true

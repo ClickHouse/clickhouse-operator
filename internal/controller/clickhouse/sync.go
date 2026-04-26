@@ -414,6 +414,8 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 		PodTemplate:       r.Cluster.Spec.PodTemplate,
 		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
 		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate,
+		CachedVersion:     r.Cluster.Status.Version,
+		CachedRevision:    r.Cluster.Status.VersionProbeRevision,
 	})
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("run version probe: %w", err)
@@ -422,6 +424,7 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 	r.versionProbe = probeResult
 	if probeResult.Completed() {
 		r.Cluster.Status.Version = probeResult.Version
+		r.Cluster.Status.VersionProbeRevision = probeResult.Revision
 	}
 
 	return chctrl.StepContinue(), nil
