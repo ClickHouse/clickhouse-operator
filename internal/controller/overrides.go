@@ -138,8 +138,25 @@ func mergeAffinity(base, patch *corev1.Affinity) *corev1.Affinity {
 // t is treated as read-only; it is only marshaled, never written to.
 // VolumeMounts are handled separately to allow multiple mounts at the same path; handled by ProjectVolumes.
 func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.ContainerTemplateSpec) (corev1.Container, error) {
+	base := container
+
+	// Strategic merge patch deep-merges corev1.Capabilities field-by-field; the schema
+	// has no patchStrategy=replace directive on Capabilities. A user setting only
+	// Drop:[ALL] would otherwise leave the operator-defaulted Add list in place,
+	// producing a spec rejected by `restricted` PodSecurity. Treat user-provided
+	// Capabilities as authoritative for the whole sub-struct by clearing it on the
+	// base before SMP. Other SecurityContext fields still deep-merge as expected.
+	if t.SecurityContext != nil && t.SecurityContext.Capabilities != nil &&
+		base.SecurityContext != nil && base.SecurityContext.Capabilities != nil {
+		baseCopy := *base
+		scCopy := *base.SecurityContext
+		scCopy.Capabilities = nil
+		baseCopy.SecurityContext = &scCopy
+		base = &baseCopy
+	}
+
 	patchContainer := corev1.Container{
-		Name:            container.Name,
+		Name:            base.Name,
 		Image:           t.Image.String(),
 		ImagePullPolicy: t.ImagePullPolicy,
 		Resources:       t.Resources,
@@ -150,7 +167,7 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		// ReadinessProbe is handled manually
 	}
 
-	mergedContainer, err := patchResource(container, patchContainer, containerSchema)
+	mergedContainer, err := patchResource(base, patchContainer, containerSchema)
 	if err != nil {
 		return corev1.Container{}, fmt.Errorf("patch container: %w", err)
 	}

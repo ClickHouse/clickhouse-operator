@@ -101,6 +101,116 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			Expect(container.SecurityContext.RunAsUser).NotTo(BeNil())
 			Expect(*container.SecurityContext.RunAsUser).To(Equal(int64(1000)), "user RunAsUser should be applied")
 		})
+
+		Describe("Capabilities", func() {
+			// Strategic merge patch deep-merges corev1.Capabilities field-by-field,
+			// so a user setting only Drop:[ALL] would otherwise leave the operator's
+			// defaulted Add list in place — producing a spec rejected by `restricted`
+			// PodSecurity. The merge must treat user-provided Capabilities as
+			// authoritative for the whole sub-struct.
+			// See https://github.com/ClickHouse/clickhouse-operator/issues/174.
+			It("should let user Drop:[ALL] override operator-defaulted Add", func() {
+				container, err := ApplyContainerTemplateOverrides(
+					&corev1.Container{
+						Name: "server",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+							},
+						},
+					},
+					&v1.ContainerTemplateSpec{
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+						},
+					},
+				)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(container.SecurityContext).NotTo(BeNil())
+				Expect(container.SecurityContext.Capabilities).NotTo(BeNil())
+				Expect(container.SecurityContext.Capabilities.Drop).To(Equal([]corev1.Capability{"ALL"}))
+				Expect(container.SecurityContext.Capabilities.Add).To(BeEmpty(),
+					"operator-defaulted Add must not survive when the user sets Drop:[ALL]")
+			})
+
+			It("should let user-set Add replace operator-defaulted Add", func() {
+				container, err := ApplyContainerTemplateOverrides(
+					&corev1.Container{
+						Name: "server",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+							},
+						},
+					},
+					&v1.ContainerTemplateSpec{
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{"NET_BIND_SERVICE"},
+							},
+						},
+					},
+				)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(container.SecurityContext.Capabilities).NotTo(BeNil())
+				Expect(container.SecurityContext.Capabilities.Add).To(Equal([]corev1.Capability{"NET_BIND_SERVICE"}),
+					"user Add list should replace, not merge with, operator defaults")
+			})
+
+			It("should preserve operator capabilities when user SecurityContext omits Capabilities", func() {
+				container, err := ApplyContainerTemplateOverrides(
+					&corev1.Container{
+						Name: "server",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+							},
+						},
+					},
+					&v1.ContainerTemplateSpec{
+						SecurityContext: &corev1.SecurityContext{
+							RunAsNonRoot: new(true),
+						},
+					},
+				)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(container.SecurityContext.Capabilities).NotTo(BeNil())
+				Expect(container.SecurityContext.Capabilities.Add).To(Equal(
+					[]corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"}),
+					"operator capabilities must survive when the user does not set capabilities")
+				Expect(container.SecurityContext.RunAsNonRoot).NotTo(BeNil())
+				Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue())
+			})
+
+			It("should not mutate the caller's container or its SecurityContext", func() {
+				baseCaps := &corev1.Capabilities{
+					Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+				}
+				baseSC := &corev1.SecurityContext{Capabilities: baseCaps}
+				base := &corev1.Container{Name: "server", SecurityContext: baseSC}
+
+				_, err := ApplyContainerTemplateOverrides(
+					base,
+					&v1.ContainerTemplateSpec{
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+						},
+					},
+				)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(base.SecurityContext).To(BeIdenticalTo(baseSC), "caller's SecurityContext pointer should be untouched")
+				Expect(baseSC.Capabilities).To(BeIdenticalTo(baseCaps), "caller's Capabilities pointer should be untouched")
+				Expect(baseCaps.Add).To(Equal([]corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"}))
+			})
+		})
 	})
 
 	Describe("Probes", func() {
