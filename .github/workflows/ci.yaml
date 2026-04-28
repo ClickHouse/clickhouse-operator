@@ -36,15 +36,6 @@ jobs:
       - name: Check manifests generated
         run: make manifests && git diff --exit-code
 
-      - name: Check CRD backward compatibility
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            make check-crd-compat CRD_BASE_REF=${{ github.event.pull_request.base.sha }}
-          else
-            make check-crd-compat CRD_BASE_REF=${{ github.event.before }}
-          fi
-
-
       - name: Lint with golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -59,6 +50,28 @@ jobs:
         uses: raven-actions/actionlint@v2
         with:
           flags: '-config-file ci/actionlint.yaml'
+
+  check-crd-compat:
+    # Only run on pull requests, and skip when the PR is explicitly labeled as
+    # an intentional CRD-breaking change. The job is not part of ci-success-check,
+    # so a failure here does not block the aggregate gate.
+    if: |
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'crd-breaking-change')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Check CRD backward compatibility
+        run: make check-crd-compat CRD_BASE_REF=${{ github.event.pull_request.base.sha }}
 
   bundle:
     runs-on: ubuntu-latest
@@ -299,7 +312,7 @@ jobs:
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
-    needs: [ lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test ]
+    needs: [ lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test, check-crd-compat ]
     if: always()
     steps:
       - name: Determine CI status
