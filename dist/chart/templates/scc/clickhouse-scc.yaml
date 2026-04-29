@@ -1,0 +1,54 @@
+{{- if .Values.openshift.scc.enabled }}
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  annotations:
+    kubernetes.io/description: SCC denies access to all host features and
+      requires pods to be run with a UID, and SELinux context. Allows capabilities needed by ClickHouse Keeper
+  name: clickhouse-keeper-scc
+priority: null
+readOnlyRootFilesystem: false
+defaultAddCapabilities: null
+fsGroup:
+  ranges:
+    - max: 65534
+      min: 100
+  type: MustRunAs
+groups: []
+requiredDropCapabilities:
+  - ALL
+runAsUser:
+  type: MustRunAsRange
+  uidRangeMin: 100
+  uidRangeMax: 65534
+seLinuxContext:
+  type: MustRunAs
+seccompProfiles:
+  - runtime/default
+supplementalGroups:
+  ranges:
+    - max: 65534
+      min: 100
+  type: MustRunAs
+volumes:
+  - configMap
+  - csi
+  - downwardAPI
+  - emptyDir
+  - ephemeral
+  - persistentVolumeClaim
+  - projected
+  - secret
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities:
+  - NET_BIND_SERVICE
+  - IPC_LOCK
+  - PERFMON
+  - SYS_PTRACE
+{{- end }}

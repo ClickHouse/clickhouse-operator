@@ -164,6 +164,12 @@ prometheus:
     # Requires prometheus-operator to be installed in the cluster.
     service_monitor: false
 
+## OpenShift specific configurations
+##
+openshift:
+    scc:
+        # Enable creating SecurityContextConstraints for OpenShift
+        enabled: false
 
 # Extra manifests to deploy as an array
 extraManifests: []
