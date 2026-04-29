@@ -4,8 +4,8 @@ kind: SecurityContextConstraints
 metadata:
   annotations:
     kubernetes.io/description: SCC denies access to all host features and
-      requires pods to be run with a UID, and SELinux context. Allows capabilities needed by ClickHouse Keeper
-  name: clickhouse-keeper-scc
+      requires pods to be run with a UID, and SELinux context. Allows capabilities needed by ClickHouse Keeper.
+  name: clickhouse-scc
 priority: null
 readOnlyRootFilesystem: false
 defaultAddCapabilities: null
