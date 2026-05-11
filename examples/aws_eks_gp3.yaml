@@ -134,8 +134,6 @@ spec:
       secret:
         key: password
         name: default-password
-    extraConfig:
-      listen_host: "0.0.0.0"
 ---
 apiVersion: v1
 kind: Service

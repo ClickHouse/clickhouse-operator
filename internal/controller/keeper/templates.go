@@ -179,7 +179,8 @@ func generateQuorumConfig(r *keeperReconciler) quorumConfig {
 }
 
 type config struct {
-	ListenHost   string                      `yaml:"listen_host"`
+	ListenHost   []string                    `yaml:"listen_host"`
+	ListenTry    bool                        `yaml:"listen_try"`
 	Path         string                      `yaml:"path"`
 	Logger       controller.LoggerConfig     `yaml:"logger"`
 	Prometheus   controller.PrometheusConfig `yaml:"prometheus"`
@@ -326,7 +327,8 @@ func replicaLabels(cr *v1.KeeperCluster, id v1.KeeperReplicaID) map[string]strin
 
 func generateConfigForSingleReplica(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (map[string]string, error) {
 	config := config{
-		ListenHost: "0.0.0.0",
+		ListenHost: []string{"::", "0.0.0.0"},
+		ListenTry:  true,
 		Path:       internal.KeeperDataPath,
 		Prometheus: controller.DefaultPrometheusConfig(PortPrometheusScrape),
 		Logger:     controller.GenerateLoggerConfig(cr.Spec.Settings.Logger, LogPath, "clickhouse-keeper"),

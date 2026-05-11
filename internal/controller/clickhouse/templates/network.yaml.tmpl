@@ -1,4 +1,7 @@
-listen_host: "::"
+listen_host:
+  - "::"
+  - "0.0.0.0"
+listen_try: 1
 {{- /* can't use composable protocol for interserver, because server disables replication,
       if interserver_http_port is not set */}}
 interserver_http_port: {{ .InterserverHTTPPort }}
