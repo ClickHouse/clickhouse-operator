@@ -1,0 +1,23 @@
+{{- if .Values.keeper.enabled -}}
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: {{ include "clickhouse-cluster.keeper.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: keeper
+    app.kubernetes.io/component: keeper-cluster
+    {{- with .Values.keeper.meta.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.keeper.meta.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /* Chart-provided defaults: image tag from .Values.imageTag (fallback: chart appVersion). User values override. */}}
+  {{- $tag := default .Chart.AppVersion .Values.imageTag }}
+  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag)) }}
+  {{- $spec := mergeOverwrite $defaults (deepCopy (.Values.keeper.spec | default dict)) }}
+  {{- toYaml $spec | nindent 2 }}
+{{- end }}

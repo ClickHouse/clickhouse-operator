@@ -176,13 +176,16 @@ jobs:
         run: helm version
 
       - name: Check helmchart generated
-        run: make generate-helmchart-ci && git diff --exit-code dist/chart/
+        run: make generate-helmchart-ci && git diff --exit-code dist/chart/ dist/chart-cluster/
 
       - name: Build Helm Chart Dependencies
         run: make build-helmchart-dependencies
 
       - name: Lint Helm Chart
         run: helm lint ./dist/chart
+
+      - name: Lint Cluster Helm Chart
+        run: make lint-cluster-chart
 
   compat-e2e-test:
     runs-on: [ubuntu-latest]

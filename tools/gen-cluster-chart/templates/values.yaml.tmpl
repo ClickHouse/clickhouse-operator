@@ -1,0 +1,68 @@
+{{- /* Per-field block emitted under the `spec:` key, indented 4 spaces. */ -}}
+{{- define "field" -}}
+{{- if .Description }}
+{{ comment .Description | indent 4 -}}
+{{- end }}
+{{- if not .HasValue }}
+    # {{ .Key }}: {{ .Zero }}
+{{- else if .Multiline }}
+    {{ .Key }}:
+{{ yaml .Value | indent 6 -}}
+{{- else }}
+    {{ .Key }}: {{ yaml .Value }}
+{{- end }}
+{{ end -}}
+# Default values for clickhouse-cluster-helm.
+#
+# THIS FILE IS GENERATED FROM CRD SCHEMAS. DO NOT EDIT BY HAND.
+# Regenerate with: make generate-cluster-chart
+#
+# Top-level keys map to the two CRs:
+#   clickhouse.{meta,spec}:  applied to ClickHouseCluster metadata + spec
+#   keeper.{meta,spec}:      applied to KeeperCluster metadata + spec
+#
+# Sub-objects (podTemplate, dataVolumeClaimSpec, settings, ...) are free-form
+# pass-throughs validated by the operator webhook on apply.
+#
+# Match --version with the operator chart for compatibility:
+#
+#   helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm --version X.Y.Z ...
+#   helm install ch                  oci://ghcr.io/clickhouse/clickhouse-cluster-helm  --version X.Y.Z ...
+
+# Default container image tag for both ClickHouseCluster and KeeperCluster.
+# Empty falls back to the chart appVersion. Per-component overrides via
+# clickhouse.spec.containerTemplate.image.tag / keeper.spec.containerTemplate.image.tag.
+imageTag: ""
+
+clickhouse:
+  # Whether to create the ClickHouseCluster CR.
+  enabled: true
+
+  # Metadata applied to the ClickHouseCluster CR itself.
+  meta:
+    # CR name. Defaults to the Helm release name when empty.
+    name: ""
+    labels: {}
+    annotations: {}
+
+  # ClickHouseCluster.spec — passed verbatim into the CR.
+  spec:
+{{ range .ClickHouseFields }}
+{{ template "field" . -}}
+{{ end }}
+keeper:
+  # Whether to create the KeeperCluster CR.
+  enabled: true
+
+  # Metadata applied to the KeeperCluster CR itself.
+  meta:
+    # CR name. Defaults to the Helm release name when empty.
+    name: ""
+    labels: {}
+    annotations: {}
+
+  # KeeperCluster.spec — passed verbatim into the CR.
+  spec:
+{{ range .KeeperFields }}
+{{ template "field" . -}}
+{{ end }}

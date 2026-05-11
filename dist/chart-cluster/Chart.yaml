@@ -1,0 +1,20 @@
+apiVersion: v2
+name: clickhouse-cluster-helm
+type: application
+version: 0.0.1
+appVersion: "latest"
+kubeVersion: ">= 1.28.0-0"
+description: |
+  Chart that deploys a ClickHouse cluster and a Keeper via the ClickHouse Operator.
+  Install the operator chart first (oci://ghcr.io/clickhouse/clickhouse-operator-helm).
+  This chart only renders ClickHouseCluster + KeeperCluster CRs and relies on the operator's reconcilers
+  to do the actual provisioning.
+keywords:
+  - database
+  - clickhouse
+  - keeper
+maintainers:
+  - name: ClickHouse Team
+    email: operator@clickhouse.com
+home: https://github.com/ClickHouse/clickhouse-operator
+icon: "https://clickhouse.com/docs/img/clickhouse-operator-logo.svg"

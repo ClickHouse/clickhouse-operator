@@ -196,7 +196,7 @@ generate-helmchart: kubebuilder kustomize ## Generate helm charts
 	rm .github/workflows/test-chart.yml dist/install-helm.yaml
 
 .PHONY: generate-helmchart-ci
-generate-helmchart-ci: generate-helmchart ## Generate helm charts and reset some files that will always generate diff
+generate-helmchart-ci: generate-helmchart generate-cluster-chart ## Generate helm charts and reset some files that will always generate diff
 	git checkout dist/chart/templates/cert-manager/
 	git checkout dist/chart/templates/manager/
 
@@ -211,6 +211,35 @@ package-helmchart: build-helmchart-dependencies ## Package helm chart. It will b
 .PHONY: push-helmchart
 push-helmchart: package-helmchart ## Push helm image. It will be pushed to the ${IMAGE_REPO}/(helmchart name, same as in Chart.yaml)
 	helm push clickhouse-operator-helm-${VERSION}.tgz oci://$(IMAGE_REPO)
+
+##@ Cluster Helm Chart
+
+CLUSTER_CHART_DIR := dist/chart-cluster
+GEN_CLUSTER_CHART ?= $(LOCALBIN)/gen-cluster-chart
+
+.PHONY: gen-cluster-chart-bin
+gen-cluster-chart-bin: $(LOCALBIN) ## Build the cluster-chart generator binary.
+	go build -o $(GEN_CLUSTER_CHART) ./tools/gen-cluster-chart
+
+.PHONY: generate-cluster-chart
+generate-cluster-chart: manifests gen-cluster-chart-bin ## Generate cluster chart values.yaml from CRDs.
+	$(GEN_CLUSTER_CHART) \
+	    -clickhouse-crd config/crd/bases/clickhouse.com_clickhouseclusters.yaml \
+	    -keeper-crd config/crd/bases/clickhouse.com_keeperclusters.yaml \
+	    -out $(CLUSTER_CHART_DIR)
+
+.PHONY: package-cluster-chart
+package-cluster-chart: ## Package cluster chart. It will be saved as clickhouse-cluster-helm-$(VERSION).tgz
+	helm package --version ${VERSION} $(CLUSTER_CHART_DIR)
+
+.PHONY: push-cluster-chart
+push-cluster-chart: package-cluster-chart ## Push cluster chart. It will be pushed to ${IMAGE_REPO}/clickhouse-cluster-helm
+	helm push clickhouse-cluster-helm-${VERSION}.tgz oci://$(IMAGE_REPO)
+
+.PHONY: lint-cluster-chart
+lint-cluster-chart: ## Lint + dry-render cluster chart.
+	helm lint $(CLUSTER_CHART_DIR)
+	helm template test $(CLUSTER_CHART_DIR) > /dev/null
 
 ##@ Build
 

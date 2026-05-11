@@ -52,9 +52,16 @@ For users who want to quickly try the operator:
      ```
 
 2. Deploy a sample cluster:
-   ```sh
-   kubectl apply -f https://raw.githubusercontent.com/ClickHouse/clickhouse-operator/refs/heads/main/examples/minimal.yaml
-   ```
+   - Using raw manifests:
+     ```sh
+     kubectl apply -f https://raw.githubusercontent.com/ClickHouse/clickhouse-operator/refs/heads/main/examples/minimal.yaml
+     ```
+   - Using the helm chart:
+     ```sh
+     helm install ch oci://ghcr.io/clickhouse/clickhouse-cluster-helm \
+        --create-namespace \
+        -n clickhouse
+     ```
 
 3. Verify the deployment:
    ```sh

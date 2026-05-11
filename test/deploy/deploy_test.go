@@ -308,7 +308,7 @@ var _ = Describe("Helm deployment", Ordered, Label("helm"), func() {
 			}, "2m", "100ms").Should(Succeed())
 		})
 
-		testDeployment(namespace)
+		testHelmCluster(namespace)
 	},
 		Entry("default values", "default", map[string]any{}),
 		Entry("disabled webhook", "webhookless", map[string]any{
@@ -343,6 +343,41 @@ spec:
 		}),
 	)
 })
+
+// testHelmCluster validates the Helm based deployment using the clickhouse-cluster-helm chart to deploy sample cluster.
+func testHelmCluster(namespace string) {
+	body := func(ctx context.Context, version string) {
+		releaseName := "cluster-" + version
+		chName := "ch-" + version
+		keeperName := "keeper-" + version
+
+		By("Installing clickhouse-cluster chart")
+		runCmd(ctx, "helm", "install", releaseName, "dist/chart-cluster", "-n", namespace,
+			"--set", "clickhouse.meta.name="+chName,
+			"--set", "keeper.meta.name="+keeperName,
+			"--set", "clickhouse.spec.replicas=1",
+			"--set", "keeper.spec.replicas=1",
+			"--set-string", "imageTag="+version,
+		)
+
+		DeferCleanup(func(ctx context.Context) {
+			By("Uninstalling clickhouse-cluster chart")
+			runCmd(ctx, "helm", "uninstall", releaseName, "-n", namespace)
+		})
+
+		By("Waiting for KeeperCluster to be ready")
+		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"keepercluster/"+keeperName)
+
+		By("Waiting for ClickHouse to be ready")
+		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"clickhousecluster/"+chName)
+	}
+
+	tableArgs := make([]any, 1, len(versionEntries)+1)
+	tableArgs[0] = body
+	DescribeTable("cluster chart should successfully deploy", append(tableArgs, versionEntries...)...)
+}
 
 func testDeployment(namespace string) {
 	body := func(ctx context.Context, version string) {

@@ -1,0 +1,27 @@
+{{- if .Values.clickhouse.enabled -}}
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: {{ include "clickhouse-cluster.clickhouse.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/component: clickhouse-cluster
+    {{- with .Values.clickhouse.meta.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.clickhouse.meta.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- /* Chart-provided defaults: image tag from .Values.imageTag (fallback: chart appVersion). User values override. */}}
+  {{- $tag := default .Chart.AppVersion .Values.imageTag }}
+  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag)) }}
+  {{- $spec := mergeOverwrite $defaults (deepCopy (.Values.clickhouse.spec | default dict)) }}
+  {{- /* Auto-wire keeperClusterRef when keeper is enabled in-chart and user did not pin one. */}}
+  {{- if and .Values.keeper.enabled (not (hasKey $spec "keeperClusterRef")) }}
+  {{- $_ := set $spec "keeperClusterRef" (dict "name" (include "clickhouse-cluster.keeper.name" .)) }}
+  {{- end }}
+  {{- toYaml $spec | nindent 2 }}
+{{- end }}

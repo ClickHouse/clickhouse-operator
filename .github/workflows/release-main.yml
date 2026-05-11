@@ -39,7 +39,7 @@ jobs:
         run: |
           FULL_VER=$(make -s print-full-version)
           echo "VERSION=${FULL_VER#v}" >> "$GITHUB_ENV" # strips 'v' → 0.0.3-d33b34f
-      - name: Package and push helm chart
+      - name: Package and push helm charts
         run: |
           helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-          make push-helmchart
+          make push-helmchart push-cluster-chart

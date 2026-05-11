@@ -1,0 +1,25 @@
+{{- $ch := .Values.clickhouse.enabled }}
+{{- $kp := .Values.keeper.enabled }}
+ClickHouse cluster {{ .Release.Name }} installed in namespace {{ .Release.Namespace }}.
+
+{{ if $ch }}ClickHouseCluster:  {{ include "clickhouse-cluster.clickhouse.name" . }}{{ end }}
+{{ if $kp }}KeeperCluster:      {{ include "clickhouse-cluster.keeper.name" . }}{{ end }}
+
+Watch reconciliation:
+  kubectl -n {{ .Release.Namespace }} get clickhousecluster,keepercluster -w
+
+{{- if $ch }}
+ClickHouseCluster status:
+  kubectl -n {{ .Release.Namespace }} describe clickhousecluster {{ include "clickhouse-cluster.clickhouse.name" . }}
+
+{{- end }}
+{{- if $kp }}
+KeeperCluster status:
+  kubectl -n {{ .Release.Namespace }} describe keepercluster {{ include "clickhouse-cluster.keeper.name" . }}
+
+{{- end }}
+NOTE: this chart only renders CRs. The ClickHouse Operator must be installed separately.
+Match --version with this chart for guaranteed compatibility:
+
+  helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+    --version {{ .Chart.Version }} --create-namespace -n clickhouse-operator-system

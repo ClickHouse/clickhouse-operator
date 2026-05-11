@@ -1,0 +1,133 @@
+# Default values for clickhouse-cluster-helm.
+#
+# THIS FILE IS GENERATED FROM CRD SCHEMAS. DO NOT EDIT BY HAND.
+# Regenerate with: make generate-cluster-chart
+#
+# Top-level keys map to the two CRs:
+#   clickhouse.{meta,spec}:  applied to ClickHouseCluster metadata + spec
+#   keeper.{meta,spec}:      applied to KeeperCluster metadata + spec
+#
+# Sub-objects (podTemplate, dataVolumeClaimSpec, settings, ...) are free-form
+# pass-throughs validated by the operator webhook on apply.
+#
+# Match --version with the operator chart for compatibility:
+#
+#   helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm --version X.Y.Z ...
+#   helm install ch                  oci://ghcr.io/clickhouse/clickhouse-cluster-helm  --version X.Y.Z ...
+
+# Default container image tag for both ClickHouseCluster and KeeperCluster.
+# Empty falls back to the chart appVersion. Per-component overrides via
+# clickhouse.spec.containerTemplate.image.tag / keeper.spec.containerTemplate.image.tag.
+imageTag: ""
+
+clickhouse:
+  # Whether to create the ClickHouseCluster CR.
+  enabled: true
+
+  # Metadata applied to the ClickHouseCluster CR itself.
+  meta:
+    # CR name. Defaults to the Helm release name when empty.
+    name: ""
+    labels: {}
+    annotations: {}
+
+  # ClickHouseCluster.spec — passed verbatim into the CR.
+  spec:
+
+    # Additional annotations that are added to resources.
+    # annotations: {}
+
+    # ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
+    clusterDomain: cluster.local
+
+    # Parameters passed to the ClickHouse container spec.
+    # containerTemplate: {}
+
+    # Specification of persistent storage for ClickHouse data.
+    # dataVolumeClaimSpec: {}
+
+    # ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
+    # The secret must reside in the same namespace as the cluster.
+    # externalSecret: {}
+
+    # Reference to the KeeperCluster that is used for ClickHouse coordination.
+    # When namespace is omitted, the ClickHouseCluster namespace is used.
+    # keeperClusterRef: {}
+
+    # Additional labels that are added to resources.
+    # labels: {}
+
+    # PodDisruptionBudget configures the PDB created for each shard.
+    # When unset, the operator defaults to maxUnavailable=1 for single-replica
+    # shards and minAvailable=1 for multi-replica shards.
+    # podDisruptionBudget: {}
+
+    # Parameters passed to the ClickHouse pod spec.
+    # podTemplate: {}
+
+    # Number of replicas in the single shard.
+    replicas: 3
+
+    # Configuration parameters for ClickHouse server.
+    # settings: {}
+
+    # Number of shards in the cluster.
+    shards: 1
+
+    # UpgradeChannel specifies the release channel for major version upgrade checks.
+    # When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
+    # upgradeChannel: ""
+
+    # VersionProbeTemplate overrides for the version detection Job.
+    # versionProbeTemplate: {}
+
+keeper:
+  # Whether to create the KeeperCluster CR.
+  enabled: true
+
+  # Metadata applied to the KeeperCluster CR itself.
+  meta:
+    # CR name. Defaults to the Helm release name when empty.
+    name: ""
+    labels: {}
+    annotations: {}
+
+  # KeeperCluster.spec — passed verbatim into the CR.
+  spec:
+
+    # Additional annotations that are added to resources.
+    # annotations: {}
+
+    # ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
+    clusterDomain: cluster.local
+
+    # Parameters passed to the Keeper container spec.
+    # containerTemplate: {}
+
+    # Specification of persistent storage for ClickHouse Keeper data.
+    # dataVolumeClaimSpec: {}
+
+    # Additional labels that are added to resources.
+    # labels: {}
+
+    # PodDisruptionBudget configures the PDB created for the Keeper cluster.
+    # When unset, the operator defaults to maxUnavailable=replicas/2
+    # (preserving quorum for a 2F+1 cluster).
+    # podDisruptionBudget: {}
+
+    # Parameters passed to the Keeper pod spec.
+    # podTemplate: {}
+
+    # Number of replicas in the cluster
+    replicas: 3
+
+    # Configuration parameters for ClickHouse Keeper server.
+    # settings: {}
+
+    # UpgradeChannel specifies the release channel for major version upgrade checks.
+    # When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
+    # upgradeChannel: ""
+
+    # VersionProbeTemplate overrides for the version detection Job.
+    # versionProbeTemplate: {}
+
