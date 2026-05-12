@@ -927,21 +927,37 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 	expected := int(r.Cluster.Replicas() * r.Cluster.Shards())
 
 	r.SetCondition(chctrl.ReplicaStartupCondition(errorIDs))
-	r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
 	r.SetCondition(chctrl.ClusterSizeCondition(exists, expected))
 
-	if len(notReadyShards) == 0 {
-		r.SetCondition(
-			metav1.Condition{Type: v1.ConditionTypeReady, Status: metav1.ConditionTrue, Reason: v1.ClickHouseConditionAllShardsReady, Message: "All shards are ready"},
-			chctrl.EventSpec{Type: corev1.EventTypeNormal, Reason: v1.EventReasonClusterReady, Action: v1.EventActionBecameReady, Message: "ClickHouse cluster is ready"},
-		)
+	if r.commander == nil {
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeHealthy,
+			Status:  metav1.ConditionUnknown,
+			Reason:  v1.ClickHouseConditionReasonPingImpossible,
+			Message: "Cannot probe replicas",
+		})
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeReady,
+			Status:  metav1.ConditionUnknown,
+			Reason:  v1.ClickHouseConditionReasonPingImpossible,
+			Message: "Cannot probe replicas",
+		})
 	} else {
-		slices.Sort(notReadyShards)
-		message := fmt.Sprintf("Not Ready shards: %v", notReadyShards)
-		r.SetCondition(
-			metav1.Condition{Type: v1.ConditionTypeReady, Status: metav1.ConditionFalse, Reason: v1.ClickHouseConditionSomeShardsNotReady, Message: message},
-			chctrl.EventSpec{Type: corev1.EventTypeWarning, Reason: v1.EventReasonClusterNotReady, Action: v1.EventActionBecameNotReady, Message: message},
-		)
+		r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
+
+		if len(notReadyShards) == 0 {
+			r.SetCondition(
+				metav1.Condition{Type: v1.ConditionTypeReady, Status: metav1.ConditionTrue, Reason: v1.ClickHouseConditionAllShardsReady, Message: "All shards are ready"},
+				chctrl.EventSpec{Type: corev1.EventTypeNormal, Reason: v1.EventReasonClusterReady, Action: v1.EventActionBecameReady, Message: "ClickHouse cluster is ready"},
+			)
+		} else {
+			slices.Sort(notReadyShards)
+			message := fmt.Sprintf("Not Ready shards: %v", notReadyShards)
+			r.SetCondition(
+				metav1.Condition{Type: v1.ConditionTypeReady, Status: metav1.ConditionFalse, Reason: v1.ClickHouseConditionSomeShardsNotReady, Message: message},
+				chctrl.EventSpec{Type: corev1.EventTypeWarning, Reason: v1.EventReasonClusterNotReady, Action: v1.EventActionBecameNotReady, Message: message},
+			)
+		}
 	}
 }
 

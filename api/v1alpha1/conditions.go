@@ -82,6 +82,10 @@ const (
 	ClickHouseConditionReasonExternalSecretValid    ConditionReason = "ExternalSecretValid"
 	ClickHouseConditionReasonExternalSecretNotFound ConditionReason = "ExternalSecretNotFound"
 	ClickHouseConditionReasonExternalSecretInvalid  ConditionReason = "ExternalSecretInvalid"
+
+	// ClickHouseConditionReasonPingImpossible is a special condition reason. It is set in case the operator cannot
+	// create a client to ping replica, but it may be healthy.
+	ClickHouseConditionReasonPingImpossible ConditionReason = "PingImpossible"
 )
 
 // KeeperCluster specific condition types and reasons.

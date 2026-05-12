@@ -133,10 +133,6 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(jobs.Items).To(HaveLen(1))
 		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
 
-		testutil.AssertEvents(recorder.Events, map[string]int{
-			"ClusterNotReady": 1,
-		})
-
 		By("completing the version probe job")
 		testutil.CompleteVersionProbeJob(ctx, suite, cr.Namespace, cr.SpecificName(), "26.1.1.1")
 	})
@@ -147,6 +143,10 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
 
 		Expect(suite.Client.List(ctx, &services, listOpts)).To(Succeed())
 		Expect(services.Items).To(HaveLen(1))
@@ -208,14 +208,15 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: crossNamespaceCluster.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
-		testutil.AssertEvents(recorder.Events, map[string]int{
-			"ClusterNotReady": 1,
-		})
 
 		testutil.CompleteVersionProbeJob(ctx, suite, crossNamespaceCluster.Namespace, crossNamespaceCluster.SpecificName(), "26.1.1.1")
 
 		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: crossNamespaceCluster.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
 
 		var config corev1.ConfigMap
 		Expect(suite.Client.Get(ctx, types.NamespacedName{
@@ -631,7 +632,6 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ExternalSecretNotFound": 1,
-			"ClusterNotReady":        1,
 		})
 
 		testutil.CompleteVersionProbeJob(ctx, suite, esoCR.Namespace, esoCR.SpecificName(), "26.1.1.1")
@@ -651,6 +651,12 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(cond.Message).To(ContainSubstring("management-password"))
 		Expect(cond.Message).To(ContainSubstring("plaintext password"))
 		Expect(cond.Message).NotTo(ContainSubstring("interserver-password"))
+
+		// commander becomes non-nil once the partial secret is found,
+		// so Ready transitions Unknown -> False and emits ClusterNotReady.
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
 
 		By("reconciling with external secret manage policy")
 
