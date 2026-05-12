@@ -61,6 +61,12 @@ func ApplyPodTemplateOverrides(podSpec *corev1.PodSpec, t *v1.PodTemplateSpec) (
 
 	podSpec.Affinity = mergeAffinity(podSpec.Affinity, t.Affinity)
 
+	// A non-nil user SecurityContext fully replaces operator defaults; see
+	// ApplyContainerTemplateOverrides for the deep-merge rationale.
+	if t.SecurityContext != nil {
+		podSpec.SecurityContext = nil
+	}
+
 	patch := *t
 	patch.Volumes = nil
 	patch.Affinity = nil
@@ -137,21 +143,19 @@ func mergeAffinity(base, patch *corev1.Affinity) *corev1.Affinity {
 // operator-generated Container using strategic merge patch with corev1.Container semantics.
 // t is treated as read-only; it is only marshaled, never written to.
 // VolumeMounts are handled separately to allow multiple mounts at the same path; handled by ProjectVolumes.
+//
+// A non-nil user SecurityContext fully replaces the operator-defaulted one rather than
+// deep-merging via SMP. Deep-merge is unsafe here because sub-fields like Capabilities
+// have no patchStrategy=replace directive: a user setting Drop:[ALL] would leave the
+// operator-defaulted Add list in place, producing a spec rejected by `restricted`
+// PodSecurity. Treating user-provided SecurityContext as authoritative keeps the
+// override semantics predictable across every sub-field.
 func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.ContainerTemplateSpec) (corev1.Container, error) {
 	base := container
 
-	// Strategic merge patch deep-merges corev1.Capabilities field-by-field; the schema
-	// has no patchStrategy=replace directive on Capabilities. A user setting only
-	// Drop:[ALL] would otherwise leave the operator-defaulted Add list in place,
-	// producing a spec rejected by `restricted` PodSecurity. Treat user-provided
-	// Capabilities as authoritative for the whole sub-struct by clearing it on the
-	// base before SMP. Other SecurityContext fields still deep-merge as expected.
-	if t.SecurityContext != nil && t.SecurityContext.Capabilities != nil &&
-		base.SecurityContext != nil && base.SecurityContext.Capabilities != nil {
+	if t.SecurityContext != nil && base.SecurityContext != nil {
 		baseCopy := *base
-		scCopy := *base.SecurityContext
-		scCopy.Capabilities = nil
-		baseCopy.SecurityContext = &scCopy
+		baseCopy.SecurityContext = nil
 		base = &baseCopy
 	}
 

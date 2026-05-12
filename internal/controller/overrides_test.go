@@ -79,7 +79,7 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue())
 		})
 
-		It("should deep-merge: user fields added to operator SecurityContext", func() {
+		It("should fully replace operator SecurityContext when user provides one", func() {
 			container, err := ApplyContainerTemplateOverrides(
 				&corev1.Container{
 					Name: "server",
@@ -96,8 +96,8 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(container.SecurityContext).NotTo(BeNil())
-			Expect(container.SecurityContext.RunAsNonRoot).NotTo(BeNil())
-			Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue(), "operator RunAsNonRoot should be preserved")
+			Expect(container.SecurityContext.RunAsNonRoot).To(BeNil(),
+				"operator RunAsNonRoot must NOT survive: a user-provided SecurityContext fully replaces operator defaults")
 			Expect(container.SecurityContext.RunAsUser).NotTo(BeNil())
 			Expect(*container.SecurityContext.RunAsUser).To(Equal(int64(1000)), "user RunAsUser should be applied")
 		})
@@ -161,7 +161,11 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 					"user Add list should replace, not merge with, operator defaults")
 			})
 
-			It("should preserve operator capabilities when user SecurityContext omits Capabilities", func() {
+			It("should drop operator capabilities when user-provided SecurityContext omits them", func() {
+				// Override semantics: a user who provides a SecurityContext owns the
+				// whole struct, so operator-defaulted Capabilities don't survive even
+				// when the user only sets unrelated fields like RunAsNonRoot. Users
+				// who want operator capabilities must restate them in their template.
 				container, err := ApplyContainerTemplateOverrides(
 					&corev1.Container{
 						Name: "server",
@@ -179,12 +183,30 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 				)
 
 				Expect(err).ToNot(HaveOccurred())
+				Expect(container.SecurityContext.Capabilities).To(BeNil(),
+					"operator capabilities must NOT survive when the user provides any SecurityContext")
+				Expect(container.SecurityContext.RunAsNonRoot).NotTo(BeNil())
+				Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue())
+			})
+
+			It("should preserve operator capabilities when user SecurityContext is nil", func() {
+				container, err := ApplyContainerTemplateOverrides(
+					&corev1.Container{
+						Name: "server",
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
+							},
+						},
+					},
+					&v1.ContainerTemplateSpec{},
+				)
+
+				Expect(err).ToNot(HaveOccurred())
 				Expect(container.SecurityContext.Capabilities).NotTo(BeNil())
 				Expect(container.SecurityContext.Capabilities.Add).To(Equal(
 					[]corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"}),
-					"operator capabilities must survive when the user does not set capabilities")
-				Expect(container.SecurityContext.RunAsNonRoot).NotTo(BeNil())
-				Expect(*container.SecurityContext.RunAsNonRoot).To(BeTrue())
+					"operator capabilities must survive when the user does not provide SecurityContext at all")
 			})
 
 			It("should not mutate the caller's container or its SecurityContext", func() {
@@ -382,7 +404,7 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 			Expect(*podSpec.SecurityContext.FSGroup).To(Equal(int64(1000)))
 		})
 
-		It("should deep-merge: user PodSecurityContext fields added to operator defaults", func() {
+		It("should fully replace operator PodSecurityContext when user provides one", func() {
 			podSpec, err := ApplyPodTemplateOverrides(
 				&corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
@@ -398,8 +420,8 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(podSpec.SecurityContext).NotTo(BeNil())
-			Expect(podSpec.SecurityContext.FSGroup).NotTo(BeNil())
-			Expect(*podSpec.SecurityContext.FSGroup).To(Equal(int64(1000)), "operator FSGroup should be preserved")
+			Expect(podSpec.SecurityContext.FSGroup).To(BeNil(),
+				"operator FSGroup must NOT survive: a user-provided PodSecurityContext fully replaces operator defaults")
 			Expect(podSpec.SecurityContext.RunAsUser).NotTo(BeNil())
 			Expect(*podSpec.SecurityContext.RunAsUser).To(Equal(int64(500)), "user RunAsUser should be applied")
 		})

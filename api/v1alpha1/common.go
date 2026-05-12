@@ -232,7 +232,8 @@ type PodTemplateSpec struct {
 	Volumes []corev1.Volume `json:"volumes,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// SecurityContext holds pod-level security attributes and common container settings.
-	// Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
+	// A non-nil SecurityContext fully replaces operator defaults; the user owns the
+	// entire struct. When nil, operator defaults are preserved.
 	// +optional
 	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 
@@ -297,7 +298,8 @@ type ContainerTemplateSpec struct {
 	Env []corev1.EnvVar `json:"env,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 
 	// SecurityContext defines the security options the container should be run with.
-	// Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
+	// A non-nil SecurityContext fully replaces operator defaults; the user owns the
+	// entire struct. When nil, operator defaults are preserved.
 	// More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
 	// +optional
 	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
