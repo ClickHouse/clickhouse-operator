@@ -1,0 +1,30 @@
+The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.
+It provides declarative cluster management through custom resources, enabling users to easily create highly-available ClickHouse deployments.
+
+The Operator handles the full lifecycle of ClickHouse clusters including scaling, upgrades, and configuration management.
+
+## Features {#features}
+
+- **ClickHouse Cluster Management**: Create and manage ClickHouse clusters
+- **ClickHouse Keeper Integration**: Built-in support for ClickHouse Keeper clusters for distributed coordination
+- **Storage Provisioning**: Customizable persistent volume claims with storage class selection
+- **High Availability**: Fault tolerant installations for ClickHouse and Keeper clusters
+- **Security**: Built-in security features TLS/SSL support for secure cluster communication
+- **Monitoring**: Prometheus metrics integration for observability
+
+## Installation {#installation}
+
+Choose your preferred installation method:
+
+- [Manifests Installation](/products/kubernetes-operator/install/kubectl) - Install using kubectl/kustomize
+- [Helm Installation](/products/kubernetes-operator/install/helm) - Install using Helm charts
+- [Operator Lifecycle Manager (OLM) Installation](/products/kubernetes-operator/install/olm) - Install using OLM
+
+## Guides {#guides}
+
+- **[Introduction](/products/kubernetes-operator/guides/introduction)** - General overview of ClickHouse Operator concepts
+- **[Configuration Guide](/products/kubernetes-operator/guides/configuration)** - Configure ClickHouse and Keeper clusters
+
+## Reference {#reference}
+
+- **[API Reference](/products/kubernetes-operator/reference/api-reference)** - Complete API documentation for custom resources
