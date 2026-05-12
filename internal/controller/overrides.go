@@ -36,42 +36,40 @@ func init() {
 	}
 }
 
-// ApplyPodTemplateOverrides merges the user-provided PodTemplateSpec onto an operator-generated
-// PodSpec using strategic merge patch with corev1.PodSpec semantics.
-// t is treated as read-only; it is only marshaled, never written to.
+// ApplyPodTemplateOverrides merges PodTemplateSpec onto an operator-generated PodSpec via SMP.
+// Inputs are treated as read-only.
 //
-// Volumes and Affinity are handled manually before SMP and excluded from the patch:
-//   - Volumes are replaced by name
-//   - Affinity term lists are concatenated.
+// Volumes (replaced by name) and Affinity (term lists concatenated) are merged manually and excluded from the patch.
+// A non-nil SecurityContext fully replaces the default, see ApplyContainerTemplateOverrides for the rationale.
 func ApplyPodTemplateOverrides(podSpec *corev1.PodSpec, t *v1.PodTemplateSpec) (corev1.PodSpec, error) {
+	base := podSpec.DeepCopy()
+
 	for _, uv := range t.Volumes {
 		replaced := false
-		for i, bv := range podSpec.Volumes {
+		for i, bv := range base.Volumes {
 			if bv.Name == uv.Name {
-				podSpec.Volumes[i] = uv
+				base.Volumes[i] = uv
 				replaced = true
 				break
 			}
 		}
 
 		if !replaced {
-			podSpec.Volumes = append(podSpec.Volumes, uv)
+			base.Volumes = append(base.Volumes, uv)
 		}
 	}
 
-	podSpec.Affinity = mergeAffinity(podSpec.Affinity, t.Affinity)
+	base.Affinity = mergeAffinity(base.Affinity, t.Affinity)
 
-	// A non-nil user SecurityContext fully replaces operator defaults; see
-	// ApplyContainerTemplateOverrides for the deep-merge rationale.
 	if t.SecurityContext != nil {
-		podSpec.SecurityContext = nil
+		base.SecurityContext = nil
 	}
 
 	patch := *t
 	patch.Volumes = nil
 	patch.Affinity = nil
 
-	mergedSpec, err := patchResource(podSpec, patch, podSchema)
+	mergedSpec, err := patchResource(base, patch, podSchema)
 	if err != nil {
 		return corev1.PodSpec{}, fmt.Errorf("patch pod spec: %w", err)
 	}
@@ -139,24 +137,26 @@ func mergeAffinity(base, patch *corev1.Affinity) *corev1.Affinity {
 	return &result
 }
 
-// ApplyContainerTemplateOverrides merges the user-provided ContainerTemplateSpec onto an
-// operator-generated Container using strategic merge patch with corev1.Container semantics.
-// t is treated as read-only; it is only marshaled, never written to.
-// VolumeMounts are handled separately to allow multiple mounts at the same path; handled by ProjectVolumes.
+// ApplyContainerTemplateOverrides merges ContainerTemplateSpec onto an operator-generated Container via SMP.
+// Inputs are treated as read-only.
 //
-// A non-nil user SecurityContext fully replaces the operator-defaulted one rather than
-// deep-merging via SMP. Deep-merge is unsafe here because sub-fields like Capabilities
-// have no patchStrategy=replace directive: a user setting Drop:[ALL] would leave the
-// operator-defaulted Add list in place, producing a spec rejected by `restricted`
-// PodSecurity. Treating user-provided SecurityContext as authoritative keeps the
-// override semantics predictable across every sub-field.
+// VolumeMounts are appended; same-path merging is handled by ProjectVolumes.
+// SecurityContext and probes are pre-cleared on base before SMP so a non-nil user value
+// fully replaces the operator default — deep-merging Capabilities would otherwise leave
+// operator-defaulted Add survivors under user Drop:[ALL], breaking `restricted` PodSecurity.
 func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.ContainerTemplateSpec) (corev1.Container, error) {
-	base := container
+	base := container.DeepCopy()
 
-	if t.SecurityContext != nil && base.SecurityContext != nil {
-		baseCopy := *base
-		baseCopy.SecurityContext = nil
-		base = &baseCopy
+	if t.SecurityContext != nil {
+		base.SecurityContext = nil
+	}
+
+	if t.LivenessProbe != nil {
+		base.LivenessProbe = nil
+	}
+
+	if t.ReadinessProbe != nil {
+		base.ReadinessProbe = nil
 	}
 
 	patchContainer := corev1.Container{
@@ -167,8 +167,8 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		// VolumeMounts are handled separately
 		Env:             t.Env,
 		SecurityContext: t.SecurityContext,
-		// LivenessProbe is handled manually
-		// ReadinessProbe is handled manually
+		LivenessProbe:   t.LivenessProbe,
+		ReadinessProbe:  t.ReadinessProbe,
 	}
 
 	mergedContainer, err := patchResource(base, patchContainer, containerSchema)
@@ -177,14 +177,6 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 	}
 
 	mergedContainer.VolumeMounts = append(mergedContainer.VolumeMounts, t.VolumeMounts...)
-
-	if t.LivenessProbe != nil {
-		mergedContainer.LivenessProbe = t.LivenessProbe.DeepCopy()
-	}
-
-	if t.ReadinessProbe != nil {
-		mergedContainer.ReadinessProbe = t.ReadinessProbe.DeepCopy()
-	}
 
 	return mergedContainer, nil
 }

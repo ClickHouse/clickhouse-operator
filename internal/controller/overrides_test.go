@@ -103,12 +103,8 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 		})
 
 		Describe("Capabilities", func() {
-			// Strategic merge patch deep-merges corev1.Capabilities field-by-field,
-			// so a user setting only Drop:[ALL] would otherwise leave the operator's
-			// defaulted Add list in place — producing a spec rejected by `restricted`
-			// PodSecurity. The merge must treat user-provided Capabilities as
-			// authoritative for the whole sub-struct.
-			// See https://github.com/ClickHouse/clickhouse-operator/issues/174.
+			// Repro for #174: without whole-SC replacement, SMP deep-merges Capabilities
+			// and operator-defaulted Add survives the user's Drop:[ALL], breaking `restricted`.
 			It("should let user Drop:[ALL] override operator-defaulted Add", func() {
 				container, err := ApplyContainerTemplateOverrides(
 					&corev1.Container{
@@ -162,10 +158,8 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			})
 
 			It("should drop operator capabilities when user-provided SecurityContext omits them", func() {
-				// Override semantics: a user who provides a SecurityContext owns the
-				// whole struct, so operator-defaulted Capabilities don't survive even
-				// when the user only sets unrelated fields like RunAsNonRoot. Users
-				// who want operator capabilities must restate them in their template.
+				// Whole-SC replacement: operator caps don't survive even when the user
+				// only sets unrelated fields.
 				container, err := ApplyContainerTemplateOverrides(
 					&corev1.Container{
 						Name: "server",
@@ -208,30 +202,31 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 					[]corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"}),
 					"operator capabilities must survive when the user does not provide SecurityContext at all")
 			})
+		})
 
-			It("should not mutate the caller's container or its SecurityContext", func() {
-				baseCaps := &corev1.Capabilities{
-					Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
-				}
-				baseSC := &corev1.SecurityContext{Capabilities: baseCaps}
-				base := &corev1.Container{Name: "server", SecurityContext: baseSC}
-
-				_, err := ApplyContainerTemplateOverrides(
-					base,
-					&v1.ContainerTemplateSpec{
-						SecurityContext: &corev1.SecurityContext{
-							Capabilities: &corev1.Capabilities{
-								Drop: []corev1.Capability{"ALL"},
-							},
-						},
+		It("should not mutate the caller's container", func() {
+			base := &corev1.Container{
+				Name: "server",
+				SecurityContext: &corev1.SecurityContext{
+					Capabilities: &corev1.Capabilities{
+						Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
 					},
-				)
+				},
+			}
+			patch := &v1.ContainerTemplateSpec{
+				SecurityContext: &corev1.SecurityContext{
+					Capabilities: &corev1.Capabilities{
+						Drop: []corev1.Capability{"ALL"},
+					},
+				},
+			}
 
-				Expect(err).ToNot(HaveOccurred())
-				Expect(base.SecurityContext).To(BeIdenticalTo(baseSC), "caller's SecurityContext pointer should be untouched")
-				Expect(baseSC.Capabilities).To(BeIdenticalTo(baseCaps), "caller's Capabilities pointer should be untouched")
-				Expect(baseCaps.Add).To(Equal([]corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"}))
-			})
+			baseCopy := base.DeepCopy()
+			patched, err := ApplyContainerTemplateOverrides(base, patch)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(base).To(Equal(baseCopy), "caller's container should be untouched")
+			Expect(patched.SecurityContext).To(Equal(patch.SecurityContext))
 		})
 	})
 
@@ -424,6 +419,44 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 				"operator FSGroup must NOT survive: a user-provided PodSecurityContext fully replaces operator defaults")
 			Expect(podSpec.SecurityContext.RunAsUser).NotTo(BeNil())
 			Expect(*podSpec.SecurityContext.RunAsUser).To(Equal(int64(500)), "user RunAsUser should be applied")
+		})
+
+		It("should not mutate the caller's PodSpec", func() {
+			base := &corev1.PodSpec{
+				SecurityContext: &corev1.PodSecurityContext{FSGroup: new(int64(1000))},
+				Volumes: []corev1.Volume{
+					{Name: "operator-vol", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+							{Weight: 1, Preference: corev1.NodeSelectorTerm{}},
+						},
+					},
+				},
+			}
+			patch := &v1.PodTemplateSpec{
+				SecurityContext: &corev1.PodSecurityContext{
+					RunAsUser: new(int64(500)),
+				},
+				Volumes: []corev1.Volume{
+					{Name: "operator-vol", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{}}},
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+							{Weight: 2, Preference: corev1.NodeSelectorTerm{}},
+						},
+					},
+				},
+			}
+
+			baseCopy := base.DeepCopy()
+			patched, err := ApplyPodTemplateOverrides(base, patch)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(base).To(Equal(baseCopy), "caller's PodSpec should be untouched")
+			Expect(patched.SecurityContext).To(Equal(patch.SecurityContext))
 		})
 	})
 

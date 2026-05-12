@@ -633,7 +633,8 @@ spec:
                   securityContext:
                     description: |-
                       SecurityContext defines the security options the container should be run with.
-                      Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
+                      A non-nil SecurityContext fully replaces operator defaults; the user owns the
+                      entire struct. When nil, operator defaults are preserved.
                       More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
                     properties:
                       allowPrivilegeEscalation:
@@ -3694,7 +3695,8 @@ spec:
                   securityContext:
                     description: |-
                       SecurityContext holds pod-level security attributes and common container settings.
-                      Deep-merged with operator defaults via SMP. When nil, operator defaults are preserved.
+                      A non-nil SecurityContext fully replaces operator defaults; the user owns the
+                      entire struct. When nil, operator defaults are preserved.
                     properties:
                       appArmorProfile:
                         description: |-
