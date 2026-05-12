@@ -1,16 +1,16 @@
-# Installation with kubectl
-
 This guide covers installing the ClickHouse Operator using kubectl and manifest files.
 
-## Prerequisites
+## Prerequisites {#prerequisites}
 
 - Kubernetes cluster v1.28.0 or later
 - kubectl v1.28.0 or later
 - Cluster admin permissions
 
-## Install from Release Manifests
+## Install from Release Manifests {#install-from-release-manifests}
 
-**NOTE:** Requires cert-manager to issue webhook certificates.
+<Note>
+Requires cert-manager to issue webhook certificates.
+</Note>
 
 Install the operator and CRDs from the latest release:
 
@@ -27,7 +27,7 @@ This will:
 6. Configure SSL certificates using cert-manager
 7. Enable metrics endpoint
 
-## Verify Installation
+## Verify Installation {#verify-installation}
 
 Check that the operator is running:
 
@@ -53,18 +53,22 @@ clickhouseclusters.clickhouse.com    2025-01-06T00:00:00Z
 keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 ```
 
-## Configure Custom Deployment Options
+## Configure Custom Deployment Options {#configure-custom-deployment-options}
 
 If you want to configure operator deployment options, follow the steps below.
 
-### 1. Clone the Repository
+<Steps>
+<Step>
+### Clone the Repository {#clone-the-repository}
 
 ```bash
 git clone https://github.com/ClickHouse/clickhouse-operator.git
 cd clickhouse-operator
 ```
+</Step>
 
-### 2. Configure installation options
+<Step>
+### Configure installation options {#configure-installation-options}
 
 Edit config/default/kustomization.yaml to enable/disable features as needed.
 
@@ -72,8 +76,10 @@ Edit config/default/kustomization.yaml to enable/disable features as needed.
 * To enable secure metrics endpoint, comment out `[METRICS]` sections and uncomment `[METRICS SECURE]` and `[CERTMANAGER]` sections.
 * To enable ServiceMonitor for Prometheus Operator, uncomment the `[PROMETHEUS]` section.
 * To enable operator network policies, uncomment the `[NETWORK POLICY]` section.
+</Step>
 
-### 3. Build and Deploy
+<Step>
+### Build and Deploy {#build-and-deploy}
 
 Build the operator manifests and apply them:
 
@@ -81,3 +87,6 @@ Build the operator manifests and apply them:
 make build-installer VERSION=<required operator version> [IMG=<custom registry path>]
 kubectl apply -k dist/install.yaml
 ```
+
+</Step>
+</Steps>

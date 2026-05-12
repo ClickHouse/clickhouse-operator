@@ -1,14 +1,10 @@
-# API Reference
-
 This document provides detailed API reference for the ClickHouse Operator custom resources.
 
-
-
-
-## ClickHouseCluster
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster is the Schema for the `clickhouseclusters` API.
-### API Version and Kind
+
+### API Version and Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -23,11 +19,10 @@ kind: ClickHouseCluster
 Appears in:
 - [ClickHouseClusterList](#clickhouseclusterlist)
 
-
-## ClickHouseClusterList
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList contains a list of ClickHouseCluster.
-### API Version and Kind
+### API Version and Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -38,8 +33,7 @@ kind: ClickHouseClusterList
 |-------|------|-------------|----------|---------|
 | `items` | [ClickHouseCluster](#clickhousecluster) array |  | true |  |
 
-
-## ClickHouseClusterSpec
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 
@@ -63,8 +57,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
 
-
-## ClickHouseClusterStatus
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 
@@ -83,9 +76,7 @@ ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
 Appears in:
 - [ClickHouseCluster](#clickhousecluster)
 
-
-
-## ClickHouseSettings
+## ClickHouseSettings {#clickhousesettings}
 
 ClickHouseSettings defines ClickHouse server settings options.
 
@@ -101,8 +92,7 @@ ClickHouseSettings defines ClickHouse server settings options.
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-
-## ClusterTLSSpec
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec defines cluster TLS configuration.
 
@@ -117,10 +107,7 @@ Appears in:
 - [ClickHouseSettings](#clickhousesettings)
 - [KeeperSettings](#keepersettings)
 
-
-
-
-## ConfigMapKeySelector
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector selects a key of a ConfigMap.
 
@@ -132,8 +119,7 @@ ConfigMapKeySelector selects a key of a ConfigMap.
 Appears in:
 - [DefaultPasswordSelector](#defaultpasswordselector)
 
-
-## ContainerImage
+## ContainerImage {#containerimage}
 
 ContainerImage defines a container image with repository, tag or hash.
 
@@ -146,8 +132,7 @@ ContainerImage defines a container image with repository, tag or hash.
 Appears in:
 - [ContainerTemplateSpec](#containertemplatespec)
 
-
-## ContainerTemplateSpec
+## ContainerTemplateSpec {#containertemplatespec}
 
 ContainerTemplateSpec describes the container configuration overrides for the cluster's containers.
 
@@ -166,8 +151,7 @@ Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 - [KeeperClusterSpec](#keeperclusterspec)
 
-
-## DefaultPasswordSelector
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector selects the source for the default user's password.
 
@@ -180,10 +164,7 @@ DefaultPasswordSelector selects the source for the default user's password.
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
 
-
-
-
-## ExternalSecret
+## ExternalSecret {#externalsecret}
 
 ExternalSecret is a reference to a Secret in the same namespace.
 
@@ -195,8 +176,7 @@ ExternalSecret is a reference to a Secret in the same namespace.
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-
-## ExternalSecretPolicy
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy controls how the operator treats the external secret's content.
 
@@ -208,11 +188,10 @@ ExternalSecretPolicy controls how the operator treats the external secret's cont
 Appears in:
 - [ExternalSecret](#externalsecret)
 
-
-## KeeperCluster
+## KeeperCluster {#keepercluster}
 
 KeeperCluster is the Schema for the `keeperclusters` API.
-### API Version and Kind
+### API Version and Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -227,11 +206,10 @@ kind: KeeperCluster
 Appears in:
 - [KeeperClusterList](#keeperclusterlist)
 
-
-## KeeperClusterList
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList contains a list of KeeperCluster.
-### API Version and Kind
+### API Version and Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -242,8 +220,7 @@ kind: KeeperClusterList
 |-------|------|-------------|----------|---------|
 | `items` | [KeeperCluster](#keepercluster) array |  | true |  |
 
-
-## KeeperClusterReference
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference identifies the KeeperCluster used by a ClickHouseCluster.
 
@@ -255,8 +232,7 @@ KeeperClusterReference identifies the KeeperCluster used by a ClickHouseCluster.
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-
-## KeeperClusterSpec
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec defines the desired state of KeeperCluster.
 
@@ -277,8 +253,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 Appears in:
 - [KeeperCluster](#keepercluster)
 
-
-## KeeperClusterStatus
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus defines the observed state of KeeperCluster.
 
@@ -297,9 +272,7 @@ KeeperClusterStatus defines the observed state of KeeperCluster.
 Appears in:
 - [KeeperCluster](#keepercluster)
 
-
-
-## KeeperSettings
+## KeeperSettings {#keepersettings}
 
 KeeperSettings defines ClickHouse Keeper server configuration.
 
@@ -312,8 +285,7 @@ KeeperSettings defines ClickHouse Keeper server configuration.
 Appears in:
 - [KeeperClusterSpec](#keeperclusterspec)
 
-
-## LoggerConfig
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig defines server logging configuration.
 
@@ -329,8 +301,7 @@ Appears in:
 - [ClickHouseSettings](#clickhousesettings)
 - [KeeperSettings](#keepersettings)
 
-
-## PDBPolicy
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy controls whether PodDisruptionBudgets are created.
 
@@ -343,8 +314,7 @@ PDBPolicy controls whether PodDisruptionBudgets are created.
 Appears in:
 - [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-
-## PodDisruptionBudgetSpec
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec configures the PDB created for the cluster.
 Exactly one of MinAvailable or MaxUnavailable may be set.
@@ -361,8 +331,7 @@ Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 - [KeeperClusterSpec](#keeperclusterspec)
 
-
-## PodTemplateSpec
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
 
@@ -388,8 +357,7 @@ Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 - [KeeperClusterSpec](#keeperclusterspec)
 
-
-## SecretKeySelector
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector selects a key of a Secret.
 
@@ -402,8 +370,7 @@ Appears in:
 - [ClusterTLSSpec](#clustertlsspec)
 - [DefaultPasswordSelector](#defaultpasswordselector)
 
-
-## TemplateMeta
+## TemplateMeta {#templatemeta}
 
 TemplateMeta defines supported metadata settings for template objects.
 
@@ -416,8 +383,7 @@ Appears in:
 - [VersionProbePodTemplate](#versionprobepodtemplate)
 - [VersionProbeTemplate](#versionprobetemplate)
 
-
-## VersionProbeContainer
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer defines container-level overrides for the version probe.
 Field names and JSON tags match corev1.Container so that SMP merges by name.
@@ -431,8 +397,7 @@ Field names and JSON tags match corev1.Container so that SMP merges by name.
 Appears in:
 - [VersionProbePodSpec](#versionprobepodspec)
 
-
-## VersionProbeJobSpec
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec defines Job-level overrides for the version probe.
 
@@ -444,8 +409,7 @@ VersionProbeJobSpec defines Job-level overrides for the version probe.
 Appears in:
 - [VersionProbeTemplate](#versionprobetemplate)
 
-
-## VersionProbePodSpec
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec defines Pod-level overrides for the version probe.
 Field names and JSON tags match corev1.PodSpec for strategic merge patch compatibility.
@@ -460,8 +424,7 @@ Field names and JSON tags match corev1.PodSpec for strategic merge patch compati
 Appears in:
 - [VersionProbePodTemplate](#versionprobepodtemplate)
 
-
-## VersionProbePodTemplate
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate describes overrides for the version probe Pod.
 
@@ -473,8 +436,7 @@ VersionProbePodTemplate describes overrides for the version probe Pod.
 Appears in:
 - [VersionProbeJobSpec](#versionprobejobspec)
 
-
-## VersionProbeTemplate
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate defines overrides for the version detection Job.
 The structure mirrors batchv1.JobTemplateSpec, exposing only supported fields.
