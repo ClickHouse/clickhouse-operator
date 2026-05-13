@@ -17,8 +17,6 @@ spec:
   keeperClusterRef:
     name: my-keeper     # Reference to KeeperCluster
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 10Gi
@@ -60,8 +58,6 @@ metadata:
 spec:
   replicas: 3  # Must be odd: 1, 3, 5, 7, 9, 11, 13, or 15
   dataVolumeClaimSpec:
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 5Gi
@@ -75,8 +71,6 @@ Configure persistent storage:
 spec:
   dataVolumeClaimSpec:
     storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 100Gi
@@ -395,8 +389,6 @@ spec:
   replicas: 3
   dataVolumeClaimSpec:
     storageClassName: <storage-class-name>
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 10Gi
@@ -434,8 +426,6 @@ spec:
   replicas: 2
   dataVolumeClaimSpec:
     storageClassName: <storage-class-name>
-    accessModes:
-      - ReadWriteOnce
     resources:
       requests:
         storage: 200Gi
