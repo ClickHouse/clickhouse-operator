@@ -15,7 +15,7 @@ Choose your preferred installation method:
 
 ## Reference
 
-- **[API Reference](./api_reference.md)** - Complete API documentation for custom resources
+- **[API Reference](./reference/api-reference.mdx)** - Complete API documentation for custom resources
 - [ClickHouse Documentation](https://clickhouse.com/docs) - Official ClickHouse documentation
 
 ## Development

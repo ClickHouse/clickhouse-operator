@@ -50,7 +50,7 @@ go test ./internal/controller/keeper/ -v --ginkgo.v --ginkgo.focus="spec name pa
 make generate               # DeepCopy methods (zz_generated.deepcopy.go)
 make manifests              # CRDs, RBAC roles, webhooks → config/crd/bases/
 make generate-helmchart-ci  # Generate Helm chart templates and reset manually maintained files (dist/chart/templates/)
-make docs-generate-api-ref  # Generate API reference docs (docs/api-reference.md)
+make docs-generate-api-ref  # Generate API reference docs (docs/reference/api-reference.mdx)
 ```
 
 ### Helm Chart

@@ -602,7 +602,7 @@ docs-generate-api-ref: crd-ref-docs ## Generate API reference documentation from
 		--config=docs/templates/.crd-ref-docs.yaml \
 		--templates-dir=docs/templates \
 		--renderer=markdown \
-		--output-path=docs/api_reference.md \
+		--output-path=docs/reference/api-reference.mdx \
 		--max-depth=10
 
 .PHONY: docs-lint-vale

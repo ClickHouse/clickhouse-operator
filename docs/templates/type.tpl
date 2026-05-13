@@ -10,12 +10,13 @@
 {{ $type := . -}}
 {{-  if markdownShouldRenderType $type }}
 
-## {{ $type.Name }}
+## {{ $type.Name }} {#{{ lower $type.Name }}}
 
 {{ $type.Doc }}
 
 {{- if $type.GVK }}
-### API Version and Kind
+
+### API Version and Kind {#{{ lower $type.Name }}-api-version-and-kind}
 
 ```yaml
 apiVersion: {{ $type.GVK.Group }}/{{ $type.GVK.Version }}

@@ -1,3 +1,11 @@
+---
+slug: /clickhouse-operator/reference/api-reference
+title: 'ClickHouse Operator API reference'
+keywords: ['kubernetes', 'operator', 'API reference']
+description: 'This document provides detailed API reference for the ClickHouse Operator custom resources.'
+sidebarTitle: 'API reference'
+---
+
 This document provides detailed API reference for the ClickHouse Operator custom resources.
 
 ## ClickHouseCluster {#clickhousecluster}
@@ -22,6 +30,7 @@ Appears in:
 ## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList contains a list of ClickHouseCluster.
+
 ### API Version and Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
@@ -191,6 +200,7 @@ Appears in:
 ## KeeperCluster {#keepercluster}
 
 KeeperCluster is the Schema for the `keeperclusters` API.
+
 ### API Version and Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
@@ -209,6 +219,7 @@ Appears in:
 ## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList contains a list of KeeperCluster.
+
 ### API Version and Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
@@ -449,4 +460,3 @@ The structure mirrors batchv1.JobTemplateSpec, exposing only supported fields.
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 - [KeeperClusterSpec](#keeperclusterspec)
-
