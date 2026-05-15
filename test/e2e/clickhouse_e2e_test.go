@@ -16,7 +16,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -252,6 +254,91 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
 			ClickHouseRWChecks(ctx, &cr, new(0))
+		})
+
+		It("should resize PVCs on every replica", func(ctx context.Context) {
+			By("creating an expandable StorageClass")
+
+			sc := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: fmt.Sprintf("expandable-%d", rand.Uint32()), //nolint:gosec
+				},
+				Provisioner:          "rancher.io/local-path",
+				VolumeBindingMode:    new(storagev1.VolumeBindingWaitForFirstConsumer),
+				AllowVolumeExpansion: new(true),
+				ReclaimPolicy:        new(corev1.PersistentVolumeReclaimDelete),
+			}
+			Expect(k8sClient.Create(ctx, sc)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, sc))).To(Succeed())
+			})
+
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("pvc-resize-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(3)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					KeeperClusterRef: v1.KeeperClusterReference{
+						Name: keeper.Name,
+					},
+					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
+						AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						StorageClassName: &sc.Name,
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+			}
+
+			By("creating cluster CR with 3 replicas")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				By("deleting cluster CR")
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, false)
+
+			By("recording initial PVC sizes")
+
+			listOpts := []client.ListOption{
+				client.InNamespace(ns),
+				client.MatchingLabels{controllerutil.LabelAppKey: cr.SpecificName()},
+			}
+
+			var pvcs corev1.PersistentVolumeClaimList
+			Expect(k8sClient.List(ctx, &pvcs, listOpts...)).To(Succeed())
+			Expect(pvcs.Items).To(HaveLen(int(cr.Replicas())), "expected one PVC per replica")
+
+			for _, pvc := range pvcs.Items {
+				Expect(pvc.Spec.Resources.Requests.Storage().Cmp(
+					*cr.Spec.DataVolumeClaimSpec.Resources.Requests.Storage())).To(Equal(0),
+					"actual: %v, spec: %v", pvc.Spec.Resources, cr.Spec.DataVolumeClaimSpec.Resources)
+			}
+
+			By("upgrading storage request from 1Gi to 2Gi")
+
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			cr.Spec.DataVolumeClaimSpec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("2Gi")
+			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, false)
+
+			Expect(k8sClient.List(ctx, &pvcs, listOpts...)).To(Succeed())
+			Expect(pvcs.Items).To(HaveLen(int(cr.Replicas())), "expected one PVC per replica")
+
+			for _, pvc := range pvcs.Items {
+				Expect(pvc.Spec.Resources.Requests.Storage().Cmp(
+					*cr.Spec.DataVolumeClaimSpec.Resources.Requests.Storage())).To(Equal(0),
+					"actual: %v, spec: %v", pvc.Spec.Resources, cr.Spec.DataVolumeClaimSpec.Resources)
+			}
 		})
 
 		It("should correctly configure access", func(ctx context.Context) {

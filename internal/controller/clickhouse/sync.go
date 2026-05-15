@@ -659,6 +659,8 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 		}
 
 		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
+
+		requeueAfter = chctrl.RequeueOnRefreshTimeout
 		replicasInStatus = []v1.ClickHouseReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:

@@ -527,6 +527,8 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 		}
 
 		log.Info(fmt.Sprintf("updating chosen replica %d with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
+
+		requeueAfter = chctrl.RequeueOnRefreshTimeout
 		replicasInStatus = []v1.KeeperReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:
