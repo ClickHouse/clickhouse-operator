@@ -295,15 +295,11 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 	controllerutil.SortKey(volumes, func(v corev1.Volume) string { return v.Name })
 
 	podSpec := corev1.PodSpec{
-		RestartPolicy: corev1.RestartPolicyAlways,
-		DNSPolicy:     corev1.DNSClusterFirst,
-		Volumes:       volumes,
-		Containers:    []corev1.Container{container},
-		SecurityContext: &corev1.PodSecurityContext{
-			FSGroup:    new(controller.DefaultUser),
-			RunAsUser:  new(controller.DefaultUser),
-			RunAsGroup: new(controller.DefaultUser),
-		},
+		RestartPolicy:   corev1.RestartPolicyAlways,
+		DNSPolicy:       corev1.DNSClusterFirst,
+		Volumes:         volumes,
+		Containers:      []corev1.Container{container},
+		SecurityContext: controller.DefaultPodSecurityContext(),
 	}
 
 	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
@@ -433,11 +429,7 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
-			},
-		},
+		SecurityContext:          controller.DefaultContainerSecurityContext(),
 	}
 
 	for i := range clusterSecrets {

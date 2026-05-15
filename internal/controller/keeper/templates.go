@@ -393,15 +393,11 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 	controllerutil.SortKey(volumes, func(v corev1.Volume) string { return v.Name })
 
 	podSpec := corev1.PodSpec{
-		RestartPolicy: corev1.RestartPolicyAlways,
-		DNSPolicy:     corev1.DNSClusterFirst,
-		Volumes:       volumes,
-		Containers:    []corev1.Container{container},
-		SecurityContext: &corev1.PodSecurityContext{
-			FSGroup:    new(controller.DefaultUser),
-			RunAsUser:  new(controller.DefaultUser),
-			RunAsGroup: new(controller.DefaultUser),
-		},
+		RestartPolicy:   corev1.RestartPolicyAlways,
+		DNSPolicy:       corev1.DNSClusterFirst,
+		Volumes:         volumes,
+		Containers:      []corev1.Container{container},
+		SecurityContext: controller.DefaultPodSecurityContext(),
 	}
 
 	podTemplate := cr.Spec.PodTemplate
@@ -532,30 +528,7 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 		ReadinessProbe:           &readinessProbe,
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
-		// Default capabilities given to ClickHouse keeper.
-		// For more information, see https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/policy/container-capabilities/
-		// IPC_LOCK
-		// •  Lock memory (mlock(2), mlockall(2), mmap(2), shmctl(2));
-		// •  Allocate memory using huge pages (memfd_create(2), mmap(2), shmctl(2)).
-		// ^^ Needed for better performance.
-		//
-		// SYS_PTRACE
-		// •  Trace arbitrary processes using ptrace(2);
-		// •  apply get_robust_list(2) to arbitrary processes;
-		// •  transfer data to or from the memory of arbitrary processes using process_vm_readv(2) and process_vm_writev(2);
-		// •  inspect processes using kcmp(2).
-		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
-		//
-		// PERFMON
-		// 	 Employ various performance-monitoring mechanisms, including:
-		// •  call perf_event_open(2);
-		// •  employ various BPF operations that have performance implications.
-		// ^^ Needed to get Kernel's performance counters from inside the container (to use perf)
-		SecurityContext: &corev1.SecurityContext{
-			Capabilities: &corev1.Capabilities{
-				Add: []corev1.Capability{"IPC_LOCK", "PERFMON", "SYS_PTRACE"},
-			},
-		},
+		SecurityContext:          controller.DefaultContainerSecurityContext(),
 	}
 
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {

@@ -267,7 +267,7 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
 					ImagePullSecrets:   cfg.PodTemplate.ImagePullSecrets,
-					SecurityContext:    cfg.PodTemplate.SecurityContext,
+					SecurityContext:    DefaultPodSecurityContext(),
 					NodeSelector:       cfg.PodTemplate.NodeSelector,
 					Tolerations:        cfg.PodTemplate.Tolerations,
 					ServiceAccountName: cfg.PodTemplate.ServiceAccountName,
@@ -277,7 +277,7 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 							Name:                     v1.VersionProbeContainerName,
 							Image:                    cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy:          cfg.ContainerTemplate.ImagePullPolicy,
-							SecurityContext:          cfg.ContainerTemplate.SecurityContext,
+							SecurityContext:          DefaultContainerSecurityContext(),
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 							Command:                  []string{"sh", "-c", fmt.Sprintf("%s --version > %s 2>&1", cfg.Binary, corev1.TerminationMessagePathDefault)},

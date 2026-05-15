@@ -45,7 +45,9 @@ spec:
       - description: Specification of persistent storage for ClickHouse data.
         displayName: Data Volume Claim Spec
         path: dataVolumeClaimSpec
-      - description: Reference to the KeeperCluster that is used for ClickHouse coordination.
+      - description: |-
+          Reference to the KeeperCluster that is used for ClickHouse coordination.
+          When namespace is omitted, the ClickHouseCluster namespace is used.
         displayName: Keeper Cluster Reference
         path: keeperClusterRef
       - description: Number of replicas in the single shard.
@@ -79,6 +81,11 @@ spec:
       - description: Version indicates the version reported by the container image.
         displayName: Version
         path: version
+      - description: |-
+          VersionProbeRevision is the image hash of the last successful version probe.
+          When this matches the current image hash, the cached Version is used directly.
+        displayName: Version Probe Revision
+        path: versionProbeRevision
       version: v1alpha1
     - description: KeeperCluster is the Schema for the `keeperclusters` API.
       displayName: Keeper Cluster
@@ -137,6 +144,11 @@ spec:
       - description: Version indicates the version reported by the container image.
         displayName: Version
         path: version
+      - description: |-
+          VersionProbeRevision is the image hash of the last successful version probe.
+          When this matches the current image hash, the cached Version is used directly.
+        displayName: Version Probe Revision
+        path: versionProbeRevision
       version: v1alpha1
   description: |
     The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.

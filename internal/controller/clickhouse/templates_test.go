@@ -229,6 +229,48 @@ var _ = Describe("BuildVolumes", func() {
 	})
 })
 
+var _ = Describe("SecurityContext defaults", func() {
+	newCtx := func() clickhouseReconciler {
+		return clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Spec: v1.ClickHouseClusterSpec{
+					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
+				},
+			},
+		}
+	}
+
+	Context("on vanilla Kubernetes", func() {
+		BeforeEach(func() { controllerutil.SetOpenShiftForTest(false) })
+		AfterEach(func() { controllerutil.SetOpenShiftForTest(false) })
+
+		It("should pin pod FSGroup to the ClickHouse user", func() {
+			ctx := newCtx()
+			podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podSpec.SecurityContext).NotTo(BeNil())
+			Expect(podSpec.SecurityContext.FSGroup).NotTo(BeNil())
+			Expect(*podSpec.SecurityContext.FSGroup).To(BeEquivalentTo(101))
+		})
+	})
+
+	Context("on OpenShift", func() {
+		BeforeEach(func() { controllerutil.SetOpenShiftForTest(true) })
+		AfterEach(func() { controllerutil.SetOpenShiftForTest(false) })
+
+		It("should leave pod UID/GID/FSGroup unset so SCC can inject them", func() {
+			ctx := newCtx()
+			podSpec, err := templatePodSpec(&ctx, v1.ClickHouseReplicaID{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podSpec.SecurityContext).NotTo(BeNil())
+			Expect(podSpec.SecurityContext.FSGroup).To(BeNil())
+			Expect(podSpec.SecurityContext.RunAsUser).To(BeNil())
+			Expect(podSpec.SecurityContext.RunAsGroup).To(BeNil())
+		})
+	})
+})
+
 var _ = Describe("PDB", func() {
 	var cr *v1.ClickHouseCluster
 

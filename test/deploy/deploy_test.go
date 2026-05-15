@@ -164,23 +164,12 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 		currentTestNamespace = namespace
 
 		By("installing operator-sdk")
-		runCmd(ctx, "make", "operator-sdk")
 
-		out, err := testutil.Run(exec.CommandContext(ctx, "make", "operator-sdk-path"))
+		out, err := testutil.Run(exec.CommandContext(ctx, "make", "-s", "operator-sdk-path"))
 		Expect(err).ToNot(HaveOccurred(), string(out))
+		Expect(out).ToNot(BeEmpty(), "operator-sdk path not found in output: %s", string(out))
 
-		// Extract the path from make output, skipping make[N] directory messages.
-		var operatorSDK string
-		for line := range strings.SplitSeq(string(out), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" && strings.HasPrefix(line, "/") && strings.HasSuffix(line, "operator-sdk") {
-				operatorSDK = line
-
-				break
-			}
-		}
-
-		Expect(operatorSDK).ToNot(BeEmpty(), "operator-sdk path not found in output: %s", string(out))
+		operatorSDK := strings.TrimSpace(string(out))
 
 		By("installing OLM")
 
@@ -197,6 +186,12 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 
 		By("creating test namespace")
 		testutil.EnsureNamespace(ctx, k8sClient, namespace)
+
+		// Enforce upstream Pod Security Admission at "restricted" level on the OLM test namespace.
+		By("labeling test namespace with PSA enforce=restricted")
+		runCmd(ctx, "kubectl", "label", "ns", namespace, "--overwrite",
+			"pod-security.kubernetes.io/enforce=restricted",
+			"pod-security.kubernetes.io/enforce-version=latest")
 
 		By("building OLM bundle")
 		runCmd(ctx, "make", "bundle", "IMG="+testImage)

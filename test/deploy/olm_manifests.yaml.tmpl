@@ -17,10 +17,25 @@ metadata:
   labels:
     app: test-catalog-server
 spec:
+  # Restricted Pod Security Standard compliance — the OLM test namespace is
+  # labeled pod-security.kubernetes.io/enforce=restricted, so the catalog
+  # server pod must drop ALL caps, run non-root, disable privilege escalation,
+  # and set the runtime-default seccomp profile.
+  securityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
   containers:
   - name: opm
     image: quay.io/operator-framework/opm:v1.62.0
     command: ["opm", "serve", "/configs"]
+    securityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
     ports:
     - containerPort: 50051
     volumeMounts:

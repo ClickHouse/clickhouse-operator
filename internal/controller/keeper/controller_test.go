@@ -302,7 +302,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 			RunAsUser: new(int64(7)),
 		}
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
-			Privileged: new(true),
+			AllowPrivilegeEscalation: new(true),
 		}
 		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
@@ -317,7 +317,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		}, &sts)).To(Succeed())
 
 		Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsUser).To(BeEquivalentTo(7))
-		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.Privileged).To(BeEquivalentTo(true))
+		Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.AllowPrivilegeEscalation).To(BeEquivalentTo(true))
 	})
 
 	It("should ignore PDBs if Ignored", func(ctx context.Context) {

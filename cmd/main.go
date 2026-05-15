@@ -183,6 +183,12 @@ func run() error {
 		return fmt.Errorf("unable to start manager: %w", err)
 	}
 
+	if err = controllerutil.DetectOpenShift(config); err != nil {
+		setupLog.Error(err, "OpenShift detection failed; falling back to vanilla defaults")
+	}
+
+	setupLog.Info("platform detected", "openshift", controllerutil.IsOpenShift())
+
 	zapLogger := controllerutil.NewLogger(logger)
 
 	var upgradeChecker *upgrade.Checker
