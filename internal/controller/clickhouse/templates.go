@@ -540,6 +540,18 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 	return container, nil
 }
 
+type protocolType = string
+
+const (
+	protocolTypeInterserver protocolType = "interserver"
+	protocolTypePrometheus  protocolType = "prometheus"
+	protocolTypeManagement  protocolType = "management"
+	protocolTypeTCP         protocolType = "tcp"
+	protocolTypeTCPSecure   protocolType = "tcp-secure"
+	protocolTypeHTTP        protocolType = "http"
+	protocolTypeHTTPSecure  protocolType = "http-secure"
+)
+
 type protocol struct {
 	Type        string `yaml:"type"`
 	Port        int32  `yaml:"port,omitempty"`
@@ -547,55 +559,55 @@ type protocol struct {
 	Description string `yaml:"description,omitempty"`
 }
 
-func buildProtocols(cr *v1.ClickHouseCluster) map[string]protocol {
-	protocols := map[string]protocol{
-		"interserver": {
-			Type:        "interserver",
+func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
+	protocols := map[protocolType]protocol{
+		protocolTypeInterserver: {
+			Type:        protocolTypeInterserver,
 			Port:        PortInterserver,
-			Description: "interserver",
+			Description: protocolTypeInterserver,
 		},
-		"prometheus": {
-			Type:        "prometheus",
+		protocolTypePrometheus: {
+			Type:        protocolTypePrometheus,
 			Port:        PortPrometheusScrape,
-			Description: "prometheus",
+			Description: protocolTypePrometheus,
 		},
-		"management": {
-			Type:        "tcp",
+		protocolTypeManagement: {
+			Type:        protocolTypeTCP,
 			Port:        PortManagement,
 			Description: "tcp-management",
 		},
-		"tcp": {
-			Type: "tcp",
+		protocolTypeTCP: {
+			Type: protocolTypeTCP,
 		},
-		"http": {
-			Type: "http",
+		protocolTypeHTTP: {
+			Type: protocolTypeHTTP,
 		},
 	}
 
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
-		protocols["http"] = protocol{
-			Type:        "http",
+		protocols[protocolTypeHTTP] = protocol{
+			Type:        protocolTypeHTTP,
 			Port:        PortHTTP,
-			Description: "http",
+			Description: protocolTypeHTTP,
 		}
-		protocols["tcp"] = protocol{
-			Type:        "tcp",
+		protocols[protocolTypeTCP] = protocol{
+			Type:        protocolTypeTCP,
 			Port:        PortNative,
 			Description: "native protocol",
 		}
 	}
 
 	if cr.Spec.Settings.TLS.Enabled {
-		protocols["tcp-secure"] = protocol{
+		protocols[protocolTypeTCPSecure] = protocol{
 			Type:        "tls",
 			Port:        PortNativeSecure,
-			Impl:        "tcp",
+			Impl:        protocolTypeTCP,
 			Description: "secure native protocol",
 		}
-		protocols["http-secure"] = protocol{
+		protocols[protocolTypeHTTPSecure] = protocol{
 			Type:        "tls",
 			Port:        PortHTTPSecure,
-			Impl:        "http",
+			Impl:        protocolTypeHTTP,
 			Description: "https",
 		}
 	}

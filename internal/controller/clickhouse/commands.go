@@ -218,11 +218,11 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 	}
 
 	for name, desc := range databases {
-		dbCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{"database": name}))
+		ctx := dbCtx(ctx, name)
 
 		log.Debug("creating database", "replica_id", id, "database", name)
 
-		if err = conn.Exec(dbCtx, fmt.Sprintf(
+		if err = conn.Exec(ctx, fmt.Sprintf(
 			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
 			desc.UUID, desc.EngineFull,
 		),
@@ -233,7 +233,7 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 		if desc.IsReplicated {
 			log.Debug("sync database replica", "replica_id", id, "database", name)
 
-			if err = conn.Exec(dbCtx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
+			if err = conn.Exec(ctx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
 				return fmt.Errorf("failed to sync replica for database %s on replica %s: %w", name, id, err)
 			}
 		}
@@ -306,8 +306,7 @@ func (cmd *commander) SyncReplica(ctx context.Context, log controllerutil.Logger
 		if desc.IsReplicated {
 			log.Debug("syncing database replica", "database", name)
 
-			syncCtx := clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{"database": name}))
-			if err = conn.Exec(syncCtx, "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
+			if err = conn.Exec(dbCtx(ctx, name), "SYSTEM SYNC DATABASE REPLICA {database:Identifier}"); err != nil {
 				errs = append(errs, fmt.Errorf("sync database %s: %w", name, err))
 			}
 		}
@@ -531,4 +530,10 @@ func (cmd *commander) ensureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 	}
 
 	return nil
+}
+
+func dbCtx(ctx context.Context, db string) context.Context {
+	return clickhouse.Context(ctx, clickhouse.WithParameters(clickhouse.Parameters{
+		"database": db,
+	}))
 }

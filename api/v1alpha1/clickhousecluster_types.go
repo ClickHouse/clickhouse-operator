@@ -425,7 +425,3 @@ type ClickHouseClusterList struct {
 
 	Items []ClickHouseCluster `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&ClickHouseCluster{}, &ClickHouseClusterList{})
-}

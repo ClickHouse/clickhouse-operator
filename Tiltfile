@@ -58,6 +58,9 @@ docker_build_with_restart(
     live_update = [
         sync("bin/manager_linux", "/manager"),
     ],
+    build_args={
+        "USER_ID": "0",
+    },
 )
 
 if deploy_source == 'helm':

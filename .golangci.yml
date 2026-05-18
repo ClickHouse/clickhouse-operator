@@ -33,6 +33,7 @@ linters:
     - nilerr
     - gocritic
     - bodyclose
+    - clickhouselint
     - exhaustive
     - usestdlibvars
     - wastedassign
@@ -129,6 +130,10 @@ linters:
       ignored-files:
         - test/.*\.go
         - internal/controller/testutil/.*\.go
+    goconst:
+      ignore-tests: true
+      ignore-string-values:
+        - \S+\s+\S*
   exclusions:
     generated: lax
     rules:

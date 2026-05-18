@@ -307,7 +307,3 @@ type KeeperClusterList struct {
 
 	Items []KeeperCluster `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&KeeperCluster{}, &KeeperClusterList{})
-}
