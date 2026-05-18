@@ -52,7 +52,6 @@ const (
 	ConditionReasonMajorUpdateAvailable ConditionReason = "MajorUpdateAvailable"
 	ConditionReasonVersionOutdated      ConditionReason = "VersionOutdated"
 	ConditionReasonUpgradeCheckFailed   ConditionReason = "UpgradeCheckFailed"
-
 	// ConditionTypeReady indicates that cluster is ready to serve client requests.
 	ConditionTypeReady                      ConditionType   = "Ready"
 	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"

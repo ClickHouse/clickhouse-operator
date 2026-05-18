@@ -152,6 +152,34 @@ func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logg
 	return result
 }
 
+// ReloadConfig executes SYSTEM RELOAD CONFIG.
+func (cmd *commander) ReloadConfig(ctx context.Context, id v1.ClickHouseReplicaID) error {
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+	}
+
+	if err := conn.Exec(ctx, "SYSTEM RELOAD CONFIG"); err != nil {
+		return fmt.Errorf("reload config on replica %s: %w", id, err)
+	}
+
+	return nil
+}
+
+// ReloadUsers executes SYSTEM RELOAD USERS.
+func (cmd *commander) ReloadUsers(ctx context.Context, id v1.ClickHouseReplicaID) error {
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+	}
+
+	if err := conn.Exec(ctx, "SYSTEM RELOAD USERS"); err != nil {
+		return fmt.Errorf("reload users on replica %s: %w", id, err)
+	}
+
+	return nil
+}
+
 func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]databaseDescriptor, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {

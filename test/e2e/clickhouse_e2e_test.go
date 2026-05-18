@@ -113,6 +113,84 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Entry("scale up to 2 replicas", v1.ClickHouseClusterSpec{Replicas: new(int32(2))}),
 		)
 
+		It("should not restart pods when only ExtraUsersConfig changes", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace(ctx),
+					Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					Settings: v1.ClickHouseSettings{
+						ExtraUsersConfig: runtime.RawExtension{Raw: []byte(`{}`)},
+					},
+				},
+			}
+			checks := 0
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cr, time.Minute, false)
+			ClickHouseRWChecks(ctx, &cr, &checks)
+
+			By("recording pod UIDs before config change")
+
+			var podsBefore corev1.PodList
+
+			Expect(k8sClient.List(ctx, &podsBefore, client.InNamespace(testNamespace(ctx)),
+				client.MatchingLabels{controllerutil.LabelAppKey: cr.SpecificName()})).To(Succeed())
+			Expect(podsBefore.Items).NotTo(BeEmpty())
+
+			uidByPodName := make(map[string]types.UID)
+			for _, p := range podsBefore.Items {
+				uidByPodName[p.Name] = p.UID
+			}
+
+			By("updating ExtraUsersConfig (reloadable, should not trigger restart)")
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			cr.Spec.Settings.ExtraUsersConfig = runtime.RawExtension{
+				Raw: []byte(`{"users": {"e2e_test_user": {"password": "test", "profile": "default"}}}`),
+			}
+			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+
+			By("waiting for configuration to sync")
+			EventuallyWithOffset(1, func() bool {
+				var cluster v1.ClickHouseCluster
+
+				ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
+
+				for _, cond := range cluster.Status.Conditions {
+					if cond.Type == v1.ConditionTypeConfigurationInSync && cond.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+
+				return false
+			}, 2*time.Minute).Should(BeTrue())
+
+			By("verifying pods were not restarted (same UIDs)")
+
+			var podsAfter corev1.PodList
+
+			Expect(k8sClient.List(ctx, &podsAfter, client.InNamespace(testNamespace(ctx)),
+				client.MatchingLabels{controllerutil.LabelAppKey: cr.SpecificName()})).To(Succeed())
+
+			for _, p := range podsAfter.Items {
+				Expect(p.UID).To(Equal(uidByPodName[p.Name]),
+					"pod %s was restarted (UID changed)", p.Name)
+			}
+
+			ClickHouseRWChecks(ctx, &cr, &checks)
+		})
+
 		DescribeTable("ClickHouse cluster updates", func(
 			ctx context.Context,
 			baseReplicas int,
