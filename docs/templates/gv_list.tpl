@@ -1,10 +1,12 @@
 {{- define "gvList" -}}
 {{- $groupVersions := . -}}
 ---
+position: 1
 slug: /clickhouse-operator/reference/api-reference
 title: 'ClickHouse Operator API reference'
-keywords: ['kubernetes', 'operator', 'API reference']
+keywords: ['kubernetes']
 description: 'This document provides detailed API reference for the ClickHouse Operator custom resources.'
+doc_type: 'reference'
 sidebarTitle: 'API reference'
 ---
 
