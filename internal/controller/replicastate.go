@@ -41,34 +41,65 @@ func (s ReplicaUpdateStage) String() string {
 }
 
 // RevisionState holds the target revision hashes for comparing replica state against desired state.
-// Constructed by the reconciler from cached revision fields and passed to replicaState methods.
+// Constructed by the reconciler and passed to replicaState methods.
 type RevisionState struct {
-	StatefulSetRevision   string
+	StatefulSetRevision string
+
 	ConfigurationRevision string
-	PVCRevision           string
-	HasPVCSpec            bool
+	// RestartConfigRevision is a partial revision of config that requires server restart.
+	RestartConfigRevision string
+	// ReloadConfigRevision is a partial revision of config that can be reloaded in runtime.
+	ReloadConfigRevision string
+
+	PVCRevision string
+	HasPVCSpec  bool
 }
 
-// ReplicaHasDiff checks whether a StatefulSet and optional PVC match the target revisions.
-func (rev RevisionState) ReplicaHasDiff(sts *appsv1.StatefulSet, pvc *corev1.PersistentVolumeClaim) bool {
-	if sts == nil {
+// ReplicaState holds resources owned by a single replica.
+type ReplicaState struct {
+	STS *appsv1.StatefulSet
+	CFG *corev1.ConfigMap
+	PVC *corev1.PersistentVolumeClaim
+}
+
+// Updated checks whether StatefulSet controller applied updates.
+func (s ReplicaState) Updated() bool {
+	if s.STS == nil {
+		return false
+	}
+
+	return s.STS.Generation == s.STS.Status.ObservedGeneration &&
+		s.STS.Status.UpdateRevision == s.STS.Status.CurrentRevision
+}
+
+// ReplicaHasDiff checks whether any replica resources should be updated.
+func (rev RevisionState) ReplicaHasDiff(state ReplicaState) bool {
+	if state.STS == nil {
 		return true
 	}
 
-	if util.GetSpecHashFromObject(sts) != rev.StatefulSetRevision {
+	if util.GetSpecHashFromObject(state.STS) != rev.StatefulSetRevision {
 		return true
 	}
 
-	if util.GetConfigHashFromObject(sts) != rev.ConfigurationRevision {
+	if state.STS.Spec.Template.Annotations[util.AnnotationConfigHash] != rev.RestartConfigRevision {
+		return true
+	}
+
+	if state.CFG == nil {
+		return true
+	}
+
+	if util.GetConfigHashFromObject(state.CFG) != rev.ConfigurationRevision {
 		return true
 	}
 
 	if rev.HasPVCSpec {
-		if pvc == nil {
+		if state.PVC == nil {
 			return true
 		}
 
-		if util.GetSpecHashFromObject(pvc) != rev.PVCRevision {
+		if util.GetSpecHashFromObject(state.PVC) != rev.PVCRevision {
 			return true
 		}
 	}

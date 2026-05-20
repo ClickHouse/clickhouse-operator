@@ -42,7 +42,7 @@ var _ = Describe("ServerRevision", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(baseCfgRevision).ToNot(BeEmpty())
 
-		baseStsRevision, err = getStatefulSetRevision(baseCR)
+		baseStsRevision, err = getStatefulSetRevision(baseCR, baseCfgRevision)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(baseStsRevision).ToNot(BeEmpty())
 	})
@@ -55,13 +55,13 @@ var _ = Describe("ServerRevision", func() {
 		Expect(baseCfgRevision).ToNot(BeEmpty())
 		Expect(cfgRevisionUpdated).To(Equal(baseCfgRevision), "server config revision shouldn't depend on replica count")
 
-		stsRevisionUpdated, err := getStatefulSetRevision(cr)
+		stsRevisionUpdated, err := getStatefulSetRevision(cr, cfgRevisionUpdated)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(stsRevisionUpdated).ToNot(BeEmpty())
 		Expect(stsRevisionUpdated).To(Equal(baseStsRevision), "StatefulSet config revision shouldn't depend on replica count")
 	})
 
-	It("should not change sts revision if only config changes", func() {
+	It("should change sts revision when config changes", func() {
 		cr := baseCR.DeepCopy()
 		cr.Spec.Settings.Logger.Level = "warning"
 		cfgRevisionUpdated, err := getConfigurationRevision(cr)
@@ -69,10 +69,10 @@ var _ = Describe("ServerRevision", func() {
 		Expect(cfgRevisionUpdated).ToNot(BeEmpty())
 		Expect(cfgRevisionUpdated).ToNot(Equal(baseCfgRevision), "configuration change should update config revision")
 
-		stsRevisionUpdated, err := getStatefulSetRevision(cr)
+		stsRevisionUpdated, err := getStatefulSetRevision(cr, cfgRevisionUpdated)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(stsRevisionUpdated).ToNot(BeEmpty())
-		Expect(stsRevisionUpdated).To(Equal(baseStsRevision), "StatefulSet config revision shouldn't change with config")
+		Expect(stsRevisionUpdated).ToNot(Equal(baseStsRevision), "config change should trigger server restart")
 	})
 })
 
@@ -216,12 +216,12 @@ var _ = Describe("getStatefulSetRevision", func() {
 			},
 		}
 
-		rev, err := getStatefulSetRevision(cr)
+		rev, err := getStatefulSetRevision(cr, "fixed-cfg-rev")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rev).ToNot(BeEmpty())
 
 		cr.Spec.DataVolumeClaimSpec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
-		rev2, err := getStatefulSetRevision(cr)
+		rev2, err := getStatefulSetRevision(cr, "fixed-cfg-rev")
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(rev2).To(Equal(rev), "StatefulSet revision should not change when data disk spec changes")
@@ -239,12 +239,12 @@ func FuzzClusterSpec(f *testing.F) {
 
 		crBefore := cr.DeepCopy()
 
-		stsFirst, err1 := templateStatefulSet(cr, id)
+		stsFirst, err1 := templateStatefulSet(cr, id, "fixed-cfg-rev")
 		if diff := cmp.Diff(crBefore.Spec, cr.Spec); diff != "" {
 			t.Errorf("ClusterSpec mutated:\n%s", diff)
 		}
 
-		stsSecond, err2 := templateStatefulSet(cr, id)
+		stsSecond, err2 := templateStatefulSet(cr, id, "fixed-cfg-rev")
 		if diff := cmp.Diff(crBefore.Spec, cr.Spec); diff != "" {
 			t.Errorf("ClusterSpec mutated:\n%s", diff)
 		}

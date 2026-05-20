@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"time"
 
 	"github.com/blang/semver/v4"
 	gcmp "github.com/google/go-cmp/cmp"
@@ -243,45 +242,38 @@ func (rm *ResourceManager) GetPVCByStatefulSet(
 // ReplicaUpdateInput contains the parameters needed to reconcile a StatefulSet for a replica.
 type ReplicaUpdateInput struct {
 	Revisions RevisionState
-
-	DesiredConfigMap *corev1.ConfigMap
-
-	ExistingSTS        *appsv1.StatefulSet
-	DesiredSTS         *appsv1.StatefulSet
-	HasError           bool
-	BreakingSTSVersion semver.Version
-
-	ExistingPVC    *corev1.PersistentVolumeClaim
-	DesiredPVCSpec *corev1.PersistentVolumeClaimSpec
+	Existing  ReplicaState
+	Desired   ReplicaState
+	HasError  bool
 }
 
 // UpdatePVC updates the PersistentVolumeClaim for the given replica ID if it exists and differs from the provided spec.
 func (rm *ResourceManager) UpdatePVC(ctx context.Context, log util.Logger, input ReplicaUpdateInput) error {
-	if input.DesiredPVCSpec == nil {
+	if input.Desired.PVC == nil {
 		return nil
 	}
 
-	if input.ExistingPVC == nil {
+	if input.Existing.PVC == nil {
 		log.Debug("replica PVC not found, skipping update")
 		return nil
 	}
 
-	log = log.With("pvc", input.ExistingPVC.Name)
+	log = log.With("pvc", input.Existing.PVC.Name)
 
-	if util.GetSpecHashFromObject(input.ExistingPVC) == input.Revisions.PVCRevision {
+	if util.GetSpecHashFromObject(input.Existing.PVC) == input.Revisions.PVCRevision {
 		log.Debug("PVC is up to date")
 		return nil
 	}
 
-	targetSpec := input.DesiredPVCSpec.DeepCopy()
-	if err := util.ApplyDefault(targetSpec, input.ExistingPVC.Spec); err != nil {
+	targetSpec := input.Desired.PVC.Spec.DeepCopy()
+	if err := util.ApplyDefault(targetSpec, input.Existing.PVC.Spec); err != nil {
 		return fmt.Errorf("patch PVC spec: %w", err)
 	}
 
-	log.Info("updating PVC", "diff", gcmp.Diff(input.ExistingPVC.Spec, *targetSpec))
+	log.Info("updating PVC", "diff", gcmp.Diff(input.Existing.PVC.Spec, *targetSpec))
 
 	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: *input.ExistingPVC.ObjectMeta.DeepCopy(),
+		ObjectMeta: *input.Existing.PVC.ObjectMeta.DeepCopy(),
 		Spec:       *targetSpec,
 	}
 
@@ -301,23 +293,31 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 	log util.Logger,
 	input ReplicaUpdateInput,
 ) (*ctrlruntime.Result, error) {
-	configChanged, err := rm.ReconcileConfigMap(ctx, log, input.DesiredConfigMap, v1.EventActionReconciling)
+	util.AddObjectConfigHash(input.Desired.CFG, input.Revisions.ConfigurationRevision)
+	util.AddHashWithKeyToAnnotations(input.Desired.CFG, util.AnnotationReloadableConfigHash, input.Revisions.ReloadConfigRevision)
+
+	configChanged, err := rm.ReconcileConfigMap(ctx, log, input.Desired.CFG, v1.EventActionReconciling)
 	if err != nil {
 		return nil, fmt.Errorf("update replica ConfigMap: %w", err)
 	}
 
-	statefulSet := input.DesiredSTS
+	// PVC update failures are non-fatal: the next reconciliation will detect the mismatch
+	// via HasDiff and retry. This avoids blocking the STS update on transient PVC conflicts.
+	if err = rm.UpdatePVC(ctx, log, input); err != nil {
+		log.Warn("failed to update replica PVC", "error", err)
+	}
+
+	statefulSet := input.Desired.STS
 
 	if err = ctrlruntime.SetControllerReference(rm.owner, statefulSet, rm.ctrl.GetScheme()); err != nil {
 		return nil, fmt.Errorf("set replica StatefulSet controller reference: %w", err)
 	}
 
-	if input.ExistingSTS == nil {
+	if input.Existing.STS == nil {
 		log.Info("replica StatefulSet not found, creating", "statefulset", statefulSet.Name)
-		util.AddObjectConfigHash(statefulSet, input.Revisions.ConfigurationRevision)
 		util.AddSpecHashToObject(statefulSet, input.Revisions.StatefulSetRevision)
 
-		if input.DesiredPVCSpec != nil {
+		if input.Desired.PVC != nil {
 			util.AddSpecHashToObject(&statefulSet.Spec.VolumeClaimTemplates[0], input.Revisions.PVCRevision)
 		}
 
@@ -328,49 +328,30 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 	}
 
-	// PVC update failures are non-fatal: the next reconciliation will detect the mismatch
-	// via HasDiff and retry. This avoids blocking the STS update on transient PVC conflicts.
-	if err = rm.UpdatePVC(ctx, log, input); err != nil {
-		log.Warn("failed to update replica PVC", "error", err)
-	}
+	statefulSet.Spec.VolumeClaimTemplates = input.Existing.STS.Spec.VolumeClaimTemplates
 
-	statefulSet.Spec.VolumeClaimTemplates = input.ExistingSTS.Spec.VolumeClaimTemplates
-
-	// Check if the StatefulSet is outdated and needs to be recreated
-	v, err := semver.Parse(input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion])
-	if err != nil || input.BreakingSTSVersion.GT(v) {
-		log.Warn("removing StatefulSet because of a breaking change",
-			"found_version", input.ExistingSTS.Annotations[util.AnnotationStatefulSetVersion],
-			"expected_version", input.BreakingSTSVersion.String(),
-		)
-
-		if err := rm.Delete(ctx, input.ExistingSTS, v1.EventActionReconciling); err != nil {
-			return nil, fmt.Errorf("recreate replica: %w", err)
+	{
+		desiredVer, err := semver.Parse(input.Desired.STS.Annotations[util.AnnotationStatefulSetVersion])
+		if err != nil {
+			return nil, fmt.Errorf("unexpected desired STS version: %w", err)
 		}
 
-		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		existingVer, err := semver.Parse(input.Existing.STS.Annotations[util.AnnotationStatefulSetVersion])
+		if err != nil || desiredVer.GT(existingVer) {
+			log.Warn("removing StatefulSet because of a breaking change",
+				"found_version", input.Existing.STS.Annotations[util.AnnotationStatefulSetVersion],
+				"expected_version", input.Desired.STS.Annotations[util.AnnotationStatefulSetVersion],
+			)
+
+			if err := rm.Delete(ctx, input.Existing.STS, v1.EventActionReconciling); err != nil {
+				return nil, fmt.Errorf("recreate replica: %w", err)
+			}
+
+			return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		}
 	}
 
-	stsNeedsUpdate := util.GetSpecHashFromObject(input.ExistingSTS) != input.Revisions.StatefulSetRevision
-
-	// Trigger Pod restart if config changed
-	// Always restarts on config changes, need to add check if it is needed.
-	if util.GetConfigHashFromObject(input.ExistingSTS) != input.Revisions.ConfigurationRevision {
-		// Use same way as Kubernetes for force restarting Pods one by one
-		// (https://github.com/kubernetes/kubernetes/blob/22a21f974f5c0798a611987405135ab7e62502da/staging/src/k8s.io/kubectl/pkg/polymorphichelpers/objectrestarter.go#L41)
-		// Not included by default in the StatefulSet so that hash-diffs work correctly
-		log.Info("forcing Pod restart, because of config changes")
-
-		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = time.Now().Format(time.RFC3339)
-
-		util.AddObjectConfigHash(statefulSet, input.Revisions.ConfigurationRevision)
-
-		stsNeedsUpdate = true
-	} else if restartedAt, ok := input.ExistingSTS.Spec.Template.Annotations[util.AnnotationRestartedAt]; ok {
-		statefulSet.Spec.Template.Annotations[util.AnnotationRestartedAt] = restartedAt
-	}
-
-	if !stsNeedsUpdate {
+	if util.GetSpecHashFromObject(input.Existing.STS) == input.Revisions.StatefulSetRevision {
 		log.Debug("StatefulSet is up to date", "statefulset", statefulSet.Name)
 
 		if configChanged {
@@ -379,10 +360,10 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 
 		// Delete stuck pod if in error state so the StatefulSet controller can recreate it
 		if input.HasError {
-			podName := input.ExistingSTS.Name + "-0"
+			podName := input.Existing.STS.Name + "-0"
 			pod := &corev1.Pod{}
 
-			err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{Namespace: input.ExistingSTS.Namespace, Name: podName}, pod)
+			err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{Namespace: input.Existing.STS.Namespace, Name: podName}, pod)
 			if err != nil {
 				if k8serrors.IsNotFound(err) {
 					return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
@@ -393,7 +374,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
 			}
 
-			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.ExistingSTS.Status.UpdateRevision {
+			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.Existing.STS.Status.UpdateRevision {
 				log.Info("deleting pod stuck in error state", "pod", podName)
 
 				if err = rm.ctrl.GetClient().Delete(ctx, pod); err != nil {
@@ -409,12 +390,12 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 
 	log.Info("updating replica StatefulSet", "statefulset", statefulSet.Name)
 
-	updatedSTS := input.ExistingSTS.DeepCopy()
+	updatedSTS := input.Existing.STS.DeepCopy()
 	updatedSTS.Spec = statefulSet.Spec
 	updatedSTS.Annotations = util.MergeMaps(updatedSTS.Annotations, statefulSet.Annotations)
 	updatedSTS.Labels = util.MergeMaps(updatedSTS.Labels, statefulSet.Labels)
 	util.AddSpecHashToObject(updatedSTS, input.Revisions.StatefulSetRevision)
-	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.ExistingSTS, updatedSTS))
+	log.Debug("replica StatefulSet diff", "diff", gcmp.Diff(input.Existing.STS, updatedSTS))
 
 	if err = rm.Update(ctx, updatedSTS, v1.EventActionReconciling); err != nil {
 		return nil, fmt.Errorf("update replica: %w", err)
@@ -441,4 +422,39 @@ func diffFilter(specFields []string) gcmp.Option {
 
 		return false
 	}, gcmp.Ignore())
+}
+
+// ListReplicaResources lists the resources for replicas and maps them to replica IDs using the provided labelToID function.
+func ListReplicaResources[
+	ID comparable,
+	Res client.Object,
+	RList client.ObjectList,
+](ctx context.Context, rm *ResourceManager, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
+	list, ok := reflect.New(reflect.TypeOf((*RList)(nil)).Elem().Elem()).Interface().(RList)
+	if !ok {
+		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
+	}
+
+	if err := rm.ctrl.GetClient().List(ctx, list, util.AppRequirements(rm.owner.GetNamespace(), rm.specificName)); err != nil {
+		return nil, fmt.Errorf("list resources: %w", err)
+	}
+
+	result := map[ID]Res{}
+
+	items := reflect.ValueOf(list).Elem().FieldByName("Items")
+	for i := range items.Len() {
+		item, ok := items.Index(i).Addr().Interface().(Res)
+		if !ok {
+			return nil, fmt.Errorf("not compatible list item type: %s", items.Index(i).Addr().Type().Name())
+		}
+
+		id, err := labelToID(item.GetLabels())
+		if err != nil {
+			continue
+		}
+
+		result[id] = item
+	}
+
+	return result, nil
 }

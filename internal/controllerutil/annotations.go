@@ -5,12 +5,11 @@ import (
 )
 
 const (
-	AnnotationSpecHash    = "checksum/spec"
-	AnnotationConfigHash  = "checksum/configuration"
-	AnnotationRestartedAt = "kubectl.kubernetes.io/restartedAt"
+	AnnotationSpecHash             = "checksum/spec"
+	AnnotationConfigHash           = "checksum/configuration"
+	AnnotationReloadableConfigHash = "checksum/reloadable-configuration"
 
-	AnnotationStatefulSetVersion        = "clickhouse.com/statefulset-version"
-	AnnotationRestartRequiredConfigHash = "checksum/restart-required-config"
+	AnnotationStatefulSetVersion = "clickhouse.com/statefulset-version"
 )
 
 // AddHashWithKeyToAnnotations adds given spec hash to object's annotations with given key.
@@ -53,19 +52,4 @@ func GetConfigHashFromObject(found client.Object) string {
 // AddObjectConfigHash adds given config hash to object's annotations.
 func AddObjectConfigHash(obj client.Object, hash string) {
 	AddHashWithKeyToAnnotations(obj, AnnotationConfigHash, hash)
-}
-
-// GetRestartRequiredConfigHashFromObject retrieves restart-required config hash from object's annotations.
-func GetRestartRequiredConfigHashFromObject(found client.Object) string {
-	annotations := found.GetAnnotations()
-	if annotations == nil || annotations[AnnotationRestartRequiredConfigHash] == "" {
-		return ""
-	}
-
-	return annotations[AnnotationRestartRequiredConfigHash]
-}
-
-// AddObjectRestartRequiredConfigHash adds restart-required config hash to object's annotations.
-func AddObjectRestartRequiredConfigHash(obj client.Object, hash string) {
-	AddHashWithKeyToAnnotations(obj, AnnotationRestartRequiredConfigHash, hash)
 }

@@ -220,9 +220,15 @@ func HealthyCondition(notReadyIDs []string) metav1.Condition {
 }
 
 // ConfigSyncCondition evaluates ConfigurationInSync.
-func ConfigSyncCondition(notUpdatedIDs []string) metav1.Condition {
-	return replicaCondition(v1.ConditionTypeConfigurationInSync, notUpdatedIDs,
-		v1.ConditionReasonConfigurationChanged, v1.ConditionReasonUpToDate, "Replicas have pending updates")
+func ConfigSyncCondition(reloadErr, notUpdated, notReloaded []string) metav1.Condition {
+	switch {
+	case len(reloadErr) > 0:
+		return replicaCondition(v1.ConditionTypeConfigurationInSync, reloadErr, v1.ConditionReasonConfigReloadFailed, v1.ConditionReasonUpToDate, "Replicas config reload failed")
+	case len(notUpdated) > 0:
+		return replicaCondition(v1.ConditionTypeConfigurationInSync, notUpdated, v1.ConditionReasonConfigurationChanged, v1.ConditionReasonUpToDate, "Replicas have pending updates")
+	}
+
+	return replicaCondition(v1.ConditionTypeConfigurationInSync, notReloaded, v1.ConditionReasonConfigReloadPending, v1.ConditionReasonUpToDate, "Replicas waiting to reload config")
 }
 
 // ClusterSizeCondition evaluates ClusterSizeAligned.

@@ -218,8 +218,8 @@ func getConfigurationRevision(cr *v1.KeeperCluster) (string, error) {
 	return hash, nil
 }
 
-func getStatefulSetRevision(cr *v1.KeeperCluster) (string, error) {
-	sts, err := templateStatefulSet(cr, 0)
+func getStatefulSetRevision(cr *v1.KeeperCluster, cfgRestartRevision string) (string, error) {
+	sts, err := templateStatefulSet(cr, 0, cfgRestartRevision)
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
@@ -255,7 +255,7 @@ func templateConfigMap(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*corev1.Con
 	}, nil
 }
 
-func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*appsv1.StatefulSet, error) {
+func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID, cfgRestartRevision string) (*appsv1.StatefulSet, error) {
 	podSpec, err := templatePodSpec(cr, id)
 	if err != nil {
 		return nil, fmt.Errorf("template pod spec: %w", err)
@@ -283,6 +283,7 @@ func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*appsv1.S
 				GenerateName: cr.SpecificName(),
 				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
+					controllerutil.AnnotationConfigHash:       cfgRestartRevision,
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},

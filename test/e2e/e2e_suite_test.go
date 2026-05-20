@@ -191,7 +191,7 @@ func CheckPodReady(pod *corev1.Pod) bool {
 // CheckUpdateOrder lists StatefulSets for the given app and validates rolling update invariants:
 // 1. Updated StatefulSets form a contiguous group from the highest replica ID
 // 2. At most one StatefulSet has zero ready replicas (the one currently being updated).
-func CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replicaLabel, stsRev, cfgRev string) error {
+func CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replicaLabel, stsRev string) error {
 	var stsList appsv1.StatefulSetList
 	Expect(k8sClient.List(ctx, &stsList, selector)).To(Succeed())
 
@@ -210,8 +210,7 @@ func CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replica
 			notReadyCount++
 		}
 
-		updated[index] = controllerutil.GetSpecHashFromObject(&sts) == stsRev &&
-			controllerutil.GetConfigHashFromObject(&sts) == cfgRev
+		updated[index] = controllerutil.GetSpecHashFromObject(&sts) == stsRev
 	}
 
 	if notReadyCount > 1 {

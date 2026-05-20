@@ -145,22 +145,52 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (c
 	return secret, changed
 }
 
-func getConfigurationRevision(r *clickhouseReconciler) (string, error) {
-	config, err := generateConfigForSingleReplica(r, v1.ClickHouseReplicaID{})
-	if err != nil {
-		return "", fmt.Errorf("generate template configuration: %w", err)
-	}
-
-	hash, err := controllerutil.DeepHashObject(config)
-	if err != nil {
-		return "", fmt.Errorf("hash template configuration: %w", err)
-	}
-
-	return hash, nil
+type configRevisions struct {
+	Restart string
+	Reload  string
+	Config  string
 }
 
-func getStatefulSetRevision(r *clickhouseReconciler) (string, error) {
-	sts, err := templateStatefulSet(r, v1.ClickHouseReplicaID{})
+func getConfigurationRevisions(r *clickhouseReconciler) (configRevisions, error) {
+	reloadable := map[string]string{}
+	restartable := map[string]string{}
+
+	for _, generator := range generators {
+		if !generator.Enabled(r) {
+			continue
+		}
+
+		data, err := generator.Generate(r, v1.ClickHouseReplicaID{})
+		if err != nil {
+			return configRevisions{}, fmt.Errorf("generate config file %s: %w", generator.Path(), err)
+		}
+
+		if generator.RequiresRestart() {
+			restartable[generator.ConfigKey()] = data
+		} else {
+			reloadable[generator.ConfigKey()] = data
+		}
+	}
+
+	reloadableRev, err := controllerutil.DeepHashObject(reloadable)
+	if err != nil {
+		return configRevisions{}, fmt.Errorf("hash reloadable configuration: %w", err)
+	}
+
+	restartableRev, err := controllerutil.DeepHashObject(restartable)
+	if err != nil {
+		return configRevisions{}, fmt.Errorf("hash restartable configuration: %w", err)
+	}
+
+	return configRevisions{
+		Restart: restartableRev,
+		Reload:  reloadableRev,
+		Config:  fmt.Sprintf("%s:%s", reloadableRev, restartableRev),
+	}, nil
+}
+
+func getStatefulSetRevision(r *clickhouseReconciler, cfgRestartRevision string) (string, error) {
+	sts, err := templateStatefulSet(r, v1.ClickHouseReplicaID{}, cfgRestartRevision)
 	if err != nil {
 		return "", fmt.Errorf("generate template StatefulSet: %w", err)
 	}
@@ -198,7 +228,7 @@ func templateConfigMap(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*cor
 	}, nil
 }
 
-func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*appsv1.StatefulSet, error) {
+func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID, cfgRestartRevision string) (*appsv1.StatefulSet, error) {
 	podSpec, err := templatePodSpec(r, id)
 	if err != nil {
 		return nil, fmt.Errorf("template pod spec: %w", err)
@@ -229,6 +259,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*a
 				GenerateName: r.Cluster.SpecificName(),
 				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(r.Cluster.Spec.Annotations, map[string]string{
+					controllerutil.AnnotationConfigHash:       cfgRestartRevision,
 					"kubectl.kubernetes.io/default-container": ContainerName,
 				}),
 			},

@@ -37,6 +37,8 @@ const (
 	// ConditionTypeConfigurationInSync indicates that cluster configuration is in desired state.
 	ConditionTypeConfigurationInSync    ConditionType   = "ConfigurationInSync"
 	ConditionReasonConfigurationChanged ConditionReason = "ConfigurationChanged"
+	ConditionReasonConfigReloadFailed   ConditionReason = "ConfigReloadFailed"
+	ConditionReasonConfigReloadPending  ConditionReason = "ConfigReloadPending"
 
 	// ConditionTypeVersionInSync indicates that all replicas report the same version as the image.
 	ConditionTypeVersionInSync        ConditionType   = "VersionInSync"
@@ -52,6 +54,7 @@ const (
 	ConditionReasonMajorUpdateAvailable ConditionReason = "MajorUpdateAvailable"
 	ConditionReasonVersionOutdated      ConditionReason = "VersionOutdated"
 	ConditionReasonUpgradeCheckFailed   ConditionReason = "UpgradeCheckFailed"
+
 	// ConditionTypeReady indicates that cluster is ready to serve client requests.
 	ConditionTypeReady                      ConditionType   = "Ready"
 	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"

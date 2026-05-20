@@ -87,23 +87,50 @@ func (cmd *commander) Close() {
 	cmd.conns = map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 }
 
-func (cmd *commander) Version(ctx context.Context, id v1.ClickHouseReplicaID) (string, error) {
+type replicaProbe struct {
+	Version              string
+	ReloadConfigRevision string
+}
+
+// Probe reads the replica server version and the latest applied reload-safe config revision.
+func (cmd *commander) Probe(ctx context.Context, id v1.ClickHouseReplicaID) (replicaProbe, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {
-		return "", fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+		return replicaProbe{}, fmt.Errorf("failed to get connection for replica %s: %w", id, err)
 	}
 
-	var version string
-	if err := conn.QueryRow(ctx, "SELECT version()").Scan(&version); err != nil {
-		return "", fmt.Errorf("query version on replica %s: %w", id, err)
+	var probe replicaProbe
+
+	row := conn.QueryRow(ctx,
+		"SELECT version(),"+
+			" ifNull((SELECT collection[?] FROM system.named_collections WHERE name = ?), '')"+
+			" SETTINGS format_display_secrets_in_show_and_select=1",
+		OperatorConfigRevisionField, OperatorNamedCollectionName,
+	)
+	if err := row.Scan(&probe.Version, &probe.ReloadConfigRevision); err != nil {
+		return replicaProbe{}, fmt.Errorf("probe replica %s: %w", id, err)
 	}
 
-	version, err = controllerutil.ParseVersion(version)
+	probe.Version, err = controllerutil.ParseVersion(probe.Version)
 	if err != nil {
-		return "", fmt.Errorf("parse version from replica %s response: %w", id, err)
+		return replicaProbe{}, fmt.Errorf("parse version from replica %s response: %w", id, err)
 	}
 
-	return version, nil
+	return probe, nil
+}
+
+// ReloadConfig queries the replica to reload its configuration.
+func (cmd *commander) ReloadConfig(ctx context.Context, id v1.ClickHouseReplicaID) error {
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+	}
+
+	if err := conn.Exec(ctx, "SYSTEM RELOAD CONFIG"); err != nil {
+		return fmt.Errorf("reload config on replica %s: %w", id, err)
+	}
+
+	return nil
 }
 
 func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logger, replicas []v1.ClickHouseReplicaID) bool {
@@ -150,34 +177,6 @@ func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logg
 	}
 
 	return result
-}
-
-// ReloadConfig executes SYSTEM RELOAD CONFIG.
-func (cmd *commander) ReloadConfig(ctx context.Context, id v1.ClickHouseReplicaID) error {
-	conn, err := cmd.getConn(id)
-	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
-	}
-
-	if err := conn.Exec(ctx, "SYSTEM RELOAD CONFIG"); err != nil {
-		return fmt.Errorf("reload config on replica %s: %w", id, err)
-	}
-
-	return nil
-}
-
-// ReloadUsers executes SYSTEM RELOAD USERS.
-func (cmd *commander) ReloadUsers(ctx context.Context, id v1.ClickHouseReplicaID) error {
-	conn, err := cmd.getConn(id)
-	if err != nil {
-		return fmt.Errorf("failed to get connection for replica %s: %w", id, err)
-	}
-
-	if err := conn.Exec(ctx, "SYSTEM RELOAD USERS"); err != nil {
-		return fmt.Errorf("reload users on replica %s: %w", id, err)
-	}
-
-	return nil
 }
 
 func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]databaseDescriptor, error) {

@@ -307,8 +307,7 @@ func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeou
 				LabelSelector: labels.SelectorFromSet(map[string]string{
 					controllerutil.LabelAppKey: cluster.SpecificName(),
 				}),
-			}, controllerutil.LabelKeeperReplicaID, cluster.Status.StatefulSetRevision,
-				cluster.Status.ConfigurationRevision)).To(Succeed())
+			}, controllerutil.LabelKeeperReplicaID, cluster.Status.StatefulSetRevision)).To(Succeed())
 		}
 
 		g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))

@@ -67,7 +67,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		Expect(configMap).ToNot(BeNil())
 		Expect(sts).ToNot(BeNil())
-		Expect(util.GetConfigHashFromObject(sts)).To(BeEquivalentTo(rec.revs.ConfigurationRevision))
+		Expect(sts.Spec.Template.Annotations[util.AnnotationConfigHash]).To(Equal(rec.revs.ConfigurationRevision))
 		Expect(util.GetSpecHashFromObject(sts)).To(BeEquivalentTo(rec.revs.StatefulSetRevision))
 	})
 
@@ -76,10 +76,13 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		sts.Status.ObservedGeneration = sts.Generation
 		sts.Status.ReadyReplicas = 1
 		rec.ReplicaState[replicaID] = replicaState{
-			Error:       false,
-			StatefulSet: sts,
+			Error: false,
 			Status: serverStatus{
 				ServerState: ModeStandalone,
+			},
+			ReplicaState: controller.ReplicaState{
+				STS: sts,
+				CFG: mustGet[*corev1.ConfigMap](ctx, rec.GetClient(), cfgKey),
 			},
 		}
 		result, err := rec.reconcileReplicaResources(ctx, log)
@@ -102,22 +105,29 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 	It("should restart server on config changes", func(ctx context.Context) {
 		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
-		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).To(BeEmpty())
+		previousHash := sts.Spec.Template.Annotations[util.AnnotationConfigHash]
+		Expect(previousHash).ToNot(BeEmpty())
+
 		rec.ReplicaState[replicaID] = replicaState{
-			Error:       false,
-			StatefulSet: sts,
+			Error: false,
 			Status: serverStatus{
 				ServerState: ModeStandalone,
 			},
+			ReplicaState: controller.ReplicaState{STS: sts},
 		}
 		rec.Cluster.Spec.Settings.Logger.Level = "info"
 		rec.revs.ConfigurationRevision = "cfg-v2"
+		rec.revs.RestartConfigRevision = "cfg-v2"
+		newStsRevision, err := getStatefulSetRevision(rec.Cluster, "cfg-v2")
+		Expect(err).ToNot(HaveOccurred())
+
+		rec.revs.StatefulSetRevision = newStsRevision
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.IsZero()).To(BeFalse())
 
 		sts = mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
-		Expect(sts.Spec.Template.Annotations[util.AnnotationRestartedAt]).ToNot(BeEmpty())
+		Expect(sts.Spec.Template.Annotations[util.AnnotationConfigHash]).To(Equal(rec.revs.RestartConfigRevision))
 	})
 
 	It("should delete stuck pod in error state", func(ctx context.Context) {
@@ -150,8 +160,8 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		By("setting replica state with error and a spec diff")
 
 		rec.ReplicaState[replicaID] = replicaState{
-			Error:       true,
-			StatefulSet: sts,
+			Error:        true,
+			ReplicaState: controller.ReplicaState{STS: sts},
 		}
 
 		result, err := rec.reconcileReplicaResources(ctx, log)

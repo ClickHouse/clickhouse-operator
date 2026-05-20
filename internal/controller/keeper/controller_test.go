@@ -265,10 +265,10 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
-		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+		Expect(updatedCR.Status.StatefulSetRevision).NotTo(Equal(cr.Status.StatefulSetRevision))
 	})
 
-	It("should merge extra config in configmap", func(ctx context.Context) {
+	It("should add extra config in configmap", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
 		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
@@ -282,7 +282,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
-		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+		Expect(updatedCR.Status.StatefulSetRevision).NotTo(Equal(cr.Status.StatefulSetRevision))
 
 		var configmap corev1.ConfigMap
 		Expect(suite.Client.Get(ctx, types.NamespacedName{

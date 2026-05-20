@@ -35,6 +35,7 @@ const (
 	testUsername                   = "operator"
 	keeperImage                    = "clickhouse/clickhouse-keeper:26.2"
 	clickhouseImage                = "clickhouse/clickhouse-server:26.2"
+	testConfigRevision             = "test-revision-v1"
 )
 
 func generateKeeperConfig() *strings.Reader {
@@ -70,8 +71,11 @@ remote_servers:
   default:
     shard:
       replica: [%s]
+named_collections:
+  __operator:
+    config_revision: %s
 display_secrets_in_show_and_select: true
-`, replica, keeperHostname, keeper.PortNative, strings.Join(replicas, ",")))
+`, replica, keeperHostname, keeper.PortNative, strings.Join(replicas, ","), testConfigRevision))
 }
 
 func generateUsersConfig() *strings.Reader {
@@ -218,12 +222,13 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		})
 	})
 
-	It("should get every node version", func(ctx context.Context) {
+	It("should probe version and config revision in a single query", func(ctx context.Context) {
 		for id := range cmd.cluster.ReplicaIDs() {
 			Eventually(func(g Gomega) {
-				v, err := cmd.Version(ctx, id)
+				probe, err := cmd.Probe(ctx, id)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(v).To(MatchRegexp(`^\d+\.\d+\.\d+\.\d+$`))
+				g.Expect(probe.Version).To(MatchRegexp(`^\d+\.\d+\.\d+\.\d+$`))
+				g.Expect(probe.ReloadConfigRevision).To(Equal(testConfigRevision))
 			}, "1m", "100ms").Should(Succeed())
 		}
 	})

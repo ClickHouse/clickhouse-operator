@@ -25,27 +25,18 @@ import (
 )
 
 type replicaState struct {
-	Error       bool `json:"error"`
-	Status      serverStatus
-	StatefulSet *appsv1.StatefulSet
-	PVC         *corev1.PersistentVolumeClaim
-}
+	chctrl.ReplicaState
 
-func (r replicaState) Updated() bool {
-	if r.StatefulSet == nil {
-		return false
-	}
-
-	return r.StatefulSet.Generation == r.StatefulSet.Status.ObservedGeneration &&
-		r.StatefulSet.Status.UpdateRevision == r.StatefulSet.Status.CurrentRevision
+	Error  bool
+	Status serverStatus
 }
 
 func (r replicaState) Ready(replicaCount int) bool {
-	if r.StatefulSet == nil {
+	if r.STS == nil {
 		return false
 	}
 
-	stsReady := r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
+	stsReady := r.STS.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
 	if replicaCount == 1 {
 		return stsReady && r.Status.ServerState == ModeStandalone
 	}
@@ -54,11 +45,11 @@ func (r replicaState) Ready(replicaCount int) bool {
 }
 
 func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
-	return rev.ReplicaHasDiff(r.StatefulSet, r.PVC)
+	return rev.ReplicaHasDiff(r.ReplicaState)
 }
 
 func (r replicaState) UpdateStage(rev chctrl.RevisionState, replicaCount int) chctrl.ReplicaUpdateStage {
-	if r.StatefulSet == nil {
+	if r.STS == nil {
 		return chctrl.StageNotExists
 	}
 
@@ -185,12 +176,15 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		return chctrl.StepResult{}, fmt.Errorf("get configuration revision: %w", err)
 	}
 
+	// For now keeper restarts on every config change.
+	r.revs.RestartConfigRevision = r.revs.ConfigurationRevision
+
 	if r.revs.ConfigurationRevision != r.Cluster.Status.ConfigurationRevision {
 		r.Cluster.Status.ConfigurationRevision = r.revs.ConfigurationRevision
 		log.Debug(fmt.Sprintf("observed new configuration revision %q", r.revs.ConfigurationRevision))
 	}
 
-	r.revs.StatefulSetRevision, err = getStatefulSetRevision(r.Cluster)
+	r.revs.StatefulSetRevision, err = getStatefulSetRevision(r.Cluster, r.revs.ConfigurationRevision)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("get StatefulSet revision: %w", err)
 	}
@@ -252,7 +246,10 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	tlsRequired := r.Cluster.Spec.Settings.TLS.Required
+	configMaps, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
+	}
 
 	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.KeeperReplicaID, replicaState, error) {
 		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
@@ -273,7 +270,8 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
-			status = getServerStatus(ctx, log.With("replica_id", id), r.Dialer, r.Cluster.HostnameByID(id), tlsRequired)
+			status = getServerStatus(ctx, log.With("replica_id", id), r.Dialer, r.Cluster.HostnameByID(id),
+				r.Cluster.Spec.Settings.TLS.Required)
 		}
 
 		var pvc *corev1.PersistentVolumeClaim
@@ -287,10 +285,14 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
 		return id, replicaState{
-			StatefulSet: &sts,
-			PVC:         pvc,
-			Error:       hasError,
-			Status:      status,
+			Error:  hasError,
+			Status: status,
+
+			ReplicaState: chctrl.ReplicaState{
+				STS: &sts,
+				CFG: configMaps[id],
+				PVC: pvc,
+			},
 		}, nil
 	})
 	for id, res := range execResults {
@@ -302,8 +304,8 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		if _, ok := r.ReplicaState[id]; !ok {
 			r.ReplicaState[id] = res.Result
 		} else {
-			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
-				"replica_id", id, "statefulset", res.Result.StatefulSet)
+			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %s, %s",
+				r.ReplicaState[id].STS.Name, res.Result.STS.Name), "replica_id", id)
 		}
 	}
 
@@ -318,9 +320,8 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			if _, exists := r.ReplicaState[id]; !exists {
 				log.Info("adding missing replica from quorum config", "replica_id", id)
 				r.ReplicaState[id] = replicaState{
-					Error:       false,
-					StatefulSet: nil,
-					Status:      serverStatus{},
+					Error:  false,
+					Status: serverStatus{},
 				}
 			}
 		}
@@ -552,51 +553,37 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 }
 
 func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
-
-	var configMaps corev1.ConfigMapList
-	if err := r.GetClient().List(ctx, &configMaps, listOpts); err != nil {
+	configMaps, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
 
-	for _, configMap := range configMaps.Items {
-		if configMap.Name == r.Cluster.QuorumConfigMapName() {
+	for id, configMap := range configMaps {
+		if _, ok := r.ReplicaState[id]; ok {
 			continue
 		}
 
-		id, err := v1.KeeperReplicaIDFromLabels(configMap.Labels)
-		if err != nil {
-			log.Warn("parse ConfigMap replica ID", "configmap", configMap.Name, "err", err)
-			continue
-		}
+		log.Info("deleting stale ConfigMap", "replica_id", id, "configmap", configMap.Name)
 
-		if _, ok := r.ReplicaState[id]; !ok {
-			log.Info("deleting stale ConfigMap", "replica_id", id, "configmap", configMap.Name)
-
-			if err := r.Delete(ctx, &configMap, v1.EventActionReconciling); err != nil {
-				log.Error(err, "delete stale replica", "replica_id", id, "configmap", configMap.Name)
-			}
+		if err := r.Delete(ctx, configMap, v1.EventActionReconciling); err != nil {
+			log.Error(err, "delete stale replica", "replica_id", id, "configmap", configMap.Name)
 		}
 	}
 
-	var statefulSets appsv1.StatefulSetList
-	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
+	statefulSets, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	for _, sts := range statefulSets.Items {
-		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
-		if err != nil {
-			log.Warn("parse StatefulSet replica ID", "sts", sts.Name, "err", err)
+	for id, sts := range statefulSets {
+		if _, ok := r.ReplicaState[id]; ok {
 			continue
 		}
 
-		if _, ok := r.ReplicaState[id]; !ok {
-			log.Info("deleting stale StatefulSet", "replica_id", id, "statefulset", sts.Name)
+		log.Info("deleting stale StatefulSet", "replica_id", id, "statefulset", sts.Name)
 
-			if err := r.Delete(ctx, &sts, v1.EventActionReconciling); err != nil {
-				log.Error(err, "delete stale replica", "replica_id", id, "statefulset", sts.Name)
-			}
+		if err := r.Delete(ctx, sts, v1.EventActionReconciling); err != nil {
+			log.Error(err, "delete stale replica", "replica_id", id, "statefulset", sts.Name)
 		}
 	}
 
@@ -633,7 +620,7 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 
 	r.SetCondition(chctrl.ReplicaStartupCondition(errorIDs))
 	r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
-	r.SetCondition(chctrl.ConfigSyncCondition(notUpdatedIDs))
+	r.SetCondition(chctrl.ConfigSyncCondition(nil, notUpdatedIDs, nil))
 	{
 		cond, event := chctrl.GetVersionSyncCondition(r.versionProbe, replicaVersions, len(notUpdatedIDs) > 0)
 		r.SetCondition(cond, event...)
@@ -725,25 +712,27 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		return nil, fmt.Errorf("template replica %q ConfigMap: %w", replicaID, err)
 	}
 
-	statefulSet, err := templateStatefulSet(r.Cluster, replicaID)
+	statefulSet, err := templateStatefulSet(r.Cluster, replicaID, r.revs.RestartConfigRevision)
 	if err != nil {
 		return nil, fmt.Errorf("template replica %q StatefulSet: %w", replicaID, err)
+	}
+
+	var pvc *corev1.PersistentVolumeClaim
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		pvc = &corev1.PersistentVolumeClaim{Spec: *r.Cluster.Spec.DataVolumeClaimSpec}
 	}
 
 	replica := r.ReplicaState[replicaID]
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
-
-		DesiredConfigMap: configMap,
-
-		ExistingSTS:        replica.StatefulSet,
-		DesiredSTS:         statefulSet,
-		HasError:           replica.Error,
-		BreakingSTSVersion: breakingStatefulSetVersion,
-
-		ExistingPVC:    replica.PVC,
-		DesiredPVCSpec: r.Cluster.Spec.DataVolumeClaimSpec,
+		Existing:  replica.ReplicaState,
+		HasError:  replica.Error,
+		Desired: chctrl.ReplicaState{
+			CFG: configMap,
+			STS: statefulSet,
+			PVC: pvc,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconcile replica %q resources: %w", replicaID, err)

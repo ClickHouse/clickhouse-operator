@@ -431,7 +431,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(updatedCR.Status.ObservedGeneration).To(Equal(updatedCR.Generation))
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
-		Expect(updatedCR.Status.StatefulSetRevision).To(Equal(cr.Status.StatefulSetRevision))
+		Expect(updatedCR.Status.StatefulSetRevision).NotTo(Equal(cr.Status.StatefulSetRevision))
 	})
 
 	It("should use security context overrides from spec", func(ctx context.Context) {

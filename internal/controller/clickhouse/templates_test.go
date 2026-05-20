@@ -10,6 +10,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/randfill"
 
@@ -392,15 +393,96 @@ var _ = Describe("getStatefulSetRevision", func() {
 			},
 		}
 
-		rev, err := getStatefulSetRevision(&r)
+		rev, err := getStatefulSetRevision(&r, "fixed-cfg-rev")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rev).ToNot(BeEmpty())
 
 		r.Cluster.Spec.DataVolumeClaimSpec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
-		rev2, err := getStatefulSetRevision(&r)
+		rev2, err := getStatefulSetRevision(&r, "fixed-cfg-rev")
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(rev2).To(Equal(rev), "StatefulSet revision should not change when data disk spec changes")
+	})
+})
+
+var _ = Describe("getConfigurationRevisions", func() {
+	It("should generate idempotent non-empty revisions", func() {
+		r := &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+				},
+			},
+		}
+
+		revsFirst, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsFirst.Config).To(Not(BeEmpty()))
+		Expect(revsFirst.Restart).To(Not(BeEmpty()))
+		Expect(revsFirst.Reload).To(Not(BeEmpty()))
+
+		revsSecond, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsFirst).To(Equal(revsSecond))
+	})
+
+	It("reload revision should not depend on restartable configs", func() {
+		r := &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+				},
+			},
+		}
+
+		revsBefore, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsBefore.Config).To(Not(BeEmpty()))
+		Expect(revsBefore.Restart).To(Not(BeEmpty()))
+		Expect(revsBefore.Reload).To(Not(BeEmpty()))
+
+		// User-provided config always triggers restart for safety.
+		r.Cluster.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte("{}")}
+
+		revsAfter, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsAfter.Config).To(Not(Equal(revsBefore.Config)))
+		Expect(revsAfter.Reload).To(Equal(revsBefore.Reload))
+		Expect(revsAfter.Restart).To(Not(Equal(revsBefore.Restart)))
+	})
+
+	It("restart revision should not depend on reloadable configs", func() {
+		r := &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+				},
+			},
+		}
+
+		revsBefore, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsBefore.Config).To(Not(BeEmpty()))
+		Expect(revsBefore.Restart).To(Not(BeEmpty()))
+		Expect(revsBefore.Reload).To(Not(BeEmpty()))
+
+		// Changes shard replicas list, reloadable
+		*r.Cluster.Spec.Replicas = 2
+
+		revsAfter, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsAfter.Config).To(Not(Equal(revsBefore.Config)))
+		Expect(revsAfter.Reload).To(Not(Equal(revsBefore.Reload)))
+		Expect(revsAfter.Restart).To(Equal(revsBefore.Restart))
 	})
 })
 
@@ -435,12 +517,12 @@ func FuzzClusterSpec(f *testing.F) {
 
 		crBefore := r.Cluster.DeepCopy()
 
-		stsFirst, err1 := templateStatefulSet(r, id)
+		stsFirst, err1 := templateStatefulSet(r, id, "fixed-cfg-rev")
 		if diff := cmp.Diff(crBefore.Spec, r.Cluster.Spec); diff != "" {
 			t.Errorf("ClusterSpec mutated:\n%s", diff)
 		}
 
-		stsSecond, err2 := templateStatefulSet(r, id)
+		stsSecond, err2 := templateStatefulSet(r, id, "fixed-cfg-rev")
 		if diff := cmp.Diff(crBefore.Spec, r.Cluster.Spec); diff != "" {
 			t.Errorf("ClusterSpec mutated:\n%s", diff)
 		}

@@ -21,6 +21,8 @@ import (
 var (
 	//go:embed templates/base.yaml.tmpl
 	baseConfigTemplateStr string
+	//go:embed templates/cluster.yaml.tmpl
+	clusterConfigTemplateStr string
 	//go:embed templates/named_collections.yaml.tmpl
 	namedCollectionsTemplateStr string
 	//go:embed templates/network.yaml.tmpl
@@ -66,21 +68,29 @@ func init() {
 	}
 
 	for _, templateSpec := range []struct {
-		Path      string
-		Filename  string
-		Raw       string
-		Generator configGeneratorFunc
-		Enabled   func(r *clickhouseReconciler) bool
+		Path            string
+		Filename        string
+		Raw             string
+		Generator       configGeneratorFunc
+		Enabled         func(r *clickhouseReconciler) bool
+		RequiresRestart bool
 	}{{
-		Path:      ConfigPath,
-		Filename:  ConfigFileName,
-		Raw:       baseConfigTemplateStr,
-		Generator: baseConfigGenerator,
+		Path:            ConfigPath,
+		Filename:        ConfigFileName,
+		Raw:             baseConfigTemplateStr,
+		Generator:       baseConfigGenerator,
+		RequiresRestart: true,
 	}, {
 		Path:      path.Join(ConfigPath, ConfigDPath),
-		Filename:  "00-network.yaml",
-		Raw:       networkConfigTemplateStr,
-		Generator: networkConfigGenerator,
+		Filename:  "00-cluster.yaml",
+		Raw:       clusterConfigTemplateStr,
+		Generator: clusterConfigGenerator,
+	}, {
+		Path:            path.Join(ConfigPath, ConfigDPath),
+		Filename:        "00-network.yaml",
+		Raw:             networkConfigTemplateStr,
+		Generator:       networkConfigGenerator,
+		RequiresRestart: true,
 	}, {
 		Path:      path.Join(ConfigPath, ConfigDPath),
 		Filename:  "00-logs-tables.yaml",
@@ -108,19 +118,21 @@ func init() {
 		tmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(templateSpec.Raw))
 
 		generators = append(generators, &templateConfigGenerator{
-			filename:  templateSpec.Filename,
-			path:      templateSpec.Path,
-			template:  tmpl,
-			generator: templateSpec.Generator,
-			enabled:   templateSpec.Enabled,
+			filename:        templateSpec.Filename,
+			path:            templateSpec.Path,
+			template:        tmpl,
+			generator:       templateSpec.Generator,
+			enabled:         templateSpec.Enabled,
+			requiresRestart: templateSpec.RequiresRestart,
 		})
 	}
 
 	generators = append(generators,
 		&extraConfigGenerator{
-			Name:          ExtraConfigFileName,
-			ConfigSubPath: ConfigDPath,
-			Getter:        func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraConfig.Raw },
+			Name:            ExtraConfigFileName,
+			ConfigSubPath:   ConfigDPath,
+			requiresRestart: true,
+			Getter:          func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraConfig.Raw },
 		},
 		&extraConfigGenerator{
 			Name:          ExtraUsersConfigFileName,
@@ -134,15 +146,17 @@ type configGenerator interface {
 	Path() string
 	ConfigKey() string
 	Enabled(r *clickhouseReconciler) bool
+	RequiresRestart() bool
 	Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
 }
 
 type templateConfigGenerator struct {
-	filename  string
-	path      string
-	template  *template.Template
-	generator configGeneratorFunc
-	enabled   func(r *clickhouseReconciler) bool
+	filename        string
+	path            string
+	template        *template.Template
+	generator       configGeneratorFunc
+	enabled         func(r *clickhouseReconciler) bool
+	requiresRestart bool
 }
 
 func (g *templateConfigGenerator) Filename() string {
@@ -161,6 +175,10 @@ func (g *templateConfigGenerator) Enabled(r *clickhouseReconciler) bool {
 	return g.enabled == nil || g.enabled(r)
 }
 
+func (g *templateConfigGenerator) RequiresRestart() bool {
+	return g.requiresRestart
+}
+
 func (g *templateConfigGenerator) Generate(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
 	data, err := g.generator(g.template, r, id)
 	if err != nil {
@@ -173,12 +191,8 @@ func (g *templateConfigGenerator) Generate(r *clickhouseReconciler, id v1.ClickH
 type configGeneratorFunc func(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
 
 type baseConfigParams struct {
-	Path   string
-	Log    controller.LoggerConfig
-	Macros []macro
-
-	KeeperNodes       []keeperNode
-	KeeperIdentityEnv string
+	Path string
+	Log  controller.LoggerConfig
 
 	DistributedDDLPath        string
 	DistributedDDLProfileName string
@@ -186,40 +200,10 @@ type baseConfigParams struct {
 	UsersZookeeperPath        string
 	UDFZookeeperPath          string
 
-	ClusterSecretEnv string
-	ManagementPort   uint16
-	ClusterHosts     [][]string
-
 	OpenSSL controller.OpenSSLConfig
 }
 
-type macro struct {
-	Name  string
-	Value any
-}
-type keeperNode struct {
-	Host   string
-	Port   int32
-	Secure bool
-}
-
-func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
-	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
-	for _, host := range r.keeper.Hostnames() {
-		if r.keeper.Spec.Settings.TLS.Enabled {
-			keeperNodes = append(keeperNodes, keeperNode{
-				Host:   host,
-				Port:   keeper.PortNativeSecure,
-				Secure: true,
-			})
-		} else {
-			keeperNodes = append(keeperNodes, keeperNode{
-				Host: host,
-				Port: keeper.PortNative,
-			})
-		}
-	}
-
+func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	openSSL := controller.OpenSSLConfig{}
 	if r.Cluster.Spec.Settings.TLS.Enabled {
 		params := controller.OpenSSLParams{
@@ -244,6 +228,82 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1
 		openSSL.Client.PreferServerCiphers = true
 	}
 
+	params := baseConfigParams{
+		Path: internal.ClickHouseDataPath,
+		Log:  controller.GenerateLoggerConfig(r.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
+
+		DistributedDDLPath:        KeeperPathDistributedDDL,
+		DistributedDDLProfileName: DefaultProfileName,
+		UsersXMLPath:              UsersFileName,
+		UsersZookeeperPath:        KeeperPathUsers,
+		UDFZookeeperPath:          KeeperPathUDF,
+
+		OpenSSL: openSSL,
+	}
+
+	builder := strings.Builder{}
+	if err := tmpl.Execute(&builder, params); err != nil {
+		return "", fmt.Errorf("template base config: %w", err)
+	}
+
+	return builder.String(), nil
+}
+
+type clusterConfigParams struct {
+	Macros []macro
+
+	KeeperNodes       []keeperNode
+	KeeperIdentityEnv string
+
+	ClusterSecretEnv string
+	ManagementPort   uint16
+	ClusterHosts     [][]string
+
+	NamedCollections []namedCollection
+}
+
+const (
+	OperatorNamedCollectionName = "__operator"
+	OperatorConfigRevisionField = "config_revision"
+)
+
+type macro struct {
+	Name  string
+	Value any
+}
+type keeperNode struct {
+	Host   string
+	Port   int32
+	Secure bool
+}
+
+type namedCollection struct {
+	Name   string
+	Values []namedCollectionValue
+}
+
+type namedCollectionValue struct {
+	Key   string
+	Value string
+}
+
+func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
+	for _, host := range r.keeper.Hostnames() {
+		if r.keeper.Spec.Settings.TLS.Enabled {
+			keeperNodes = append(keeperNodes, keeperNode{
+				Host:   host,
+				Port:   keeper.PortNativeSecure,
+				Secure: true,
+			})
+		} else {
+			keeperNodes = append(keeperNodes, keeperNode{
+				Host: host,
+				Port: keeper.PortNative,
+			})
+		}
+	}
+
 	clusterHosts := make([][]string, r.Cluster.Shards())
 	for shard := range r.Cluster.Shards() {
 		hosts := make([]string, r.Cluster.Replicas())
@@ -254,9 +314,7 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1
 		clusterHosts[shard] = hosts
 	}
 
-	params := baseConfigParams{
-		Path: internal.ClickHouseDataPath,
-		Log:  controller.GenerateLoggerConfig(r.Cluster.Spec.Settings.Logger, LogPath, "clickhouse-server"),
+	params := clusterConfigParams{
 		Macros: []macro{
 			{Name: "cluster", Value: DefaultClusterName},
 			{Name: "shard", Value: id.ShardID},
@@ -266,22 +324,22 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1
 		KeeperNodes:       keeperNodes,
 		KeeperIdentityEnv: EnvKeeperIdentity,
 
-		DistributedDDLPath:        KeeperPathDistributedDDL,
-		DistributedDDLProfileName: DefaultProfileName,
-		UsersXMLPath:              UsersFileName,
-		UsersZookeeperPath:        KeeperPathUsers,
-		UDFZookeeperPath:          KeeperPathUDF,
-
 		ClusterSecretEnv: EnvClusterSecret,
 		ManagementPort:   PortManagement,
 		ClusterHosts:     clusterHosts,
 
-		OpenSSL: openSSL,
+		NamedCollections: []namedCollection{{
+			Name: OperatorNamedCollectionName,
+			Values: []namedCollectionValue{{
+				Key:   OperatorConfigRevisionField,
+				Value: r.revs.ReloadConfigRevision,
+			}},
+		}},
 	}
 
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
-		return "", fmt.Errorf("template base config: %w", err)
+		return "", fmt.Errorf("template cluster config: %w", err)
 	}
 
 	return builder.String(), nil
@@ -418,9 +476,10 @@ func namedCollectionsConfigGenerator(tmpl *template.Template, _ *clickhouseRecon
 }
 
 type extraConfigGenerator struct {
-	Name          string
-	ConfigSubPath string
-	Getter        func(r *clickhouseReconciler) []byte
+	Name            string
+	ConfigSubPath   string
+	requiresRestart bool
+	Getter          func(r *clickhouseReconciler) []byte
 }
 
 func (g *extraConfigGenerator) Filename() string {
@@ -437,6 +496,10 @@ func (g *extraConfigGenerator) ConfigKey() string {
 
 func (g *extraConfigGenerator) Enabled(r *clickhouseReconciler) bool {
 	return len(g.Getter(r)) > 0
+}
+
+func (g *extraConfigGenerator) RequiresRestart() bool {
+	return g.requiresRestart
 }
 
 func (g *extraConfigGenerator) Generate(r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {

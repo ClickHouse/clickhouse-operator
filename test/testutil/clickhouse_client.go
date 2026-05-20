@@ -238,6 +238,31 @@ func (c *ClickHouseClient) QueryRow(ctx context.Context, query string, result an
 	return nil
 }
 
+// QueryRowReplica executes a query on one of the ClickHouse cluster nodes.
+// Scans the result into the provided result variable.
+func (c *ClickHouseClient) QueryRowReplica(
+	ctx context.Context,
+	id v1.ClickHouseReplicaID,
+	query string,
+	result any,
+) error {
+	conn, ok := c.clients[id]
+	if !ok {
+		return fmt.Errorf("replica %v not found", id)
+	}
+
+	row := conn.QueryRow(ctx, query)
+	if err := row.Err(); err != nil {
+		return fmt.Errorf("query row: %w", err)
+	}
+
+	if err := row.Scan(result); err != nil {
+		return fmt.Errorf("scan row: %w", err)
+	}
+
+	return nil
+}
+
 // Query executes a query on one of the ClickHouse cluster nodes.
 func (c *ClickHouseClient) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
 	if len(c.clients) == 0 {

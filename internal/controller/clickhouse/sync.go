@@ -34,40 +34,31 @@ func compareReplicaID(a, b v1.ClickHouseReplicaID) int {
 }
 
 type replicaState struct {
-	Error       bool `json:"error"`
-	StatefulSet *appsv1.StatefulSet
-	PVC         *corev1.PersistentVolumeClaim
-	Pinged      bool
-	Version     string
-}
+	replicaProbe
+	chctrl.ReplicaState
 
-func (r replicaState) Updated() bool {
-	if r.StatefulSet == nil {
-		return false
-	}
-
-	return r.StatefulSet.Generation == r.StatefulSet.Status.ObservedGeneration &&
-		r.StatefulSet.Status.UpdateRevision == r.StatefulSet.Status.CurrentRevision
+	ReloadError error
+	Error       bool
 }
 
 func (r replicaState) Ready() bool {
-	if r.StatefulSet == nil {
+	if r.STS == nil {
 		return false
 	}
 
-	return r.Pinged && r.StatefulSet.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
+	return r.Version != "" && r.STS.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
 }
 
 func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
-	return rev.ReplicaHasDiff(r.StatefulSet, r.PVC)
+	return rev.ReplicaHasDiff(r.ReplicaState)
 }
 
 func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdateStage {
-	if r.StatefulSet == nil {
+	if r.STS == nil {
 		return chctrl.StageNotExists
 	}
 
-	if r.Error {
+	if r.Error || r.ReloadError != nil {
 		return chctrl.StageError
 	}
 
@@ -79,7 +70,7 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageHasDiff
 	}
 
-	if !r.Ready() {
+	if !r.Ready() || r.ReloadConfigRevision != rev.ReloadConfigRevision {
 		return chctrl.StageNotReadyUpToDate
 	}
 
@@ -438,6 +429,11 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
+	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
+	}
+
 	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, replicaState, error) {
 		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
 		if err != nil {
@@ -452,18 +448,26 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			hasError = true
 		}
 
-		pinged := false
-		version := ""
+		var (
+			probe     replicaProbe
+			reloadErr error
+		)
 
 		if !hasError && sts.Status.ReadyReplicas > 0 && r.commander != nil {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
-			version, err = r.commander.Version(ctx, id)
+			probe, err = r.commander.Probe(ctx, id)
 			if err != nil {
-				log.Debug("failed to query version on replica", "replica_id", id, "error", err)
-			} else {
-				pinged = true
+				log.Debug("failed to probe replica", "replica_id", id, "error", err)
+			}
+
+			if cfg, ok := configMaps[id]; ok && probe.ReloadConfigRevision != cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash] {
+				if reloadErr = r.commander.ReloadConfig(ctx, id); reloadErr != nil {
+					log.Debug("replica config reload failed", "replica_id", id, "error", reloadErr)
+				} else if probe, err = r.commander.Probe(ctx, id); err != nil {
+					log.Debug("failed to re-probe replica after reload", "replica_id", id, "error", err)
+				}
 			}
 		}
 
@@ -478,11 +482,14 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
 		return id, replicaState{
-			StatefulSet: &sts,
-			PVC:         pvc,
-			Error:       hasError,
-			Pinged:      pinged,
-			Version:     version,
+			ReloadError:  reloadErr,
+			Error:        hasError,
+			replicaProbe: probe,
+			ReplicaState: chctrl.ReplicaState{
+				STS: &sts,
+				CFG: configMaps[id],
+				PVC: pvc,
+			},
 		}, nil
 	})
 
@@ -495,8 +502,8 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		if _, ok := r.ReplicaState[id]; !ok {
 			r.ReplicaState[id] = res.Result
 		} else {
-			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %v", id),
-				"replica_id", id, "statefulset", res.Result.StatefulSet.Name)
+			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %s, %s",
+				r.ReplicaState[id].STS.Name, res.Result.STS.Name), "replica_id", id)
 		}
 	}
 
@@ -546,17 +553,21 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
 	}
 
-	r.revs.ConfigurationRevision, err = getConfigurationRevision(r)
+	cfgRev, err := getConfigurationRevisions(r)
 	if err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("get configuration revision: %w", err)
+		return chctrl.StepResult{}, fmt.Errorf("get configuration revisions: %w", err)
 	}
 
-	if r.revs.ConfigurationRevision != r.Cluster.Status.ConfigurationRevision {
-		r.Cluster.Status.ConfigurationRevision = r.revs.ConfigurationRevision
-		log.Debug(fmt.Sprintf("observed new configuration revision %q", r.revs.ConfigurationRevision))
+	r.revs.ReloadConfigRevision = cfgRev.Reload
+	r.revs.RestartConfigRevision = cfgRev.Restart
+	r.revs.ConfigurationRevision = cfgRev.Config
+
+	if cfgRev.Config != r.Cluster.Status.ConfigurationRevision {
+		r.Cluster.Status.ConfigurationRevision = cfgRev.Config
+		log.Debug(fmt.Sprintf("observed new configuration revision %q", cfgRev.Config))
 	}
 
-	r.revs.StatefulSetRevision, err = getStatefulSetRevision(r)
+	r.revs.StatefulSetRevision, err = getStatefulSetRevision(r, r.revs.RestartConfigRevision)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("get StatefulSet revision: %w", err)
 	}
@@ -575,24 +586,32 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		}
 	}
 
-	var notUpdatedIDs []string
+	var notUpdated, reloadErr, notReloaded []string
 	for shard := range r.Cluster.Shards() {
 		for index := range r.Cluster.Replicas() {
 			id := v1.ClickHouseReplicaID{ShardID: shard, Index: index}
 			replica := r.ReplicaState[id]
 
 			if replica.HasDiff(r.revs) || !replica.Updated() {
-				notUpdatedIDs = append(notUpdatedIDs, id.String())
+				notUpdated = append(notUpdated, id.String())
+			}
+
+			if replica.ReloadError != nil {
+				reloadErr = append(reloadErr, id.String())
+			}
+
+			if replica.ReloadConfigRevision != r.revs.ReloadConfigRevision {
+				notReloaded = append(notReloaded, id.String())
 			}
 		}
 	}
 
-	r.SetCondition(chctrl.ConfigSyncCondition(notUpdatedIDs))
+	r.SetCondition(chctrl.ConfigSyncCondition(reloadErr, notUpdated, notReloaded))
 
 	exists := len(r.ReplicaState)
 	expected := int(r.Cluster.Replicas() * r.Cluster.Shards())
 
-	if len(notUpdatedIDs) == 0 && exists == expected {
+	if len(notUpdated) == 0 && len(reloadErr) == 0 && len(notReloaded) == 0 && exists == expected {
 		r.Cluster.Status.CurrentRevision = r.Cluster.Status.UpdateRevision
 	}
 
@@ -602,7 +621,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 	}
 
 	{
-		cond, event := chctrl.GetVersionSyncCondition(r.versionProbe, replicaVersions, len(notUpdatedIDs) > 0)
+		cond, event := chctrl.GetVersionSyncCondition(r.versionProbe, replicaVersions, len(notUpdated) > 0)
 		r.SetCondition(cond, event...)
 	}
 
@@ -616,10 +635,10 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 	return chctrl.StepContinue(), nil
 }
 
-// reconcileReplicaResources performs update on replicas ConfigMap and StatefulSet.
+// reconcileReplicaResources performs update on replicas ConfigMap, StatefulSet, PVC.
 // If there are replicas that has no created StatefulSet, creates immediately.
-// If all replicas exists performs rolling upgrade, with the following order preferences:
-// NotExists -> CrashLoop/ImagePullErr -> OnlySts -> OnlyConfig -> Any.
+// For existing and Ready replicas performs rolling update. Update priority:
+// NotExists -> StartupErrors -> UpdateInProgress -> HasDiff(rolling).
 func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	highestStage := chctrl.StageUpToDate
 
@@ -795,98 +814,65 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	return chctrl.StepContinue(), nil
 }
 
-type replicaResources struct {
-	cfg *corev1.ConfigMap
-	sts *appsv1.StatefulSet
-}
-
 func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	var (
-		configMaps corev1.ConfigMapList
+	var replicasToRemove = map[v1.ClickHouseReplicaID]chctrl.ReplicaState{}
 
-		listOpts         = ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
-		replicasToRemove = map[int32]map[int32]replicaResources{}
-	)
-
-	if err := r.GetClient().List(ctx, &configMaps, listOpts); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
+	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
 
-	for _, configMap := range configMaps.Items {
-		id, err := v1.ClickHouseIDFromLabels(configMap.Labels)
-		if err != nil {
-			log.Warn("failed to get replica ID from ConfigMap labels", "configmap", configMap.Name, "error", err)
-			continue
-		}
-
+	for id, configMap := range configMaps {
 		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
 			continue
 		}
 
-		if _, ok := replicasToRemove[id.ShardID]; !ok {
-			replicasToRemove[id.ShardID] = map[int32]replicaResources{}
+		replicasToRemove[id] = chctrl.ReplicaState{
+			CFG: configMap,
 		}
-
-		state := replicasToRemove[id.ShardID][id.Index]
-		state.cfg = &configMap
-		replicasToRemove[id.ShardID][id.Index] = state
 	}
 
-	var statefulSets appsv1.StatefulSetList
-	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
+	statefulSets, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	for _, sts := range statefulSets.Items {
-		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
-		if err != nil {
-			log.Warn("failed to get replica ID from StatefulSet labels", "statefulset", sts.Name, "error", err)
-			continue
-		}
-
+	for id, sts := range statefulSets {
 		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
 			continue
 		}
 
-		if _, ok := replicasToRemove[id.ShardID]; !ok {
-			replicasToRemove[id.ShardID] = map[int32]replicaResources{}
-		}
-
-		state := replicasToRemove[id.ShardID][id.Index]
-		state.sts = &sts
-		replicasToRemove[id.ShardID][id.Index] = state
+		state := replicasToRemove[id]
+		state.STS = sts
+		replicasToRemove[id] = state
 	}
 
-	for shardID, replicas := range replicasToRemove {
-		inSync := !r.unsyncedShards[shardID]
+	for id, res := range replicasToRemove {
+		inSync := !r.unsyncedShards[id.ShardID]
 
-		for index, res := range replicas {
-			id := v1.ClickHouseReplicaID{ShardID: shardID, Index: index}
+		// Always delete orphaned ConfigMaps.
+		if res.CFG != nil && (inSync || res.STS == nil) {
+			log.Info("removing replica configmap", "replica_id", id, "configmap", res.CFG.Name)
 
-			// Always delete orphaned ConfigMaps.
-			if res.cfg != nil && (inSync || res.sts == nil) {
-				log.Info("removing replica configmap", "replica_id", id, "configmap", res.cfg.Name)
-
-				if err := r.Delete(ctx, res.cfg, v1.EventActionReconciling); err != nil {
-					log.Error(err, "failed to delete replica configmap", "replica_id", id, "configmap", res.cfg.Name)
-				}
+			if err := r.Delete(ctx, res.CFG, v1.EventActionReconciling); err != nil {
+				log.Error(err, "failed to delete replica configmap", "replica_id", id, "configmap", res.CFG.Name)
 			}
+		}
 
-			// Delete StatefulSets only if the entire shard is removed or shard sync succeeded.
-			if res.sts == nil {
-				continue
-			}
+		// Delete StatefulSets only if the entire shard is removed or shard sync succeeded.
+		if res.STS == nil {
+			continue
+		}
 
-			if !inSync {
-				log.Info("shard sync failed, skipping replica deletion", "replica_id", id)
-				continue
-			}
+		if !inSync {
+			log.Info("shard sync failed, skipping replica deletion", "replica_id", id)
+			continue
+		}
 
-			log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
+		log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
 
-			if err := r.Delete(ctx, res.sts, v1.EventActionReconciling); err != nil {
-				log.Error(err, "failed to delete replica statefulset", "replica_id", id, "statefulset", res.sts.Name)
-			}
+		if err := r.Delete(ctx, res.STS, v1.EventActionReconciling); err != nil {
+			log.Error(err, "failed to delete replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
 		}
 	}
 
@@ -972,25 +958,27 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 		return nil, fmt.Errorf("template replica %s ConfigMap: %w", id, err)
 	}
 
-	statefulSet, err := templateStatefulSet(r, id)
+	statefulSet, err := templateStatefulSet(r, id, r.revs.RestartConfigRevision)
 	if err != nil {
 		return nil, fmt.Errorf("template replica %s StatefulSet: %w", id, err)
+	}
+
+	var pvc *corev1.PersistentVolumeClaim
+	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
+		pvc = &corev1.PersistentVolumeClaim{Spec: *r.Cluster.Spec.DataVolumeClaimSpec}
 	}
 
 	replica := r.ReplicaState[id]
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
-
-		DesiredConfigMap: configMap,
-
-		ExistingSTS:        replica.StatefulSet,
-		DesiredSTS:         statefulSet,
-		HasError:           replica.Error,
-		BreakingSTSVersion: breakingStatefulSetVersion,
-
-		ExistingPVC:    replica.PVC,
-		DesiredPVCSpec: r.Cluster.Spec.DataVolumeClaimSpec,
+		Existing:  replica.ReplicaState,
+		HasError:  replica.Error,
+		Desired: chctrl.ReplicaState{
+			CFG: configMap,
+			STS: statefulSet,
+			PVC: pvc,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconcile replica %s resources: %w", id, err)
