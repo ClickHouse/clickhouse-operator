@@ -264,5 +264,38 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("only one of"))
 		})
+
+		It("Should accept a valid AdditionalPorts list", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.AdditionalPorts = []chv1.AdditionalPort{
+				{Name: "mysql", Port: 9004},
+				{Name: "postgres", Port: 9005},
+			}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+		})
+
+		It("Should reject AdditionalPorts with duplicate names (enforced by CRD list-map key)", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.AdditionalPorts = []chv1.AdditionalPort{
+				{Name: "mysql", Port: 9004},
+				{Name: "mysql", Port: 19004},
+			}
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mysql"))
+		})
+
+		It("Should reject AdditionalPorts with duplicate ports", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.AdditionalPorts = []chv1.AdditionalPort{
+				{Name: "alpha", Port: 12345},
+				{Name: "beta", Port: 12345},
+			}
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.additionalPorts[1].port"))
+			Expect(err.Error()).To(ContainSubstring("duplicates"))
+		})
 	})
 })

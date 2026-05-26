@@ -86,6 +86,27 @@ type ClickHouseClusterSpec struct {
 	// The secret must reside in the same namespace as the cluster.
 	// +optional
 	ExternalSecret *ExternalSecret `json:"externalSecret,omitempty"`
+
+	// AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.
+	// The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	AdditionalPorts []AdditionalPort `json:"additionalPorts,omitempty"`
+}
+
+// AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and the operator-managed headless Service.
+type AdditionalPort struct {
+	// Name uniquely identifies the port within the list. Used as both the container port name and the Service port name.
+	// This must be a DNS_LABEL.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// Port is the TCP port number to expose.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.

@@ -35,6 +35,15 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		})
 	}
 
+	for _, p := range cr.Spec.AdditionalPorts {
+		ports = append(ports, corev1.ServicePort{
+			Protocol:   corev1.ProtocolTCP,
+			Name:       p.Name,
+			Port:       p.Port,
+			TargetPort: intstr.FromInt32(p.Port),
+		})
+	}
+
 	controllerutil.SortKey(ports, func(port corev1.ServicePort) string {
 		return port.Name
 	})
@@ -492,6 +501,14 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 			Protocol:      corev1.ProtocolTCP,
 			Name:          name,
 			ContainerPort: proto.Port,
+		})
+	}
+
+	for _, p := range cr.Spec.AdditionalPorts {
+		container.Ports = append(container.Ports, corev1.ContainerPort{
+			Protocol:      corev1.ProtocolTCP,
+			Name:          p.Name,
+			ContainerPort: p.Port,
 		})
 	}
 

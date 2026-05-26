@@ -1,0 +1,48 @@
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 1Gi
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 1
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 2Gi
+  keeperClusterRef:
+    name: sample
+
+  # The operator opens these ports on the Pod and the headless Service.
+  additionalPorts:
+    - name: mysql
+      port: 9004
+    - name: postgres
+      port: 9005
+    - name: grpc
+      port: 9100
+
+  # Configure ClickHouse server to listed additional protocols.
+  settings:
+    extraConfig:
+      protocols:
+        mysql:
+          type: mysql
+          port: 9004
+          description: "MySQL wire protocol"
+        postgres:
+          type: postgres
+          port: 9005
+          description: "PostgreSQL wire protocol"
+      grpc:
+        port: 9100
+        enable_ssl: false

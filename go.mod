@@ -9,6 +9,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
+	github.com/go-sql-driver/mysql v1.10.0
 	github.com/go-zookeeper/zk v1.0.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -32,6 +33,7 @@ require (
 require (
 	cel.dev/expr v0.25.2 // indirect
 	dario.cat/mergo v1.0.2 // indirect
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect

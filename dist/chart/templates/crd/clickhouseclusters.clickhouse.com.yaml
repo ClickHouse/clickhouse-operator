@@ -65,6 +65,35 @@ spec:
           spec:
             description: ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
             properties:
+              additionalPorts:
+                description: |-
+                  AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.
+                  The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
+                items:
+                  description: AdditionalPort declares one extra TCP port to expose
+                    on the ClickHouse Pod and the operator-managed headless Service.
+                  properties:
+                    name:
+                      description: |-
+                        Name uniquely identifies the port within the list. Used as both the container port name and the Service port name.
+                        This must be a DNS_LABEL.
+                      maxLength: 63
+                      pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    port:
+                      description: Port is the TCP port number to expose.
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                  required:
+                  - name
+                  - port
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               annotations:
                 additionalProperties:
                   type: string

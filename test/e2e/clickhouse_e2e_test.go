@@ -2,8 +2,10 @@ package e2e
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"math/rand/v2"
+	"net"
 	"path"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	mcertv1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	"github.com/go-sql-driver/mysql"
 	gcmp "github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -559,6 +562,81 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			By("checking custom setting applied")
 			Expect(chClient.QueryRow(ctx, query, &maxTableSizeToDrop)).To(Succeed())
 			Expect(maxTableSizeToDrop).To(Equal("7"))
+		})
+
+		It("should expose AdditionalPorts and reach a user-configured MySQL listener", func(ctx context.Context) {
+			const (
+				mysqlPortName = "mysql"
+				mysqlPort     = 9004
+			)
+
+			cr := &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("clickhouse-mysql-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					AdditionalPorts: []v1.AdditionalPort{
+						{Name: mysqlPortName, Port: mysqlPort},
+					},
+					Settings: v1.ClickHouseSettings{
+						ExtraConfig: runtime.RawExtension{Raw: []byte(`{
+							"protocols": {
+								"mysql": {
+									"type": "mysql",
+									"port": 9004,
+									"description": "user-configured mysql"
+								}
+							}
+						}`)},
+					},
+				},
+			}
+
+			By("creating clickhouse with MySQL interface")
+			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
+			})
+
+			WaitClickHouseUpdatedAndReady(ctx, cr, 3*time.Minute, false)
+
+			By("asserting the headless Service carries the user-declared port")
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
+
+			var svc corev1.Service
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: cr.Namespace,
+				Name:      cr.HeadlessServiceName(),
+			}, &svc)).To(Succeed())
+
+			foundOnService := false
+			for _, p := range svc.Spec.Ports {
+				if p.Name == mysqlPortName && p.Port == int32(mysqlPort) {
+					foundOnService = true
+				}
+			}
+
+			Expect(foundOnService).To(BeTrue(), "service must expose the AdditionalPort")
+
+			By("connecting to ClickHouse over the MySQL wire protocol via port-forward")
+			mysql.RegisterDialContext(cr.Namespace, func(ctx context.Context, addr string) (net.Conn, error) {
+				return podDialer(ctx, addr)
+			})
+
+			replicaID := v1.ClickHouseReplicaID{}
+			addr := fmt.Sprintf("%s:%d", cr.HostnameByID(replicaID), mysqlPort)
+			dsn := fmt.Sprintf("default:@%s(%s)/default?timeout=15s&readTimeout=15s&writeTimeout=15s", cr.Namespace, addr)
+			db, err := sql.Open("mysql", dsn)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(db.PingContext(ctx)).To(Succeed())
 		})
 
 		It("should generate correct sharded cluster configuration", func(ctx context.Context) {

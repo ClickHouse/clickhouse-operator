@@ -115,5 +115,14 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		}
 	}
 
+	seenPorts := make(map[int32]int, len(obj.Spec.AdditionalPorts))
+	for i, p := range obj.Spec.AdditionalPorts {
+		if prev, ok := seenPorts[p.Port]; ok {
+			errs = append(errs, fmt.Errorf("spec.additionalPorts[%d].port: %d duplicates spec.additionalPorts[%d].port", i, p.Port, prev))
+		} else {
+			seenPorts[p.Port] = i
+		}
+	}
+
 	return warns, errs
 }

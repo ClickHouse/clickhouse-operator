@@ -34,6 +34,10 @@ clickhouse:
   # ClickHouseCluster.spec — passed verbatim into the CR.
   spec:
 
+    # AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.
+    # The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
+    # additionalPorts: []
+
     # Additional annotations that are added to resources.
     # annotations: {}
 
