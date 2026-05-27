@@ -31,7 +31,7 @@ spec:
     - name: grpc
       port: 9100
 
-  # Configure ClickHouse server to listed additional protocols.
+  # Configure ClickHouse server to listen on additional protocols.
   settings:
     extraConfig:
       protocols:
