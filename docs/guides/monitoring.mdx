@@ -14,7 +14,7 @@ The operator exposes Prometheus-compatible metrics and Kubernetes health probes 
 This guide covers what the operator exposes, how to scrape it, and which queries are useful day to day.
 
 <Note>
-This guide is about the **operator process itself** (the controller manager). For ClickHouse server metrics (queries, parts, replication lag), enable the [Prometheus endpoint in ClickHouse](/operations/server-configuration-parameters/settings#prometheus) via `extraConfig` and scrape it separately.
+This guide is about the **operator process itself** (the controller manager). For ClickHouse server metrics (queries, parts, replication lag), use the [Prometheus endpoint in ClickHouse](/operations/server-configuration-parameters/settings#prometheus) to scrape it separately.
 </Note>
 
 ## Endpoints {#endpoints}
@@ -23,7 +23,7 @@ The operator process exposes two HTTP endpoints inside the manager pod:
 
 | Endpoint | Default port | Path | Purpose |
 |---|---|---|---|
-| Metrics | `8080` (helm) / `:0` disabled (raw flag default) | `/metrics` | Prometheus exposition format |
+| Metrics | `8080` (Helm) / `0` disabled (binary default) | `/metrics` | Prometheus exposition format |
 | Health probe | `8081` | `/healthz`, `/readyz` | Kubernetes liveness and readiness |
 
 The metrics endpoint is **off by default** when running the operator binary directly (`--metrics-bind-address=0`). The Helm chart turns it on with `metrics.enable: true` and `metrics.port: 8080`.
@@ -90,9 +90,9 @@ helm upgrade --install clickhouse-operator \
 
 After install the chart creates:
 
-- `Service/<release>-controller-manager-metrics-service` — exposes port `8080` (HTTPS when `metrics.secure: true`).
-- `ServiceMonitor/<release>-controller-manager-metrics-monitor` — when `prometheus.enable: true`.
-- `ClusterRole/clickhouse-operator-metrics-reader` — non-resource URL `/metrics` with `get` verb.
+- `Service/<resource-prefix>metrics-service` — exposes port `8080` (HTTPS when `metrics.secure: true`).
+- `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — when `prometheus.enable: true`.
+- `ClusterRole/<resource-prefix>-metrics-reader` — non-resource URL `/metrics` with `get` verb.
 
 ## Securing the metrics endpoint {#securing-the-metrics-endpoint}
 
@@ -133,7 +133,7 @@ subjects:
 ```
 
 <Warning>
-If you see `401 Unauthorized` or `403 Forbidden` from the metrics endpoint, the scraper is either presenting no bearer token (HTTP scraping a HTTPS endpoint) or its ServiceAccount lacks the binding above. Disabling security by setting `metrics.secure: false` is **not recommended** in shared clusters because anyone with network reachability to the pod could scrape the endpoint.
+If you see `401 Unauthorized` or `403 Forbidden` from the metrics endpoint, the scraper is using HTTPS but is missing/unauthorized for a Kubernetes bearer token, or its ServiceAccount lacks the binding above. Disabling security by setting `metrics.secure: false` is **not recommended** in shared clusters because anyone with network reachability to the pod could scrape the endpoint.
 </Warning>
 
 ## ServiceMonitor reference {#servicemonitor-reference}
@@ -158,7 +158,7 @@ spec:
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
-        serverName: <release>-controller-manager-metrics-service.<namespace>.svc
+        serverName: <release>-metrics-service.<operator-namespace>.svc
         ca:
           secret:
             name: metrics-server-cert
@@ -371,7 +371,7 @@ kubectl -n $NS run curl-metrics --rm -it --restart=Never \
   --image=curlimages/curl:8.10.1 -- sh -c '
     TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
     curl -sk -H "Authorization: Bearer $TOKEN" \
-      https://<release>-controller-manager-metrics-service.'$NS'.svc:8080/metrics \
+      https://<release>-metrics-service.'$NS'.svc:8080/metrics \
       | head -20
   '
 ```
