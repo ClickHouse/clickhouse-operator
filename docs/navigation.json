@@ -17,7 +17,8 @@
       "expanded": true,
       "pages": [
         "products/kubernetes-operator/guides/introduction",
-        "products/kubernetes-operator/guides/configuration"
+        "products/kubernetes-operator/guides/configuration",
+        "products/kubernetes-operator/guides/monitoring"
       ]
     },
     {
