@@ -1109,48 +1109,29 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			WaitKeeperUpdatedAndReady(ctx, keeperCR, 2*time.Minute, false)
 		})
 
+		cr := baseCr.DeepCopy()
+
 		By("checking server cert ca bundle is used to connect to the keeper", func() {
-			cr := baseCr.DeepCopy()
-
-			By("creating clickhouse")
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
-
-			defer func() {
-				if err := k8sClient.Delete(ctx, cr); err != nil {
-					By(fmt.Sprintf("failed to delete clickhouse: %s", err))
-					DeferCleanup(func(ctx context.Context) {
-						Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
-					})
-				}
-			}()
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
+			})
 
 			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, false)
 			ClickHouseRWChecks(ctx, cr, new(0))
 		})
 
 		By("checking custom ca bundle is used to connect to the keeper", func() {
-			cr := baseCr.DeepCopy()
-			cr.Name = fmt.Sprintf("clickhouse-%d", rand.Uint32()) //nolint:gosec
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 			cr.Spec.Settings.TLS = v1.ClusterTLSSpec{
 				CABundle: &v1.SecretKeySelector{
 					Name: keeperCertName,
 					Key:  "ca.crt",
 				},
 			}
+			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
 
-			By("creating clickhouse")
-			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
-
-			defer func() {
-				if err := k8sClient.Delete(ctx, cr); err != nil {
-					By(fmt.Sprintf("failed to delete clickhouse: %s", err))
-					DeferCleanup(func(ctx context.Context) {
-						Expect(k8sClient.Delete(ctx, cr)).To(Succeed())
-					})
-				}
-			}()
-
-			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, false)
+			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, true)
 			ClickHouseRWChecks(ctx, cr, new(0))
 		})
 	})
