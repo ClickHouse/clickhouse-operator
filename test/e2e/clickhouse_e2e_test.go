@@ -1130,7 +1130,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 		By("checking custom ca bundle is used to connect to the keeper", func() {
 			cr := baseCr.DeepCopy()
-			cr.Name = fmt.Sprintf("clickhouse-ca-bundle-%d", suffix)
+			cr.Name = fmt.Sprintf("clickhouse-%d", rand.Uint32()) //nolint:gosec
 			cr.Spec.Settings.TLS = v1.ClusterTLSSpec{
 				CABundle: &v1.SecretKeySelector{
 					Name: keeperCertName,
