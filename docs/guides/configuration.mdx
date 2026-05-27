@@ -230,6 +230,96 @@ spec:
             key: <ca-certificate-key>
 ```
 
+## External Secret {#external-secret}
+
+By default the operator creates and owns a Secret containing the cluster's internal credentials (interserver password, management password, keeper identity, cluster secret, named-collections key). The Secret is named after the cluster and lives in the cluster's namespace.
+
+If you want to manage these credentials yourself — for example, sourcing them from HashiCorp Vault, AWS Secrets Manager, or [External Secrets Operator](https://external-secrets.io/) — point the operator at a pre-existing Secret using `spec.externalSecret`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+  externalSecret:
+    name: my-clickhouse-credentials
+    policy: Observe
+```
+
+<Note>
+The referenced Secret must reside in the **same namespace** as the ClickHouseCluster. The operator never deletes a Secret it did not create.
+</Note>
+
+### Required keys {#external-secret-required-keys}
+
+The Secret must contain the following keys:
+
+| Key | Format | When required |
+|---|---|---|
+| `interserver-password` | plaintext password | Always |
+| `management-password` | plaintext password | Always |
+| `keeper-identity` | `clickhouse:<password>` | Always |
+| `cluster-secret` | plaintext password | Always |
+| `named-collections-key` | hex-encoded 16-byte AES key (32 hex chars) | ClickHouse `>= 25.12` only |
+
+A complete Secret looks like this:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-clickhouse-credentials
+  namespace: sample
+type: Opaque
+stringData:
+  interserver-password: "a-strong-random-password"
+  management-password: "another-strong-password"
+  keeper-identity: "clickhouse:keeper-auth-password"
+  cluster-secret: "cluster-internal-secret"
+  named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+```
+
+### Policy: Observe vs Manage {#external-secret-policy}
+
+`spec.externalSecret.policy` controls how the operator handles missing required keys:
+
+| Policy | Behavior on missing keys |
+|---|---|
+| `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` status condition and a `Warning` event. |
+| `Manage` | The operator **generates** any missing required keys and writes them back to the same Secret. Useful for bootstrapping: create an empty Secret, let the operator fill it, then optionally tighten access. The operator still never deletes the Secret. |
+
+Pick `Observe` when an external system (Vault, ESO, sealed-secrets, GitOps) is the source of truth and you want the operator to fail loudly on misconfiguration. Pick `Manage` when you want self-sufficient bootstrapping but still want to retain ownership of the Secret object itself (for example, to back it up).
+
+### Status condition and troubleshooting {#external-secret-status}
+
+The operator exposes a `ExternalSecretValid` condition on `ClickHouseCluster.status.conditions`. Inspect it when reconciliation looks stuck:
+
+```bash
+kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
+```
+
+Possible reasons:
+
+| `reason` | Meaning | Fix |
+|---|---|---|
+| `ExternalSecretNotFound` | The referenced Secret does not exist in the namespace. | Create the Secret, or fix `spec.externalSecret.name`. |
+| `ExternalSecretInvalid` | The Secret exists but lacks required keys (only with `Observe`). The message lists each missing key together with its expected format. | Add the missing keys, or switch to `policy: Manage`. |
+| `ExternalSecretValid` | All required keys are present and the operator is using the Secret. | — |
+
+The operator requeues reconciliation while the Secret is invalid, so once you add the missing keys the next reconcile picks them up automatically — no need to bounce pods.
+
+<Note>
+The set of required keys depends on the running ClickHouse version. `named-collections-key` is only validated once the operator's version probe has detected ClickHouse `25.12` or newer. On older versions the key may be absent from the Secret.
+</Note>
+
 ## ClickHouse settings {#clickhouse-settings}
 
 ### Default user password {#default-user-password}
