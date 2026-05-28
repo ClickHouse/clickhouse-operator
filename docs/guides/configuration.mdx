@@ -296,6 +296,10 @@ stringData:
 | `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` status condition and a `Warning` event. |
 | `Manage` | The operator **generates** any missing required keys and writes them back to the same Secret. Useful for bootstrapping: create an empty Secret, let the operator fill it, then optionally tighten access. The operator still never deletes the Secret. |
 
+<Note>
+Even with `policy: Manage` the Secret must already exist in the namespace — the operator never creates the Secret itself, it only writes generated keys into an existing one. If the referenced Secret is missing, reconciliation is blocked with the `ExternalSecretNotFound` reason regardless of policy.
+</Note>
+
 Pick `Observe` when an external system (Vault, ESO, sealed-secrets, GitOps) is the source of truth and you want the operator to fail loudly on misconfiguration. Pick `Manage` when you want self-sufficient bootstrapping but still want to retain ownership of the Secret object itself (for example, to back it up).
 
 ### Status condition and troubleshooting {#external-secret-status}
@@ -303,6 +307,13 @@ Pick `Observe` when an external system (Vault, ESO, sealed-secrets, GitOps) is t
 The operator exposes a `ExternalSecretValid` condition on `ClickHouseCluster.status.conditions`. Inspect it when reconciliation looks stuck:
 
 ```bash
+# Plain kubectl — works out of the box
+kubectl describe clickhousecluster sample | sed -n '/Conditions:/,$p'
+
+# Same data as YAML
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+
+# Pretty-printed JSON (requires jq)
 kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 ```
 
