@@ -3,8 +3,11 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +55,8 @@ var releases = map[string][]upgrade.ClickHouseVersion{
 }
 
 var (
+	shardIndex     int
+	shardTotal     int
 	k8sClient      client.Client
 	config         *rest.Config
 	podDialer      controllerutil.DialContextFunc
@@ -73,6 +78,40 @@ func TestE2E(t *testing.T) {
 
 	RunSpecs(t, "e2e suite")
 }
+
+// Forbid Ordered containers at the suite level so the sharding contract holds.
+var _ = ReportBeforeSuite(func(report Report) {
+	var offenders []string
+	for _, s := range report.SpecReports {
+		if s.IsInOrderedContainer {
+			offenders = append(offenders, fmt.Sprintf("  %s @ %s", s.FullText(), s.LeafNodeLocation))
+		}
+	}
+
+	if len(offenders) > 0 {
+		Fail("Ordered containers are not allowed (sharding-incompatible):\n" + strings.Join(offenders, "\n"))
+	}
+
+	indexStr := os.Getenv("E2E_SHARD_INDEX")
+
+	totalStr := os.Getenv("E2E_SHARD_TOTAL")
+	if indexStr == "" && totalStr == "" {
+		return
+	}
+
+	total, err := strconv.Atoi(totalStr)
+	if err != nil || total < 1 {
+		Fail(fmt.Sprintf("invalid E2E_SHARD_TOTAL=%q", totalStr))
+	}
+
+	index, err := strconv.Atoi(indexStr)
+	if err != nil || index < 1 || index > total {
+		Fail(fmt.Sprintf("invalid E2E_SHARD_INDEX=%q (total=%d)", indexStr, total))
+	}
+
+	shardIndex = index
+	shardTotal = total
+})
 
 var _ = BeforeSuite(func(ctx context.Context) {
 	var (
@@ -151,6 +190,19 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	if err = imagePuller.Wait(); err != nil {
 		GinkgoWriter.Printf("failed to pre pull images: %s", err)
+	}
+})
+
+var _ = JustBeforeEach(func() {
+	if shardTotal <= 1 {
+		return
+	}
+
+	h := fnv.New32a()
+
+	_, _ = h.Write([]byte(CurrentSpecReport().FullText()))
+	if int(h.Sum32()%uint32(shardTotal))+1 != shardIndex {
+		Skip(fmt.Sprintf("not in shard %d/%d", shardIndex, shardTotal))
 	}
 })
 
