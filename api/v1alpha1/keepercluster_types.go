@@ -238,9 +238,15 @@ func (v *KeeperClusterStatus) GetConditions() *[]metav1.Condition {
 	return &v.Conditions
 }
 
-// SpecificName returns cluster name with resource suffix. Used to generate resource names.
+// SpecificName returns cluster name with role suffix.
 func (v *KeeperCluster) SpecificName() string {
-	return normalizeName(v.Name) + "-keeper"
+	return v.Name + "-keeper"
+}
+
+// SpecificResourceName returns owned resource name with suffix.
+// Base name is truncated to fit in length limits.
+func (v *KeeperCluster) SpecificResourceName(suffix string) string {
+	return resourceName(v.SpecificName(), suffix)
 }
 
 // Replicas returns requested number of replicas in the cluster.
@@ -260,27 +266,27 @@ const (
 
 // HeadlessServiceName returns headless service name for the Keeper cluster.
 func (v *KeeperCluster) HeadlessServiceName() string {
-	return v.SpecificName() + "-headless"
+	return v.SpecificResourceName("headless")
 }
 
 // PodDisruptionBudgetName returns PodDisruptionBudget name for the Keeper cluster.
 func (v *KeeperCluster) PodDisruptionBudgetName() string {
-	return v.SpecificName()
+	return v.SpecificResourceName("")
 }
 
 // QuorumConfigMapName returns ConfigMap name mounted in every replica.
 func (v *KeeperCluster) QuorumConfigMapName() string {
-	return fmt.Sprintf("%s-quorum-%s-%d", v.SpecificName(), KeeperConfigMapNameSuffix, latestKeeperQuorumConfigMapVersion)
+	return v.SpecificResourceName(fmt.Sprintf("quorum-%s-%d", KeeperConfigMapNameSuffix, latestKeeperQuorumConfigMapVersion))
 }
 
 // ConfigMapNameByReplicaID returns ConfigMap name for given replica ID.
 func (v *KeeperCluster) ConfigMapNameByReplicaID(replicaID KeeperReplicaID) string {
-	return fmt.Sprintf("%s-%d-%s-v%d", v.SpecificName(), replicaID, KeeperConfigMapNameSuffix, latestKeeperConfigMapVersion)
+	return v.SpecificResourceName(fmt.Sprintf("%d-%s-v%d", replicaID, KeeperConfigMapNameSuffix, latestKeeperConfigMapVersion))
 }
 
 // StatefulSetNameByReplicaID returns StatefulSet name for given replica ID.
 func (v *KeeperCluster) StatefulSetNameByReplicaID(replicaID KeeperReplicaID) string {
-	return fmt.Sprintf("%s-%d", v.SpecificName(), replicaID)
+	return v.SpecificResourceName(fmt.Sprintf("%d", replicaID))
 }
 
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.

@@ -8,6 +8,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
 // ContainerImage defines a container image with repository, tag or hash.
@@ -443,9 +445,26 @@ func (s *DefaultPasswordSelector) Validate() error {
 	return nil
 }
 
-// normalizeName removes dots from name to make it valid for use as a hostname or label value, where dots are not allowed.
-func normalizeName(name string) string {
-	return strings.ReplaceAll(name, ".", "-")
+const (
+	maxResourceNameLen = 63
+	hashLen            = 4
+)
+
+// resourceName normalizes name and appends suffix, truncating the prefix to a max limit.
+func resourceName(name, suffix string) string {
+	var fullName string
+	switch {
+	case len(suffix) == 0:
+		fullName = name
+	case len(name)+len(suffix)+1 <= maxResourceNameLen:
+		fullName = name + "-" + suffix
+	default:
+		hash := util.Sha256Hash([]byte(name))[:hashLen]
+		name = name[:maxResourceNameLen-len(suffix)-hashLen-2]
+		fullName = fmt.Sprintf("%s-%s-%s", name, hash, suffix)
+	}
+
+	return strings.ReplaceAll(fullName, ".", "-")
 }
 
 // formatPodHostname returns hostname for the first pod in the StatefulSet.
