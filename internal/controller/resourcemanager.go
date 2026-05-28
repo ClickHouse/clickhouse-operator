@@ -30,25 +30,23 @@ type Controller interface {
 	GetRecorder() events.EventRecorder
 }
 
+type clusterOwner interface {
+	client.Object
+	SpecificName() string
+	SpecificResourceName(suffix string) string
+}
+
 // ResourceManager provides Kubernetes resource modification helpers.
 type ResourceManager struct {
-	ctrl         Controller
-	owner        client.Object
-	specificName string
+	ctrl  Controller
+	owner clusterOwner
 }
 
 // NewResourceManager creates a new ResourceManager instance.
-func NewResourceManager(
-	ctrl Controller,
-	owner interface {
-		client.Object
-		SpecificName() string
-	},
-) ResourceManager {
+func NewResourceManager(ctrl Controller, owner clusterOwner) ResourceManager {
 	return ResourceManager{
-		ctrl:         ctrl,
-		owner:        owner,
-		specificName: owner.SpecificName(),
+		ctrl:  ctrl,
+		owner: owner,
 	}
 }
 
@@ -435,7 +433,7 @@ func ListReplicaResources[
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
 	}
 
-	if err := rm.ctrl.GetClient().List(ctx, list, util.AppRequirements(rm.owner.GetNamespace(), rm.specificName)); err != nil {
+	if err := rm.ctrl.GetClient().List(ctx, list, util.AppRequirements(rm.owner.GetNamespace(), rm.owner.SpecificName())); err != nil {
 		return nil, fmt.Errorf("list resources: %w", err)
 	}
 
