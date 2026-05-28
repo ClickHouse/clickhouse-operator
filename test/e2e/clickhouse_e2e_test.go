@@ -1110,6 +1110,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		})
 
 		cr := baseCr.DeepCopy()
+		checks := 0
 
 		By("checking server cert ca bundle is used to connect to the keeper", func() {
 			Expect(k8sClient.Create(ctx, cr)).To(Succeed())
@@ -1118,7 +1119,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			})
 
 			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, false)
-			ClickHouseRWChecks(ctx, cr, new(0))
+			ClickHouseRWChecks(ctx, cr, &checks)
 		})
 
 		By("checking custom ca bundle is used to connect to the keeper", func() {
@@ -1132,7 +1133,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
 
 			WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, true)
-			ClickHouseRWChecks(ctx, cr, new(0))
+			ClickHouseRWChecks(ctx, cr, &checks)
 		})
 	})
 
