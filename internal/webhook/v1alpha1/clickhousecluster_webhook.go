@@ -14,6 +14,20 @@ import (
 	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
+// reservedClickHousePort* values mirror the port constants defined in
+// internal/controller/clickhouse/constants.go. They are duplicated here because
+// importing that package from the webhook would introduce a controller→webhook
+// import cycle. Keep these values in sync with the controller package.
+const (
+	reservedClickHousePortHTTP             = 8123
+	reservedClickHousePortHTTPSecure       = 8443
+	reservedClickHousePortNative           = 9000
+	reservedClickHousePortNativeSecure     = 9440
+	reservedClickHousePortInterserver      = 9009
+	reservedClickHousePortPrometheusScrape = 9363
+	reservedClickHousePortManagement       = 9001
+)
+
 // SetupClickHouseWebhookWithManager registers the webhook for ClickHouseCluster in the manager.
 func SetupClickHouseWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	wh := &ClickHouseClusterWebhook{
@@ -121,6 +135,45 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 			errs = append(errs, fmt.Errorf("spec.additionalPorts[%d].port: %d duplicates spec.additionalPorts[%d].port", i, p.Port, prev))
 		} else {
 			seenPorts[p.Port] = i
+		}
+	}
+
+	// Reject additionalPorts that collide with ports the operator may bind on its own.
+	// All TLS-related ports are reserved unconditionally so flipping settings.tls.enabled
+	// later cannot break a previously valid cluster.
+	reservedPorts := map[int32]string{
+		reservedClickHousePortHTTP:             "HTTP",
+		reservedClickHousePortHTTPSecure:       "HTTPS",
+		reservedClickHousePortNative:           "native TCP",
+		reservedClickHousePortNativeSecure:     "native TLS",
+		reservedClickHousePortInterserver:      "interserver",
+		reservedClickHousePortPrometheusScrape: "Prometheus metrics",
+		reservedClickHousePortManagement:       "management",
+	}
+
+	reservedNames := map[string]struct{}{
+		"http":        {},
+		"http-secure": {},
+		"tcp":         {},
+		"tcp-secure":  {},
+		"interserver": {},
+		"prometheus":  {},
+		"management":  {},
+	}
+
+	for i, p := range obj.Spec.AdditionalPorts {
+		if purpose, taken := reservedPorts[p.Port]; taken {
+			errs = append(errs, fmt.Errorf(
+				"spec.additionalPorts[%d].port: %d is reserved for the operator-managed %s port",
+				i, p.Port, purpose,
+			))
+		}
+
+		if _, taken := reservedNames[p.Name]; taken {
+			errs = append(errs, fmt.Errorf(
+				"spec.additionalPorts[%d].name: %q is reserved by the operator",
+				i, p.Name,
+			))
 		}
 	}
 
