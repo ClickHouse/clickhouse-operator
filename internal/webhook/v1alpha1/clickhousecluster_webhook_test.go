@@ -308,5 +308,16 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(err.Error()).To(ContainSubstring("spec.additionalPorts[0].port"))
 			Expect(err.Error()).To(ContainSubstring("reserved"))
 		})
+
+		It("Should reject AdditionalPorts using a reserved name", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.AdditionalPorts = []chv1.AdditionalPort{
+				{Name: "http", Port: 18123},
+			}
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("spec.additionalPorts[0].name"))
+			Expect(err.Error()).To(ContainSubstring("reserved"))
+		})
 	})
 })
