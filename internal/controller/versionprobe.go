@@ -212,7 +212,7 @@ func (rm *ResourceManager) cleanupVersionProbeJobs(ctx context.Context, log cont
 	var jobs batchv1.JobList
 
 	if err := cli.List(ctx, &jobs, client.InNamespace(rm.owner.GetNamespace()), client.MatchingLabels(map[string]string{
-		controllerutil.LabelAppKey:  rm.specificName,
+		controllerutil.LabelAppKey:  rm.owner.SpecificName(),
 		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
 	})); err != nil {
 		log.Warn("failed to list obsolete version probe jobs", "error", err)
@@ -310,11 +310,11 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 		return batchv1.Job{}, fmt.Errorf("set version probe job controller reference: %w", err)
 	}
 
-	job.Name = fmt.Sprintf("%s-version-probe-%s", rm.specificName, revision[:8])
+	job.Name = rm.owner.SpecificResourceName("version-probe-" + revision[:8])
 
 	// Set reserved labels after overrides to ensure they are not modified by user overrides.
 	job.Labels = controllerutil.MergeMaps(job.Labels, map[string]string{
-		controllerutil.LabelAppKey:  rm.specificName,
+		controllerutil.LabelAppKey:  rm.owner.SpecificName(),
 		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
 	})
 

@@ -263,7 +263,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scope: [ test-keeper-e2e, test-clickhouse-e2e ]
+        shard: [ 1, 2, 3, 4 ]
     runs-on: [self-hosted, amd-medium]
     steps:
       - name: Checkout code
@@ -286,13 +286,16 @@ jobs:
           node_image: "kindest/node:v1.34.3" # Can't use newer node image as self-hosted runners use cgroups v1
 
       - name: Run e2e tests
-        run:  make ${{ matrix.scope }}
+        env:
+          E2E_SHARD_INDEX: ${{ matrix.shard }}
+          E2E_SHARD_TOTAL: "4"
+        run:  make test-e2e
 
       - name: Upload test report
         uses: actions/upload-artifact@v6
         if: ${{ !cancelled() }}
         with:
-          name: e2e-report-${{ matrix.scope }}
+          name: e2e-report-shard-${{ matrix.shard }}
           path: "**/report/*"
           if-no-files-found: error
           overwrite: true
@@ -302,10 +305,16 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
       - name: Download all e2e test reports
         uses: actions/download-artifact@v8
         with:
           pattern: e2e-report-*
+
+      - name: Merge sharded e2e reports
+        run: python3 ci/merge-junit-reports.py
 
       - name: Test Report
         uses: dorny/test-reporter@v3
@@ -313,8 +322,7 @@ jobs:
           name: E2E tests
           badge-title: E2E tests
           reporter: java-junit
-          artifact: "/(.*)e2e-report(.*)/"
-          path: "**/*.xml"
+          path: "**/*-report.xml"
 
   ci-success-check:
     name: All CI checks passed

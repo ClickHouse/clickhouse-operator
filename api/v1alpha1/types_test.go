@@ -136,4 +136,25 @@ var _ = Describe("ClickHouseCluster", func() {
 			Expect(hostname).To(Equal("test-clickhouse-0-1-0.test-clickhouse-headless.test-ns.svc.internal.corp.example.com"))
 		})
 	})
+
+	Describe("SpecificResourceName", func() {
+		It("should add suffix", func() {
+			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+			Expect(cluster.SpecificResourceName("suffix")).To(HaveSuffix("-suffix"))
+		})
+
+		It("should replace forbidden chars", func() {
+			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: "test.name"}}
+			Expect(cluster.SpecificResourceName("suffix")).To(Not(ContainSubstring(".")))
+		})
+
+		It("should truncate length", func() {
+			name := "very-very.long.resource-name.that-longer-than-limit"
+			suffix := "long-suffix-in-result"
+			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			res := cluster.SpecificResourceName(suffix)
+			Expect(res).To(HaveLen(maxResourceNameLen), res)
+			Expect(res).To(HaveSuffix(suffix), res)
+		})
+	})
 })

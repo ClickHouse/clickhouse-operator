@@ -361,9 +361,15 @@ func (v *ClickHouseClusterStatus) GetConditions() *[]metav1.Condition {
 	return &v.Conditions
 }
 
-// SpecificName returns cluster name with resource suffix. Used to generate resource names that may be used in DNS.
+// SpecificName returns cluster name with role suffix.
 func (v *ClickHouseCluster) SpecificName() string {
-	return normalizeName(v.Name) + "-clickhouse"
+	return v.Name + "-clickhouse"
+}
+
+// SpecificResourceName returns owned resource name with suffix.
+// Base name is truncated to fit in length limits.
+func (v *ClickHouseCluster) SpecificResourceName(suffix string) string {
+	return resourceName(v.SpecificName(), suffix)
 }
 
 // Shards returns requested number of shards in the ClickHouseCluster.
@@ -399,12 +405,12 @@ func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
 
 // HeadlessServiceName returns name of the headless service for the ClickHouseCluster.
 func (v *ClickHouseCluster) HeadlessServiceName() string {
-	return v.SpecificName() + "-headless"
+	return v.SpecificResourceName("headless")
 }
 
 // PodDisruptionBudgetNameByShard returns name of the PodDisruptionBudget for the specific shard.
 func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
-	return fmt.Sprintf("%s-%d", v.SpecificName(), shard)
+	return v.SpecificResourceName(strconv.FormatInt(int64(shard), 10))
 }
 
 // SecretName returns name of the Secret with cluster secret values.
@@ -414,17 +420,17 @@ func (v *ClickHouseCluster) SecretName() string {
 		return v.Spec.ExternalSecret.Name
 	}
 
-	return v.SpecificName()
+	return v.SpecificResourceName("")
 }
 
 // ConfigMapNameByReplicaID returns name of the ConfigMap for the specific replica.
 func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ClickHouseReplicaID) string {
-	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
+	return v.SpecificResourceName(fmt.Sprintf("%d-%d", id.ShardID, id.Index))
 }
 
 // StatefulSetNameByReplicaID returns name of the StatefulSet for the specific replica.
 func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) string {
-	return fmt.Sprintf("%s-%d-%d", v.SpecificName(), id.ShardID, id.Index)
+	return v.SpecificResourceName(fmt.Sprintf("%d-%d", id.ShardID, id.Index))
 }
 
 // KeeperClusterNamespacedName returns the fully-qualified KeeperCluster reference.
