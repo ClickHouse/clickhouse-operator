@@ -153,11 +153,11 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 
 	reservedNames := map[string]struct{}{
 		"http":        {},
-		"https":       {},
+		"http-secure": {},
 		"tcp":         {},
 		"tcp-secure":  {},
 		"interserver": {},
-		"metrics":     {},
+		"prometheus":  {},
 		"management":  {},
 	}
 
