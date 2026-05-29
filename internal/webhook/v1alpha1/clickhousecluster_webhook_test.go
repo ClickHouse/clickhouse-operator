@@ -34,10 +34,42 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(k8sClient.Get(ctx, chCluster.NamespacedName(), chCluster)).Should(Succeed())
 
 			Expect(chCluster.Spec.ContainerTemplate.Image.Repository).Should(Equal(chv1.DefaultClickHouseContainerRepository))
+			Expect(chCluster.Spec.ContainerTemplate.Resources.Requests).Should(Equal(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(chv1.DefaultClickHouseCPURequest),
+				corev1.ResourceMemory: resource.MustParse(chv1.DefaultClickHouseMemoryRequest),
+			}))
 			Expect(chCluster.Spec.ContainerTemplate.Resources.Limits).Should(Equal(corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse(chv1.DefaultClickHouseCPULimit),
 				corev1.ResourceMemory: resource.MustParse(chv1.DefaultClickHouseMemoryLimit),
 			}))
+		})
+
+		It("Should not inject default resources when the user provided a partial spec", func(ctx context.Context) {
+			By("Respecting user-provided requests with no limits")
+
+			chCluster := &chv1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "default",
+					Name:      "test-partial-resources",
+				},
+				Spec: chv1.ClickHouseClusterSpec{
+					KeeperClusterRef: chv1.KeeperClusterReference{
+						Name: "some-keeper-cluster",
+					},
+					ContainerTemplate: chv1.ContainerTemplateSpec{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("2"),
+								corev1.ResourceMemory: resource.MustParse("10Gi"),
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, chCluster)).Should(Succeed())
+			deferCleanup(chCluster)
+			Expect(k8sClient.Get(ctx, chCluster.NamespacedName(), chCluster)).Should(Succeed())
+			Expect(chCluster.Spec.ContainerTemplate.Resources.Limits).Should(BeNil())
 		})
 
 		It("Should set default access modes if data volume enabled", func(ctx context.Context) {

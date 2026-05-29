@@ -607,8 +607,7 @@ spec:
                   resources:
                     description: |-
                       Resources is the resource requirements for the server container.
-                      Deep-merged with operator defaults via SMP. Individual limits and requests override only matching
-                      keys; unset fields preserve operator defaults.
+                      Applied as a whole: operator defaults are used only when all resource fields are empty.
                     properties:
                       claims:
                         description: |-

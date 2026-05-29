@@ -120,16 +120,6 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 				Tag:        DefaultClickHouseContainerTag,
 			},
 			ImagePullPolicy: DefaultClickHouseContainerPolicy,
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(DefaultClickHouseCPURequest),
-					corev1.ResourceMemory: resource.MustParse(DefaultClickHouseMemoryRequest),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(DefaultClickHouseCPULimit),
-					corev1.ResourceMemory: resource.MustParse(DefaultClickHouseMemoryLimit),
-				},
-			},
 		},
 		Settings: ClickHouseSettings{
 			Logger: LoggerConfig{
@@ -143,6 +133,21 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 
 	if err := controllerutil.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
+	}
+
+	if len(s.ContainerTemplate.Resources.Requests) == 0 &&
+		len(s.ContainerTemplate.Resources.Limits) == 0 &&
+		len(s.ContainerTemplate.Resources.Claims) == 0 {
+		s.ContainerTemplate.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(DefaultClickHouseCPURequest),
+				corev1.ResourceMemory: resource.MustParse(DefaultClickHouseMemoryRequest),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(DefaultClickHouseCPULimit),
+				corev1.ResourceMemory: resource.MustParse(DefaultClickHouseMemoryLimit),
+			},
+		}
 	}
 
 	if s.Settings.TLS.CABundle != nil && s.Settings.TLS.CABundle.Key == "" {

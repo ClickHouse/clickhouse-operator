@@ -11,8 +11,8 @@ const (
 
 	DefaultKeeperCPULimit      = "1"
 	DefaultKeeperCPURequest    = "250m"
-	DefaultKeeperMemoryLimit   = "1Gi"
-	DefaultKeeperMemoryRequest = "256Mi"
+	DefaultKeeperMemoryLimit   = "512Mi"
+	DefaultKeeperMemoryRequest = "512Mi"
 
 	DefaultKeeperReplicaCount = 3
 
@@ -22,8 +22,8 @@ const (
 
 	DefaultClickHouseCPULimit      = "1"
 	DefaultClickHouseCPURequest    = "250m"
-	DefaultClickHouseMemoryLimit   = "1Gi"
-	DefaultClickHouseMemoryRequest = "256Mi"
+	DefaultClickHouseMemoryLimit   = "512Mi"
+	DefaultClickHouseMemoryRequest = "512Mi"
 
 	DefaultClickHouseShardCount   = 1
 	DefaultClickHouseReplicaCount = 3

@@ -80,16 +80,6 @@ func (s *KeeperClusterSpec) WithDefaults() {
 				Tag:        DefaultKeeperContainerTag,
 			},
 			ImagePullPolicy: DefaultKeeperContainerPolicy,
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPURequest),
-					corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryRequest),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPULimit),
-					corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryLimit),
-				},
-			},
 		},
 		Settings: KeeperSettings{
 			Logger: LoggerConfig{
@@ -103,6 +93,21 @@ func (s *KeeperClusterSpec) WithDefaults() {
 
 	if err := controllerutil.ApplyDefault(s, defaultSpec); err != nil {
 		panic(fmt.Sprintf("unable to apply defaults: %v", err))
+	}
+
+	if len(s.ContainerTemplate.Resources.Requests) == 0 &&
+		len(s.ContainerTemplate.Resources.Limits) == 0 &&
+		len(s.ContainerTemplate.Resources.Claims) == 0 {
+		s.ContainerTemplate.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPURequest),
+				corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryRequest),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(DefaultKeeperCPULimit),
+				corev1.ResourceMemory: resource.MustParse(DefaultKeeperMemoryLimit),
+			},
+		}
 	}
 
 	if s.DataVolumeClaimSpec != nil && len(s.DataVolumeClaimSpec.AccessModes) == 0 {

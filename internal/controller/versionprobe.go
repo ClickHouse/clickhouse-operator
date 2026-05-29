@@ -24,7 +24,7 @@ import (
 const (
 	DefaultProbeCPULimit      = "1"
 	DefaultProbeCPURequest    = "250m"
-	DefaultProbeMemoryLimit   = "1Gi"
+	DefaultProbeMemoryLimit   = "256Mi"
 	DefaultProbeMemoryRequest = "256Mi"
 )
 

@@ -275,8 +275,7 @@ type ContainerTemplateSpec struct {
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 
 	// Resources is the resource requirements for the server container.
-	// Deep-merged with operator defaults via SMP. Individual limits and requests override only matching
-	// keys; unset fields preserve operator defaults.
+	// Applied as a whole: operator defaults are used only when all resource fields are empty.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
