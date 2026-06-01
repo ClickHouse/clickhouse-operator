@@ -74,6 +74,14 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 }
 
 func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBudget {
+	// Smart default: single-replica clusters use maxUnavailable=1 to avoid
+	// drain deadlocks; multi-replica clusters use maxUnavailable=replicas/2
+	// to preserve Raft quorum.
+	maxUnavailable := cr.Replicas() / 2
+	if cr.Replicas() <= 1 {
+		maxUnavailable = 1
+	}
+
 	pdb := &policyv1.PodDisruptionBudget{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PodDisruptionBudget",
@@ -93,7 +101,7 @@ func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 					controllerutil.LabelAppKey: cr.SpecificName(),
 				},
 			},
-			MaxUnavailable: new(intstr.FromInt32(cr.Replicas() / 2)),
+			MaxUnavailable: new(intstr.FromInt32(maxUnavailable)),
 		},
 	}
 

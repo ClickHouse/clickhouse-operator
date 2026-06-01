@@ -138,6 +138,15 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 		Expect(pdb.Spec.MinAvailable).To(BeNil())
 	})
 
+	It("should default to maxUnavailable=1 for single-replica cluster to avoid drain deadlocks", func() {
+		cr.Spec.Replicas = new(int32(1))
+		pdb := templatePodDisruptionBudget(cr)
+
+		Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntValue()).To(Equal(1)) // smart default avoids the 1/2=0 deadlock
+		Expect(pdb.Spec.MinAvailable).To(BeNil())
+	})
+
 	It("should respect custom maxUnavailable", func() {
 		cr.Spec.PodDisruptionBudget = &v1.PodDisruptionBudgetSpec{
 			MaxUnavailable: new(intstr.FromInt32(2)),
