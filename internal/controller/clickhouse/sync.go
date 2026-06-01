@@ -514,9 +514,9 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 }
 
 func warningAction(msg string) string {
-	h := fnv.New32a()
+	h := fnv.New64a()
 	_, _ = h.Write([]byte(msg))
-	return fmt.Sprintf("Warning-%08x", h.Sum32())
+	return fmt.Sprintf("Warning-%016x", h.Sum64())
 }
 
 func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
