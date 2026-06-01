@@ -528,11 +528,10 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, []string, error) {
+	results := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, struct{}, error) {
 		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
 		if err != nil {
-			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
-			return v1.ClickHouseReplicaID{}, []string{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
+			return v1.ClickHouseReplicaID{}, struct{}{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
 		}
 
 		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
@@ -542,30 +541,34 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 			hasError = true
 		}
 
-		var warnings []string
-
-		if !hasError && sts.Status.ReadyReplicas > 0 && r.commander != nil {
-			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-			defer cancel()
-
-			var wErr error
-
-			warnings, wErr = r.commander.Warnings(ctx, id)
-			if wErr != nil {
-				log.Debug("failed to get warnings from replica", "replica_id", id, "error", wErr)
-			}
-
-			log.Info("system.warnings fetched", "replica_id", id, "count", len(warnings))
-
-			for _, warning := range warnings {
-				r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
-					v1.EventReasonClickHouseWarning, warningAction(warning),
-					"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
-			}
+		if hasError || sts.Status.ReadyReplicas == 0 || r.commander == nil {
+			return id, struct{}{}, nil
 		}
 
-		return id, warnings, nil
+		ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+		defer cancel()
+
+		warnings, err := r.commander.Warnings(ctx, id)
+		if err != nil {
+			return id, struct{}{}, fmt.Errorf("fetch warnings from replica %s: %w", id, err)
+		}
+
+		log.Debug("system.warnings fetched", "replica_id", id, "count", len(warnings))
+
+		for _, warning := range warnings {
+			r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
+				v1.EventReasonClickHouseWarning, warningAction(warning),
+				"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
+		}
+
+		return id, struct{}{}, nil
 	})
+
+	for id, res := range results {
+		if res.Err != nil {
+			log.Warn("failed to publish replica warnings", "replica_id", id, "error", res.Err)
+		}
+	}
 
 	return chctrl.StepRequeue(chctrl.WarningsPollInterval), nil
 }
