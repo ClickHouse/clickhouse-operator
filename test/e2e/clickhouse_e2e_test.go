@@ -239,7 +239,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 				var seen []string
 				for _, e := range events.Items {
-					if e.Reason == v1.EventWarningRecord && e.InvolvedObject.Name == cr.Name {
+					if e.Reason == v1.EventReasonClickHouseWarning && e.InvolvedObject.Name == cr.Name {
 						seen = append(seen, e.Message)
 					}
 				}
