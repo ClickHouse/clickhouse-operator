@@ -134,7 +134,7 @@ func InstallCertManager(ctx context.Context) error {
 	cmd = exec.CommandContext(ctx, "kubectl", "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
-		"--timeout", "5m",
+		"--timeout", "10m",
 	)
 
 	_, err := Run(cmd)
