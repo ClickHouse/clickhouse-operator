@@ -559,7 +559,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 			for _, warning := range warnings {
 				r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
-					v1.EventWarningRecord, warningAction(warning),
+					v1.EventReasonClickHouseWarning, warningAction(warning),
 					"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
 			}
 		}

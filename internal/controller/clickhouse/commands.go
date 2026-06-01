@@ -126,7 +126,7 @@ func (cmd *commander) Warnings(ctx context.Context, id v1.ClickHouseReplicaID) (
 		return []string{}, fmt.Errorf("failed to get connection for replica %s: %w", id, err)
 	}
 
-	warnings := []string{}
+	var warnings []string
 
 	rows, err := conn.Query(ctx, "SELECT message FROM system.warnings")
 	if err != nil {
