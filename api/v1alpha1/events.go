@@ -40,7 +40,7 @@ const (
 
 // ClickHouse warning event.
 const (
-	EventWarningRecord EventReason = "ClickHouseWarning"
+	EventReasonClickHouseWarning EventReason = "ClickHouseWarning"
 )
 
 // EventAction represents the action associated with an event.
