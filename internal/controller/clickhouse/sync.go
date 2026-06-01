@@ -548,9 +548,10 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
-			warnings, err := r.commander.Warnings(ctx, id)
-			if err != nil {
-				log.Debug("failed to get warnings from replica", id, " error", err)
+			var wErr error
+			warnings, wErr = r.commander.Warnings(ctx, id)
+			if wErr != nil {
+				log.Debug("failed to get warnings from replica", "replica_id", id, "error", wErr)
 			}
 
 			log.Info("system.warnings fetched", "replica_id", id, "count", len(warnings))
