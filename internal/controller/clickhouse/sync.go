@@ -510,6 +510,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	}
 
 	r.evaluateReplicaConditions()
+
 	return chctrl.StepContinue(), nil
 }
 
@@ -560,6 +561,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 					"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
 			}
 		}
+
 		return id, warnings, nil
 	})
 

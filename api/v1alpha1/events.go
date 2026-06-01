@@ -38,7 +38,7 @@ const (
 	EventReasonUpgradeAvailable   EventReason = "VersionUpgradeAvailable"
 )
 
-// ClickHouse warning event
+// ClickHouse warning event.
 const (
 	EventWarningRecord EventReason = "ClickHouseWarning"
 )

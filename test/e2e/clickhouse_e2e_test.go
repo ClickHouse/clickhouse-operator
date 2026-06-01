@@ -200,8 +200,10 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 
 			By("creating enough tables to exceed max_table_num_to_warn")
+
 			chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
 			Expect(err).NotTo(HaveOccurred())
+
 			defer chClient.Close()
 
 			for i := range 2 {
@@ -215,6 +217,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Eventually(func(g Gomega) {
 				rows, err := chClient.Query(ctx, "SELECT message FROM system.warnings")
 				g.Expect(err).NotTo(HaveOccurred())
+
 				defer func() { _ = rows.Close() }()
 
 				var warnings []string
@@ -223,6 +226,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					g.Expect(rows.Scan(&m)).To(Succeed())
 					warnings = append(warnings, m)
 				}
+
 				g.Expect(rows.Err()).NotTo(HaveOccurred())
 				g.Expect(warnings).To(ContainElement(ContainSubstring(tableWarning)),
 					"expected the table-count warning in system.warnings, got: %v", warnings)
@@ -239,6 +243,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						seen = append(seen, e.Message)
 					}
 				}
+
 				g.Expect(seen).To(ContainElement(ContainSubstring(tableWarning)),
 					"no ClickHouseWarning event carrying %q; events seen: %v", tableWarning, seen)
 			}).WithPolling(pollingInterval).WithTimeout(2 * time.Minute).Should(Succeed())

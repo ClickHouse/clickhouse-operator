@@ -119,7 +119,7 @@ func (cmd *commander) Probe(ctx context.Context, id v1.ClickHouseReplicaID) (rep
 	return probe, nil
 }
 
-// Reads system warnings from the server
+// Reads system warnings from the server.
 func (cmd *commander) Warnings(ctx context.Context, id v1.ClickHouseReplicaID) ([]string, error) {
 	conn, err := cmd.getConn(id)
 	if err != nil {
@@ -128,16 +128,25 @@ func (cmd *commander) Warnings(ctx context.Context, id v1.ClickHouseReplicaID) (
 
 	warnings := []string{}
 
-	rows, err := conn.Query(ctx,
-		"SELECT message FROM system.warnings",
-	)
+	rows, err := conn.Query(ctx, "SELECT message FROM system.warnings")
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to query system.warnings on replica %s: %w", id, err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
 
 	for rows.Next() {
 		var raw string
 		if err := rows.Scan(&raw); err != nil {
-			return []string{}, fmt.Errorf("probe replica %s: %w", id, err)
+			return []string{}, fmt.Errorf("failed to get data from system.warnings: replica %s, %w", id, err)
 		}
+
 		warnings = append(warnings, raw)
+	}
+
+	if err := rows.Err(); err != nil {
+		return []string{}, fmt.Errorf("failed to scan data from system.warnings %s: %w", id, err)
 	}
 
 	return warnings, nil
