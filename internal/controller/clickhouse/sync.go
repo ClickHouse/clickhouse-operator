@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"hash/fnv"
 	"maps"
 	"slices"
 	"strconv"
@@ -130,6 +131,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		{Name: "ClusterSecret", Fn: r.reconcileClusterSecret, Always: true},
 		{Name: "ExternalSecret", Fn: r.reconcileExternalSecret, Always: true},
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
+		{Name: "Warnings", Fn: r.reconcileWarnings, Always: true},
 		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
 		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
 		{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
@@ -508,8 +510,60 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	}
 
 	r.evaluateReplicaConditions()
-
 	return chctrl.StepContinue(), nil
+}
+
+func warningAction(msg string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(msg))
+	return fmt.Sprintf("Warning-%08x", h.Sum32())
+}
+
+func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
+
+	var statefulSets appsv1.StatefulSetList
+	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
+	}
+
+	ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, []string, error) {
+		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
+		if err != nil {
+			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
+			return v1.ClickHouseReplicaID{}, []string{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
+		}
+
+		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
+		if err != nil {
+			log.Warn("failed to check replica pod error", "statefulset", sts.Name, "error", err)
+
+			hasError = true
+		}
+
+		var warnings []string
+
+		if !hasError && sts.Status.ReadyReplicas > 0 && r.commander != nil {
+			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+			defer cancel()
+
+			warnings, err := r.commander.Warnings(ctx, id)
+			if err != nil {
+				log.Debug("failed to get warnings from replica", id, " error", err)
+			}
+
+			log.Info("system.warnings fetched", "replica_id", id, "count", len(warnings))
+
+			for _, warning := range warnings {
+				r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
+					v1.EventWarningRecord, warningAction(warning),
+					"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
+			}
+		}
+		return id, warnings, nil
+	})
+
+	return chctrl.StepRequeue(chctrl.WarningsPollInterval), nil
 }
 
 func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {

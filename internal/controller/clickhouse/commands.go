@@ -119,6 +119,30 @@ func (cmd *commander) Probe(ctx context.Context, id v1.ClickHouseReplicaID) (rep
 	return probe, nil
 }
 
+// Reads system warnings from the server
+func (cmd *commander) Warnings(ctx context.Context, id v1.ClickHouseReplicaID) ([]string, error) {
+	conn, err := cmd.getConn(id)
+	if err != nil {
+		return []string{}, fmt.Errorf("failed to get connection for replica %s: %w", id, err)
+	}
+
+	warnings := []string{}
+
+	rows, err := conn.Query(ctx,
+		"SELECT message FROM system.warnings",
+	)
+
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return []string{}, fmt.Errorf("probe replica %s: %w", id, err)
+		}
+		warnings = append(warnings, raw)
+	}
+
+	return warnings, nil
+}
+
 // ReloadConfig queries the replica to reload its configuration.
 func (cmd *commander) ReloadConfig(ctx context.Context, id v1.ClickHouseReplicaID) error {
 	conn, err := cmd.getConn(id)

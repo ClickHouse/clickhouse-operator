@@ -172,6 +172,78 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Entry("scale down to 2 replicas", 3, v1.ClickHouseClusterSpec{Replicas: new(int32(2))}),
 		)
 
+		It("should surface system.warnings as ClickHouseWarning events", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("warnings-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					Settings: v1.ClickHouseSettings{
+						ExtraConfig: runtime.RawExtension{Raw: []byte(`{"max_table_num_to_warn": 1}`)},
+					},
+				},
+			}
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				By("deleting cluster CR")
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+
+			By("creating enough tables to exceed max_table_num_to_warn")
+			chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+			Expect(err).NotTo(HaveOccurred())
+			defer chClient.Close()
+
+			for i := range 2 {
+				Expect(chClient.Exec(ctx, fmt.Sprintf(
+					"CREATE TABLE IF NOT EXISTS default.warn_t%d (x UInt64) ENGINE = MergeTree ORDER BY x", i))).To(Succeed())
+			}
+
+			const tableWarning = "The number of attached tables"
+
+			By("confirming the table-count warning is present in system.warnings table")
+			Eventually(func(g Gomega) {
+				rows, err := chClient.Query(ctx, "SELECT message FROM system.warnings")
+				g.Expect(err).NotTo(HaveOccurred())
+				defer func() { _ = rows.Close() }()
+
+				var warnings []string
+				for rows.Next() {
+					var m string
+					g.Expect(rows.Scan(&m)).To(Succeed())
+					warnings = append(warnings, m)
+				}
+				g.Expect(rows.Err()).NotTo(HaveOccurred())
+				g.Expect(warnings).To(ContainElement(ContainSubstring(tableWarning)),
+					"expected the table-count warning in system.warnings, got: %v", warnings)
+			}).WithPolling(pollingInterval).WithTimeout(time.Minute).Should(Succeed())
+
+			By("asserting the operator surfaced it as a ClickHouseWarning event")
+			Eventually(func(g Gomega) {
+				var events corev1.EventList
+				g.Expect(k8sClient.List(ctx, &events, client.InNamespace(ns))).To(Succeed())
+
+				var seen []string
+				for _, e := range events.Items {
+					if e.Reason == v1.EventWarningRecord && e.InvolvedObject.Name == cr.Name {
+						seen = append(seen, e.Message)
+					}
+				}
+				g.Expect(seen).To(ContainElement(ContainSubstring(tableWarning)),
+					"no ClickHouseWarning event carrying %q; events seen: %v", tableWarning, seen)
+			}).WithPolling(pollingInterval).WithTimeout(2 * time.Minute).Should(Succeed())
+		})
+
 		It("should work with custom data folder mount", func(ctx context.Context) {
 			cr := v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
