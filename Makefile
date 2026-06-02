@@ -3,12 +3,19 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
+#
 ifeq ($(VERSION),)
-VERSION := $(shell git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n1 | cut -c 2-)
-ifeq ($(VERSION),)
-VERSION := 0.0.0
+LAST_RELEASED_VERSION := $(shell git tag --list "v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | head -n1 | cut -c 2-)
+ifeq ($(LAST_RELEASED_VERSION),)
+LAST_RELEASED_VERSION := 0.0.0
 endif
-FULL_VERSION := v$(VERSION)-$(shell git rev-parse --short HEAD)
+VERSION := $(shell echo $(LAST_RELEASED_VERSION) | awk -F. -v OFS=. '{$$NF+=1; print}')
+# Commits since the last release tag. Used as the first pre-release identifier
+# so SemVer orders successive fast builds monotonically (per-spec: pure-numeric
+# identifiers are compared numerically). Falls back to total HEAD count when
+# no tags exist.
+COMMIT_COUNT := $(shell git rev-list --count v$(LAST_RELEASED_VERSION)..HEAD 2>/dev/null || git rev-list --count HEAD)
+FULL_VERSION := v$(VERSION)-$(COMMIT_COUNT).$(shell git rev-parse --short HEAD)
 else
 FULL_VERSION := v$(VERSION)
 endif
@@ -22,7 +29,7 @@ print-full-version: ## Print the computed full version
 # To re-generate a bundle for other specific channels without changing the standard setup, you can:
 # - use the CHANNELS as arg of the bundle target (e.g make bundle CHANNELS=candidate,fast,stable)
 # - use environment variables to overwrite this value (e.g export CHANNELS="candidate,fast,stable")
-CHANNELS ?= stable
+CHANNELS ?= stable,fast
 BUNDLE_CHANNELS := --channels=$(CHANNELS)
 
 # DEFAULT_CHANNEL defines the default channel used in the bundle.

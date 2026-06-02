@@ -19,6 +19,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-tags: true
+          fetch-depth: '0'
       - name: Free disk space
         uses: jlumbroso/free-disk-space@v1.3.0
       - name: Set up Go
@@ -31,6 +32,8 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v3.2.0
       - name: Build operator image
         run: make docker-buildx-latest
       - name: Install Helm
@@ -38,8 +41,16 @@ jobs:
       - name: Set VERSION
         run: |
           FULL_VER=$(make -s print-full-version)
-          echo "VERSION=${FULL_VER#v}" >> "$GITHUB_ENV" # strips 'v' → 0.0.3-d33b34f
+          echo "VERSION=${FULL_VER#v}" >> "$GITHUB_ENV"
       - name: Package and push helm charts
         run: |
           helm registry login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
           make push-helmchart push-cluster-chart
+      - name: Build and push fast bundle
+        run: make bundle bundle-buildx
+      - name: Build catalog
+        run: make catalog-buildx
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Mark catalog as latest
+        run: make catalog-push-latest
