@@ -20,15 +20,19 @@ jobs:
       - uses: errata-ai/vale-action@v2.1.1
         with:
           fail_on_error: 'true'
+          filter_mode: nofilter
 
   markdown-link-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: tcort/github-action-markdown-link-check@v1
+      - uses: UmbrellaDocs/action-linkspector@v1
         with:
-          config-file: ci/.markdown-link-check.json
-          file-extension: '.md'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          reporter: github-pr-review
+          filter_mode: nofilter
+          fail_level: any
+          config_file: .linkspector.yml
 
   api-reference-generated:
     name: API Reference Generated

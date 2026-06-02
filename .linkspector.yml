@@ -1,0 +1,17 @@
+dirs:
+  - .
+useGitIgnore: true
+fileExtensions:
+  - md
+  - mdx
+excludedDirs:
+  - ./node_modules
+  - ./bin
+  - ./dist
+
+ignorePatterns:
+  # Mintlify absolute routes — resolved at deploy time by Mintlify,
+  # not present as files in this repo.
+  - pattern: '^/(products|core|cloud|operations)/'
+  # Cloudflare bot protection returns 403 to programmatic checkers.
+  - pattern: '^https://trust\.clickhouse\.com'

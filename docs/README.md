@@ -4,14 +4,15 @@
 
 Choose your preferred installation method:
 
-- [Manifests Installation](./installation/kubectl.md) - Install using kubectl/kustomize
-- [Helm Installation](./installation/helm.md) - Install using Helm charts
-- [Operator Lifecycle Manager (OLM) Installation](./installation/olm.md) - Install using OLM
+- [Manifests Installation](./install/kubectl.mdx) - Install using kubectl/kustomize
+- [Helm Installation](./install/helm.mdx) - Install using Helm charts
+- [Operator Lifecycle Manager (OLM) Installation](./install/olm.mdx) - Install using OLM
 
 ## Guides
 
-- **[Introduction](./introduction.md)** - General overview of ClickHouse Operator concepts
-- **[Configuration Guide](./configuration.md)** - Configure ClickHouse and Keeper clusters
+- **[Introduction](./guides/introduction.mdx)** - General overview of ClickHouse Operator concepts
+- **[Configuration Guide](./guides/configuration.mdx)** - Configure ClickHouse and Keeper clusters
+- **[Monitoring](./guides/monitoring.mdx)** - Monitor clickhouse-operator using Prometheus metrics
 
 ## Reference
 

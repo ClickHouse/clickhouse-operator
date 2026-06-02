@@ -611,9 +611,9 @@ docs-lint-vale: ## Run Vale linter on documentation
 	vale --config='.vale.ini' *.md docs
 
 .PHONY: docs-link-check
-docs-link-check: ## Run markdown-link-check on documentation
-	@command -v markdown-link-check >/dev/null 2>&1 || { echo "markdown-link-check is required but not installed. npm install -g markdown-link-check"; exit 1; }
-	markdown-link-check -c ci/.markdown-link-check.json *.md docs
+docs-link-check: ## Run linkspector on documentation
+	@command -v linkspector >/dev/null 2>&1 || { echo "linkspector is required but not installed. npm install -g @umbrelladocs/linkspector"; exit 1; }
+	linkspector check
 
 .PHONY: docs-lint
 docs-lint: docs-lint-vale docs-link-check ## Run all documentation linters
