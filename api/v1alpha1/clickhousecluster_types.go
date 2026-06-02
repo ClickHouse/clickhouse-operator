@@ -14,7 +14,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+
+	networkingv1 "k8s.io/api/networking/v1"
 )
+
+type NetworkPolicySpec struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// TODO: add Cilium
+	Backend         string                           `json:"backend,omitempty"`
+	AllowedClients  []networkingv1.NetworkPolicyPeer `json:"allowedClients,omitempty"`
+	MonitoringPeers []networkingv1.NetworkPolicyPeer `json:"monitoringPeers,omitempty"`
+}
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 type ClickHouseClusterSpec struct {
@@ -72,6 +82,9 @@ type ClickHouseClusterSpec struct {
 	// shards and minAvailable=1 for multi-replica shards.
 	// +optional
 	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
+
+	// NetworkPolicy configures network policy of cluster.
+	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
 
 	// Configuration parameters for ClickHouse server.
 	// +optional

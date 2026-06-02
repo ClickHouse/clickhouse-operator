@@ -26,6 +26,7 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
+	networkingv1 "k8s.io/api/networking/v1"
 )
 
 // ClusterController reconciles a ClickHouseCluster object.
@@ -65,6 +66,7 @@ func keeperReferenceFieldValue(cluster *v1.ClickHouseCluster) []string {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -199,7 +201,8 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.Service{}).
-		Owns(&batchv1.Job{})
+		Owns(&batchv1.Job{}).
+		Owns(&networkingv1.NetworkPolicy{})
 
 	if enablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})

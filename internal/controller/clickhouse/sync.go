@@ -14,6 +14,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -145,6 +146,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
 		{Name: "Warnings", Fn: r.reconcileWarnings, Always: true},
 		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
+		{Name: "NetworkPolicy", Fn: r.reconcileNetworkPolicy, Always: true},
 		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
 		{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
 		{Name: "CleanUp", Fn: r.reconcileCleanUp},
@@ -1162,6 +1164,38 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 				log.Error(err, "failed to delete replica service", "replica_id", id, "service", res.Service.Name)
 			}
 		}
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *clickhouseReconciler) reconcileNetworkPolicy(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	np := r.Cluster.Spec.NetworkPolicy
+
+	if np != nil && np.Enabled {
+		desired := templateNetworkPolicy(r.Cluster)
+		if _, err := r.ReconcileResource(ctx, log, desired, []string{"Spec"}, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("reconcile NetworkPolicy: %w", err)
+		}
+
+		return chctrl.StepContinue(), nil
+	}
+
+	existing := &networkingv1.NetworkPolicy{}
+	err := r.GetClient().Get(ctx, types.NamespacedName{
+		Namespace: r.Cluster.Namespace,
+		Name:      r.Cluster.SpecificName(),
+	}, existing)
+	if k8serrors.IsNotFound(err) {
+		return chctrl.StepContinue(), nil
+	}
+
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("get NetworkPolicy: %w", err)
+	}
+
+	if err := r.Delete(ctx, existing, v1.EventActionReconciling); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("delete NetworkPolicy: %w", err)
 	}
 
 	return chctrl.StepContinue(), nil
