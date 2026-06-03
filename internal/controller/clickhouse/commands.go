@@ -88,8 +88,13 @@ func (cmd *commander) Close() {
 }
 
 type replicaProbe struct {
-	Version              string
-	ReloadConfigRevision string
+	Version                   string
+	ReloadConfigRevision      string
+	UsersReloadConfigRevision string
+}
+
+func (p replicaProbe) Reloaded(rev string) bool {
+	return p.ReloadConfigRevision == rev && p.UsersReloadConfigRevision == rev
 }
 
 // Probe reads the replica server version and the latest applied reload-safe config revision.
@@ -103,11 +108,13 @@ func (cmd *commander) Probe(ctx context.Context, id v1.ClickHouseReplicaID) (rep
 
 	row := conn.QueryRow(ctx,
 		"SELECT version(),"+
-			" ifNull((SELECT collection[?] FROM system.named_collections WHERE name = ?), '')"+
+			" ifNull((SELECT collection[?] FROM system.named_collections WHERE name = ?), ''),"+
+			" ifNull((SELECT trim(BOTH '''' FROM value) FROM system.settings_profile_elements WHERE profile_name = ? AND setting_name = ?), '')"+
 			" SETTINGS format_display_secrets_in_show_and_select=1",
 		OperatorConfigRevisionField, OperatorNamedCollectionName,
+		OperatorSettingsProfileName, OperatorReloadMarkerSettingName,
 	)
-	if err := row.Scan(&probe.Version, &probe.ReloadConfigRevision); err != nil {
+	if err := row.Scan(&probe.Version, &probe.ReloadConfigRevision, &probe.UsersReloadConfigRevision); err != nil {
 		return replicaProbe{}, fmt.Errorf("probe replica %s: %w", id, err)
 	}
 

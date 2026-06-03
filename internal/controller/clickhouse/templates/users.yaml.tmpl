@@ -11,7 +11,7 @@ users:
     grants:
       - query: "GRANT ALL ON *.* WITH GRANT OPTION"
   {{ .OperatorUserName }}:
-    profile: {{ .DefaultProfileName }}
+    profile: {{ .OperatorProfileName }}
     quota: default
     password_sha256_hex: {{ .OperatorUserPasswordHash }}
     grants: {{/* TODO restrict */}}
@@ -19,5 +19,8 @@ users:
 profiles:
   {{ .DefaultProfileName }}:
     log_queries: 1
+  {{ .OperatorProfileName }}:
+    profile: {{ .DefaultProfileName }}
+    custom_operator_reload_revision: "'{{ .ReloadConfigRevision }}'"
 quotas:
   default:

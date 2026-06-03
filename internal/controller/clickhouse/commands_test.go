@@ -75,6 +75,7 @@ named_collections:
   __operator:
     config_revision: %s
 display_secrets_in_show_and_select: true
+custom_settings_prefixes: custom_
 `, replica, keeperHostname, keeper.PortNative, strings.Join(replicas, ","), testConfigRevision))
 }
 
@@ -84,11 +85,15 @@ func generateUsersConfig() *strings.Reader {
     no_password
   operator:
     password: %s
-    profile: default
+    profile: __operator
     quota: default
     grants:
       query: GRANT ALL ON *.*
-`, testPassword))
+profiles:
+  __operator:
+    profile: default
+    custom_operator_reload_revision: "'%s'"
+`, testPassword, testConfigRevision))
 }
 
 var _ = Describe("commander", Ordered, Label("integration"), func() {
@@ -229,6 +234,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(probe.Version).To(MatchRegexp(`^\d+\.\d+\.\d+\.\d+$`))
 				g.Expect(probe.ReloadConfigRevision).To(Equal(testConfigRevision))
+				g.Expect(probe.UsersReloadConfigRevision).To(Equal(testConfigRevision))
 			}, "1m", "100ms").Should(Succeed())
 		}
 	})

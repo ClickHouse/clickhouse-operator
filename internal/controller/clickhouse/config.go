@@ -263,8 +263,10 @@ type clusterConfigParams struct {
 }
 
 const (
-	OperatorNamedCollectionName = "__operator"
-	OperatorConfigRevisionField = "config_revision"
+	OperatorNamedCollectionName     = "__operator"
+	OperatorConfigRevisionField     = "config_revision"
+	OperatorSettingsProfileName     = "__operator"
+	OperatorReloadMarkerSettingName = "custom_operator_reload_revision"
 )
 
 type macro struct {
@@ -404,6 +406,8 @@ type userConfigParams struct {
 	DefaultProfileName       string
 	OperatorUserName         string
 	OperatorUserPasswordHash string
+	OperatorProfileName      string
+	ReloadConfigRevision     string
 }
 
 func userConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
@@ -422,6 +426,8 @@ func userConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.
 		DefaultProfileName:       DefaultProfileName,
 		OperatorUserName:         OperatorManagementUsername,
 		OperatorUserPasswordHash: controllerutil.Sha256Hash(r.secret.Data[SecretKeyManagementPassword]),
+		OperatorProfileName:      OperatorSettingsProfileName,
+		ReloadConfigRevision:     r.revs.ReloadConfigRevision,
 	}
 
 	builder := strings.Builder{}

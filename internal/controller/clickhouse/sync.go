@@ -70,7 +70,7 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageHasDiff
 	}
 
-	if !r.Ready() || r.ReloadConfigRevision != rev.ReloadConfigRevision {
+	if !r.Ready() || !r.Reloaded(rev.ReloadConfigRevision) {
 		return chctrl.StageNotReadyUpToDate
 	}
 
@@ -462,7 +462,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 				log.Debug("failed to probe replica", "replica_id", id, "error", err)
 			}
 
-			if cfg, ok := configMaps[id]; ok && probe.ReloadConfigRevision != cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash] {
+			if cfg, ok := configMaps[id]; ok && !probe.Reloaded(cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash]) {
 				if reloadErr = r.commander.ReloadConfig(ctx, id); reloadErr != nil {
 					log.Debug("replica config reload failed", "replica_id", id, "error", reloadErr)
 				} else if probe, err = r.commander.Probe(ctx, id); err != nil {
@@ -600,7 +600,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 				reloadErr = append(reloadErr, id.String())
 			}
 
-			if replica.ReloadConfigRevision != r.revs.ReloadConfigRevision {
+			if !replica.Reloaded(r.revs.ReloadConfigRevision) {
 				notReloaded = append(notReloaded, id.String())
 			}
 		}
