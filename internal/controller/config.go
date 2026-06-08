@@ -82,6 +82,17 @@ type OpenSSLConfig struct {
 	Client OpenSSLParams `yaml:"client,omitempty"`
 }
 
+// UserMountsAt reports whether any of the given mounts targets path.
+func UserMountsAt(mounts []corev1.VolumeMount, path string) bool {
+	for _, m := range mounts {
+		if m.MountPath == path {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ProjectVolumes replaces volumes with the same mount path with a single projected volume.
 func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	mountPaths := map[string][]corev1.VolumeMount{}

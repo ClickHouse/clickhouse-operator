@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate OLM catalog template with all available bundles from registry
-# Usage: ./ci/generate-catalog-template.sh [<bundle-image>]
+# Default mode: list released + fast bundle tags from ghcr, emit stable-v0
+# + fast-v0 template.
+#
+# SINGLE_BUNDLE_IMAGE=<image> mode: emit a one-bundle stable-v0 template
+# pointing at the given image. Used by the per-PR OpenShift compatibility
+# job which builds its own bundle for the PR head.
 
-# Image repository
 BUNDLE_IMAGE=${1-ghcr.io/clickhouse/clickhouse-operator-bundle}
-# Output file
 OUTPUT_FILE="catalog/clickhouse-operator-template.yaml"
+mkdir -p catalog
+
+if [ -n "${SINGLE_BUNDLE_IMAGE:-}" ]; then
+    cat > "$OUTPUT_FILE" <<EOF
+Schema: olm.semver
+GenerateMajorChannels: true
+GenerateMinorChannels: false
+Stable:
+  Bundles:
+    - Image: ${SINGLE_BUNDLE_IMAGE}
+EOF
+    echo "Single-bundle catalog: ${SINGLE_BUNDLE_IMAGE}"
+    cat "$OUTPUT_FILE"
+    exit 0
+fi
 
 # Function to get all tags from ghcr.io
 get_bundle_tags() {
@@ -39,10 +56,6 @@ get_bundle_tags() {
         | sort -V
 }
 
-# Create catalog directory if it doesn't exist
-mkdir -p catalog
-
-# Generate the template YAML
 cat > "$OUTPUT_FILE" <<EOF
 Schema: olm.semver
 GenerateMajorChannels: true

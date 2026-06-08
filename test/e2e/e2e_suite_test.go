@@ -39,8 +39,8 @@ import (
 const (
 	pollingInterval = time.Millisecond * 100
 
-	BaseVersion   = "26.2"
-	UpdateVersion = "26.3"
+	BaseVersion   = testutil.BaseVersion
+	UpdateVersion = testutil.UpdateVersion
 )
 
 var releases = map[string][]upgrade.ClickHouseVersion{

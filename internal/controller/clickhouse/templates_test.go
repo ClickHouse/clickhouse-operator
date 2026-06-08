@@ -59,8 +59,8 @@ var _ = Describe("BuildVolumes", func() {
 		volumes := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
 		mounts := buildMounts(&ctx)
 
-		Expect(volumes).To(HaveLen(4))
-		Expect(mounts).To(HaveLen(4))
+		Expect(volumes).To(HaveLen(5))
+		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
 	})
 
@@ -487,13 +487,13 @@ var _ = Describe("getConfigurationRevisions", func() {
 })
 
 func checkVolumeMounts(volumes []corev1.Volume, mounts []corev1.VolumeMount) {
-	volumeMap := map[string]struct{}{
-		internal.PersistentVolumeName: {},
-	}
+	volumeMap := map[string]struct{}{}
 	for _, volume := range volumes {
 		ExpectWithOffset(1, volumeMap).NotTo(HaveKey(volume.Name))
 		volumeMap[volume.Name] = struct{}{}
 	}
+
+	volumeMap[internal.PersistentVolumeName] = struct{}{}
 
 	mountPaths := map[string]struct{}{}
 	for _, mount := range mounts {

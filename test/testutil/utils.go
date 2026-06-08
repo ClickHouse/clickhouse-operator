@@ -40,7 +40,9 @@ const (
 	certmanagerVersion = "v1.19.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
-	logTailLines = 10
+	logTailLines  = 10
+	BaseVersion   = "26.2"
+	UpdateVersion = "26.3"
 )
 
 var (
@@ -103,6 +105,18 @@ func Run(cmd *exec.Cmd) ([]byte, error) {
 	}
 
 	return output, nil
+}
+
+// MustRun executes the provided command and fails the test if it returns an error.
+func MustRun(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+
+	ret, err := Run(cmd)
+	if err != nil {
+		return fmt.Errorf("cmd %q failed with error: (%w)\n%s", cmd.String(), err, ret)
+	}
+
+	return nil
 }
 
 // InstallCRDs installs the CRDs into the cluster using make install.

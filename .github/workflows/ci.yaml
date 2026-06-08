@@ -324,6 +324,69 @@ jobs:
           reporter: java-junit
           path: "**/*-report.xml"
 
+  openshift-compat:
+    needs: [ compat-e2e-test, e2e-test ]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, openshift, operator]
+    continue-on-error: true
+    timeout-minutes: 60
+    concurrency:
+      group: openshift-compatibility
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      KUBECONFIG: /home/runner/okd-install/auth/kubeconfig
+      VERSION: 0.0.99-test
+      IMG: ghcr.io/clickhouse/clickhouse-operator:test
+      BUNDLE_IMG: ghcr.io/clickhouse/clickhouse-operator-bundle:test
+      CATALOG_IMG: ghcr.io/clickhouse/clickhouse-operator-catalog:test
+      SINGLE_BUNDLE_IMAGE: ghcr.io/clickhouse/clickhouse-operator-bundle:test
+      OPENSHIFT_CATALOG_IMAGE: ghcr.io/clickhouse/clickhouse-operator-catalog:test
+      OPENSHIFT_CHANNEL: stable-v0
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push test operator + bundle + catalog
+        run: make docker-buildx bundle bundle-buildx catalog-buildx
+
+      - name: Clean up cluster state from previous runs
+        run: sudo /usr/local/bin/okd-cleanup.sh
+
+      - name: Install OLM tooling
+        run: make operator-sdk opm
+
+      - name: Run OLM compatibility e2e
+        run: make test-compat-e2e-olm-openshift
+
+      - name: Test Report
+        uses: dorny/test-reporter@v3
+        with:
+          name: E2E tests
+          badge-title: E2E tests
+          reporter: java-junit
+          path: "**/report/*"
+
+      - name: Wipe workspace
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE/.git" "$GITHUB_WORKSPACE/_work" || true
+
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
