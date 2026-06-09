@@ -18,7 +18,8 @@
       "pages": [
         "products/kubernetes-operator/guides/introduction",
         "products/kubernetes-operator/guides/configuration",
-        "products/kubernetes-operator/guides/monitoring"
+        "products/kubernetes-operator/guides/monitoring",
+        "products/kubernetes-operator/guides/scaling"
       ]
     },
     {
