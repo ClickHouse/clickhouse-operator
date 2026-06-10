@@ -110,4 +110,4 @@ If you hit this, delete the affected StatefulSet so the operator recreates it wi
 kubectl delete statefulset <cluster>-clickhouse-0-0
 ```
 
-Set `dataVolumeClaimSpec.persistentVolumeReclaimPolicy: Retain` so the PVCs survive the delete and the recreated StatefulSet re-binds to the same volumes.
+Deleting a StatefulSet does not delete its PVCs, so the recreated StatefulSet re-binds to the same volumes and the data is preserved. If you also need the underlying PersistentVolumes to survive a PVC deletion, use a StorageClass with `reclaimPolicy: Retain`.
