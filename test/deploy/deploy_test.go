@@ -69,18 +69,18 @@ func TestDeploy(t *testing.T) {
 
 var _ = BeforeSuite(func(ctx context.Context) {
 	By("building manager binary")
-	runCmd(ctx, "make", "build-linux-manager")
+	Expect(testutil.MustRun(ctx, "make", "build-linux-manager")).To(Succeed())
 
 	By("building operator image")
-	runCmd(ctx, "docker", "build", "-f", "dev.Dockerfile", "-t", testImage, ".")
+	Expect(testutil.MustRun(ctx, "docker", "build", "-f", "dev.Dockerfile", "-t", testImage, ".")).To(Succeed())
 
 	By("loading operator image to kind")
-	runCmd(ctx, "kind", "load", "docker-image", testImage)
+	Expect(testutil.MustRun(ctx, "kind", "load", "docker-image", testImage)).To(Succeed())
 
 	By("installing the cert-manager")
 	Expect(testutil.InstallCertManager(ctx)).To(Succeed())
 
-	runCmd(ctx, "helm",
+	Expect(testutil.MustRun(ctx, "helm",
 		"upgrade", "--install", "prometheus", "-n", "prometheus", "--create-namespace",
 		"oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack",
 		"--set", "alertmanager.enabled=false",
@@ -89,7 +89,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		"--set", "grafana.enabled=false",
 		"--set", "kube-state-metrics.enabled=false",
 		"--set", "server.enabled=false",
-	)
+	)).To(Succeed())
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -136,14 +136,14 @@ var _ = Describe("Manifests deployment", Ordered, Label("manifest"), func() {
 		currentTestNamespace = namespace
 
 		By("building installer manifest")
-		runCmd(ctx, "make", "build-installer", "IMG="+testImage)
+		Expect(testutil.MustRun(ctx, "make", "build-installer", "IMG="+testImage)).To(Succeed())
 
 		By("applying installer manifest")
-		runCmd(ctx, "kubectl", "apply", "-f", "dist/install.yaml")
+		Expect(testutil.MustRun(ctx, "kubectl", "apply", "-f", "dist/install.yaml")).To(Succeed())
 
 		DeferCleanup(func(ctx context.Context) {
 			By("removing installer manifest resources")
-			runCmd(ctx, "kubectl", "delete", "--ignore-not-found", "-f", "dist/install.yaml")
+			Expect(testutil.MustRun(ctx, "kubectl", "delete", "--ignore-not-found", "-f", "dist/install.yaml")).To(Succeed())
 		})
 
 		By("Waiting controller to be ready")
@@ -176,12 +176,12 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 		if _, err := testutil.Run(exec.CommandContext(ctx, operatorSDK, "olm", "status")); err != nil {
 			// Clean up any leftover OLM resources from a previous run
 			_, _ = testutil.Run(exec.CommandContext(ctx, operatorSDK, "olm", "uninstall", "--timeout", "1m"))
-			runCmd(ctx, operatorSDK, "olm", "install", "--timeout", "5m")
+			Expect(testutil.MustRun(ctx, operatorSDK, "olm", "install", "--timeout", "5m")).To(Succeed())
 		}
 
 		DeferCleanup(func(ctx context.Context) {
 			By("uninstalling OLM")
-			runCmd(ctx, operatorSDK, "olm", "uninstall", "--timeout", "5m")
+			Expect(testutil.MustRun(ctx, operatorSDK, "olm", "uninstall", "--timeout", "5m")).To(Succeed())
 		})
 
 		By("creating test namespace")
@@ -189,12 +189,12 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 
 		// Enforce upstream Pod Security Admission at "restricted" level on the OLM test namespace.
 		By("labeling test namespace with PSA enforce=restricted")
-		runCmd(ctx, "kubectl", "label", "ns", namespace, "--overwrite",
+		Expect(testutil.MustRun(ctx, "kubectl", "label", "ns", namespace, "--overwrite",
 			"pod-security.kubernetes.io/enforce=restricted",
-			"pod-security.kubernetes.io/enforce-version=latest")
+			"pod-security.kubernetes.io/enforce-version=latest")).To(Succeed())
 
 		By("building OLM bundle")
-		runCmd(ctx, "make", "bundle", "IMG="+testImage)
+		Expect(testutil.MustRun(ctx, "make", "bundle", "IMG="+testImage)).To(Succeed())
 
 		By("creating catalog and subscription")
 
@@ -232,8 +232,8 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 		})
 
 		By("waiting for catalog server to be ready")
-		runCmd(ctx, "kubectl", "wait", "-n", namespace, "--timeout=120s",
-			"--for=condition=Ready", "pod/test-catalog-server")
+		Expect(testutil.MustRun(ctx, "kubectl", "wait", "-n", namespace, "--timeout=120s",
+			"--for=condition=Ready", "pod/test-catalog-server")).To(Succeed())
 
 		By("waiting for ClusterServiceVersion to succeed")
 		Eventually(func(g Gomega) {
@@ -284,15 +284,15 @@ var _ = Describe("Helm deployment", Ordered, Label("helm"), func() {
 			Expect(valuesFile.Close()).To(Succeed())
 
 			By("Installing clickhouse-operator with helm")
-			runCmd(ctx, "helm", "install", namespace, "dist/chart", "-n", namespace,
-				"--create-namespace", "--values", valuesFile.Name())
+			Expect(testutil.MustRun(ctx, "helm", "install", namespace, "dist/chart", "-n", namespace,
+				"--create-namespace", "--values", valuesFile.Name())).To(Succeed())
 
 			DeferCleanup(func(ctx context.Context) {
 				By("Uninstalling clickhouse-operator with helm")
-				runCmd(ctx, "helm", "uninstall", namespace, "-n", namespace)
+				Expect(testutil.MustRun(ctx, "helm", "uninstall", namespace, "-n", namespace)).To(Succeed())
 
 				By("Deleting test namespace")
-				runCmd(ctx, "kubectl", "delete", "ns", namespace)
+				Expect(testutil.MustRun(ctx, "kubectl", "delete", "ns", namespace)).To(Succeed())
 			})
 
 			By("Waiting controller to be ready")
@@ -347,26 +347,26 @@ func testHelmCluster(namespace string) {
 		keeperName := "keeper-" + version
 
 		By("Installing clickhouse-cluster chart")
-		runCmd(ctx, "helm", "install", releaseName, "dist/chart-cluster", "-n", namespace,
+		Expect(testutil.MustRun(ctx, "helm", "install", releaseName, "dist/chart-cluster", "-n", namespace,
 			"--set", "clickhouse.meta.name="+chName,
 			"--set", "keeper.meta.name="+keeperName,
 			"--set", "clickhouse.spec.replicas=1",
 			"--set", "keeper.spec.replicas=1",
 			"--set-string", "imageTag="+version,
-		)
+		)).To(Succeed())
 
 		DeferCleanup(func(ctx context.Context) {
 			By("Uninstalling clickhouse-cluster chart")
-			runCmd(ctx, "helm", "uninstall", releaseName, "-n", namespace)
+			Expect(testutil.MustRun(ctx, "helm", "uninstall", releaseName, "-n", namespace)).To(Succeed())
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"keepercluster/"+keeperName)
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"keepercluster/"+keeperName)).To(Succeed())
 
 		By("Waiting for ClickHouse to be ready")
-		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"clickhousecluster/"+chName)
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"clickhousecluster/"+chName)).To(Succeed())
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
@@ -396,8 +396,8 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"keepercluster/"+keeper.Name)
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"keepercluster/"+keeper.Name)).To(Succeed())
 
 		ch := v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -422,8 +422,8 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for ClickHouse to be ready")
-		runCmd(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"clickhousecluster/"+ch.Name)
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
+			"clickhousecluster/"+ch.Name)).To(Succeed())
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
@@ -431,17 +431,12 @@ func testDeployment(namespace string) {
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
 }
 
-func runCmd(ctx context.Context, name string, args ...string) {
-	out, err := testutil.Run(exec.CommandContext(ctx, name, args...))
-	ExpectWithOffset(1, err).ToNot(HaveOccurred(), string(out))
-}
-
 func templateTestResources(ctx context.Context, namespace string) string {
 	projectDir, err := testutil.GetProjectDir()
 	Expect(err).NotTo(HaveOccurred())
 
 	By("installing opm")
-	runCmd(ctx, "make", "opm")
+	Expect(testutil.MustRun(ctx, "make", "opm")).To(Succeed())
 
 	opm := filepath.Join(projectDir, "bin", "opm")
 

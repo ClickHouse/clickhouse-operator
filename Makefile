@@ -135,12 +135,12 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy | grep -v /openshift) \
 	--ginkgo.v
 
 .PHONY: test-ci
 test-ci: manifests generate fmt vet envtest ## Run tests in CI env.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy) \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e | grep -v /deploy | grep -v /openshift) \
 	-v -count=1 -race -coverprofile cover.out --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 fuzz-keeper: generate # Run keeper spec fuzz tests
@@ -166,11 +166,15 @@ test-clickhouse-e2e: ## Run clickhouse e2e tests.
 
 .PHONY: test-compat-e2e  # Run compatibility smoke tests across ClickHouse versions.
 test-compat-e2e: ## Run compatibility e2e tests (requires CLICKHOUSE_VERSION env var).
-	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=!olm --ginkgo.junit-report=report/junit-report.xml
+	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter='!olm' --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-compat-e2e-olm  # Run OLM deployment smoke test.
 test-compat-e2e-olm: ## Run OLM deployment e2e test on a dedicated cluster.
 	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=olm --ginkgo.junit-report=report/junit-report.xml
+
+.PHONY: test-compat-e2e-olm-openshift  # Run OLM deployment smoke test on OpenShift.
+test-compat-e2e-olm-openshift: ## Run OLM deployment e2e against an OpenShift cluster.
+	go test ./test/openshift/ -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-compat-e2e-manifest  # Run compatibility smoke tests (manifests deployment only).
 test-compat-e2e-manifest: ## Run compatibility e2e tests using manifests deployment only (requires CLICKHOUSE_VERSION env var).

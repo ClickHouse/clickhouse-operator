@@ -617,6 +617,13 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 		})
 	}
 
+	if cr.Spec.DataVolumeClaimSpec == nil && !controller.UserMountsAt(cr.Spec.ContainerTemplate.VolumeMounts, internal.KeeperDataPath) {
+		volumes = append(volumes, corev1.Volume{
+			Name:         internal.PersistentVolumeName,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
 	return volumes
 }
 
@@ -649,6 +656,11 @@ func buildMounts(cr *v1.KeeperCluster) []corev1.VolumeMount {
 				MountPath: "/var/log/clickhouse-keeper",
 				SubPath:   "var-log-clickhouse",
 			})
+	} else if !controller.UserMountsAt(cr.Spec.ContainerTemplate.VolumeMounts, internal.KeeperDataPath) {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      internal.PersistentVolumeName,
+			MountPath: internal.KeeperDataPath,
+		})
 	}
 
 	if cr.Spec.Settings.TLS.Enabled {

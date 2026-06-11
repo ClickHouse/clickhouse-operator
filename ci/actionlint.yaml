@@ -1,3 +1,6 @@
 self-hosted-runner:
   labels:
     - amd-medium
+    - openshift
+    - operator
+    - openshift-okd

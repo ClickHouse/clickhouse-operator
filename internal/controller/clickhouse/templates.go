@@ -703,6 +703,13 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) []corev1.V
 		})
 	}
 
+	if r.Cluster.Spec.DataVolumeClaimSpec == nil && !controller.UserMountsAt(r.Cluster.Spec.ContainerTemplate.VolumeMounts, internal.ClickHouseDataPath) {
+		volumes = append(volumes, corev1.Volume{
+			Name:         internal.PersistentVolumeName,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+	}
+
 	return volumes
 }
 
@@ -722,6 +729,11 @@ func buildMounts(r *clickhouseReconciler) []corev1.VolumeMount {
 				SubPath:   "var-log-clickhouse",
 			},
 		)
+	} else if !controller.UserMountsAt(r.Cluster.Spec.ContainerTemplate.VolumeMounts, internal.ClickHouseDataPath) {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      internal.PersistentVolumeName,
+			MountPath: internal.ClickHouseDataPath,
+		})
 	}
 
 	seenPaths := map[string]struct{}{}
