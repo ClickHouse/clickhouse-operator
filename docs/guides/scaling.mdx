@@ -99,15 +99,3 @@ The `ScaleAllowed` condition reports whether the quorum can change membership ri
 | `WaitingFollowers` | The operator is waiting for followers to catch up |
 
 Scale Keeper in single steps and let `ScaleAllowed` return to `ReadyToScale` between changes. Jumping several members at once does not bypass the one-at-a-time reconcile — the operator still walks the quorum one member per step.
-
-## Known limitation: growing shards on an existing cluster {#shard-topology-limitation}
-
-A StatefulSet has immutable fields (for example `serviceName`, `selector`, and `volumeClaimTemplates`). When a topology change would require mutating those fields on a shard's existing StatefulSet, the operator cannot update it in place, and that shard keeps its original shape while the newly created shards run the new one. This is tracked in [issue #191](https://github.com/ClickHouse/clickhouse-operator/issues/191).
-
-If you hit this, delete the affected StatefulSet so the operator recreates it with the current spec:
-
-```bash
-kubectl delete statefulset <cluster>-clickhouse-0-0
-```
-
-Deleting a StatefulSet does not delete its PVCs, so the recreated StatefulSet re-binds to the same volumes and the data is preserved. If you also need the underlying PersistentVolumes to survive a PVC deletion, use a StorageClass with `reclaimPolicy: Retain`.
