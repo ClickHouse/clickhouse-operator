@@ -9,8 +9,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -111,6 +113,11 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 
 		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(1))
+
+		var jobs batchv1.JobList
+		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty())
+		Expect(meta.FindStatusCondition(cr.Status.Conditions, v1.ConditionTypeVersionUpgraded)).To(BeNil())
 
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ReplicaCreated":  1,

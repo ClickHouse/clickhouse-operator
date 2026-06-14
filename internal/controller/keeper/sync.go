@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -92,7 +93,6 @@ type keeperReconciler struct {
 func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter Keeper Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
-	meta.RemoveStatusCondition(&r.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
 	meta.RemoveStatusCondition(&r.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)
 
 	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation",
@@ -101,6 +101,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 			v1.ConditionTypeHealthy,
 			v1.ConditionTypeClusterSizeAligned,
 			v1.ConditionTypeConfigurationInSync,
+			v1.ConditionTypeVersionInSync,
 			v1.ConditionTypeReady,
 			v1.KeeperConditionTypeScaleAllowed,
 		})
@@ -558,6 +559,7 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 	var errorIDs, notReadyIDs, notUpdatedIDs []string
 
 	replicasByMode := map[string][]v1.KeeperReplicaID{}
+	replicaVersions := map[string]string{}
 
 	r.Cluster.Status.ReadyReplicas = 0
 	for id, replica := range r.ReplicaState {
@@ -577,11 +579,17 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 		if replica.HasDiff(r.revs) || !replica.Updated() {
 			notUpdatedIDs = append(notUpdatedIDs, idStr)
 		}
+
+		if replica.Status.Version != "" {
+			replicaVersions[idStr] = replica.Status.Version
+		}
 	}
 
 	r.SetCondition(chctrl.ReplicaStartupCondition(errorIDs))
 	r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
 	r.SetCondition(chctrl.ConfigSyncCondition(nil, notUpdatedIDs, nil))
+	versionCond, versionEvents := keeperVersionSyncCondition(replicaVersions, len(notUpdatedIDs) > 0)
+	r.SetCondition(versionCond, versionEvents...)
 
 	// Ready condition — keeper-specific logic.
 	exists := len(r.ReplicaState)
@@ -658,6 +666,55 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 		metav1.Condition{Type: v1.ConditionTypeReady, Status: status, Reason: reason, Message: message},
 		chctrl.EventSpec{Type: eventType, Reason: eventReason, Action: eventAction, Message: message},
 	)
+}
+
+func keeperVersionSyncCondition(replicaVersions map[string]string, isUpdating bool) (metav1.Condition, []chctrl.EventSpec) {
+	newCond := func(status metav1.ConditionStatus, reason v1.ConditionReason, message string) metav1.Condition {
+		return metav1.Condition{
+			Type:    v1.ConditionTypeVersionInSync,
+			Status:  status,
+			Reason:  reason,
+			Message: message,
+		}
+	}
+
+	if len(replicaVersions) == 0 {
+		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "No Keeper replica version has been observed yet"), nil
+	}
+
+	versions := map[string]struct{}{}
+
+	var observed []string
+	for id, version := range replicaVersions {
+		versions[version] = struct{}{}
+		observed = append(observed, fmt.Sprintf("%s: %s", id, version))
+	}
+
+	if len(versions) == 1 {
+		var version string
+		for _, v := range replicaVersions {
+			version = v
+			break
+		}
+
+		return newCond(metav1.ConditionTrue, v1.ConditionReasonVersionMatch,
+			"All observed Keeper replicas report version "+version), nil
+	}
+
+	slices.Sort(observed)
+	cond := newCond(metav1.ConditionFalse, v1.ConditionReasonVersionMismatch,
+		"Keeper replica versions differ: "+strings.Join(observed, ", "))
+
+	if isUpdating {
+		return cond, nil
+	}
+
+	return cond, []chctrl.EventSpec{{
+		Type:    corev1.EventTypeWarning,
+		Reason:  v1.EventReasonVersionDiverge,
+		Action:  v1.EventActionVersionCheck,
+		Message: cond.Message,
+	}}
 }
 
 func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logger, replicaID v1.KeeperReplicaID) (*ctrl.Result, error) {
