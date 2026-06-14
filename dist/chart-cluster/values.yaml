@@ -157,10 +157,3 @@ keeper:
     # Configuration parameters for ClickHouse Keeper server.
     # settings: {}
 
-    # UpgradeChannel specifies the release channel for major version upgrade checks.
-    # When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
-    # upgradeChannel: ""
-
-    # VersionProbeTemplate overrides for the version detection Job.
-    # versionProbeTemplate: {}
-

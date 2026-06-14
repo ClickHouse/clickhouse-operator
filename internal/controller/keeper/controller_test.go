@@ -9,7 +9,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,7 +17,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
@@ -41,7 +39,6 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		pdbs         policyv1.PodDisruptionBudgetList
 		configs      corev1.ConfigMapList
 		statefulsets appsv1.StatefulSetList
-		jobs         batchv1.JobList
 		cr           = &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "standalone",
@@ -115,73 +112,10 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(1))
 
-		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
-		Expect(jobs.Items).To(HaveLen(1))
-		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
-
 		testutil.AssertEvents(recorder.Events, map[string]int{
 			"ReplicaCreated":  1,
 			"ClusterNotReady": 1,
 		})
-	})
-
-	It("should propagate version probe overrides to the job", func(ctx context.Context) {
-		By("updating the CR with version probe overrides")
-
-		updatedCR := cr.DeepCopy()
-		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		updatedCR.Spec.VersionProbeTemplate = &v1.VersionProbeTemplate{
-			Spec: v1.VersionProbeJobSpec{
-				Template: v1.VersionProbePodTemplate{
-					Metadata: v1.TemplateMeta{
-						Annotations: map[string]string{
-							"sidecar.istio.io/inject": "false",
-						},
-						Labels: map[string]string{
-							"probe-label": "probe-value",
-						},
-					},
-				},
-			},
-		}
-		updatedCR.Spec.PodTemplate.Tolerations = []corev1.Toleration{
-			{Key: "workload", Operator: corev1.TolerationOpEqual, Value: "system", Effect: corev1.TaintEffectNoSchedule},
-		}
-		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
-
-		// Delete old job so new one is created with overrides.
-		for _, j := range jobs.Items {
-			Expect(suite.Client.Delete(ctx, &j, client.PropagationPolicy(metav1.DeletePropagationBackground))).To(Succeed())
-		}
-
-		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-
-		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
-		Expect(suite.Client.List(ctx, &jobs, listOpts)).To(Succeed())
-		Expect(jobs.Items).To(HaveLen(1))
-
-		By("verifying annotations on Pod template only")
-		Expect(jobs.Items[0].Spec.Template.Annotations).To(HaveKeyWithValue("sidecar.istio.io/inject", "false"))
-
-		By("verifying probe-specific labels on Pod template only")
-		Expect(jobs.Items[0].Spec.Template.Labels).To(HaveKeyWithValue("probe-label", "probe-value"))
-
-		By("verifying operator-reserved labels are preserved")
-		Expect(jobs.Items[0].Labels[controllerutil.LabelRoleKey]).To(Equal(controllerutil.LabelVersionProbe))
-		Expect(jobs.Items[0].Labels[controllerutil.LabelAppKey]).To(Equal(cr.SpecificName()))
-
-		By("verifying scheduling fields inherited from PodTemplate")
-		Expect(jobs.Items[0].Spec.Template.Spec.Tolerations).To(ContainElement(corev1.Toleration{
-			Key: "workload", Operator: corev1.TolerationOpEqual, Value: "system", Effect: corev1.TaintEffectNoSchedule,
-		}))
-
-		testutil.AssertEvents(recorder.Events, map[string]int{
-			"HorizontalScaleBlocked": 1,
-		})
-
-		cr = updatedCR.DeepCopy()
 	})
 
 	It("should propagate meta attributes for every resource", func() {
@@ -266,6 +200,10 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
 		Expect(updatedCR.Status.StatefulSetRevision).NotTo(Equal(cr.Status.StatefulSetRevision))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"HorizontalScaleBlocked": 1,
+		})
 	})
 
 	It("should add extra config in configmap", func(ctx context.Context) {

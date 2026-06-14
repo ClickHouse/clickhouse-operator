@@ -201,7 +201,7 @@ func run() error {
 		upgradeChecker = upgrade.NewChecker(updater)
 	}
 
-	if err = keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB); err != nil {
+	if err = keeper.SetupWithManager(mgr, zapLogger, nil, env.EnablePDB); err != nil {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 

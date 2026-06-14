@@ -87,8 +87,7 @@ spec:
         displayName: Version Probe Revision
         path: versionProbeRevision
       version: v1alpha1
-    - description: KeeperCluster is the Schema for the `keeperclusters` API.
-      displayName: Keeper Cluster
+    - displayName: Keeper Cluster
       kind: KeeperCluster
       name: keeperclusters.clickhouse.com
       resources:
@@ -141,14 +140,6 @@ spec:
           revision.
         displayName: Update Revision
         path: updateRevision
-      - description: Version indicates the version reported by the container image.
-        displayName: Version
-        path: version
-      - description: |-
-          VersionProbeRevision is the image hash of the last successful version probe.
-          When this matches the current image hash, the cached Version is used directly.
-        displayName: Version Probe Revision
-        path: versionProbeRevision
       version: v1alpha1
   description: |
     The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.

@@ -58,16 +58,6 @@ type KeeperClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="cluster.local"
 	ClusterDomain string `json:"clusterDomain,omitempty"`
-
-	// UpgradeChannel specifies the release channel for major version upgrade checks.
-	// When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8).
-	// +optional
-	// +kubebuilder:validation:Pattern=`^(lts|stable|\d+\.\d+)?$`
-	UpgradeChannel string `json:"upgradeChannel,omitempty"`
-
-	// VersionProbeTemplate overrides for the version detection Job.
-	// +optional
-	VersionProbeTemplate *VersionProbeTemplate `json:"versionProbeTemplate,omitempty"`
 }
 
 // WithDefaults sets default values for KeeperClusterSpec fields.
@@ -161,15 +151,6 @@ type KeeperClusterStatus struct {
 	// ObservedGeneration indicates latest generation observed by controller.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// Version indicates the version reported by the container image.
-	// +optional
-	// +operator-sdk:csv:customresourcedefinitions:type=status
-	Version string `json:"version,omitempty"`
-	// VersionProbeRevision is the image hash of the last successful version probe.
-	// When this matches the current image hash, the cached Version is used directly.
-	// +optional
-	// +operator-sdk:csv:customresourcedefinitions:type=status
-	VersionProbeRevision string `json:"versionProbeRevision,omitempty"`
 }
 
 // KeeperCluster is the Schema for the `keeperclusters` API.
@@ -180,7 +161,6 @@ type KeeperClusterStatus struct {
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message"
 // +kubebuilder:printcolumn:name="ReadyReplicas",type="number",JSONPath=".status.readyReplicas"
 // +kubebuilder:printcolumn:name="Replicas",type="number",JSONPath=".spec.replicas"
-// +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +operator-sdk:csv:customresourcedefinitions:resources={{Pod,v1}}
 // +operator-sdk:csv:customresourcedefinitions:resources={{PersistentVolumeClaim,v1}}

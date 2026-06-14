@@ -29,7 +29,6 @@ var (
 type serverStatus struct {
 	ServerState string
 	Followers   int
-	Version     string
 }
 
 func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) (net.Conn, error) {
@@ -102,13 +101,6 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 
 	result := serverStatus{
 		ServerState: statMap["zk_server_state"],
-	}
-
-	version, err := controllerutil.ParseVersion(statMap["zk_version"])
-	if err != nil {
-		log.Warn("failed to parse keeper version", "raw", statMap["zk_version"], "error", err)
-	} else {
-		result.Version = version
 	}
 
 	if result.ServerState == "" {

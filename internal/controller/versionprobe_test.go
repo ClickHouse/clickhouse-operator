@@ -54,7 +54,8 @@ func baseJob() batchv1.Job {
 						{
 							Name:    v1.VersionProbeContainerName,
 							Image:   "clickhouse/clickhouse-server:latest",
-							Command: []string{"sh", "-c", "clickhouse-server --version"},
+							Command: []string{versionProbeBinary},
+							Args:    []string{"local", "--query", versionProbeQuery},
 							SecurityContext: &corev1.SecurityContext{
 								RunAsNonRoot: new(true),
 							},
@@ -189,7 +190,8 @@ var _ = Describe("patchResource with jobSchema (version probe overrides)", func(
 
 		By("verifying container command is preserved")
 		Expect(container.Image).To(Equal("clickhouse/clickhouse-server:latest"))
-		Expect(container.Command).To(Equal([]string{"sh", "-c", "clickhouse-server --version"}))
+		Expect(container.Command).To(Equal([]string{versionProbeBinary}))
+		Expect(container.Args).To(Equal([]string{"local", "--query", versionProbeQuery}))
 	})
 
 	It("should deep-merge securityContext via SMP", func() {
@@ -311,7 +313,6 @@ func (f *fakeController) GetRecorder() events.EventRecorder { return f.recorder 
 // probeCfg returns a VersionProbeConfig with the given image and cache values.
 func probeCfg(image, cachedVersion, cachedRevision string) VersionProbeConfig {
 	return VersionProbeConfig{
-		Binary: "clickhouse-server",
 		ContainerTemplate: v1.ContainerTemplateSpec{
 			Image: v1.ContainerImage{Repository: image, Tag: "latest"},
 		},

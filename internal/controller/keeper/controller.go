@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +19,6 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
@@ -32,7 +30,6 @@ type ClusterController struct {
 	Recorder  events.EventRecorder
 	Logger    controllerutil.Logger
 	Webhook   webhookv1.KeeperClusterWebhook
-	Checker   *upgrade.Checker
 	Dialer    controllerutil.DialContextFunc
 	EnablePDB bool
 }
@@ -47,7 +44,6 @@ type ClusterController struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -101,7 +97,6 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
 
 		Dialer:    cc.Dialer,
-		Checker:   cc.Checker,
 		EnablePDB: cc.EnablePDB,
 
 		Cluster:      cluster,
@@ -126,18 +121,13 @@ func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }
 
-// GetVersionChecker returns the version upgrade Checker.
-func (cc *ClusterController) GetVersionChecker() *upgrade.Checker {
-	return cc.Checker
-}
-
 // GetDialer returns the custom dialer, or nil.
 func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 	return cc.Dialer
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, dialer controllerutil.DialContextFunc, enablePDB bool) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
@@ -146,7 +136,6 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Recorder:  mgr.GetEventRecorder("keeper-controller"),
 		Logger:    namedLogger,
 		Webhook:   webhookv1.KeeperClusterWebhook{Log: namedLogger},
-		Checker:   checker,
 		Dialer:    dialer,
 		EnablePDB: enablePDB,
 	}
@@ -156,8 +145,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.Pod{}).
-		Owns(&batchv1.Job{})
+		Owns(&corev1.Pod{})
 
 	if enablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})

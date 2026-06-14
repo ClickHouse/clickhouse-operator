@@ -596,14 +596,14 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 
 ## Version probe and upgrade channel {#version-probe-and-upgrade-channel}
 
-The operator does two independent things with cluster versions:
+The operator does two independent things with ClickHouse cluster versions:
 
-1. **Version probe** — a Kubernetes `Job` that runs the container image once to detect the running ClickHouse / Keeper version. The detected version is recorded in `.status.version` and used by other reconciliation steps (e.g. the `External Secret` named-collections key is only required from ClickHouse `25.12`).
+1. **Version probe** — a Kubernetes `Job` that runs the ClickHouse container image once to detect the running ClickHouse version. The detected version is recorded in `.status.version` and used by other reconciliation steps (e.g. the `External Secret` named-collections key is only required from ClickHouse `25.12`).
 2. **Upgrade channel** — a periodic check against the public ClickHouse release feed (`https://clickhouse.com/data/version_date.tsv`). The operator reports whether a newer version is available via the `VersionUpgraded` status condition. It never upgrades the cluster on its own — the user is in control of the image tag.
 
 ### Choosing a release channel {#upgrade-channel-choosing}
 
-`spec.upgradeChannel` selects which set of upstream releases the operator compares against. Same field exists on both `ClickHouseCluster` and `KeeperCluster`.
+`ClickHouseCluster` `spec.upgradeChannel` selects which set of upstream releases the operator compares against.
 
 ```yaml
 spec:

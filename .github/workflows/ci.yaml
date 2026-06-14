@@ -238,7 +238,7 @@ jobs:
             deploy_target: test-compat-e2e-olm
           - name: supported-clickhouse-compatibility
             k8s_image: v1.30.13
-            clickhouse_version: "26.5,26.4,26.3,25.8"
+            clickhouse_version: "26.5,26.5-distroless,26.4,26.3,25.8"
             deploy_target: test-compat-e2e-manifest
           - name: operator-upgrade
             k8s_image: v1.30.13

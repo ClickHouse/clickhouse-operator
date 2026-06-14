@@ -401,7 +401,6 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 
 func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	probeResult, err := r.VersionProbe(ctx, log, chctrl.VersionProbeConfig{
-		Binary:            "clickhouse-server",
 		Labels:            r.Cluster.Spec.Labels,
 		Annotations:       r.Cluster.Spec.Annotations,
 		PodTemplate:       r.Cluster.Spec.PodTemplate,

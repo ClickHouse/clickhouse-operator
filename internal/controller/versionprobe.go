@@ -26,12 +26,12 @@ const (
 	DefaultProbeCPURequest    = "250m"
 	DefaultProbeMemoryLimit   = "256Mi"
 	DefaultProbeMemoryRequest = "256Mi"
+	versionProbeBinary        = "/usr/bin/clickhouse"
+	versionProbeQuery         = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
 )
 
 // VersionProbeConfig holds parameters for the version probe Job.
 type VersionProbeConfig struct {
-	// Name of the binary to run.
-	Binary string
 	// Labels to apply to the Job, inherited from the cluster spec.
 	Labels map[string]string
 	// Annotations to apply to the Job, inherited from the cluster spec.
@@ -280,7 +280,8 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 							SecurityContext:          DefaultContainerSecurityContext(),
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
-							Command:                  []string{"sh", "-c", fmt.Sprintf("%s --version > %s 2>&1", cfg.Binary, corev1.TerminationMessagePathDefault)},
+							Command:                  []string{versionProbeBinary},
+							Args:                     []string{"local", "--query", versionProbeQuery},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse(DefaultProbeCPURequest),
