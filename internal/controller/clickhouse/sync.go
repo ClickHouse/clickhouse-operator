@@ -514,34 +514,22 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	return chctrl.StepContinue(), nil
 }
 
-func warningAction(msg string) string {
+func warningAction(shard int32, replica, msg string) string {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(msg))
-	return fmt.Sprintf("Warning-%016x", h.Sum64())
+	_, _ = fmt.Fprintf(h, "%d/%s/%s", shard, replica, msg)
+	return fmt.Sprintf("Warning-%d-%s-%016x", shard, replica, h.Sum64())
 }
 
 func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
-
-	var statefulSets appsv1.StatefulSetList
-	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
+	if r.commander == nil {
+		return chctrl.StepRequeue(chctrl.WarningsPollInterval), nil
 	}
 
-	results := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, struct{}, error) {
-		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
-		if err != nil {
-			return v1.ClickHouseReplicaID{}, struct{}{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
-		}
+	ids := slices.Collect(maps.Keys(r.ReplicaState))
 
-		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
-		if err != nil {
-			log.Warn("failed to check replica pod error", "statefulset", sts.Name, "error", err)
-
-			hasError = true
-		}
-
-		if hasError || sts.Status.ReadyReplicas == 0 || r.commander == nil {
+	results := ctrlutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		replica := r.ReplicaState[id]
+		if replica.Error || replica.STS == nil || replica.STS.Status.ReadyReplicas == 0 {
 			return id, struct{}{}, nil
 		}
 
@@ -557,7 +545,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 		for _, warning := range warnings {
 			r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
-				v1.EventReasonClickHouseWarning, warningAction(warning),
+				v1.EventReasonClickHouseWarning, warningAction(r.Cluster.Shards(), r.Cluster.HostnameByID(id), warning),
 				"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
 		}
 
