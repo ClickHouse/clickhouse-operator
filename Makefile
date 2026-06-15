@@ -467,7 +467,7 @@ CRD_BASE_REF ?= origin/main
 # Violations from embedded Kubernetes core types (securityContext bools, resource maps, etc.)
 # that are structural to the k8s API, not operator design choices. These are automatically
 # suppressed by ratcheting for existing fields, but appear when adding new fields that embed core types.
-CRD_COMPAT_EMBEDDED_TYPE_RE := (securityContext|windowsOptions)\.|metadata\.(labels|annotations) |resources\.(limits|requests) |nodeSelector
+CRD_COMPAT_EMBEDDED_TYPE_RE := (securityContext|windowsOptions)\.|metadata\.(labels|annotations) |resources\.(limits|requests) |selector\.matchLabels|nodeSelector
 .PHONY: check-crd-compat
 check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against $(CRD_BASE_REF).
 	@FAILED=0; \

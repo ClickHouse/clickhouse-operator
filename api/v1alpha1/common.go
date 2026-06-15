@@ -562,3 +562,27 @@ type VersionProbeContainer struct {
 	// +optional
 	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
+
+// NamedTemplateMeta defines supported metadata settings for template objects that require a name.
+type NamedTemplateMeta struct {
+	// Name is the resource identifier.
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// Labels are labels applied to the template objects.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// Annotations are annotations applied to the template objects.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// PersistentVolumeClaimTemplate is a named template for a per-replica PersistentVolumeClaim.
+type PersistentVolumeClaimTemplate struct {
+	// Metadata template of the volume claim.
+	NamedTemplateMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired characteristics of a volume requested by a pod author.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
+	Spec corev1.PersistentVolumeClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+}

@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
@@ -419,6 +420,98 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					*cr.Spec.DataVolumeClaimSpec.Resources.Requests.Storage())).To(Equal(0),
 					"actual: %v, spec: %v", pvc.Spec.Resources, cr.Spec.DataVolumeClaimSpec.Resources)
 			}
+		})
+
+		It("should provision and resize JBOD additional disks", func(ctx context.Context) {
+			By("creating an expandable StorageClass")
+
+			sc := &storagev1.StorageClass{
+				ObjectMeta:           metav1.ObjectMeta{Name: fmt.Sprintf("jbod-expandable-%d", rand.Uint32())}, //nolint:gosec
+				Provisioner:          "rancher.io/local-path",
+				VolumeBindingMode:    new(storagev1.VolumeBindingWaitForFirstConsumer),
+				AllowVolumeExpansion: new(true),
+				ReclaimPolicy:        new(corev1.PersistentVolumeReclaimDelete),
+			}
+			Expect(k8sClient.Create(ctx, sc)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, sc))).To(Succeed())
+			})
+
+			diskSpec := corev1.PersistentVolumeClaimSpec{
+				StorageClassName: &sc.Name,
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+				},
+			}
+
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      "jbod",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					DataVolumeClaimSpec: &diskSpec,
+					AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
+						{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk1"}, Spec: diskSpec},
+						{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk2"}, Spec: diskSpec},
+					},
+				},
+			}
+			checks := 0
+
+			verifyDisks := func(size resource.Quantity) {
+				var pvcs corev1.PersistentVolumeClaimList
+				Expect(k8sClient.List(ctx, &pvcs, client.InNamespace(ns),
+					client.MatchingLabels{controllerutil.LabelAppKey: cr.SpecificName()})).To(Succeed())
+
+				existingDisks := make([]string, 0, len(pvcs.Items))
+				for i, d := range pvcs.Items {
+					existingDisks = append(existingDisks, pvcs.Items[i].Labels[controllerutil.LabelDiskName])
+
+					Expect(d.Spec.Resources.Requests.Storage().Cmp(size)).To(BeZero())
+				}
+
+				Expect(existingDisks).To(ConsistOf(internal.PersistentVolumeName, "disk1", "disk2"))
+
+				chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+				Expect(err).NotTo(HaveOccurred())
+
+				defer chClient.Close()
+
+				var diskCount int64
+				Expect(chClient.QueryRowReplica(ctx, v1.ClickHouseReplicaID{},
+					"SELECT count()::Int64 FROM system.disks", &diskCount)).To(Succeed())
+				Expect(diskCount).To(Equal(int64(3)), "server should see base + 2 additional disks")
+			}
+
+			By("creating cluster CR with 2 additional disks")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				By("deleting cluster CR")
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			ClickHouseRWChecks(ctx, &cr, &checks)
+			verifyDisks(resource.MustParse("1Gi"))
+
+			By("resizing disks")
+
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+
+			diskSpec.Resources.Requests = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")}
+			cr.Spec.DataVolumeClaimSpec = &diskSpec
+			cr.Spec.AdditionalVolumeClaimTemplates[0].Spec = diskSpec
+			cr.Spec.AdditionalVolumeClaimTemplates[1].Spec = diskSpec
+			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			ClickHouseRWChecks(ctx, &cr, &checks)
+			verifyDisks(resource.MustParse("2Gi"))
 		})
 
 		It("should correctly configure access", func(ctx context.Context) {

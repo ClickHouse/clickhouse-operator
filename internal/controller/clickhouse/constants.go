@@ -5,6 +5,8 @@ import (
 
 	"github.com/blang/semver/v4"
 
+	"github.com/ClickHouse/clickhouse-operator/internal"
+
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
@@ -29,6 +31,7 @@ const (
 	ExtraUsersConfigFileName = "99-extra-users-config.yaml"
 	ClientConfigPath         = "/etc/clickhouse-client/"
 	ClientConfigFileName     = "config.yaml"
+	AdditionalDiskBasePath   = internal.ClickHouseDataPath + "/disks/"
 
 	TLSConfigPath       = "/etc/clickhouse-server/tls/"
 	CABundleFilename    = "ca-bundle.crt"

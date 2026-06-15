@@ -10,8 +10,6 @@ const (
 
 	KeeperDataPath     = "/var/lib/clickhouse"
 	ClickHouseDataPath = "/var/lib/clickhouse"
-
-	AdditionalDiskBasePath = "/var/lib/clickhouse/disks/"
 )
 
 var (

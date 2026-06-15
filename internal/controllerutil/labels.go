@@ -18,6 +18,7 @@ const (
 	LabelKeeperReplicaID     = "clickhouse.com/keeper-replica-id"
 	LabelClickHouseShardID   = "clickhouse.com/shard-id"
 	LabelClickHouseReplicaID = "clickhouse.com/replica-id"
+	LabelDiskName            = "clickhouse.com/disk"
 )
 
 const (
@@ -26,6 +27,11 @@ const (
 	LabelClickHouseValue   = "clickhouse-server"
 	LabelVersionProbe      = "version-probe"
 )
+
+// DiskLabel returns the label set identifying a disk's volumeClaimTemplate/PVC by name.
+func DiskLabel(name string) map[string]string {
+	return map[string]string{LabelDiskName: name}
+}
 
 // AppRequirements returns ListOptions to list resources of the given app.
 func AppRequirements(namespace, app string) *client.ListOptions {

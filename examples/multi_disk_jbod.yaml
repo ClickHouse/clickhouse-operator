@@ -1,4 +1,15 @@
 apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: keeper-jbod
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 1Gi
+---
+apiVersion: clickhouse.com/v1alpha1
 kind: ClickHouseCluster
 metadata:
   name: clickhouse-jbod
@@ -6,25 +17,21 @@ spec:
   shards: 2
   replicas: 2
   keeperClusterRef:
-    name: keeper
+    name: keeper-jbod
   dataVolumeClaimSpec:
-    storageClassName: gp3
-    accessModes: ["ReadWriteOnce"]
     resources:
       requests:
-        storage: 100Gi
-  additionalDataVolumeClaimSpecs:
-    - name: disk1
+        storage: 10Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: data-disk1
       spec:
-        storageClassName: gp3
-        accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 100Gi
-    - name: disk2
+            storage: 10Gi
+    - metadata:
+        name: data-disk2
       spec:
-        storageClassName: gp3
-        accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 100Gi
+            storage: 10Gi

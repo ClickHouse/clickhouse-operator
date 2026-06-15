@@ -51,15 +51,14 @@ type RevisionState struct {
 	// ReloadConfigRevision is a partial revision of config that can be reloaded in runtime.
 	ReloadConfigRevision string
 
-	PVCRevision string
-	HasPVCSpec  bool
+	PVCRevisions map[string]string
 }
 
 // ReplicaState holds resources owned by a single replica.
 type ReplicaState struct {
-	STS *appsv1.StatefulSet
-	CFG *corev1.ConfigMap
-	PVC *corev1.PersistentVolumeClaim
+	STS  *appsv1.StatefulSet
+	CFG  *corev1.ConfigMap
+	PVCs map[string]*corev1.PersistentVolumeClaim
 }
 
 // Updated checks whether StatefulSet controller applied updates.
@@ -94,12 +93,13 @@ func (rev RevisionState) ReplicaHasDiff(state ReplicaState) bool {
 		return true
 	}
 
-	if rev.HasPVCSpec {
-		if state.PVC == nil {
+	for name, revision := range rev.PVCRevisions {
+		pvc, ok := state.PVCs[name]
+		if !ok || pvc == nil {
 			return true
 		}
 
-		if util.GetSpecHashFromObject(state.PVC) != rev.PVCRevision {
+		if util.GetSpecHashFromObject(pvc) != revision {
 			return true
 		}
 	}

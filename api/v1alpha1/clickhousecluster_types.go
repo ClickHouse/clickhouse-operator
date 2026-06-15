@@ -49,12 +49,13 @@ type ClickHouseClusterSpec struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Spec"
 	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
-	// Additional persistent volume claims attached to each ClickHouse pod.
-	// Each entry creates a volumeClaimTemplate on the StatefulSet, producing
-	// per-pod PVCs named <name>-<statefulset>-<ordinal>.
-	// Use for JBOD / multi-disk storage layouts.
+	// Additional per-pod PVC templates for JBOD / multi-disk storage.
+	// Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at /var/lib/clickhouse/disks/<name> and
+	// added to the generated JBOD storage policy.
+	// The set of disks is fixed at creation.
 	// +optional
-	AdditionalDataVolumeClaimSpecs []AdditionalVolumeClaimSpec `json:"additionalDataVolumeClaimSpecs,omitempty"`
+	// +listType=atomic
+	AdditionalVolumeClaimTemplates []PersistentVolumeClaimTemplate `json:"additionalVolumeClaimTemplates,omitempty"`
 
 	// Additional labels that are added to resources.
 	// +optional
@@ -116,22 +117,6 @@ type AdditionalPort struct {
 	Port int32 `json:"port"`
 }
 
-// AdditionalVolumeClaimSpec defines an additional persistent volume claim for a ClickHouse pod.
-type AdditionalVolumeClaimSpec struct {
-	// Name used as the volumeClaimTemplate name and the volume/volumeMount name.
-	// Must be unique and not collide with the primary data volume name.
-	// Must consist of lowercase alphanumeric characters or hyphens, and start and end with an alphanumeric character.
-	// Hyphens are automatically converted to underscores in the ClickHouse disk configuration.
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
-	Name string `json:"name"`
-	// PVC spec for this additional volume.
-	Spec corev1.PersistentVolumeClaimSpec `json:"spec"`
-	// MountPath inside the ClickHouse container.
-	// If empty, defaults to /var/lib/clickhouse/disks/<name>.
-	// +optional
-	MountPath string `json:"mountPath,omitempty"`
-}
-
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
 func (s *ClickHouseClusterSpec) WithDefaults() {
 	defaultSpec := ClickHouseClusterSpec{
@@ -181,14 +166,9 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 		s.DataVolumeClaimSpec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 	}
 
-	for i := range s.AdditionalDataVolumeClaimSpecs {
-		if len(s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes) == 0 {
-			s.AdditionalDataVolumeClaimSpecs[i].Spec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
-		}
-
-		if s.AdditionalDataVolumeClaimSpecs[i].MountPath == "" {
-			// Keep in sync with internal.AdditionalDiskBasePath.
-			s.AdditionalDataVolumeClaimSpecs[i].MountPath = "/var/lib/clickhouse/disks/" + s.AdditionalDataVolumeClaimSpecs[i].Name
+	for i, t := range s.AdditionalVolumeClaimTemplates {
+		if len(t.Spec.AccessModes) == 0 {
+			s.AdditionalVolumeClaimTemplates[i].Spec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 		}
 	}
 }

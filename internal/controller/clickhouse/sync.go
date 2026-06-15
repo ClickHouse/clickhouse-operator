@@ -473,12 +473,9 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			}
 		}
 
-		var pvc *corev1.PersistentVolumeClaim
-		if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-			pvc, err = r.GetPVCByStatefulSet(ctx, log.With("replica_id", id), &sts)
-			if err != nil {
-				log.Error(err, "failed to get PVC for replica", "replica_id", id)
-			}
+		pvcs, pvcErr := r.GetReplicaPVCs(ctx, &sts)
+		if pvcErr != nil {
+			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
 		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
@@ -488,9 +485,9 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			Error:        hasError,
 			replicaProbe: probe,
 			ReplicaState: chctrl.ReplicaState{
-				STS: &sts,
-				CFG: configMaps[id],
-				PVC: pvc,
+				STS:  &sts,
+				CFG:  configMaps[id],
+				PVCs: pvcs,
 			},
 		}, nil
 	})
@@ -626,13 +623,11 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", r.revs.StatefulSetRevision))
 	}
 
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		r.revs.HasPVCSpec = true
-
-		r.revs.PVCRevision, err = ctrlutil.DeepHashObject(r.Cluster.Spec.DataVolumeClaimSpec)
-		if err != nil {
-			return chctrl.StepResult{}, fmt.Errorf("get PVC revision: %w", err)
-		}
+	r.revs.PVCRevisions, err = chctrl.PVCRevisions(
+		chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, r.Cluster.Spec.AdditionalVolumeClaimTemplates),
+	)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("compute PVC revisions: %w", err)
 	}
 
 	var notUpdated, reloadErr, notReloaded []string
@@ -1012,24 +1007,17 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 		return nil, fmt.Errorf("template replica %s StatefulSet: %w", id, err)
 	}
 
-	var pvc *corev1.PersistentVolumeClaim
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		pvc = &corev1.PersistentVolumeClaim{Spec: *r.Cluster.Spec.DataVolumeClaimSpec}
-	}
-
 	replica := r.ReplicaState[id]
-	additionalPVCs := templateAdditionalPVCs(r, id)
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
 		Existing:  replica.ReplicaState,
 		HasError:  replica.Error,
 		Desired: chctrl.ReplicaState{
-			CFG: configMap,
-			STS: statefulSet,
-			PVC: pvc,
+			CFG:  configMap,
+			STS:  statefulSet,
+			PVCs: chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, r.Cluster.Spec.AdditionalVolumeClaimTemplates),
 		},
-		AdditionalPVCs: additionalPVCs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reconcile replica %s resources: %w", id, err)

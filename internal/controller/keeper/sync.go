@@ -194,13 +194,9 @@ func (r *keeperReconciler) reconcileClusterRevisions(ctx context.Context, log ct
 		log.Debug(fmt.Sprintf("observed new StatefulSet revision %q", r.revs.StatefulSetRevision))
 	}
 
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		r.revs.HasPVCSpec = true
-
-		r.revs.PVCRevision, err = ctrlutil.DeepHashObject(r.Cluster.Spec.DataVolumeClaimSpec)
-		if err != nil {
-			return chctrl.StepResult{}, fmt.Errorf("get PVC revision: %w", err)
-		}
+	r.revs.PVCRevisions, err = chctrl.PVCRevisions(chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, nil))
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("compute PVC revisions: %w", err)
 	}
 
 	probeResult, err := r.VersionProbe(ctx, log, chctrl.VersionProbeConfig{
@@ -274,12 +270,9 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 				r.Cluster.Spec.Settings.TLS.Required)
 		}
 
-		var pvc *corev1.PersistentVolumeClaim
-		if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-			pvc, err = r.GetPVCByStatefulSet(ctx, log.With("replica_id", id), &sts)
-			if err != nil {
-				log.Error(err, "failed to get PVC for replica", "replica_id", id)
-			}
+		pvcs, pvcErr := r.GetReplicaPVCs(ctx, &sts)
+		if pvcErr != nil {
+			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
 		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
@@ -289,9 +282,9 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			Status: status,
 
 			ReplicaState: chctrl.ReplicaState{
-				STS: &sts,
-				CFG: configMaps[id],
-				PVC: pvc,
+				STS:  &sts,
+				CFG:  configMaps[id],
+				PVCs: pvcs,
 			},
 		}, nil
 	})
@@ -717,11 +710,6 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		return nil, fmt.Errorf("template replica %q StatefulSet: %w", replicaID, err)
 	}
 
-	var pvc *corev1.PersistentVolumeClaim
-	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
-		pvc = &corev1.PersistentVolumeClaim{Spec: *r.Cluster.Spec.DataVolumeClaimSpec}
-	}
-
 	replica := r.ReplicaState[replicaID]
 
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
@@ -729,9 +717,9 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 		Existing:  replica.ReplicaState,
 		HasError:  replica.Error,
 		Desired: chctrl.ReplicaState{
-			CFG: configMap,
-			STS: statefulSet,
-			PVC: pvc,
+			CFG:  configMap,
+			STS:  statefulSet,
+			PVCs: chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, nil),
 		},
 	})
 	if err != nil {

@@ -1,9 +1,7 @@
-{{- /* Storage configuration: all disks in a single volume for true JBOD round-robin distribution */}}
-{{- /* DiskName is the ClickHouse identifier (hyphens replaced with underscores); Path uses the original name. */}}
 storage_configuration:
   disks:
-{{- range .AdditionalDisks }}
-    {{ .DiskName }}:
+{{- range . }}
+    {{ .Name }}:
       path: {{ .Path }}
 {{- end }}
   policies:
@@ -12,6 +10,6 @@ storage_configuration:
         main:
           disk:
             - default
-{{- range .AdditionalDisks }}
-            - {{ .DiskName }}
+{{- range . }}
+            - {{ .Name }}
 {{- end }}

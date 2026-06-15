@@ -34,7 +34,7 @@ var (
 	//go:embed templates/client.yaml.tmpl
 	clientConfigTemplateStr string
 	//go:embed templates/storage_jbod.yaml.tmpl
-	storageJbodConfigTemplateStr string
+	storageJBODConfigTemplateStr string
 
 	generators []configGenerator
 )
@@ -116,6 +116,14 @@ func init() {
 		Filename:  ClientConfigFileName,
 		Raw:       clientConfigTemplateStr,
 		Generator: clientConfigGenerator,
+	}, {
+		Path:      path.Join(ConfigPath, ConfigDPath),
+		Filename:  "10-storage-jbod.yaml",
+		Raw:       storageJBODConfigTemplateStr,
+		Generator: storageJBODConfigGenerator,
+		Enabled: func(r *clickhouseReconciler) bool {
+			return len(r.Cluster.Spec.AdditionalVolumeClaimTemplates) > 0
+		},
 	}} {
 		tmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(templateSpec.Raw))
 
@@ -128,13 +136,6 @@ func init() {
 			requiresRestart: templateSpec.RequiresRestart,
 		})
 	}
-
-	storageJbodTmpl := template.Must(template.New("").Parse(storageJbodConfigTemplateStr))
-	generators = append(generators, &storageJbodConfigGenerator{
-		filename: "10-storage-jbod.yaml",
-		path:     path.Join(ConfigPath, ConfigDPath),
-		template: storageJbodTmpl,
-	})
 
 	generators = append(generators,
 		&extraConfigGenerator{
@@ -195,75 +196,6 @@ func (g *templateConfigGenerator) Generate(r *clickhouseReconciler, id v1.ClickH
 	}
 
 	return data, nil
-}
-
-type storageJbodConfigGenerator struct {
-	filename string
-	path     string
-	template *template.Template
-}
-
-func (g *storageJbodConfigGenerator) Filename() string {
-	return g.filename
-}
-
-func (g *storageJbodConfigGenerator) Path() string {
-	return g.path
-}
-
-func (g *storageJbodConfigGenerator) ConfigKey() string {
-	return controllerutil.PathToName(path.Join(g.path, g.filename))
-}
-
-func (g *storageJbodConfigGenerator) Enabled(r *clickhouseReconciler) bool {
-	return len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs) > 0
-}
-
-func (g *storageJbodConfigGenerator) RequiresRestart() bool {
-	return true
-}
-
-func (g *storageJbodConfigGenerator) Generate(r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
-	additionalDisks := make([]struct {
-		Name     string
-		DiskName string
-		Path     string
-	}, 0, len(r.Cluster.Spec.AdditionalDataVolumeClaimSpecs))
-	for _, addl := range r.Cluster.Spec.AdditionalDataVolumeClaimSpecs {
-		diskPath := addl.MountPath
-		if !strings.HasSuffix(diskPath, "/") {
-			diskPath += "/"
-		}
-
-		additionalDisks = append(additionalDisks, struct {
-			Name     string
-			DiskName string
-			Path     string
-		}{
-			Name:     addl.Name,
-			DiskName: strings.ReplaceAll(addl.Name, "-", "_"),
-			Path:     diskPath,
-		})
-	}
-
-	params := struct {
-		DefaultDiskPath string
-		AdditionalDisks []struct {
-			Name     string
-			DiskName string
-			Path     string
-		}
-	}{
-		DefaultDiskPath: internal.ClickHouseDataPath + "/",
-		AdditionalDisks: additionalDisks,
-	}
-
-	builder := strings.Builder{}
-	if err := g.template.Execute(&builder, params); err != nil {
-		return "", fmt.Errorf("template storage JBOD config: %w", err)
-	}
-
-	return builder.String(), nil
 }
 
 type configGeneratorFunc func(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error)
@@ -554,6 +486,28 @@ func namedCollectionsConfigGenerator(tmpl *template.Template, _ *clickhouseRecon
 	builder := strings.Builder{}
 	if err := tmpl.Execute(&builder, params); err != nil {
 		return "", fmt.Errorf("template named collections config: %w", err)
+	}
+
+	return builder.String(), nil
+}
+
+type additionalDisk struct {
+	Name string
+	Path string
+}
+
+func storageJBODConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+	disks := make([]additionalDisk, 0, len(r.Cluster.Spec.AdditionalVolumeClaimTemplates))
+	for _, d := range r.Cluster.Spec.AdditionalVolumeClaimTemplates {
+		disks = append(disks, additionalDisk{
+			Name: strings.ReplaceAll(d.Name, "-", "_"),
+			Path: AdditionalDiskBasePath + d.Name + "/",
+		})
+	}
+
+	builder := strings.Builder{}
+	if err := tmpl.Execute(&builder, disks); err != nil {
+		return "", fmt.Errorf("template JBOD config: %w", err)
 	}
 
 	return builder.String(), nil

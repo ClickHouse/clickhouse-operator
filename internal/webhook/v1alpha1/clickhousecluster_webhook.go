@@ -9,10 +9,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-
-	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
 // reservedClickHousePort* values mirror the port constants defined in
@@ -88,9 +87,9 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster,
 		errs = append(errs, err)
 	}
 
-	if err := validateAdditionalDataVolumeClaimSpecsChanges(
-		oldCluster.Spec.AdditionalDataVolumeClaimSpecs,
-		newCluster.Spec.AdditionalDataVolumeClaimSpecs,
+	if err := validateAdditionalVolumeClaimTemplatesChanges(
+		oldCluster.Spec.AdditionalVolumeClaimTemplates,
+		newCluster.Spec.AdditionalVolumeClaimTemplates,
 	); err != nil {
 		errs = append(errs, err)
 	}
@@ -119,11 +118,11 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
-	additionalVolumeErrs := validateAdditionalDataVolumeClaimSpecs(obj.Spec.AdditionalDataVolumeClaimSpecs)
+	additionalVolumeErrs := validateAdditionalVolumeClaimTemplates(obj.Spec.DataVolumeClaimSpec, obj.Spec.AdditionalVolumeClaimTemplates)
 	errs = append(errs, additionalVolumeErrs...)
 
 	reservedNames := slices.Clone(internal.ReservedClickHouseVolumeNames)
-	for _, addl := range obj.Spec.AdditionalDataVolumeClaimSpecs {
+	for _, addl := range obj.Spec.AdditionalVolumeClaimTemplates {
 		reservedNames = append(reservedNames, addl.Name)
 	}
 

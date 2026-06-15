@@ -4,20 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"regexp"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+
 	"github.com/ClickHouse/clickhouse-operator/internal"
 )
-
-// additionalVolumeNameRe matches names that are valid as Kubernetes volume / PVC names
-// (DNS label subset: lowercase alphanumeric and hyphens, must start and end with alphanumeric).
-// Hyphens are automatically converted to underscores when the name is written into the
-// ClickHouse disk configuration, so users only need to follow Kubernetes naming rules here.
-var additionalVolumeNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 // validateCustomVolumeMounts validates that the provided volume mounts correspond to defined volumes and
 // do not use any reserved volume names. It returns a slice of errors for any validation issues found.
@@ -89,67 +83,53 @@ func validateDataVolumeSpecChanges(oldSpec, newSpec *corev1.PersistentVolumeClai
 	return nil
 }
 
-// validateAdditionalDataVolumeClaimSpecs validates additionalDataVolumeClaimSpecs:
-// - names must not collide with the primary data volume name
-// - no duplicate names in the slice
-// - no duplicate mount paths in the slice (would cause two PVCs to mount at the same path).
-func validateAdditionalDataVolumeClaimSpecs(specs []v1alpha1.AdditionalVolumeClaimSpec) []error {
+// validateAdditionalVolumeClaimTemplates validates additionalVolumeClaimTemplates not collide with the
+// primary data volume name, and be unique within the slice.
+func validateAdditionalVolumeClaimTemplates(data *corev1.PersistentVolumeClaimSpec, additional []v1.PersistentVolumeClaimTemplate) []error {
+	if len(additional) == 0 {
+		return nil
+	}
+
+	if data == nil {
+		return []error{errors.New("dataVolumeClaimSpec should be set in order to enable additionalVolumeClaimTemplates")}
+	}
+
 	var errs []error
 
 	seenNames := make(map[string]struct{})
-
-	seenPaths := make(map[string]struct{})
-	for i, spec := range specs {
-		if spec.Name == "" {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name must not be empty", i))
-		} else if !additionalVolumeNameRe.MatchString(spec.Name) {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name %q is invalid: must consist of lowercase alphanumeric characters or hyphens, and start and end with an alphanumeric character", i, spec.Name))
+	for i, tmpl := range additional {
+		if tmpl.Name == internal.PersistentVolumeName {
+			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q collides with primary data volume name", i, tmpl.Name))
 		}
 
-		if spec.Name == internal.PersistentVolumeName {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d].name %q collides with primary data volume name", i, spec.Name))
+		if tmpl.Name == "default" {
+			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q is reserved by the ClickHouse default disk", i, tmpl.Name))
 		}
 
-		if _, ok := seenNames[spec.Name]; ok {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs has duplicate name %q", spec.Name))
+		if _, ok := seenNames[tmpl.Name]; ok {
+			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates has duplicate name %q", tmpl.Name))
 		}
 
-		seenNames[spec.Name] = struct{}{}
-
-		// Resolve the effective mount path (mirrors WithDefaults logic) for duplicate detection.
-		mountPath := spec.MountPath
-		if mountPath == "" {
-			mountPath = internal.AdditionalDiskBasePath + spec.Name
-		}
-
-		if _, ok := seenPaths[mountPath]; ok {
-			errs = append(errs, fmt.Errorf("additionalDataVolumeClaimSpecs[%d] has duplicate mountPath %q", i, mountPath))
-		}
-
-		seenPaths[mountPath] = struct{}{}
+		seenNames[tmpl.Name] = struct{}{}
 	}
 
 	return errs
 }
 
-// validateAdditionalDataVolumeClaimSpecsChanges validates update policy for additionalDataVolumeClaimSpecs:
-// - adding new disks is allowed
-// - removing existing disks is rejected
-// - renaming existing disks is rejected (equivalent to remove+add)
-// - updating specs for existing names is allowed.
-func validateAdditionalDataVolumeClaimSpecsChanges(oldSpecs, newSpecs []v1alpha1.AdditionalVolumeClaimSpec) error {
-	if len(oldSpecs) > 0 && len(newSpecs) == 0 {
-		return errors.New("additionalDataVolumeClaimSpecs cannot be removed after cluster creation")
+// validateAdditionalVolumeClaimTemplatesChanges ensures that the set of additional disks is fixed.
+func validateAdditionalVolumeClaimTemplatesChanges(oldTemplates, newTemplates []v1.PersistentVolumeClaimTemplate) error {
+	if len(oldTemplates) != len(newTemplates) {
+		return errors.New("additionalVolumeClaimTemplates cannot be added or removed after cluster creation")
 	}
 
-	newNames := make(map[string]struct{}, len(newSpecs))
-	for _, s := range newSpecs {
-		newNames[s.Name] = struct{}{}
+	newNames := make(map[string]struct{}, len(newTemplates))
+	for _, t := range newTemplates {
+		newNames[t.Name] = struct{}{}
 	}
 
-	for _, s := range oldSpecs {
-		if _, ok := newNames[s.Name]; !ok {
-			return errors.New("additionalDataVolumeClaimSpecs names cannot be removed or renamed after cluster creation")
+	for _, t := range oldTemplates {
+		if _, ok := newNames[t.Name]; !ok {
+			return fmt.Errorf("additionalVolumeClaimTemplates names cannot be changed after cluster creation, missing %q", t.Name)
 		}
 	}
 
