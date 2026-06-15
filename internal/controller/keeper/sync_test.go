@@ -5,12 +5,14 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -23,6 +25,7 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
 var _ = Describe("UpdateReplica", Ordered, func() {
@@ -172,6 +175,99 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		err = rec.GetClient().Get(ctx, podKey, &corev1.Pod{})
 		Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "stuck pod should have been deleted")
+	})
+})
+
+var _ = Describe("Keeper version status", func() {
+	It("should report matching live replica versions", func() {
+		_, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
+			0: {Status: serverStatus{Version: "25.8.2.1"}},
+			1: {Status: serverStatus{Version: "25.8.2.1"}},
+		}
+
+		rec.evaluateReplicaConditions()
+
+		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
+		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal(v1.ConditionReasonVersionMatch))
+		Expect(meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)).To(BeNil())
+	})
+
+	It("should keep last known version when no live replica version is observed", func() {
+		_, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		rec.Cluster.Status.Version = "25.8.2.1"
+		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
+			0: {Status: serverStatus{}},
+		}
+
+		rec.evaluateReplicaConditions()
+
+		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
+		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionUnknown))
+		Expect(cond.Reason).To(Equal(v1.ConditionReasonVersionPending))
+	})
+
+	It("should keep last known aggregate version when live replica versions differ", func() {
+		_, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		rec.Cluster.Status.Version = "25.8.2.1"
+		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
+			0: {Status: serverStatus{Version: "25.8.2.1"}},
+			1: {Status: serverStatus{Version: "25.8.3.1"}},
+		}
+
+		rec.evaluateReplicaConditions()
+
+		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
+		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(v1.ConditionReasonVersionMismatch))
+	})
+
+	It("should use the agreed live version for upgrade checks", func(ctx context.Context) {
+		log, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		updater := upgrade.NewReleaseUpdater(&upgrade.StaticFetcher{Releases: map[string][]upgrade.ClickHouseVersion{
+			upgrade.ChannelStable: {
+				{Major: 25, Minor: 8, Patch: 2, Build: 1},
+				{Major: 25, Minor: 8, Patch: 3, Build: 1},
+			},
+		}}, time.Hour, log)
+		rec.Checker = upgrade.NewChecker(updater)
+		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
+			0: {Status: serverStatus{Version: "25.8.2.1"}},
+			1: {Status: serverStatus{Version: "25.8.2.1"}},
+		}
+
+		updCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		go func() {
+			defer GinkgoRecover()
+
+			Expect(updater.Start(updCtx)).To(Succeed())
+		}()
+
+		Eventually(updater.GetReleasesData).ShouldNot(BeNil())
+
+		rec.evaluateReplicaConditions()
+
+		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal(v1.ConditionReasonMinorUpdateAvailable))
 	})
 })
 

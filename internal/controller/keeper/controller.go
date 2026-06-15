@@ -19,6 +19,7 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
@@ -30,6 +31,7 @@ type ClusterController struct {
 	Recorder  events.EventRecorder
 	Logger    controllerutil.Logger
 	Webhook   webhookv1.KeeperClusterWebhook
+	Checker   *upgrade.Checker
 	Dialer    controllerutil.DialContextFunc
 	EnablePDB bool
 }
@@ -97,6 +99,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
 
 		Dialer:    cc.Dialer,
+		Checker:   cc.Checker,
 		EnablePDB: cc.EnablePDB,
 
 		Cluster:      cluster,
@@ -121,13 +124,18 @@ func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }
 
+// GetVersionChecker returns the version upgrade Checker.
+func (cc *ClusterController) GetVersionChecker() *upgrade.Checker {
+	return cc.Checker
+}
+
 // GetDialer returns the custom dialer, or nil.
 func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 	return cc.Dialer
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, dialer controllerutil.DialContextFunc, enablePDB bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB bool) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
@@ -136,6 +144,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, dialer contro
 		Recorder:  mgr.GetEventRecorder("keeper-controller"),
 		Logger:    namedLogger,
 		Webhook:   webhookv1.KeeperClusterWebhook{Log: namedLogger},
+		Checker:   checker,
 		Dialer:    dialer,
 		EnablePDB: enablePDB,
 	}

@@ -22,6 +22,7 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	ctrlutil "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
 type replicaState struct {
@@ -80,6 +81,7 @@ type keeperReconciler struct {
 	chctrl.ResourceManager
 
 	Dialer    ctrlutil.DialContextFunc
+	Checker   *upgrade.Checker
 	EnablePDB bool
 
 	Cluster      *v1.KeeperCluster
@@ -93,8 +95,6 @@ type keeperReconciler struct {
 func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter Keeper Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
-	meta.RemoveStatusCondition(&r.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)
-
 	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation",
 		[]v1.ConditionType{
 			v1.ConditionTypeReplicaStartupSucceeded,
@@ -102,6 +102,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 			v1.ConditionTypeClusterSizeAligned,
 			v1.ConditionTypeConfigurationInSync,
 			v1.ConditionTypeVersionInSync,
+			v1.ConditionTypeVersionUpgraded,
 			v1.ConditionTypeReady,
 			v1.KeeperConditionTypeScaleAllowed,
 		})
@@ -590,6 +591,7 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 	r.SetCondition(chctrl.ConfigSyncCondition(nil, notUpdatedIDs, nil))
 	versionCond, versionEvents := keeperVersionSyncCondition(replicaVersions, len(notUpdatedIDs) > 0)
 	r.SetCondition(versionCond, versionEvents...)
+	r.evaluateUpgradeCondition(replicaVersions)
 
 	// Ready condition — keeper-specific logic.
 	exists := len(r.ReplicaState)
@@ -668,6 +670,21 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 	)
 }
 
+func (r *keeperReconciler) evaluateUpgradeCondition(replicaVersions map[string]string) {
+	version, ok := keeperObservedVersion(replicaVersions)
+	if ok {
+		r.Cluster.Status.Version = version
+	}
+
+	if r.Checker == nil || !ok {
+		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
+		return
+	}
+
+	cond, event := chctrl.GetUpgradeCondition(*r.Checker, chctrl.VersionProbeResult{Version: version}, r.Cluster.Spec.UpgradeChannel)
+	r.SetCondition(cond, event...)
+}
+
 func keeperVersionSyncCondition(replicaVersions map[string]string, isUpdating bool) (metav1.Condition, []chctrl.EventSpec) {
 	newCond := func(status metav1.ConditionStatus, reason v1.ConditionReason, message string) metav1.Condition {
 		return metav1.Condition{
@@ -682,21 +699,12 @@ func keeperVersionSyncCondition(replicaVersions map[string]string, isUpdating bo
 		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "No Keeper replica version has been observed yet"), nil
 	}
 
-	versions := map[string]struct{}{}
-
 	var observed []string
 	for id, version := range replicaVersions {
-		versions[version] = struct{}{}
 		observed = append(observed, fmt.Sprintf("%s: %s", id, version))
 	}
 
-	if len(versions) == 1 {
-		var version string
-		for _, v := range replicaVersions {
-			version = v
-			break
-		}
-
+	if version, ok := keeperObservedVersion(replicaVersions); ok {
 		return newCond(metav1.ConditionTrue, v1.ConditionReasonVersionMatch,
 			"All observed Keeper replicas report version "+version), nil
 	}
@@ -715,6 +723,22 @@ func keeperVersionSyncCondition(replicaVersions map[string]string, isUpdating bo
 		Action:  v1.EventActionVersionCheck,
 		Message: cond.Message,
 	}}
+}
+
+func keeperObservedVersion(replicaVersions map[string]string) (string, bool) {
+	var result string
+	for _, version := range replicaVersions {
+		if result == "" {
+			result = version
+			continue
+		}
+
+		if version != result {
+			return "", false
+		}
+	}
+
+	return result, result != ""
 }
 
 func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logger, replicaID v1.KeeperReplicaID) (*ctrl.Result, error) {

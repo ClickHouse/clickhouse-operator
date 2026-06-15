@@ -201,12 +201,12 @@ For ClickHouse clusters with more than one shard, **one PDB is created per shard
 
 The operator picks safe defaults based on the cluster size so that a fresh `apply` already protects against accidental quorum loss.
 
-| Resource | Topology | Default PDB |
-|---|---|---|
-| `ClickHouseCluster` | `replicas: 1` (single-replica shard) | `maxUnavailable: 1` — disruption is allowed for a single-node cluster so that node drains are not blocked |
-| `ClickHouseCluster` | `replicas: 2+` (multi-replica shard) | `minAvailable: 1` — at least one replica per shard must stay up |
-| `KeeperCluster` | `replicas: 1` | `maxUnavailable: 1` — disruption is allowed for a single-node cluster so that node drains are not blocked |
-| `KeeperCluster` | `replicas: 3+` | `maxUnavailable: replicas/2` — preserves the RAFT quorum for a `2F+1` cluster (3 replicas tolerate 1 down, 5 replicas tolerate 2 down) |
+| Resource            | Topology                             | Default PDB                                                                                                                            |
+|---------------------|--------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `ClickHouseCluster` | `replicas: 1` (single-replica shard) | `maxUnavailable: 1` — disruption is allowed for a single-node cluster so that node drains are not blocked                              |
+| `ClickHouseCluster` | `replicas: 2+` (multi-replica shard) | `minAvailable: 1` — at least one replica per shard must stay up                                                                        |
+| `KeeperCluster`     | `replicas: 1`                        | `maxUnavailable: 1` — disruption is allowed for a single-node cluster so that node drains are not blocked                              |
+| `KeeperCluster`     | `replicas: 3+`                       | `maxUnavailable: replicas/2` — preserves the RAFT quorum for a `2F+1` cluster (3 replicas tolerate 1 down, 5 replicas tolerate 2 down) |
 
 For a 3-shard ClickHouseCluster with `replicas: 3`, the operator creates three PDBs, one per shard, each with `minAvailable: 1`.
 
@@ -248,11 +248,11 @@ spec:
 
 `spec.podDisruptionBudget.policy` lets you choose **how aggressively** the operator manages PDBs:
 
-| Policy | Behavior |
-|---|---|
-| `Enabled` (default) | The operator creates and updates the PDB on every reconcile. This is the safe production default. |
-| `Disabled` | The operator does **not** create PDBs and **deletes** any existing ones with matching labels. Useful for development clusters where every voluntary disruption should be allowed. |
-| `Ignored` | The operator neither creates nor deletes PDBs. Existing PDBs are left alone. Use this when another system (e.g. policy admission, GitOps tool) owns PDB management for you. |
+| Policy              | Behavior                                                                                                                                                                          |
+|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Enabled` (default) | The operator creates and updates the PDB on every reconcile. This is the safe production default.                                                                                 |
+| `Disabled`          | The operator does **not** create PDBs and **deletes** any existing ones with matching labels. Useful for development clusters where every voluntary disruption should be allowed. |
+| `Ignored`           | The operator neither creates nor deletes PDBs. Existing PDBs are left alone. Use this when another system (e.g. policy admission, GitOps tool) owns PDB management for you.       |
 
 Example — disable PDB management completely on a development cluster:
 
@@ -424,12 +424,12 @@ The referenced Secret must reside in the **same namespace** as the ClickHouseClu
 
 The Secret must contain the following keys:
 
-| Key | Format | When required |
-|---|---|---|
-| `interserver-password` | plaintext password | Always |
-| `management-password` | plaintext password | Always |
-| `keeper-identity` | `clickhouse:<password>` | Always |
-| `cluster-secret` | plaintext password | Always |
+| Key                     | Format                                     | When required              |
+|-------------------------|--------------------------------------------|----------------------------|
+| `interserver-password`  | plaintext password                         | Always                     |
+| `management-password`   | plaintext password                         | Always                     |
+| `keeper-identity`       | `clickhouse:<password>`                    | Always                     |
+| `cluster-secret`        | plaintext password                         | Always                     |
 | `named-collections-key` | hex-encoded 16-byte AES key (32 hex chars) | ClickHouse `>= 25.12` only |
 
 A complete Secret looks like this:
@@ -453,10 +453,10 @@ stringData:
 
 `spec.externalSecret.policy` controls how the operator handles missing required keys:
 
-| Policy | Behavior on missing keys |
-|---|---|
-| `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` condition (with reason `ExternalSecretInvalid`) and a `Warning` event. |
-| `Manage` | The operator **generates** any missing required keys and writes them back to the same Secret. Useful for bootstrapping: create an empty Secret, let the operator fill it, then optionally tighten access. The operator still never deletes the Secret. |
+| Policy              | Behavior on missing keys                                                                                                                                                                                                                               |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` condition (with reason `ExternalSecretInvalid`) and a `Warning` event.           |
+| `Manage`            | The operator **generates** any missing required keys and writes them back to the same Secret. Useful for bootstrapping: create an empty Secret, let the operator fill it, then optionally tighten access. The operator still never deletes the Secret. |
 
 <Note>
 Even with `policy: Manage` the Secret must already exist in the namespace — the operator never creates the Secret itself, it only writes generated keys into an existing one. If the referenced Secret is missing, reconciliation is blocked with the `ExternalSecretNotFound` reason regardless of policy.
@@ -481,11 +481,11 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 
 Possible reasons:
 
-| `reason` | Meaning | Fix |
-|---|---|---|
-| `ExternalSecretNotFound` | The referenced Secret does not exist in the namespace. | Create the Secret, or fix `spec.externalSecret.name`. |
-| `ExternalSecretInvalid` | The Secret exists but lacks required keys (only with `Observe`). The message lists each missing key together with its expected format. | Add the missing keys, or switch to `policy: Manage`. |
-| `ExternalSecretValid` | All required keys are present and the operator is using the Secret. | — |
+| `reason`                 | Meaning                                                                                                                                | Fix                                                   |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
+| `ExternalSecretNotFound` | The referenced Secret does not exist in the namespace.                                                                                 | Create the Secret, or fix `spec.externalSecret.name`. |
+| `ExternalSecretInvalid`  | The Secret exists but lacks required keys (only with `Observe`). The message lists each missing key together with its expected format. | Add the missing keys, or switch to `policy: Manage`.  |
+| `ExternalSecretValid`    | All required keys are present and the operator is using the Secret.                                                                    | —                                                     |
 
 The operator requeues reconciliation while the Secret is invalid, so once you add the missing keys the next reconcile picks them up automatically — no need to bounce pods.
 
@@ -556,36 +556,36 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 
 ### Field constraints {#additional-ports-constraints}
 
-| Field | Rule |
-|---|---|
+| Field  | Rule                                                                                                                                     |
+|--------|------------------------------------------------------------------------------------------------------------------------------------------|
 | `name` | Must match the DNS_LABEL pattern `^[a-z]([-a-z0-9]*[a-z0-9])?$`, max 63 characters. Uniqueness is enforced by the CRD as a list-map key. |
-| `port` | Integer in `[1, 65535]`. The webhook rejects duplicate port numbers within the list. |
+| `port` | Integer in `[1, 65535]`. The webhook rejects duplicate port numbers within the list.                                                     |
 
 ### Reserved ports and names {#additional-ports-reserved}
 
 The validating webhook rejects `additionalPorts` entries that would collide with ports the operator binds itself. All TLS-related ports are reserved **unconditionally** so that flipping `spec.settings.tls.enabled` later cannot break a previously valid cluster.
 
-| Port | Reserved for |
-|---|---|
-| `8123` | HTTP |
-| `8443` | HTTPS |
-| `9000` | native TCP |
-| `9440` | native TLS |
-| `9009` | interserver |
-| `9001` | management |
+| Port   | Reserved for       |
+|--------|--------------------|
+| `8123` | HTTP               |
+| `8443` | HTTPS              |
+| `9000` | native TCP         |
+| `9440` | native TLS         |
+| `9009` | interserver        |
+| `9001` | management         |
 | `9363` | Prometheus metrics |
 
 The following names are also rejected — they are the operator's internal protocol-type identifiers (not the human-readable aliases):
 
-| Name |
-|---|
-| `http` |
+| Name          |
+|---------------|
+| `http`        |
 | `http-secure` |
-| `tcp` |
-| `tcp-secure` |
+| `tcp`         |
+| `tcp-secure`  |
 | `interserver` |
-| `management` |
-| `prometheus` |
+| `management`  |
+| `prometheus`  |
 
 A rejected request produces an error such as:
 
@@ -596,14 +596,14 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 
 ## Version probe and upgrade channel {#version-probe-and-upgrade-channel}
 
-The operator does two independent things with ClickHouse cluster versions:
+The operator does two independent things with cluster versions:
 
-1. **Version probe** — a Kubernetes `Job` that runs the ClickHouse container image once to detect the running ClickHouse version. The detected version is recorded in `.status.version` and used by other reconciliation steps (e.g. the `External Secret` named-collections key is only required from ClickHouse `25.12`).
+1. **Version reporting** — for `ClickHouseCluster`, a Kubernetes `Job` runs the container image once to detect the running ClickHouse version; for `KeeperCluster`, the operator reads the server-reported version from running replicas. The detected version is recorded in `.status.version` and used by other reconciliation steps (e.g. the `External Secret` named-collections key is only required from ClickHouse `25.12`).
 2. **Upgrade channel** — a periodic check against the public ClickHouse release feed (`https://clickhouse.com/data/version_date.tsv`). The operator reports whether a newer version is available via the `VersionUpgraded` status condition. It never upgrades the cluster on its own — the user is in control of the image tag.
 
 ### Choosing a release channel {#upgrade-channel-choosing}
 
-`ClickHouseCluster` `spec.upgradeChannel` selects which set of upstream releases the operator compares against.
+`spec.upgradeChannel` selects which set of upstream releases the operator compares against. Same field exists on both `ClickHouseCluster` and `KeeperCluster`.
 
 ```yaml
 spec:
@@ -612,12 +612,12 @@ spec:
 
 Allowed values (validated by the CRD with the pattern `^(lts|stable|\d+\.\d+)?$`):
 
-| Value | Behavior |
-|---|---|
-| _empty_ (default) | The operator proposes only **minor** updates within the currently-running major.minor line. A cluster on `25.8.3.1` will be told about `25.8.4.x` but not `25.9.x`. |
-| `stable` | Tracks the upstream `stable` channel — the latest release that ClickHouse Inc. flags as stable on the main release line. Receives major upgrades sooner than the `lts` channel. |
-| `lts` | Tracks the upstream `lts` channel — long-term support releases. Receives major upgrades less frequently, with longer support windows. |
-| `25.8` (or any `<major>.<minor>`) | Pins the channel to a specific major.minor line. Major upgrades beyond it are not proposed even if a newer version exists upstream. |
+| Value                             | Behavior                                                                                                                                                                        |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| _empty_ (default)                 | The operator proposes only **minor** updates within the currently-running major.minor line. A cluster on `25.8.3.1` will be told about `25.8.4.x` but not `25.9.x`.             |
+| `stable`                          | Tracks the upstream `stable` channel — the latest release that ClickHouse Inc. flags as stable on the main release line. Receives major upgrades sooner than the `lts` channel. |
+| `lts`                             | Tracks the upstream `lts` channel — long-term support releases. Receives major upgrades less frequently, with longer support windows.                                           |
+| `25.8` (or any `<major>.<minor>`) | Pins the channel to a specific major.minor line. Major upgrades beyond it are not proposed even if a newer version exists upstream.                                             |
 
 For production, pinning the channel to an explicit `<major>.<minor>` (e.g. `25.8`) is generally preferred. It locks the cluster to the intended major release line and lets the operator surface a `WrongReleaseChannel` warning if any replica somehow drifts onto a different major — which matters especially when the image is referenced by a digest (`@sha256:...`) rather than by a human-readable tag. The empty default is fine for development clusters where major-version jumps are not a concern.
 
@@ -625,18 +625,18 @@ For production, pinning the channel to an explicit `<major>.<minor>` (e.g. `25.8
 
 Two conditions surface the result of the probe and the upgrade check:
 
-| Condition | Reason | Meaning |
-|---|---|---|
-| `VersionInSync` | `VersionMatch` | All replicas report the same version as the image |
-| `VersionInSync` | `VersionMismatch` | Replicas are running different versions. The warning event is suppressed during a planned rolling upgrade. It typically surfaces when a mutable image tag has been pinned (for example `latest` or a bare major like `26.3`) and the underlying registry has shifted between pulls, so different replicas ended up on different patches of the same tag. |
-| `VersionInSync` | `VersionPending` | Version probe Job has not finished yet |
-| `VersionInSync` | `VersionProbeFailed` | Probe Job failed; the operator cannot determine the running version |
-| `VersionUpgraded` | `UpToDate` | The cluster is on the latest version available in the selected channel |
-| `VersionUpgraded` | `MinorUpdateAvailable` | A newer patch is available in the same `major.minor` line |
-| `VersionUpgraded` | `MajorUpdateAvailable` | A newer `major.minor` is available within the chosen channel |
-| `VersionUpgraded` | `VersionOutdated` | The running version is out of date and will no longer receive fixes from the selected channel — typically because the major line has been dropped from `lts` or `stable` upstream |
-| `VersionUpgraded` | `WrongReleaseChannel` | The running image does not belong to the selected `upgradeChannel`. Example: a cluster running `26.5` with `upgradeChannel: lts`, since `26.5` is not part of the upstream `lts` line. |
-| `VersionUpgraded` | `UpgradeCheckFailed` | The operator could not reach the upstream release feed |
+| Condition         | Reason                 | Meaning                                                                                                                                                                                                                                                                                                                                            |
+|-------------------|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `VersionInSync`   | `VersionMatch`         | All replicas report the same version as the image                                                                                                                                                                                                                                                                                                  |
+| `VersionInSync`   | `VersionMismatch`      | Replicas are running different versions. This reason is suppressed during a planned rolling upgrade. It typically surfaces when a mutable image tag has been pinned (for example `latest` or a bare major like `26.3`) and the underlying registry has shifted between pulls, so different replicas ended up on different patches of the same tag. |
+| `VersionInSync`   | `VersionPending`       | Version probe Job has not finished yet, or no Keeper replica version has been observed yet                                                                                                                                                                                                                                                         |
+| `VersionInSync`   | `VersionProbeFailed`   | ClickHouse probe Job failed; the operator cannot determine the running version                                                                                                                                                                                                                                                                     |
+| `VersionUpgraded` | `UpToDate`             | The cluster is on the latest version available in the selected channel                                                                                                                                                                                                                                                                             |
+| `VersionUpgraded` | `MinorUpdateAvailable` | A newer patch is available in the same `major.minor` line                                                                                                                                                                                                                                                                                          |
+| `VersionUpgraded` | `MajorUpdateAvailable` | A newer `major.minor` is available within the chosen channel                                                                                                                                                                                                                                                                                       |
+| `VersionUpgraded` | `VersionOutdated`      | The running version is out of date and will no longer receive fixes from the selected channel — typically because the major line has been dropped from `lts` or `stable` upstream                                                                                                                                                                  |
+| `VersionUpgraded` | `WrongReleaseChannel`  | The running image does not belong to the selected `upgradeChannel`. Example: a cluster running `26.5` with `upgradeChannel: lts`, since `26.5` is not part of the upstream `lts` line.                                                                                                                                                             |
+| `VersionUpgraded` | `UpgradeCheckFailed`   | The operator could not reach the upstream release feed                                                                                                                                                                                                                                                                                             |
 
 Inspect them with:
 
@@ -676,9 +676,9 @@ The container name `version-probe` is the operator's default — the entry under
 
 Two flags on the operator manager control the upgrade-check loop globally:
 
-| Flag | Default | Effect |
-|---|---|---|
-| `--version-update-interval` | `24h` | How often the operator re-fetches the upstream version list |
+| Flag                              | Default | Effect                                                                                                                                           |
+|-----------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--version-update-interval`       | `24h`   | How often the operator re-fetches the upstream version list                                                                                      |
 | `--disable-version-update-checks` | `false` | Disables the upgrade checker entirely. The `VersionUpgraded` condition is not set, and no outbound HTTP traffic to `clickhouse.com` is generated |
 
 Set `--disable-version-update-checks=true` in air-gapped environments or when egress to `clickhouse.com` is not allowed.
@@ -802,13 +802,13 @@ spec:
       count: 50         # Default: 50. Number of rotated files to keep
 ```
 
-| Field | Default | Description |
-|---|---|---|
-| `logToFile` | `true` | When `false`, the operator drops the file targets and the server logs only to the container console. |
-| `jsonLogs` | `false` | When `true`, the operator adds `formatting.type: json` so each line is a JSON object. |
-| `level` | `trace` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
-| `size` | `1000M` | Maximum size of a single log file before rotation. |
-| `count` | `50` | Number of rotated log files the server retains. |
+| Field       | Default | Description                                                                                                       |
+|-------------|---------|-------------------------------------------------------------------------------------------------------------------|
+| `logToFile` | `true`  | When `false`, the operator drops the file targets and the server logs only to the container console.              |
+| `jsonLogs`  | `false` | When `true`, the operator adds `formatting.type: json` so each line is a JSON object.                             |
+| `level`     | `trace` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `1000M` | Maximum size of a single log file before rotation.                                                                |
+| `count`     | `50`    | Number of rotated log files the server retains.                                                                   |
 
 The operator always keeps console logging on so that `kubectl logs` works, and layers file logging on top when `logToFile` is `true`. A cluster with the defaults renders this `logger` block:
 
