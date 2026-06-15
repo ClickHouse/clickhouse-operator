@@ -514,10 +514,10 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 	return chctrl.StepContinue(), nil
 }
 
-func warningAction(shard int32, replica, msg string) string {
+func warningAction(id v1.ClickHouseReplicaID, msg string) string {
 	h := fnv.New64a()
-	_, _ = fmt.Fprintf(h, "%d/%s/%s", shard, replica, msg)
-	return fmt.Sprintf("Warning-%d-%s-%016x", shard, replica, h.Sum64())
+	_, _ = fmt.Fprintf(h, "%d/%d/%s", id.ShardID, id.Index, msg)
+	return fmt.Sprintf("Warning-%d-%d-%016x", id.ShardID, id.Index, h.Sum64())
 }
 
 func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
@@ -545,7 +545,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 		for _, warning := range warnings {
 			r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning,
-				v1.EventReasonClickHouseWarning, warningAction(r.Cluster.Shards(), r.Cluster.HostnameByID(id), warning),
+				v1.EventReasonClickHouseWarning, warningAction(id, warning),
 				"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
 		}
 
