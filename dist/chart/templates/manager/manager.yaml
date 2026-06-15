@@ -114,7 +114,10 @@ spec:
         - name: {{ $k }}
           value: {{ $v | quote }}
         {{- end }}
-        image: "{{ .Values.manager.image.repository }}{{- if .Values.manager.image.digest }}@{{ .Values.manager.image.digest }}{{- else if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- $repository := .Values.manager.image.repository }}
+        {{- $registry := default .Values.manager.image.registry (.Values.global | default dict).imageRegistry }}
+        {{- if $registry }}{{- $repository = printf "%s/%s" (trimSuffix "/" $registry) $repository }}{{- end }}
+        image: "{{ $repository }}{{- if .Values.manager.image.digest }}@{{ .Values.manager.image.digest }}{{- else if not (contains "@" $repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
         {{- end }}

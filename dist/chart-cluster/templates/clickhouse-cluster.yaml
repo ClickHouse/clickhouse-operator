@@ -17,7 +17,10 @@ metadata:
 spec:
   {{- /* Chart-provided defaults: image tag from .Values.imageTag (fallback: chart appVersion). User values override. */}}
   {{- $tag := default .Chart.AppVersion .Values.imageTag }}
-  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag)) }}
+  {{- $repository := .Values.clickhouse.image.repository }}
+  {{- $registry := default .Values.clickhouse.image.registry ((.Values.global | default dict).imageRegistry) }}
+  {{- if $registry }}{{- $repository = printf "%s/%s" (trimSuffix "/" $registry) $repository }}{{- end }}
+  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag "repository" $repository)) }}
   {{- $spec := mergeOverwrite $defaults (deepCopy (.Values.clickhouse.spec | default dict)) }}
   {{- /* Auto-wire keeperClusterRef when keeper is enabled in-chart and user did not pin one. */}}
   {{- if and .Values.keeper.enabled (not (hasKey $spec "keeperClusterRef")) }}

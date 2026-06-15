@@ -6,6 +6,17 @@
 ##
 # fullnameOverride: ""
 
+## Global values shared across this chart and its subcharts.
+##
+global:
+  ## Optional registry prefix prepended to every image repository rendered by
+  ## this chart. Routes all pulls through a single mirror/proxy registry.
+  ## Empty disables the prefix. Overrides per-image registry settings.
+  ## Example: "my-proxy.example.com" renders
+  ##          my-proxy.example.com/ghcr.io/clickhouse/clickhouse-operator
+  ##
+  imageRegistry: ""
+
 ## Configure the controller manager settings
 ##
 controller:
@@ -30,6 +41,10 @@ manager:
   replicas: 1
 
   image:
+    ## Optional registry prefix for this image. Overridden by global.imageRegistry
+    ## when set. Empty uses repository as-is.
+    ##
+    registry: ""
     repository: ghcr.io/clickhouse/clickhouse-operator
     ## Digest of the image to use. Tag is used if unset.
     ##

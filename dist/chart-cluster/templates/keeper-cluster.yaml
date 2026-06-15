@@ -17,7 +17,10 @@ metadata:
 spec:
   {{- /* Chart-provided defaults: image tag from .Values.imageTag (fallback: chart appVersion). User values override. */}}
   {{- $tag := default .Chart.AppVersion .Values.imageTag }}
-  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag)) }}
+  {{- $repository := .Values.keeper.image.repository }}
+  {{- $registry := default .Values.keeper.image.registry ((.Values.global | default dict).imageRegistry) }}
+  {{- if $registry }}{{- $repository = printf "%s/%s" (trimSuffix "/" $registry) $repository }}{{- end }}
+  {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag "repository" $repository)) }}
   {{- $spec := mergeOverwrite $defaults (deepCopy (.Values.keeper.spec | default dict)) }}
   {{- toYaml $spec | nindent 2 }}
 {{- end }}

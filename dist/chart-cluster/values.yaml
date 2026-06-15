@@ -20,9 +20,24 @@
 # clickhouse.spec.containerTemplate.image.tag / keeper.spec.containerTemplate.image.tag.
 imageTag: ""
 
+# Global values shared across this chart and its parent chart.
+global:
+  # Optional registry prefix prepended to every image repository rendered by
+  # this chart. Routes all pulls through a single mirror/proxy registry.
+  # Empty disables the prefix. Overrides clickhouse.image.registry / keeper.image.registry.
+  imageRegistry: ""
+
 clickhouse:
   # Whether to create the ClickHouseCluster CR.
   enabled: true
+
+  # Container image for ClickHouse server. The effective value is injected into
+  # spec.containerTemplate.image.repository (an explicit spec value still wins).
+  # registry is an optional prefix overridden by global.imageRegistry; empty
+  # uses repository as-is.
+  image:
+    registry: ""
+    repository: docker.io/clickhouse/clickhouse-server
 
   # Metadata applied to the ClickHouseCluster CR itself.
   meta:
@@ -88,6 +103,14 @@ clickhouse:
 keeper:
   # Whether to create the KeeperCluster CR.
   enabled: true
+
+  # Container image for ClickHouse Keeper. The effective value is injected into
+  # spec.containerTemplate.image.repository (an explicit spec value still wins).
+  # registry is an optional prefix overridden by global.imageRegistry; empty
+  # uses repository as-is.
+  image:
+    registry: ""
+    repository: docker.io/clickhouse/clickhouse-keeper
 
   # Metadata applied to the KeeperCluster CR itself.
   meta:
