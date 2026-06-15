@@ -28,6 +28,12 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 			Port:       PortInterserver,
 			TargetPort: intstr.FromInt32(PortInterserver),
 		},
+		{
+			Protocol:   corev1.ProtocolTCP,
+			Name:       "prometheus",
+			Port:       PortPrometheusScrape,
+			TargetPort: intstr.FromInt32(PortPrometheusScrape),
+		},
 	}
 
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
