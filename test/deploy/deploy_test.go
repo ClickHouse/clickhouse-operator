@@ -425,6 +425,14 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 			"--for=condition=Ready", "clickhousecluster/"+chName)).To(Succeed())
 
 		By("writing test data", func() {
+			keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer keeperClient.Close()
+
+			Expect(keeperClient.CheckWrite(0)).To(Succeed())
+			Expect(keeperClient.CheckRead(0)).To(Succeed())
+
 			chClient, err := testutil.NewClickHouseClient(ctx, dialer, &chCR)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -445,7 +453,30 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "rollout", "status",
 			"--timeout=3m", "deployment/"+deploymentName)).To(Succeed())
 
-		By("making small change to trigger reconciliation", func() {
+		By("updating keeper and verifying it stays writable", func() {
+			Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &keeperCR)).To(Succeed())
+			keeperCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
+			Expect(k8sClient.Update(ctx, &keeperCR)).To(Succeed())
+			Eventually(func(g Gomega) {
+				var cluster v1.KeeperCluster
+				g.Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &cluster)).To(Succeed())
+				g.Expect(cluster.Status.ObservedGeneration).To(Equal(cluster.Generation))
+				g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
+				g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas()))
+				g.Expect(meta.IsStatusConditionTrue(cluster.Status.Conditions, v1.ConditionTypeReady)).To(BeTrue())
+			}, "10m", "5s").Should(Succeed())
+
+			keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer keeperClient.Close()
+
+			Expect(keeperClient.CheckRead(0)).To(Succeed())
+			Expect(keeperClient.CheckWrite(1)).To(Succeed())
+			Expect(keeperClient.CheckRead(1)).To(Succeed())
+		})
+
+		By("updating clickhouse and verifying its health", func() {
 			Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &chCR)).To(Succeed())
 			chCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
 			Expect(k8sClient.Update(ctx, &chCR)).To(Succeed())
@@ -457,19 +488,13 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 				g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas() * cluster.Shards()))
 				g.Expect(meta.IsStatusConditionTrue(cluster.Status.Conditions, v1.ConditionTypeReady)).To(BeTrue())
 			}, "10m", "5s").Should(Succeed())
-		})
 
-		By("verifying pre-upgrade data survived and the cluster remains writable", func() {
 			chClient, err := testutil.NewClickHouseClient(ctx, dialer, &chCR)
 			Expect(err).NotTo(HaveOccurred())
 
 			defer chClient.Close()
 
-			// Replicas may stay readonly until they re-establish their Keeper session after the upgrade roll.
-			Eventually(func(g Gomega) {
-				g.Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
-			}, "3m", "5s").Should(Succeed())
-
+			Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
 			Expect(chClient.CheckWrite(ctx, 1)).To(Succeed())
 			Expect(chClient.CheckRead(ctx, 1)).To(Succeed())
 		})
