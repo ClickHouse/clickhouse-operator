@@ -142,7 +142,8 @@ var _ = Describe("Manifests deployment", Ordered, Label("manifest"), func() {
 		Expect(testutil.MustRun(ctx, "make", "build-installer", "IMG="+testImage)).To(Succeed())
 
 		By("applying installer manifest")
-		Expect(testutil.MustRun(ctx, "kubectl", "apply", "-f", "dist/install.yaml")).To(Succeed())
+		Expect(testutil.MustRun(ctx, "kubectl", "apply", "--server-side", "--force-conflicts",
+			"-f", "dist/install.yaml")).To(Succeed())
 
 		DeferCleanup(func(ctx context.Context) {
 			By("removing installer manifest resources")

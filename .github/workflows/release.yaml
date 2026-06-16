@@ -101,6 +101,12 @@ jobs:
         run: |
           make build-installer
           mv dist/install.yaml dist/clickhouse-operator.yaml
+          make build-installer-stripped
+          mv dist/install-stripped-crds.yaml dist/clickhouse-operator-stripped-crds.yaml
+          make build-crds
+          mv dist/crds.yaml dist/clickhouse-operator-crds.yaml
+          make build-crds-stripped
+          mv dist/crds-stripped.yaml dist/clickhouse-operator-crds-stripped.yaml
       - name: Install Helm
         run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
       - name: Verify Helm installation
@@ -152,10 +158,22 @@ jobs:
           name: ${{github.ref_name }}
           draft: true
           body: |
-            ## Install using the manifest
+            ## Install using the manifest (server-side apply)
             ```
-            kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/${{github.ref_name}}/clickhouse-operator.yaml
+            kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/download/${{github.ref_name}}/clickhouse-operator.yaml
             ```
+
+            For clusters restricted to client-side apply, use the description-stripped CRDs:
+            ```
+            kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/download/${{github.ref_name}}/clickhouse-operator-stripped-crds.yaml
+            ```
+
+            ## CRDs only
+            ```
+            kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/download/${{github.ref_name}}/clickhouse-operator-crds.yaml
+            ```
+
+            Client-side apply variant: `clickhouse-operator-crds-stripped.yaml`
             
             ## Install using helmchart
             ```
@@ -171,6 +189,9 @@ jobs:
           append_body: true
           files: |
             dist/clickhouse-operator.yaml
+            dist/clickhouse-operator-stripped-crds.yaml
+            dist/clickhouse-operator-crds.yaml
+            dist/clickhouse-operator-crds-stripped.yaml
             clickhouse-operator-helm-${{env.VERSION}}.tgz
             clickhouse-cluster-helm-${{env.VERSION}}.tgz
             clickhouse-operator_${{env.VERSION}}_*.tar.gz
