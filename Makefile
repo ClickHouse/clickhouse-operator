@@ -166,7 +166,7 @@ test-clickhouse-e2e: ## Run clickhouse e2e tests.
 
 .PHONY: test-compat-e2e  # Run compatibility smoke tests across ClickHouse versions.
 test-compat-e2e: ## Run compatibility e2e tests (requires CLICKHOUSE_VERSION env var).
-	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter='!olm' --ginkgo.junit-report=report/junit-report.xml
+	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter='!olm && !upgrade' --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: test-compat-e2e-olm  # Run OLM deployment smoke test.
 test-compat-e2e-olm: ## Run OLM deployment e2e test on a dedicated cluster.

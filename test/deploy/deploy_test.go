@@ -445,7 +445,7 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "rollout", "status",
 			"--timeout=3m", "deployment/"+deploymentName)).To(Succeed())
 
-		By("making small change to trigger reconcillation", func() {
+		By("making small change to trigger reconciliation", func() {
 			Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &chCR)).To(Succeed())
 			chCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
 			Expect(k8sClient.Update(ctx, &chCR)).To(Succeed())
