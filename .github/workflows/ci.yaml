@@ -13,8 +13,27 @@ permissions:
   pull-requests: write
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Detect non-docs changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!**/*.mdx'
+
   lint:
     runs-on: ubuntu-latest
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -55,7 +74,9 @@ jobs:
     # Only run on pull requests, and skip when the PR is explicitly labeled as
     # an intentional CRD-breaking change. The job is not part of ci-success-check,
     # so a failure here does not block the aggregate gate.
+    needs: [ changes ]
     if: |
+      needs.changes.outputs.code == 'true' &&
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'crd-breaking-change')
     runs-on: ubuntu-latest
@@ -75,6 +96,8 @@ jobs:
 
   bundle:
     runs-on: ubuntu-latest
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     env:
       VERSION: 0.0.1
     steps:
@@ -109,6 +132,8 @@ jobs:
 
   build_and_test:
     runs-on: ubuntu-latest
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -143,6 +168,8 @@ jobs:
 
   fuzz_specs:
     runs-on: ubuntu-latest
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -160,6 +187,8 @@ jobs:
 
   helm-test:
     runs-on: ubuntu-latest
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -189,6 +218,8 @@ jobs:
 
   compat-e2e-test:
     runs-on: [ubuntu-latest]
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -259,7 +290,8 @@ jobs:
           overwrite: true
 
   e2e-test:
-    needs: [ lint ]
+    needs: [ lint, changes ]
+    if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -301,9 +333,9 @@ jobs:
           overwrite: true
 
   e2e-report:
-    needs: [compat-e2e-test, e2e-test]
+    needs: [ changes, compat-e2e-test, e2e-test ]
     runs-on: ubuntu-latest
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -325,8 +357,10 @@ jobs:
           path: "**/*-report.xml"
 
   openshift-compat:
-    needs: [ compat-e2e-test, e2e-test ]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: [ changes, compat-e2e-test, e2e-test ]
+    if: |
+      needs.changes.outputs.code == 'true' &&
+      ( github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository )
     runs-on: [self-hosted, openshift, operator]
     continue-on-error: true
     timeout-minutes: 60
@@ -390,7 +424,7 @@ jobs:
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
-    needs: [ lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test, check-crd-compat ]
+    needs: [ changes, lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test, check-crd-compat ]
     if: always()
     steps:
       - name: Determine CI status

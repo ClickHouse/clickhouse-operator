@@ -105,21 +105,23 @@ After modifying types, always run `make generate manifests generate-helmchart-ci
 ### Controllers (`internal/controller/`)
 Both controllers follow the same pattern, extending a shared base:
 
-- `reconcilerbase.go` — Base reconciliation logic shared by both controllers
+- `step.go` — ReconcileStep pipeline primitives (StepResult, RunSteps)
 - `clickhouse/controller.go` — ClickHouseCluster reconciler (manages StatefulSets, ConfigMaps, Services)
 - `keeper/controller.go` — KeeperCluster reconciler
-- `clickhouse/sync.go`, `keeper/sync.go` — Sync desired state to Kubernetes
+- `clickhouse/sync.go`, `keeper/sync.go` — Build the step pipeline; sync desired state to Kubernetes
 - `clickhouse/templates.go`, `keeper/templates.go` — Generate Kubernetes resource specs
 - `clickhouse/config.go` — Generate ClickHouse YAML configuration
 - `clickhouse/commands.go`, `keeper/commands.go` — Interfaces to communicate to running containers
 - `overrides.go` — Pod/container spec overrides helpers via strategic merge patch
 - `versionprobe.go` — Creates Jobs to detect actual ClickHouse/Keeper versions
 - `upgradecheck.go` — Checks for newer version availability
-- `resources.go` — Shared Kubernetes resource creation helpers
-- `status.go` — Status update logic
+- `resourcemanager.go` — Shared Kubernetes resource create/update with spec-hash idempotency
+- `statusmanager.go` — Status/condition manager (retry-on-conflict, events on transition)
+- `replicastate.go` — Per-replica readiness / rolling-update state
+- `securitycontext.go` — Pod/container SecurityContext defaults
 
 ### Reconciliation Pattern
-Controllers execute reconcile as a sequence of step functions (`func(ctx, log) (*Result, error)`). Steps are defined in `sync()` and executed sequentially.
+`sync()` builds an ordered `[]ReconcileStep` (see `step.go`), executed by `RunSteps`. Each step's `Fn` is `func(ctx, log) (StepResult, error)`. `StepResult{RequeueAfter, Blocked}` controls flow: `Blocked=true` is a *valid wait* (e.g. version-probe Job not finished) — return it, not an error; it skips subsequent non-`Always` steps. Steps with `Always: true` run even while the pipeline is blocked. `RunSteps` returns the minimum `RequeueAfter`; the first error aborts.
 
 ### Resource Change Detection
 Resources are tracked via annotation hashes (`checksum/spec`, `checksum/configuration`). Before updating a K8s resource, compare `util.DeepHashResource()` output against the stored annotation. Skip updates when hashes match. Always call `util.AddSpecHashToObject()` on reconciled resources.
