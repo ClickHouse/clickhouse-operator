@@ -425,13 +425,16 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 			"--for=condition=Ready", "clickhousecluster/"+chName)).To(Succeed())
 
 		By("writing test data", func() {
-			keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
-			Expect(err).NotTo(HaveOccurred())
+			// A freshly formed keeper ensemble re-elects for a while, so retry through transient leader loss.
+			Eventually(func(g Gomega) {
+				keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
+				g.Expect(err).NotTo(HaveOccurred())
 
-			defer keeperClient.Close()
+				defer keeperClient.Close()
 
-			Expect(keeperClient.CheckWrite(0)).To(Succeed())
-			Expect(keeperClient.CheckRead(0)).To(Succeed())
+				g.Expect(keeperClient.CheckWrite(0)).To(Succeed())
+				g.Expect(keeperClient.CheckRead(0)).To(Succeed())
+			}, "2m", "5s").Should(Succeed())
 
 			chClient, err := testutil.NewClickHouseClient(ctx, dialer, &chCR)
 			Expect(err).NotTo(HaveOccurred())
@@ -466,14 +469,17 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 				g.Expect(meta.IsStatusConditionTrue(cluster.Status.Conditions, v1.ConditionTypeReady)).To(BeTrue())
 			}, "10m", "5s").Should(Succeed())
 
-			keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
-			Expect(err).NotTo(HaveOccurred())
+			// Keeper re-elects after the rolling restart, so retry through transient leader loss.
+			Eventually(func(g Gomega) {
+				keeperClient, err := testutil.NewKeeperClient(ctx, dialer, &keeperCR)
+				g.Expect(err).NotTo(HaveOccurred())
 
-			defer keeperClient.Close()
+				defer keeperClient.Close()
 
-			Expect(keeperClient.CheckRead(0)).To(Succeed())
-			Expect(keeperClient.CheckWrite(1)).To(Succeed())
-			Expect(keeperClient.CheckRead(1)).To(Succeed())
+				g.Expect(keeperClient.CheckRead(0)).To(Succeed())
+				g.Expect(keeperClient.CheckWrite(1)).To(Succeed())
+				g.Expect(keeperClient.CheckRead(1)).To(Succeed())
+			}, "2m", "5s").Should(Succeed())
 		})
 
 		By("updating clickhouse and verifying its health", func() {

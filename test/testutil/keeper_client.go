@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -134,7 +135,9 @@ func (c *KeeperClient) Close() {
 func (c *KeeperClient) CheckWrite(order int) error {
 	for i := range 10 {
 		path := fmt.Sprintf(keeperTestDataKey, order, i)
-		if _, err := c.client.Create(path, []byte(fmt.Sprintf(keeperTestDataVal, i)), 0, nil); err != nil {
+
+		_, err := c.client.Create(path, []byte(fmt.Sprintf(keeperTestDataVal, i)), 0, nil)
+		if err != nil && !errors.Is(err, zk.ErrNodeExists) {
 			return fmt.Errorf("creating test data failed: %w", err)
 		}
 
