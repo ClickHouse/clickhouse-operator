@@ -40,7 +40,7 @@ const (
 	ConditionReasonConfigReloadFailed   ConditionReason = "ConfigReloadFailed"
 	ConditionReasonConfigReloadPending  ConditionReason = "ConfigReloadPending"
 
-	// ConditionTypeVersionInSync indicates that all replicas report the same version as the image.
+	// ConditionTypeVersionInSync indicates that all replicas report the same version.
 	ConditionTypeVersionInSync        ConditionType   = "VersionInSync"
 	ConditionReasonVersionMatch       ConditionReason = "VersionMatch"
 	ConditionReasonVersionMismatch    ConditionReason = "VersionMismatch"

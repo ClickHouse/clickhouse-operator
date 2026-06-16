@@ -15,7 +15,7 @@ import (
 // Returns current condition and optional EventSpec that should be recorded if condition Status changed.
 func GetUpgradeCondition(
 	checker upgrade.Checker,
-	probe VersionProbeResult,
+	version string,
 	upgradeChannel string,
 ) (metav1.Condition, []EventSpec) {
 	newCond := func(status metav1.ConditionStatus, reason v1.ConditionReason, message string) metav1.Condition {
@@ -27,15 +27,7 @@ func GetUpgradeCondition(
 		}
 	}
 
-	if probe.Pending {
-		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"), nil
-	}
-
-	if probe.Err != nil {
-		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, "Version probe failed"), nil
-	}
-
-	result, err := checker.CheckUpdates(probe.Version, upgradeChannel)
+	result, err := checker.CheckUpdates(version, upgradeChannel)
 	if err != nil {
 		return newCond(metav1.ConditionUnknown, v1.ConditionReasonUpgradeCheckFailed, fmt.Sprintf("Upgrade check failed: %v", err)), nil
 	}
@@ -63,7 +55,7 @@ func GetUpgradeCondition(
 
 	case result.Outdated:
 		reason = v1.ConditionReasonVersionOutdated
-		message = "Current version " + probe.Version + " is out of support"
+		message = "Current version " + version + " is out of support"
 	default:
 		return newCond(metav1.ConditionTrue, v1.ConditionReasonUpToDate, ""), nil
 	}

@@ -148,10 +148,11 @@ func (rm *ResourceManager) VersionProbe(
 	return VersionProbeResult{Version: version, Revision: revision}, nil
 }
 
-// GetVersionSyncCondition evaluates the VersionInSync condition based on the probe result and replica versions.
-// Returns current condition and optional EventSpec that should be recorded if condition Status changed.
+// GetVersionSyncCondition evaluates the VersionInSync condition by comparing the known
+// cluster version against the versions reported by replicas. The version must be known;
+// the "version unavailable" states are reported by the caller.
 func GetVersionSyncCondition(
-	probe VersionProbeResult,
+	version string,
 	replicaVersions map[string]string,
 	isUpdating bool,
 ) (metav1.Condition, []EventSpec) {
@@ -164,25 +165,10 @@ func GetVersionSyncCondition(
 		}
 	}
 
-	if probe.Err != nil {
-		message := fmt.Sprintf("Version probe failed: %v", probe.Err)
-
-		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionProbeFailed, message), []EventSpec{{
-			Type:    corev1.EventTypeWarning,
-			Reason:  v1.EventReasonVersionProbeFailed,
-			Action:  v1.EventActionVersionCheck,
-			Message: message,
-		}}
-	}
-
-	if probe.Pending {
-		return newCond(metav1.ConditionUnknown, v1.ConditionReasonVersionPending, "Version probe has not completed yet"), nil
-	}
-
 	var mismatched []string
-	for id, version := range replicaVersions {
-		if version != "" && version != probe.Version {
-			mismatched = append(mismatched, fmt.Sprintf("%s: %s", id, version))
+	for id, replicaVersion := range replicaVersions {
+		if replicaVersion != "" && replicaVersion != version {
+			mismatched = append(mismatched, fmt.Sprintf("%s: %s", id, replicaVersion))
 		}
 	}
 
@@ -192,7 +178,7 @@ func GetVersionSyncCondition(
 
 	slices.Sort(mismatched)
 	cond := newCond(metav1.ConditionFalse, v1.ConditionReasonVersionMismatch,
-		fmt.Sprintf("Replica version doesn't match version probe %s: %s", probe.Version, strings.Join(mismatched, ", ")))
+		fmt.Sprintf("Replica version doesn't match %s: %s", version, strings.Join(mismatched, ", ")))
 
 	if isUpdating {
 		return cond, nil

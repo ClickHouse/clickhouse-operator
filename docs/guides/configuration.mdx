@@ -627,7 +627,7 @@ Two conditions surface the result of the probe and the upgrade check:
 
 | Condition         | Reason                 | Meaning                                                                                                                                                                                                                                                                                                                                            |
 |-------------------|------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `VersionInSync`   | `VersionMatch`         | All replicas report the same version as the image                                                                                                                                                                                                                                                                                                  |
+| `VersionInSync`   | `VersionMatch`         | All replicas report the same version                                                                                                                                                                                                                                                                                                               |
 | `VersionInSync`   | `VersionMismatch`      | Replicas are running different versions. This reason is suppressed during a planned rolling upgrade. It typically surfaces when a mutable image tag has been pinned (for example `latest` or a bare major like `26.3`) and the underlying registry has shifted between pulls, so different replicas ended up on different patches of the same tag. |
 | `VersionInSync`   | `VersionPending`       | Version probe Job has not finished yet, or no Keeper replica version has been observed yet                                                                                                                                                                                                                                                         |
 | `VersionInSync`   | `VersionProbeFailed`   | ClickHouse probe Job failed; the operator cannot determine the running version                                                                                                                                                                                                                                                                     |
@@ -645,6 +645,8 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 ```
 
 ### Overriding the version probe Job {#version-probe-template}
+
+This applies to `ClickHouseCluster` only. `KeeperCluster` no longer runs a version-probe Job — its version is read directly from the running Keeper replicas — so `spec.versionProbeTemplate` is deprecated and has no effect there.
 
 The probe is implemented as a regular Kubernetes `Job`. If your cluster has admission policies that require specific Tolerations, node selectors, security contexts, or you want to limit how long completed probe Jobs linger, override the template via `spec.versionProbeTemplate`:
 

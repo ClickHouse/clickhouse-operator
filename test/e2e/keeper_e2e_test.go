@@ -60,7 +60,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 
 		WaitKeeperUpdatedAndReady(ctx, &cr, 3*time.Minute, true)
 		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
-
+		Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 		KeeperRWChecks(ctx, &cr, &checks)
 	},
 		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperSettings{

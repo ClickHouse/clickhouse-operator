@@ -216,26 +216,7 @@ var _ = Describe("Keeper version status", func() {
 		Expect(cond.Reason).To(Equal(v1.ConditionReasonVersionPending))
 	})
 
-	It("should keep last known aggregate version when live replica versions differ", func() {
-		_, rec, cancelEvents := setupReconciler()
-		defer cancelEvents()
-
-		rec.Cluster.Status.Version = "25.8.2.1"
-		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
-			0: {Status: serverStatus{Version: "25.8.2.1"}},
-			1: {Status: serverStatus{Version: "25.8.3.1"}},
-		}
-
-		rec.evaluateReplicaConditions()
-
-		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
-		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
-		Expect(cond).NotTo(BeNil())
-		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		Expect(cond.Reason).To(Equal(v1.ConditionReasonVersionMismatch))
-	})
-
-	It("should use the agreed live version for upgrade checks", func(ctx context.Context) {
+	It("should use deterministic version for upgrade check when replicas diverge", func(ctx context.Context) {
 		log, rec, cancelEvents := setupReconciler()
 		defer cancelEvents()
 
@@ -247,7 +228,7 @@ var _ = Describe("Keeper version status", func() {
 		}}, time.Hour, log)
 		rec.Checker = upgrade.NewChecker(updater)
 		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
-			0: {Status: serverStatus{Version: "25.8.2.1"}},
+			0: {Status: serverStatus{Version: "25.7.2.1"}},
 			1: {Status: serverStatus{Version: "25.8.2.1"}},
 		}
 
@@ -263,6 +244,13 @@ var _ = Describe("Keeper version status", func() {
 		Eventually(updater.GetReleasesData).ShouldNot(BeNil())
 
 		rec.evaluateReplicaConditions()
+
+		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
+
+		sync := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
+		Expect(sync).NotTo(BeNil())
+		Expect(sync.Status).To(Equal(metav1.ConditionFalse))
+		Expect(sync.Reason).To(Equal(v1.ConditionReasonVersionMismatch))
 
 		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)
 		Expect(cond).NotTo(BeNil())

@@ -377,6 +377,12 @@ var _ = Describe("VersionProbe caching", func() {
 		var jobs batchv1.JobList
 		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
 		Expect(jobs.Items).To(HaveLen(1))
+
+		By("verifying the probe runs the shell-free distroless command")
+
+		container := jobs.Items[0].Spec.Template.Spec.Containers[0]
+		Expect(container.Command).To(Equal([]string{"/usr/bin/clickhouse"}))
+		Expect(container.Args).To(Equal([]string{"local", "--query", "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"}))
 	})
 
 	It("should miss cache when image changes", func(ctx context.Context) {

@@ -417,6 +417,29 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 	if probeResult.Completed() {
 		r.Cluster.Status.Version = probeResult.Version
 		r.Cluster.Status.VersionProbeRevision = probeResult.Revision
+	} else {
+		reason := v1.ConditionReasonVersionPending
+		message := "Version probe has not completed yet"
+
+		var event []chctrl.EventSpec
+		if r.versionProbe.Err != nil {
+			reason = v1.ConditionReasonVersionProbeFailed
+			message = fmt.Sprintf("Version probe failed: %v", r.versionProbe.Err)
+			event = []chctrl.EventSpec{{
+				Type:    corev1.EventTypeWarning,
+				Reason:  v1.EventReasonVersionProbeFailed,
+				Action:  v1.EventActionVersionCheck,
+				Message: message,
+			}}
+		}
+
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeVersionInSync,
+			Status:  metav1.ConditionUnknown,
+			Reason:  reason,
+			Message: message,
+		}, event...)
+		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
 	}
 
 	return chctrl.StepContinue(), nil
@@ -664,12 +687,12 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 	}
 
 	{
-		cond, event := chctrl.GetVersionSyncCondition(r.versionProbe, replicaVersions, len(notUpdated) > 0)
+		cond, event := chctrl.GetVersionSyncCondition(r.versionProbe.Version, replicaVersions, len(notUpdated) > 0)
 		r.SetCondition(cond, event...)
 	}
 
 	if r.Checker != nil {
-		cond, event := chctrl.GetUpgradeCondition(*r.Checker, r.versionProbe, r.Cluster.Spec.UpgradeChannel)
+		cond, event := chctrl.GetUpgradeCondition(*r.Checker, r.versionProbe.Version, r.Cluster.Spec.UpgradeChannel)
 		r.SetCondition(cond, event...)
 	} else {
 		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
