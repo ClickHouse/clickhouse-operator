@@ -1,17 +1,22 @@
+# Link check for the docs/ tree. Run from the repo root so the self-link
+# rewrite resolves against the local source.
+#   - relative + external links: checked normally
+#   - operator self-links (/products/kubernetes-operator/...): resolved against
+#     the local docs/ source, including anchors
+#   - other Mintlify site-absolute links (/reference, /concepts, ...): resolved
+#     against ClickHouse/mintlify-docs-dev main via raw GitHub (page existence;
+#     anchors are not checked over HTTP)
 dirs:
-  - .
-useGitIgnore: true
+  - docs
+useGitIgnore: false
 fileExtensions:
   - md
   - mdx
-excludedDirs:
-  - ./node_modules
-  - ./bin
-  - ./dist
-
+replacementPatterns:
+  - pattern: '^/products/kubernetes-operator/(.+?)(#.*)?$'
+    replacement: '/docs/$1.mdx$2'
+  - pattern: '^/(?!docs/)([^#]+?)(#.*)?$'
+    replacement: 'https://raw.githubusercontent.com/ClickHouse/mintlify-docs-dev/main/$1.mdx'
 ignorePatterns:
-  # Mintlify absolute routes — resolved at deploy time by Mintlify,
-  # not present as files in this repo.
-  - pattern: '^/(products|core|cloud|operations)/'
-  # Cloudflare bot protection returns 403 to programmatic checkers.
+  - pattern: '^/(_site|images|assets)/'
   - pattern: '^https://trust\.clickhouse\.com'

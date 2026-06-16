@@ -137,7 +137,7 @@ func (cc *ClusterController) GetScheme() *runtime.Scheme {
 	return cc.Scheme
 }
 
-// GetRecorder returns the KeeperCluster EventRecorder.
+// GetRecorder returns the ClickHouseCluster EventRecorder.
 func (cc *ClusterController) GetRecorder() events.EventRecorder {
 	return cc.Recorder
 }

@@ -270,7 +270,7 @@ KeeperClusterSpec defines the desired state of KeeperCluster.
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse Keeper data. | false |  |
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
-| `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for the Keeper cluster.<br />When unset, the operator defaults to maxUnavailable=replicas/2<br />(preserving quorum for a 2F+1 cluster). | false |  |
+| `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for the Keeper cluster.<br />When unset, the operator defaults to maxUnavailable=replicas/2<br />(preserving quorum for a 2F+1 cluster); single-replica clusters use maxUnavailable=1. | false |  |
 | `settings` | [KeeperSettings](#keepersettings) | Configuration parameters for ClickHouse Keeper server. | false |  |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
@@ -290,7 +290,7 @@ KeeperClusterStatus defines the observed state of KeeperCluster.
 | `configurationRevision` | string | ConfigurationRevision indicates target configuration revision for every replica. | true |  |
 | `statefulSetRevision` | string | StatefulSetRevision indicates target StatefulSet revision for every replica. | true |  |
 | `currentRevision` | string | CurrentRevision indicates latest applied KeeperCluster spec revision. | true |  |
-| `updateRevision` | string | CurrentRevision indicates latest requested KeeperCluster spec revision. | true |  |
+| `updateRevision` | string | UpdateRevision indicates latest requested KeeperCluster spec revision. | true |  |
 | `observedGeneration` | integer | ObservedGeneration indicates latest generation observed by controller. | true |  |
 | `version` | string | Version indicates the version reported by the container image. | false |  |
 | `versionProbeRevision` | string | VersionProbeRevision is the image hash of the last successful version probe.<br />When this matches the current image hash, the cached Version is used directly. | false |  |

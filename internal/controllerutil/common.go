@@ -146,7 +146,7 @@ func applyDefaultRecursive(sourceValue reflect.Value, defaults reflect.Value) er
 	return nil
 }
 
-// UpdateResult merges two ctrl.Result objects, choosing the most recent RequeueAfter duration.
+// UpdateResult merges two ctrl.Result objects, choosing the smallest (soonest) non-zero RequeueAfter duration.
 func UpdateResult(result *ctrl.Result, update *ctrl.Result) {
 	if update.IsZero() || update.RequeueAfter == 0 {
 		return

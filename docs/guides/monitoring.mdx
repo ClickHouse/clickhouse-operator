@@ -1,20 +1,18 @@
 ---
 position: 3
 slug: /clickhouse-operator/guides/monitoring
-title: 'Monitoring'
+title: Monitoring the ClickHouse Operator
 keywords: ['kubernetes', 'prometheus', 'monitoring', 'metrics']
 description: 'How to scrape, secure, and use the operator metrics and health endpoints.'
 doc_type: 'guide'
 ---
-
-# Monitoring the ClickHouse Operator
 
 The operator exposes Prometheus-compatible metrics and Kubernetes health probes so that you can observe its reconciliation activity, detect stalled controllers, and alert on failures.
 
 This guide covers what the operator exposes, how to scrape it, and which queries are useful day to day.
 
 <Note>
-This guide is about the **operator process itself** (the controller manager). For ClickHouse server metrics (queries, parts, replication lag), use the [Prometheus endpoint in ClickHouse](/operations/server-configuration-parameters/settings#prometheus) to scrape it separately.
+This guide is about the **operator process itself** (the controller manager). For ClickHouse server metrics (queries, parts, replication lag), use the [Prometheus endpoint in ClickHouse](/reference/settings/server-settings/settings#prometheus) to scrape it separately.
 </Note>
 
 ## Endpoints {#endpoints}
@@ -90,7 +88,7 @@ helm upgrade --install clickhouse-operator \
 
 After install the chart creates:
 
-- `Service/<resource-prefix>metrics-service` — exposes port `8080` (HTTPS when `metrics.secure: true`).
+- `Service/<resource-prefix>-metrics-service` — exposes port `8080` (HTTPS when `metrics.secure: true`).
 - `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — when `prometheus.enable: true`.
 - `ClusterRole/<resource-prefix>-metrics-reader` — non-resource URL `/metrics` with `get` verb.
 
@@ -201,6 +199,7 @@ readinessProbe:
     path: /readyz
     port: 8081
   initialDelaySeconds: 5
+  periodSeconds: 10
 ```
 
 A repeatedly failing probe usually means the probe server itself never came up — for example, the manager exited early during startup. Check the manager logs for `unable to start manager`, RBAC failures, or `cache did not sync` errors.
@@ -225,20 +224,21 @@ The `controller` label is derived by `controller-runtime` from the resource type
 
 | Metric | Type | Labels |
 |---|---|---|
-| `workqueue_depth` | gauge | `name` (= controller name) |
-| `workqueue_adds_total` | counter | `name` |
-| `workqueue_retries_total` | counter | `name` |
-| `workqueue_unfinished_work_seconds` | gauge | `name` |
-| `workqueue_longest_running_processor_seconds` | gauge | `name` |
-| `workqueue_queue_duration_seconds_bucket` | histogram | `name` |
-| `workqueue_work_duration_seconds_bucket` | histogram | `name` |
+| `workqueue_depth` | gauge | `name`, `controller`, `priority` |
+| `workqueue_adds_total` | counter | `name`, `controller` |
+| `workqueue_retries_total` | counter | `name`, `controller` |
+| `workqueue_unfinished_work_seconds` | gauge | `name`, `controller` |
+| `workqueue_longest_running_processor_seconds` | gauge | `name`, `controller` |
+| `workqueue_queue_duration_seconds_bucket` | histogram | `name`, `controller` |
+| `workqueue_work_duration_seconds_bucket` | histogram | `name`, `controller` |
+
+The `name` and `controller` labels carry the same value (the controller name).
 
 ### API server traffic {#api-server-traffic}
 
 | Metric | Type | Labels |
 |---|---|---|
 | `rest_client_requests_total` | counter | `code`, `method`, `host` |
-| `rest_client_request_duration_seconds_bucket` | histogram | `verb`, `host`, `url` |
 
 ### Leader election {#leader-election}
 
@@ -286,12 +286,6 @@ workqueue_longest_running_processor_seconds > 60
 ```promql
 # Throttled requests to the API server
 sum by (code, host) (rate(rest_client_requests_total{code=~"4..|5.."}[5m]))
-
-# 99th percentile API call duration
-histogram_quantile(
-  0.99,
-  sum by (le, verb) (rate(rest_client_request_duration_seconds_bucket[5m]))
-)
 ```
 
 ### Leader status (HA deployment)

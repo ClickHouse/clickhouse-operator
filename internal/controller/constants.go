@@ -25,7 +25,7 @@ var (
 		SuccessThreshold:    1,
 	}
 
-	// DefaultReadinessProbeSettings defines default settings for Kubernetes liveness probes.
+	// DefaultReadinessProbeSettings defines default settings for Kubernetes readiness probes.
 	//nolint: mnd // Magic numbers are used as constants.
 	DefaultReadinessProbeSettings = corev1.Probe{
 		InitialDelaySeconds: 5,

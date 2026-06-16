@@ -46,7 +46,7 @@ type KeeperClusterSpec struct {
 
 	// PodDisruptionBudget configures the PDB created for the Keeper cluster.
 	// When unset, the operator defaults to maxUnavailable=replicas/2
-	// (preserving quorum for a 2F+1 cluster).
+	// (preserving quorum for a 2F+1 cluster); single-replica clusters use maxUnavailable=1.
 	// +optional
 	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
 
@@ -155,7 +155,7 @@ type KeeperClusterStatus struct {
 	// CurrentRevision indicates latest applied KeeperCluster spec revision.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	CurrentRevision string `json:"currentRevision,omitempty"`
-	// CurrentRevision indicates latest requested KeeperCluster spec revision.
+	// UpdateRevision indicates latest requested KeeperCluster spec revision.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	UpdateRevision string `json:"updateRevision,omitempty"`
 	// ObservedGeneration indicates latest generation observed by controller.

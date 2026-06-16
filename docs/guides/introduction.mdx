@@ -1,13 +1,11 @@
 ---
 position: 1
 slug: /clickhouse-operator/guides/introduction
-title: 'Introduction'
+title: Introduction to the ClickHouse Operator
 keywords: ['kubernetes']
 description: 'This document provides an overview of key concepts and usage patterns for the ClickHouse Operator.'
 doc_type: 'guide'
 ---
-
-# Introduction to the ClickHouse Operator
 
 This document provides an overview of key concepts and usage patterns for the ClickHouse Operator.
 
@@ -101,7 +99,7 @@ The ClickHouse Operator automatically replicates database definitions across all
 ### What Gets Replicated {#what-gets-replicated}
 
 The operator synchronizes:
-- [Replicated](/core/reference/engines/database-engines/replicated) database definitions
+- [Replicated](/reference/engines/database-engines/replicated) database definitions
 - Integration database engines (PostgreSQL, MySQL, etc.)
 
 The operator does **not** synchronize:
@@ -114,7 +112,7 @@ The operator does **not** synchronize:
 <Tip>
 **Best practice**
 
-Always use the [Replicated](/core/reference/engines/database-engines/replicated) database engine for production deployments.
+Always use the [Replicated](/reference/engines/database-engines/replicated) database engine for production deployments.
 </Tip>
 
 Benefits:
@@ -171,10 +169,10 @@ To completely remove storage:
 kubectl delete clickhousecluster my-cluster
 
 # Wait for pods to terminate
-kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
 
 # Delete PVCs
-kubectl delete pvc -l app.kubernetes.io/instance=sample-cluster
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
 ```
 
 ## Default configuration highlights {#default-configuration-highlights}

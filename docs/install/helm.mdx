@@ -53,7 +53,7 @@ Install a specific operator version
     helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
        --create-namespace \
        -n clickhouse-operator-system \
-       --set-json="manager.container.tag=<operator version>
+       --set manager.image.tag=<operator version>
 ```
 
 ### From Local Chart {#from-local-chart}

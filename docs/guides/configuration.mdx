@@ -1,13 +1,11 @@
 ---
 position: 2
 slug: /clickhouse-operator/guides/configuration
-title: 'Configuration'
+title: ClickHouse Operator configuration guide
 keywords: ['kubernetes']
 description: 'This guide covers how to configure ClickHouse and Keeper clusters using the ClickHouse operator.'
 doc_type: 'guide'
 ---
-
-# ClickHouse Operator configuration guide
 
 This guide covers how to configure ClickHouse and Keeper clusters using the operator.
 
@@ -389,7 +387,7 @@ stringData:
 
 | Policy | Behavior on missing keys |
 |---|---|
-| `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` status condition and a `Warning` event. |
+| `Observe` (default) | Reconciliation is **blocked** until every required key is present. The operator reports each missing key — and the format hint for it — via the `ExternalSecretValid` condition (with reason `ExternalSecretInvalid`) and a `Warning` event. |
 | `Manage` | The operator **generates** any missing required keys and writes them back to the same Secret. Useful for bootstrapping: create an empty Secret, let the operator fill it, then optionally tighten access. The operator still never deletes the Secret. |
 
 <Note>
@@ -562,7 +560,7 @@ Two conditions surface the result of the probe and the upgrade check:
 | Condition | Reason | Meaning |
 |---|---|---|
 | `VersionInSync` | `VersionMatch` | All replicas report the same version as the image |
-| `VersionInSync` | `VersionMismatch` | Replicas are running different versions. This reason is suppressed during a planned rolling upgrade. It typically surfaces when a mutable image tag has been pinned (for example `latest` or a bare major like `26.3`) and the underlying registry has shifted between pulls, so different replicas ended up on different patches of the same tag. |
+| `VersionInSync` | `VersionMismatch` | Replicas are running different versions. The warning event is suppressed during a planned rolling upgrade. It typically surfaces when a mutable image tag has been pinned (for example `latest` or a bare major like `26.3`) and the underlying registry has shifted between pulls, so different replicas ended up on different patches of the same tag. |
 | `VersionInSync` | `VersionPending` | Version probe Job has not finished yet |
 | `VersionInSync` | `VersionProbeFailed` | Probe Job failed; the operator cannot determine the running version |
 | `VersionUpgraded` | `UpToDate` | The cluster is on the latest version available in the selected channel |
@@ -778,8 +776,8 @@ spec:
 ```
 
 #### Useful links:
-* [YAML configuration examples](/core/concepts/features/configuration/server-config/configuration-files#example-1)
-* [All server settings](/core/reference/settings/server-settings/settings)
+* [YAML configuration examples](/concepts/features/configuration/server-config/configuration-files#example-1)
+* [All server settings](/reference/settings/server-settings/settings)
 
 ### Embedded extra users configuration {#embedded-extra-users-configuration}
 
@@ -811,7 +809,7 @@ spec:
 The `extraUsersConfig` is stored in k8s ConfigMap object. Avoid plain text secrets there.
 </Note>
 
-#### See [documentation](/core/concepts/features/configuration/settings/settings-users) for all supported ClickHouse users configuration options.
+#### See [documentation](/concepts/features/configuration/settings/settings-users) for all supported ClickHouse users configuration options.
 
 ### Configuration example {#configuration-example}
 

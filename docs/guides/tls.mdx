@@ -1,13 +1,11 @@
 ---
 position: 5
 slug: /clickhouse-operator/guides/tls
-title: 'Securing with TLS'
+title: Securing a cluster with TLS
 keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'security', 'certificates']
 description: 'How to secure a ClickHouse cluster with TLS using cert-manager, including client connections and Keeper encryption.'
 doc_type: 'guide'
 ---
-
-# Securing a cluster with TLS
 
 This guide walks through encrypting a ClickHouse cluster end to end: issuing a
 certificate with [cert-manager](https://cert-manager.io/), enabling TLS on the
@@ -279,7 +277,7 @@ spec:
 
 The merge is per-key: only the values you set are replaced, and the generated keys you
 omit (certificate paths, CA configuration) are preserved. See the
-[`openSSL` server settings](/operations/server-configuration-parameters/settings#openssl)
+[`openSSL` server settings](/reference/settings/server-settings/settings#openssl)
 for the available options, and
 [Configuration → Embedded extra configuration](/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 for how `extraConfig` is merged.
@@ -313,4 +311,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 - [Configuration → TLS/SSL configuration](/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — field reference
 - [Configuration → `additionalPorts`](/products/kubernetes-operator/guides/configuration#additional-ports) — reserved ports
 - [API Reference → ClusterTLSSpec](/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-- [`openSSL` server settings](/operations/server-configuration-parameters/settings#openssl) — TLS options you can override via `extraConfig`
+- [`openSSL` server settings](/reference/settings/server-settings/settings#openssl) — TLS options you can override via `extraConfig`

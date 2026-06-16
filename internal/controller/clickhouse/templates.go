@@ -64,7 +64,7 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
 			ClusterIP: "None",
-			// This has to be true to acquire quorum
+			// Publish not-yet-ready pod addresses so replicas can resolve and reach peers before they report Ready
 			PublishNotReadyAddresses: true,
 			Selector: map[string]string{
 				controllerutil.LabelAppKey: cr.SpecificName(),

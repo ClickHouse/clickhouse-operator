@@ -1,13 +1,11 @@
 ---
 position: 4
 slug: /clickhouse-operator/guides/scaling
-title: 'Scaling'
+title: Scaling clusters
 keywords: ['kubernetes', 'scaling', 'replicas', 'shards', 'keeper', 'quorum']
 description: 'How to scale ClickHouse replicas and shards and Keeper quorum members, and what the operator does automatically.'
 doc_type: 'guide'
 ---
-
-# Scaling clusters
 
 You scale a cluster by editing the replica and shard counts on the Custom Resource. The operator reconciles the running cluster toward the new topology: it creates or removes the per-replica StatefulSets, keeps the schema in sync, and surfaces progress through status conditions.
 
