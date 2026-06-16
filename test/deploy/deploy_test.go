@@ -465,7 +465,11 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 
 			defer chClient.Close()
 
-			Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
+			// Replicas may stay readonly until they re-establish their Keeper session after the upgrade roll.
+			Eventually(func(g Gomega) {
+				g.Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
+			}, "3m", "5s").Should(Succeed())
+
 			Expect(chClient.CheckWrite(ctx, 1)).To(Succeed())
 			Expect(chClient.CheckRead(ctx, 1)).To(Succeed())
 		})
