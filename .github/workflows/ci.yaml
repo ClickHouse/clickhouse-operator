@@ -216,6 +216,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          fetch-tags: 'true'
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@v1.3.0
