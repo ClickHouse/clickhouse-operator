@@ -329,12 +329,12 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 .PHONY: build-installer-stripped
-build-installer-stripped: manifests generate kustomize ## Generate a consolidated installer with description-stripped CRDs (for client-side kubectl apply).
+build-installer-stripped: controller-gen kustomize ## Generate a consolidated installer with description-stripped CRDs (for client-side kubectl apply).
 	mkdir -p dist
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) crd:maxDescLen=0 paths="./..." output:crd:artifacts:config=config/crd/bases
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install-stripped-crds.yaml
-	$(MAKE) manifests
+	$(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: build-crds
 build-crds: manifests kustomize ## Generate standalone CRD manifests.
@@ -342,11 +342,11 @@ build-crds: manifests kustomize ## Generate standalone CRD manifests.
 	$(KUSTOMIZE) build config/crd > dist/crds.yaml
 
 .PHONY: build-crds-stripped
-build-crds-stripped: manifests kustomize ## Generate standalone CRD manifests with descriptions stripped (for client-side kubectl apply).
+build-crds-stripped: controller-gen kustomize ## Generate standalone CRD manifests with descriptions stripped (for client-side kubectl apply).
 	mkdir -p dist
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) crd:maxDescLen=0 paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(KUSTOMIZE) build config/crd > dist/crds-stripped.yaml
-	$(MAKE) manifests
+	$(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=config/crd/bases
 
 ##@ Deployment
 
