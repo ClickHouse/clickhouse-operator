@@ -15,6 +15,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -339,6 +342,136 @@ spec:
 	)
 })
 
+var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
+	const (
+		namespace      = "clickhouse-operator-upgrade"
+		releaseName    = namespace
+		releasedChart  = "oci://ghcr.io/clickhouse/clickhouse-operator-helm"
+		deploymentName = namespace + "-controller-manager"
+		keeperName     = "keeper"
+		chName         = "ch"
+		version        = testutil.UpdateVersion
+	)
+
+	helmArgs := []string{"-n", namespace,
+		"--set", "controller.watchNamespaces={" + namespace + "}",
+		"--set", "crd.enable=true", "--set", "crd.keep=false",
+	}
+
+	storage := &corev1.PersistentVolumeClaimSpec{
+		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		Resources: corev1.VolumeResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+		},
+	}
+
+	BeforeAll(func(ctx context.Context) {
+		currentTestNamespace = namespace
+
+		fromVersion := latestReleasedVersion(ctx)
+
+		By("installing the released operator " + fromVersion + " via Helm")
+		Expect(testutil.MustRun(ctx, "helm", append([]string{"install", releaseName, releasedChart,
+			"--version", fromVersion, "--create-namespace"}, helmArgs...)...,
+		)).To(Succeed())
+
+		DeferCleanup(func(ctx context.Context) {
+			By("uninstalling the operator and cleaning up")
+
+			_ = testutil.MustRun(ctx, "helm", "uninstall", releaseName, "-n", namespace)
+			_ = testutil.MustRun(ctx, "kubectl", "delete", "ns", namespace, "--ignore-not-found")
+			_ = testutil.UninstallCRDs(ctx)
+		})
+
+		By("waiting for the released operator to be ready")
+		Eventually(func(g Gomega) {
+			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "wait", "-n", namespace,
+				"--timeout=120s", "--for=condition=Available", "deployment/"+deploymentName))
+			g.Expect(err).ToNot(HaveOccurred(), string(out))
+		}, "2m", "100ms").Should(Succeed())
+	})
+
+	It("should reconcile cluster after upgrade without data loss", func(ctx context.Context) {
+		dialer := testutil.NewPortForwardDialer(config)
+
+		keeperCR := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
+			Spec: v1.KeeperClusterSpec{
+				Replicas:            new(int32(3)),
+				DataVolumeClaimSpec: storage,
+				ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: version}},
+			},
+		}
+		chCR := v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: chName},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:            new(int32(2)),
+				DataVolumeClaimSpec: storage,
+				KeeperClusterRef:    v1.KeeperClusterReference{Name: keeperName},
+				ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: version}},
+			},
+		}
+
+		By("deploying keeper and clickhouse on the released operator")
+
+		Expect(k8sClient.Create(ctx, &keeperCR)).To(Succeed())
+		DeferCleanup(func(ctx context.Context) {
+			Expect(k8sClient.Delete(ctx, &keeperCR)).To(Succeed())
+		})
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m",
+			"--for=condition=Ready", "keepercluster/"+keeperName)).To(Succeed())
+		Expect(k8sClient.Create(ctx, &chCR)).To(Succeed())
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m",
+			"--for=condition=Ready", "clickhousecluster/"+chName)).To(Succeed())
+
+		By("writing test data", func() {
+			chClient, err := testutil.NewClickHouseClient(ctx, dialer, &chCR)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer chClient.Close()
+
+			Expect(chClient.CreateDatabase(ctx)).To(Succeed())
+			Expect(chClient.CheckWrite(ctx, 0)).To(Succeed())
+			Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
+		})
+
+		By("upgrading the operator to the local build")
+
+		Expect(testutil.MustRun(ctx, "helm", append([]string{"upgrade", releaseName, "dist/chart",
+			"--set", "manager.image.repository=" + testRepo,
+			"--set", "manager.image.tag=" + testTag,
+			"--set", "manager.image.pullPolicy=Never",
+		}, helmArgs...)...)).To(Succeed())
+		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "rollout", "status",
+			"--timeout=3m", "deployment/"+deploymentName)).To(Succeed())
+
+		By("making small change to trigger reconcillation", func() {
+			Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &chCR)).To(Succeed())
+			chCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
+			Expect(k8sClient.Update(ctx, &chCR)).To(Succeed())
+			Eventually(func(g Gomega) {
+				var cluster v1.ClickHouseCluster
+				g.Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &cluster)).To(Succeed())
+				g.Expect(cluster.Status.ObservedGeneration).To(Equal(cluster.Generation))
+				g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
+				g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas() * cluster.Shards()))
+				g.Expect(meta.IsStatusConditionTrue(cluster.Status.Conditions, v1.ConditionTypeReady)).To(BeTrue())
+			}, "10m", "5s").Should(Succeed())
+		})
+
+		By("verifying pre-upgrade data survived and the cluster remains writable", func() {
+			chClient, err := testutil.NewClickHouseClient(ctx, dialer, &chCR)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer chClient.Close()
+
+			Expect(chClient.CheckRead(ctx, 0)).To(Succeed())
+			Expect(chClient.CheckWrite(ctx, 1)).To(Succeed())
+			Expect(chClient.CheckRead(ctx, 1)).To(Succeed())
+		})
+	})
+})
+
 // testHelmCluster validates the Helm based deployment using the clickhouse-cluster-helm chart to deploy sample cluster.
 func testHelmCluster(namespace string) {
 	body := func(ctx context.Context, version string) {
@@ -463,4 +596,19 @@ func templateTestResources(ctx context.Context, namespace string) string {
 	})).To(Succeed())
 
 	return result.String()
+}
+
+func latestReleasedVersion(ctx context.Context) string {
+	if v := os.Getenv("UPGRADE_FROM_VERSION"); v != "" {
+		return strings.TrimPrefix(v, "v")
+	}
+
+	out, err := testutil.Run(exec.CommandContext(ctx, "git", "tag", "--list",
+		"v[0-9]*.[0-9]*.[0-9]*", "--sort=-v:refname"))
+	Expect(err).NotTo(HaveOccurred(), string(out))
+
+	tags := strings.Fields(string(out))
+	Expect(tags).NotTo(BeEmpty(), "no release tags found to upgrade from")
+
+	return strings.TrimPrefix(tags[0], "v")
 }

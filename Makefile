@@ -180,6 +180,10 @@ test-compat-e2e-olm-openshift: ## Run OLM deployment e2e against an OpenShift cl
 test-compat-e2e-manifest: ## Run compatibility e2e tests using manifests deployment only (requires CLICKHOUSE_VERSION env var).
 	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=manifest --ginkgo.junit-report=report/junit-report.xml
 
+.PHONY: test-compat-e2e-upgrade  # Run operator upgrade e2e (latest release -> local build).
+test-compat-e2e-upgrade: ## Run operator upgrade e2e test: deploy on the latest release, then upgrade to the local build.
+	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=upgrade --ginkgo.junit-report=report/junit-report.xml
+
 .PHONY: lint
 lint: golangci-lint codespell actionlint ## Run golangci-lint linter, codespell, and actionlint
 	$(GOLANGCI_LINT) run
