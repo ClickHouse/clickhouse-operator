@@ -226,23 +226,23 @@ jobs:
         include:
           - name: minimal-k8s-all-deploy-methods
             k8s_image: v1.28.15
-            clickhouse_version: "26.3"
+            clickhouse_version: "26.5"
             deploy_target: test-compat-e2e
           - name: maximal-k8s-all-deploy-methods
             k8s_image: v1.35.1
-            clickhouse_version: "26.3"
+            clickhouse_version: "26.5"
             deploy_target: test-compat-e2e
           - name: olm-deploy-method
             k8s_image: v1.28.15
-            clickhouse_version: "26.3"
+            clickhouse_version: "26.5"
             deploy_target: test-compat-e2e-olm
           - name: supported-clickhouse-compatibility
             k8s_image: v1.30.13
-            clickhouse_version: "26.3,26.2,26.1,25.8"
+            clickhouse_version: "26.5,26.4,26.3,25.8"
             deploy_target: test-compat-e2e-manifest
           - name: operator-upgrade
             k8s_image: v1.30.13
-            clickhouse_version: "26.3"
+            clickhouse_version: "26.5"
             deploy_target: test-compat-e2e-upgrade
     steps:
       - name: Checkout code
