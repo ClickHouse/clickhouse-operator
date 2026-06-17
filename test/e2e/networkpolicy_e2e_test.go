@@ -89,6 +89,7 @@ var _ = Describe("ClickHouse NetworkPolicy", Label("clickhouse"), func() {
 		WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, false)
 
 		By("resolving the ClickHouse pod IP")
+
 		var pods corev1.PodList
 		Expect(k8sClient.List(ctx, &pods,
 			client.InNamespace(ns),
@@ -101,6 +102,7 @@ var _ = Describe("ClickHouse NetworkPolicy", Label("clickhouse"), func() {
 		// Positive check: a client matching AllowedClients reaches the native port.
 		// This holds with or without an enforcing CNI, so it always runs.
 		By("a client matching AllowedClients (role=allowed) can reach the native port")
+
 		allowed := runConnectivityProbe(ctx, ns, "probe-allowed", targetIP, 9000, map[string]string{"role": "allowed"})
 		Eventually(probePhase(ctx, allowed)).
 			WithTimeout(time.Minute).WithPolling(pollingInterval).
@@ -122,7 +124,8 @@ var _ = Describe("ClickHouse NetworkPolicy", Label("clickhouse"), func() {
 			for i, tc := range cases {
 				By("blocked: " + tc.name)
 
-				probe := runConnectivityProbe(ctx, ns, fmt.Sprintf("probe-block-%d", i), targetIP, tc.port, map[string]string{"role": "allowed"})
+				probe := runConnectivityProbe(ctx, ns, fmt.Sprintf("probe-block-%d", i),
+					targetIP, tc.port, map[string]string{"role": "allowed"})
 				Eventually(probePhase(ctx, probe)).
 					WithTimeout(time.Minute).WithPolling(pollingInterval).
 					Should(Equal(corev1.PodFailed)) // nc -w3 times out -> non-zero exit -> Failed
@@ -141,7 +144,9 @@ var _ = Describe("ClickHouse NetworkPolicy", Label("clickhouse"), func() {
 	})
 })
 
-func runConnectivityProbe(ctx context.Context, ns, name, targetIP string, port int, labels map[string]string) *corev1.Pod {
+func runConnectivityProbe(
+	ctx context.Context, ns, name, targetIP string, port int, labels map[string]string,
+) *corev1.Pod {
 	GinkgoHelper()
 
 	pod := &corev1.Pod{

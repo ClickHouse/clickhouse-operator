@@ -18,9 +18,9 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 )
 
+// NetworkPolicySpec configures the NetworkPolicy managed for the cluster.
 type NetworkPolicySpec struct {
-	Enabled bool `json:"enabled,omitempty"`
-	// TODO: add Cilium
+	Enabled         bool                             `json:"enabled,omitempty"`
 	Backend         string                           `json:"backend,omitempty"`
 	AllowedClients  []networkingv1.NetworkPolicyPeer `json:"allowedClients,omitempty"`
 	MonitoringPeers []networkingv1.NetworkPolicyPeer `json:"monitoringPeers,omitempty"`
