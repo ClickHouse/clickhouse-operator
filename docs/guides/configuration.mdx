@@ -716,10 +716,13 @@ for the full list.
 
 - Use `password_sha256_hex` (or another hashed type) so the plaintext never has to
   exist in the cluster — store only the hash.
-- Use `password` only when a component needs the plaintext. Note that **only the
-  plaintext `password` type is also placed in the operator's client configuration**; with a
-  hashed type the server still authenticates the `default` user, but the operator's
-  own client connections do not carry the password.
+- Use `password` only when you need the in-pod `clickhouse-client` to authenticate
+  as `default` automatically: the operator writes the value into the client
+  configuration (`/etc/clickhouse-client/config.yaml`) **only for the plaintext
+  `password` type**. With a hashed type the server still authenticates the `default`
+  user normally, but `clickhouse-client` run inside the pod is not pre-filled with
+  the password (a hash cannot be used as a client-side password). This does not
+  affect the operator itself — it manages the cluster as a separate `operator` user.
 
 #### Full example with a Secret {#default-password-secret-example}
 
