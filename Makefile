@@ -598,7 +598,7 @@ catalog-template: # Generate catalog template with all bundles from registry
 
 .PHONY: catalog-render
 catalog-render: opm catalog-template ## Generate FBC catalog from template
-	$(OPM) alpha render-template catalog/clickhouse-operator-template.yaml > catalog/catalog.yaml
+	CONTAINERS_REGISTRIES_CONF=/dev/null $(OPM) alpha render-template catalog/clickhouse-operator-template.yaml > catalog/catalog.yaml
 	$(OPM) validate catalog
 
 .PHONY: catalog-build
