@@ -24,11 +24,15 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
+          predicate-quantifier: 'every'
           filters: |
             code:
               - '**'
               - '!**/*.md'
               - '!**/*.mdx'
+              - '!docs/**'
+              - '!examples/**'
+              - '!LICENSE'
 
   lint:
     runs-on: ubuntu-latest
