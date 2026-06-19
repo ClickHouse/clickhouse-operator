@@ -374,7 +374,6 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, id v1.KeeperReplicaID)
 			Server: controller.OpenSSLParams{
 				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
 				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-				CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
 				VerificationMode:    "relaxed",
 				DisableProtocols:    "sslv2,sslv3",
 				PreferServerCiphers: true,
@@ -614,7 +613,6 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
 					DefaultMode: new(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
-						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
 						{Key: "tls.key", Path: KeyFilename},
 					},

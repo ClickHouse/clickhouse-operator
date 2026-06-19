@@ -365,10 +365,9 @@ spec:
 
 ### SSL certificate secret format {#ssl-certificate-secret-format}
 
-It is expected that the Secret contains the following keys:
+It is expected that the Secret contains the server keypair:
 - `tls.crt` - PEM encoded server certificate
 - `tls.key` - PEM encoded private key
-- `ca.crt` - PEM encoded CA certificate chain
 
 <Note>
 This format is compatible with cert-manager generated certificates.
@@ -378,10 +377,9 @@ This format is compatible with cert-manager generated certificates.
 
 If KeeperCluster has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
 
-ClickHouseCluster should be able to verify Keeper nodes certificates.
-If ClickHouseCluster has TLS enabled, is uses `ca.crt` bundle for verification. Otherwise, default CA bundle is used.
+ClickHouseCluster verifies Keeper node certificates against the system trust store, plus any `caBundle` you configure.
 
-User may provide a custom CA bundle reference:
+To trust a private CA (for example, a self-signed or internal CA), provide a custom CA bundle reference:
 
 ```yaml
 spec:

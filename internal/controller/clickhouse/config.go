@@ -216,18 +216,14 @@ type baseConfigParams struct {
 func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	openSSL := controller.OpenSSLConfig{}
 	if r.Cluster.Spec.Settings.TLS.Enabled {
-		params := controller.OpenSSLParams{
-			CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
-			PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-			CAConfig:            path.Join(TLSConfigPath, CABundleFilename),
-			VerificationMode:    "relaxed",
-			DisableProtocols:    "sslv2,sslv3",
-			PreferServerCiphers: true,
-		}
-
 		openSSL = controller.OpenSSLConfig{
-			Server: params,
-			Client: params,
+			Server: controller.OpenSSLParams{
+				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
+				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
+				VerificationMode:    "relaxed",
+				DisableProtocols:    "sslv2,sslv3",
+				PreferServerCiphers: true,
+			},
 		}
 	}
 

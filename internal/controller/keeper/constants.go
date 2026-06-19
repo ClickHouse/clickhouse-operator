@@ -21,7 +21,6 @@ const (
 	ExtraConfigFileName = "99-extra-config.yaml"
 
 	TLSConfigPath       = "/etc/clickhouse-keeper/tls/"
-	CABundleFilename    = "ca-bundle.crt"
 	CertificateFilename = "clickhouse-keeper.crt"
 	KeyFilename         = "clickhouse-keeper.key"
 

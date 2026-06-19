@@ -62,6 +62,52 @@ var _ = Describe("BuildVolumes", func() {
 		Expect(volumes).To(HaveLen(5))
 		Expect(mounts).To(HaveLen(5))
 		checkVolumeMounts(volumes, mounts)
+
+		var tlsItems []corev1.KeyToPath
+		for _, volume := range volumes {
+			if volume.Name == internal.TLSVolumeName {
+				tlsItems = volume.Secret.Items
+			}
+		}
+
+		Expect(tlsItems).To(ConsistOf(
+			corev1.KeyToPath{Key: "tls.crt", Path: CertificateFilename},
+			corev1.KeyToPath{Key: "tls.key", Path: KeyFilename},
+		))
+	})
+
+	It("should generate a custom CA volume when caBundle is set", func() {
+		ctx.Cluster = &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Settings: v1.ClickHouseSettings{
+					TLS: v1.ClusterTLSSpec{
+						Enabled:          true,
+						ServerCertSecret: &corev1.LocalObjectReference{Name: "serverCertSecret"},
+						CABundle:         &v1.CABundleSelector{Name: "ca-secret", Key: "ca.crt"},
+					},
+				},
+			},
+		}
+		volumes := buildVolumes(&ctx, v1.ClickHouseReplicaID{})
+		mounts := buildMounts(&ctx)
+
+		var caItems []corev1.KeyToPath
+		for _, volume := range volumes {
+			if volume.Name == internal.CustomCAVolumeName {
+				Expect(volume.Secret.SecretName).To(Equal("ca-secret"))
+				caItems = volume.Secret.Items
+			}
+		}
+
+		Expect(caItems).To(ConsistOf(corev1.KeyToPath{Key: "ca.crt", Path: CustomCAFilename}))
+		Expect(mounts).To(ContainElement(corev1.VolumeMount{
+			Name:      internal.CustomCAVolumeName,
+			MountPath: TLSConfigPath,
+			ReadOnly:  true,
+		}))
 	})
 
 	It("should mount additionalVolumeClaimTemplates at their default JBOD path", func() {

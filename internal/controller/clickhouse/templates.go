@@ -690,7 +690,6 @@ func buildVolumes(r *clickhouseReconciler, id v1.ClickHouseReplicaID) []corev1.V
 					SecretName:  r.Cluster.Spec.Settings.TLS.ServerCertSecret.Name,
 					DefaultMode: new(controller.TLSFileMode),
 					Items: []corev1.KeyToPath{
-						{Key: "ca.crt", Path: CABundleFilename},
 						{Key: "tls.crt", Path: CertificateFilename},
 						{Key: "tls.key", Path: KeyFilename},
 					},

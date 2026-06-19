@@ -106,3 +106,6 @@ spec:
       required: true
       serverCertSecret:
         name: clickhouse-cert
+      caBundle:
+        name: clickhouse-cert
+        key: ca.crt

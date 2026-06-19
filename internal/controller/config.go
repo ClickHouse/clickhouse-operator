@@ -70,7 +70,7 @@ func DefaultPrometheusConfig(port uint16) PrometheusConfig {
 type OpenSSLParams struct {
 	CertificateFile     string `yaml:"certificateFile"`
 	PrivateKeyFile      string `yaml:"privateKeyFile"`
-	CAConfig            string `yaml:"caConfig"`
+	CAConfig            string `yaml:"caConfig,omitempty"`
 	VerificationMode    string `yaml:"verificationMode"`
 	DisableProtocols    string `yaml:"disableProtocols"`
 	PreferServerCiphers bool   `yaml:"preferServerCiphers"`

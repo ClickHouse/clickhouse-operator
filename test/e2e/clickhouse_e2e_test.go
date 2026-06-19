@@ -1237,6 +1237,10 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						ServerCertSecret: &corev1.LocalObjectReference{
 							Name: chCertName,
 						},
+						CABundle: &v1.CABundleSelector{
+							Name: chCertName,
+							Key:  "ca.crt",
+						},
 					},
 				},
 			},
@@ -1295,7 +1299,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		By("checking custom ca bundle is used to connect to the keeper", func() {
 			Expect(k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
 			cr.Spec.Settings.TLS = v1.ClusterTLSSpec{
-				CABundle: &v1.SecretKeySelector{
+				CABundle: &v1.CABundleSelector{
 					Name: keeperCertName,
 					Key:  "ca.crt",
 				},

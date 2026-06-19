@@ -29,17 +29,16 @@ rotate that Secret, but any tool that writes a Secret in the expected format wor
 ## How the operator expects certificates {#secret-format}
 
 TLS is enabled by pointing `spec.settings.tls.serverCertSecret` at a Secret that
-contains three keys:
+contains the server keypair:
 
-| Secret key | Contents                         |
-|------------|----------------------------------|
-| `tls.crt`  | PEM-encoded server certificate   |
-| `tls.key`  | PEM-encoded private key          |
-| `ca.crt`   | PEM-encoded CA certificate chain |
+| Secret key | Contents                       | Required |
+|------------|--------------------------------|----------|
+| `tls.crt`  | PEM-encoded server certificate | Yes      |
+| `tls.key`  | PEM-encoded private key        | Yes      |
 
 This is exactly the layout cert-manager writes for a `Certificate` resource, so no
-conversion is needed. The operator mounts these into each pod at
-`/etc/clickhouse-server/tls/` and wires them into ClickHouse's `openSSL` configuration.
+conversion is needed. The operator mounts the keypair into each pod at
+`/etc/clickhouse-server/tls/` and wires it into ClickHouse's `openSSL` configuration.
 
 <Note>
 `serverCertSecret` is **mandatory** when `tls.enabled: true`. The validating
@@ -232,13 +231,15 @@ spec:
 
 Keeper exposes its secure client port on `2281`. Once Keeper has TLS enabled, **the
 ClickHouse cluster connects to it over TLS automatically** — no extra setting on the
-ClickHouseCluster side. ClickHouse verifies the Keeper certificate using its own
-`ca.crt` bundle when it has TLS enabled, otherwise the system default CA bundle.
+ClickHouseCluster side. ClickHouse verifies the Keeper certificate against the system
+trust store, plus any [`caBundle`](#custom-ca) you configure.
 
 ## Custom CA bundle {#custom-ca}
 
-If ClickHouse must trust a CA different from the one in its server certificate (for
-example, Keeper signed by a separate CA), supply a `caBundle`:
+By default ClickHouse verifies the peers it connects to (other replicas, Keeper, HTTPS
+dictionary sources, S3, …) against the **system trust store**. To **additionally** trust
+a private CA — a self-signed or internal CA whose root is not in the system store —
+supply a `caBundle`:
 
 ```yaml
 spec:
@@ -252,8 +253,11 @@ spec:
         key: ca.crt
 ```
 
-The operator mounts this bundle and points the client-side `openSSL` verification at
-it instead of the certificate's own `ca.crt`.
+The operator mounts this bundle and adds it to the `openSSL` client trust store
+(`caConfig`). The system trust store stays in effect — your private CA is trusted **in
+addition to** the public roots, so connections to public endpoints keep working. For a
+self-signed setup, point `caBundle` at the `ca.crt` key of the same Secret cert-manager
+wrote (as in the `cluster_with_ssl` example).
 
 ## Customizing the TLS settings {#custom-tls-settings}
 
@@ -296,15 +300,15 @@ kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
 
 ```bash
 kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
-# ca-bundle.crt  clickhouse-server.crt  clickhouse-server.key
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
 ```
 
-| Symptom | Likely cause |
-|---|---|
-| Pods fail to start / volume mount error after enabling TLS | The referenced Secret is missing or lacks `tls.crt`/`tls.key`/`ca.crt`. The operator does not validate the Secret's contents — missing keys surface as a pod volume-mount failure, not a dedicated status condition. Inspect the pod with `kubectl describe pod`. |
-| Webhook rejects the cluster | `required: true` set without `enabled: true`, or `enabled: true` without `serverCertSecret`. |
-| Client `certificate verify failed` | Client is not trusting the CA. Pass the `ca.crt` from the Secret, or check the `dnsNames` on the certificate cover the host you connect to. |
-| A plaintext client suddenly can't connect | `required: true` removed ports `9000`/`8123`. Switch the client to `9440`/`8443`, or set `required: false` to keep insecure ports open during migration. |
+| Symptom                                                    | Likely cause                                                                                                                                                                                                                                                                                                        |
+|------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Pods fail to start / volume mount error after enabling TLS | The referenced Secret is missing or lacks `tls.crt`/`tls.key` (or, when `caBundle` is set, the Secret/key it references). The operator does not validate the Secret's contents — missing keys surface as a pod volume-mount failure, not a dedicated status condition. Inspect the pod with `kubectl describe pod`. |
+| Webhook rejects the cluster                                | `required: true` set without `enabled: true`, or `enabled: true` without `serverCertSecret`.                                                                                                                                                                                                                        |
+| Client `certificate verify failed`                         | Client is not trusting the CA. Pass the `ca.crt` from the Secret, or check the `dnsNames` on the certificate cover the host you connect to.                                                                                                                                                                         |
+| A plaintext client suddenly can't connect                  | `required: true` removed ports `9000`/`8123`. Switch the client to `9440`/`8443`, or set `required: false` to keep insecure ports open during migration.                                                                                                                                                            |
 
 ## See also {#see-also}
 

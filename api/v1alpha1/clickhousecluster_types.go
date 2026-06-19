@@ -158,10 +158,6 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 		}
 	}
 
-	if s.Settings.TLS.CABundle != nil && s.Settings.TLS.CABundle.Key == "" {
-		s.Settings.TLS.CABundle.Key = "ca.crt"
-	}
-
 	if s.DataVolumeClaimSpec != nil && len(s.DataVolumeClaimSpec.AccessModes) == 0 {
 		s.DataVolumeClaimSpec.AccessModes = []corev1.PersistentVolumeAccessMode{DefaultAccessMode}
 	}

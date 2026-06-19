@@ -137,7 +137,7 @@ spec:
           every replica.
         displayName: Stateful Set Revision
         path: statefulSetRevision
-      - description: CurrentRevision indicates latest requested KeeperCluster spec
+      - description: UpdateRevision indicates latest requested KeeperCluster spec
           revision.
         displayName: Update Revision
         path: updateRevision
@@ -146,6 +146,7 @@ spec:
         path: version
       - description: |-
           VersionProbeRevision is the image hash of the last successful version probe.
+
           Deprecated: Keeper version probe Jobs are not used; this field is retained for backward compatibility.
         displayName: Version Probe Revision
         path: versionProbeRevision

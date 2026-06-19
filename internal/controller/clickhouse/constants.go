@@ -34,7 +34,6 @@ const (
 	AdditionalDiskBasePath   = internal.ClickHouseDataPath + "/disks/"
 
 	TLSConfigPath       = "/etc/clickhouse-server/tls/"
-	CABundleFilename    = "ca-bundle.crt"
 	CertificateFilename = "clickhouse-server.crt"
 	KeyFilename         = "clickhouse-server.key"
 	CustomCAFilename    = "custom-ca.crt"
@@ -98,9 +97,9 @@ func (s *secretSpec) enabled(cluster *v1.ClickHouseCluster) bool {
 
 var (
 	// minVersionNamedCollections is the minimum ClickHouse version that supports keeper_encrypted for named collections.
-	minVersionNamedCollections    = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
-	breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
-	clusterSecrets                = []secretSpec{
+	minVersionNamedCollections = upgrade.ClickHouseVersion{Major: 25, Minor: 12} //nolint:mnd
+	breakingStatefulSetVersion = semver.MustParse("0.0.1")
+	clusterSecrets             = []secretSpec{
 		{Key: SecretKeyInterserverPassword, Env: EnvInterserverPassword, Format: "%s", Hint: "plaintext password"},
 		{Key: SecretKeyManagementPassword, Format: "%s", Hint: "plaintext password"},
 		{Key: SecretKeyKeeperIdentity, Env: EnvKeeperIdentity, Format: "clickhouse:%s", Hint: `"clickhouse:<password>"`},
