@@ -688,41 +688,30 @@ Set `--disable-version-update-checks=true` in air-gapped environments or when eg
 ### Default user password {#default-user-password}
 
 `spec.settings.defaultUserPassword` sets the password for the built-in `default`
-user. The value is not stored inline; it is read from a key in a Secret or a
-ConfigMap that you create, and injected into the pod as an environment variable.
+user. Provide the value from a key in a Secret (recommended) or a ConfigMap that
+you create, rather than inline in the CR:
 
 ```yaml
 spec:
   settings:
     defaultUserPassword:
       passwordType: password   # default; see "Password types" below
-      secret:                  # exactly one of secret OR configMap
+      secret:                  # exactly one of secret or configMap
         name: clickhouse-password   # name of the Secret/ConfigMap
-        key: password               # the KEY inside it, not the password value
+        key: password               # the key inside it, not the password value
 ```
 
-You must specify **exactly one** of `secret` or `configMap` (setting both, or
-neither, is rejected by the validating webhook), and both `name` and `key` are
-required. `name` is the Secret/ConfigMap object, `key` is the entry within it whose
-value holds the password. The password itself is never written in the CR.
+Provide exactly one of `secret` or `configMap`, each with both `name` (the object)
+and `key` (the entry that holds the password).
 
 #### Password types {#password-types}
 
 `passwordType` tells ClickHouse how to interpret the value. It defaults to
-`password` (plaintext). The common alternatives are hashed forms such as
-`password_sha256_hex` and `password_double_sha1_hex`. See the
+`password` (plaintext); the alternatives are hashed forms such as
+`password_sha256_hex` and `password_double_sha1_hex`. Prefer a hashed type so the
+plaintext is never stored. See the
 [ClickHouse user settings](https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword)
 for the full list.
-
-- Use `password_sha256_hex` (or another hashed type) so the plaintext never has to
-  exist in the cluster; store only the hash.
-- Use `password` only when you need the in-pod `clickhouse-client` to authenticate
-  as `default` automatically: the operator writes the value into the client
-  configuration (`/etc/clickhouse-client/config.yaml`) **only for the plaintext
-  `password` type**. With a hashed type the server still authenticates the `default`
-  user normally, but `clickhouse-client` run inside the pod is not pre-filled with
-  the password (a hash cannot be used as a client-side password). This does not
-  affect the operator itself, which manages the cluster as a separate `operator` user.
 
 #### Full example with a Secret {#default-password-secret-example}
 
@@ -747,6 +736,11 @@ spec:
         key: password
 ```
 
+<Note>
+With `passwordType: password`, the in-pod `clickhouse-client` is configured with
+this password, which is handy for debugging.
+</Note>
+
 For a hashed password, store the hash instead of the plaintext:
 
 ```bash
@@ -767,10 +761,9 @@ spec:
 
 #### Using a ConfigMap {#using-configmap-for-user-passwords}
 
-A ConfigMap works the same way but stores its value in plaintext on the API server,
-so use it **only for non-sensitive or already-hashed values**, for example a
-`password_sha256_hex` digest, which does not contain the plaintext password
-(though a weak password may still be recoverable from the hash by brute force):
+A ConfigMap works the same way, but its contents are not protected like a Secret.
+Use it only for non-sensitive or already-hashed values, such as a
+`password_sha256_hex` digest:
 
 ```yaml
 spec:
@@ -783,8 +776,8 @@ spec:
 ```
 
 <Note>
-Do not put a plaintext password in a ConfigMap. ConfigMap data is not protected
-like Secret data. Use a Secret for any plaintext (`passwordType: password`) value.
+Do not put a plaintext password in a ConfigMap. Use a Secret for any plaintext
+(`passwordType: password`) value.
 </Note>
 
 ### Custom users in configuration {#custom-users-in-configuration}
