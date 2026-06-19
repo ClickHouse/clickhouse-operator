@@ -264,7 +264,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 			return nil, fmt.Errorf("create replica: %w", err)
 		}
 
-		return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+		return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 	}
 
 	statefulSet.Spec.VolumeClaimTemplates = input.Existing.STS.Spec.VolumeClaimTemplates
@@ -286,7 +286,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 				return nil, fmt.Errorf("recreate replica: %w", err)
 			}
 
-			return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 		}
 	}
 
@@ -294,7 +294,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 		log.Debug("StatefulSet is up to date", "statefulset", statefulSet.Name)
 
 		if configChanged {
-			return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+			return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 		}
 
 		// Delete stuck pod if in error state so the StatefulSet controller can recreate it
@@ -305,12 +305,12 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 			err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{Namespace: input.Existing.STS.Namespace, Name: podName}, pod)
 			if err != nil {
 				if k8serrors.IsNotFound(err) {
-					return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+					return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 				}
 
 				log.Warn("failed to get error pod", "pod", podName, "error", err)
 
-				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+				return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 			}
 
 			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.Existing.STS.Status.UpdateRevision {
@@ -320,7 +320,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 					log.Warn("failed to delete stuck pod", "pod", podName, "error", err)
 				}
 
-				return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+				return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 			}
 		}
 
@@ -340,7 +340,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 		return nil, fmt.Errorf("update replica: %w", err)
 	}
 
-	return &ctrlruntime.Result{RequeueAfter: RequeueOnRefreshTimeout}, nil
+	return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 }
 
 func diffFilter(specFields []string) gcmp.Option {

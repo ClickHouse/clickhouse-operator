@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
@@ -57,14 +56,16 @@ type commander struct {
 	auth    clickhouse.Auth
 	dialer  controllerutil.DialContextFunc
 
-	lock  sync.RWMutex
-	conns map[v1.ClickHouseReplicaID]clickhouse.Conn
+	entry *connCacheEntry
 }
 
-func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc) *commander {
+func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, cache *connCache) *commander {
+	log = log.Named("commander")
+	credHash, _ := controllerutil.DeepHashObject(secret.Data[SecretKeyManagementPassword])
+
 	return &commander{
-		log:     log.Named("commander"),
-		conns:   map[v1.ClickHouseReplicaID]clickhouse.Conn{},
+		log:     log,
+		entry:   cache.Get(cluster.NamespacedName(), credHash, log),
 		cluster: cluster,
 		dialer:  dialer,
 		auth: clickhouse.Auth{
@@ -72,19 +73,6 @@ func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secr
 			Password: string(secret.Data[SecretKeyManagementPassword]),
 		},
 	}
-}
-
-func (cmd *commander) Close() {
-	cmd.lock.Lock()
-	defer cmd.lock.Unlock()
-
-	for id, conn := range cmd.conns {
-		if err := conn.Close(); err != nil {
-			cmd.log.Warn("error closing connection", "error", err, "replica_id", id)
-		}
-	}
-
-	cmd.conns = map[v1.ClickHouseReplicaID]clickhouse.Conn{}
 }
 
 type replicaProbe struct {
@@ -474,53 +462,28 @@ func (cmd *commander) CleanupDatabaseReplicas(
 }
 
 func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
-	cmd.lock.RLock()
-	conn, ok := cmd.conns[id]
-	cmd.lock.RUnlock()
+	return cmd.entry.Conn(id, func() (clickhouse.Conn, error) {
+		cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
 
-	if ok {
+		conn, err := clickhouse.Open(&clickhouse.Options{
+			Addr:        []string{net.JoinHostPort(cmd.cluster.HostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
+			Auth:        cmd.auth,
+			DialContext: cmd.dialer,
+			Debugf: func(format string, args ...any) {
+				cmd.log.Debug(fmt.Sprintf(format, args...))
+			},
+		})
+		if err != nil {
+			cmd.log.Error(err, "failed to open ClickHouse connection", "replica_id", id)
+			return nil, fmt.Errorf("open ClickHouse connection: %w", err)
+		}
+
 		return conn, nil
-	}
-
-	cmd.lock.Lock()
-	defer cmd.lock.Unlock()
-
-	// Check if another goroutine created the connection while we were waiting for the lock
-	if conn, ok := cmd.conns[id]; ok {
-		return conn, nil
-	}
-
-	cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
-
-	conn, err := clickhouse.Open(&clickhouse.Options{
-		Addr:        []string{net.JoinHostPort(cmd.cluster.HostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
-		Auth:        cmd.auth,
-		DialContext: cmd.dialer,
-		Debugf: func(format string, args ...any) {
-			cmd.log.Debug(fmt.Sprintf(format, args...))
-		},
 	})
-	if err != nil {
-		cmd.log.Error(err, "failed to open ClickHouse connection", "replica_id", id)
-		return nil, fmt.Errorf("open ClickHouse connection: %w", err)
-	}
-
-	cmd.conns[id] = conn
-
-	return conn, nil
 }
 
 func (cmd *commander) getAnyConn(ctx context.Context) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
-	cmd.lock.RLock()
-	defer cmd.lock.RUnlock()
-
-	for id, conn := range cmd.conns {
-		if conn.Ping(ctx) == nil {
-			return id, conn, nil
-		}
-	}
-
-	return v1.ClickHouseReplicaID{}, nil, errors.New("no available connections")
+	return cmd.entry.AnyConn(ctx)
 }
 
 func (cmd *commander) ensureReplicaDefaultDatabaseEngine(ctx context.Context, log controllerutil.Logger, id v1.ClickHouseReplicaID) error {

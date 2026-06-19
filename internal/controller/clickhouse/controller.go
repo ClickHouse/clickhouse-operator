@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -38,6 +39,7 @@ type ClusterController struct {
 	Checker   *upgrade.Checker
 	Dialer    controllerutil.DialContextFunc
 	EnablePDB bool
+	connCache *connCache
 }
 
 const keeperClusterReferenceField = "clickhouse.com/keeperClusterReference"
@@ -72,6 +74,8 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		if errors.IsNotFound(err) {
 			cc.Logger.Info("clickhouse cluster not found")
+			cc.connCache.Evict(req.NamespacedName, cc.Logger)
+
 			return ctrl.Result{}, nil
 		}
 
@@ -117,6 +121,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Dialer:    cc.Dialer,
 		Checker:   cc.Checker,
 		EnablePDB: cc.EnablePDB,
+		connCache: cc.connCache,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.ClickHouseReplicaID]replicaState{},
@@ -165,6 +170,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Checker:   checker,
 		Dialer:    dialer,
 		EnablePDB: enablePDB,
+		connCache: newConnCache(),
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ClickHouseCluster{}, keeperClusterReferenceField, func(obj client.Object) []string {
@@ -200,6 +206,16 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Complete(clickhouseController)
 	if err != nil {
 		return fmt.Errorf("setup ClickHouse controller: %w", err)
+	}
+
+	// Close pooled connections on manager stop so ClickHouse sees a graceful close.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		clickhouseController.connCache.Close(namedLogger)
+
+		return nil
+	})); err != nil {
+		return fmt.Errorf("close cached ClickHouse connections: %w", err)
 	}
 
 	return nil

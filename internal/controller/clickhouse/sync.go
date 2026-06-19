@@ -88,6 +88,7 @@ type clickhouseReconciler struct {
 	Dialer    ctrlutil.DialContextFunc
 	Checker   *upgrade.Checker
 	EnablePDB bool
+	connCache *connCache
 
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
@@ -118,12 +119,6 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 			v1.ConditionTypeReady,
 			v1.ClickHouseConditionTypeSchemaInSync,
 		})
-
-	defer func() {
-		if r.commander != nil {
-			r.commander.Close()
-		}
-	}()
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},
@@ -252,13 +247,13 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 
 		secretExists = false
 	} else {
-		r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+		r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
 	}
 
 	if !r.versionProbe.Completed() {
 		log.Info("version probe is not completed yet, skipping cluster secret templating")
 
-		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepBlocked(chctrl.RequeueProbePoll), nil
 	}
 
 	var isSecretUpdated bool
@@ -274,7 +269,7 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 	}
 
 	// Create or recreate commander with new credentials
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
 
 	if !secretExists {
 		log.Info("cluster secret not found, creating", "secret", r.Cluster.SecretName())
@@ -335,12 +330,12 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 		r.secret.Data = make(map[string][]byte)
 	}
 
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
 
 	if !r.versionProbe.Completed() {
 		log.Info("version probe is not completed yet, skipping external secret validation")
 
-		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepBlocked(chctrl.RequeueProbePoll), nil
 	}
 
 	var missingKeys []int
@@ -388,7 +383,7 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 		return chctrl.StepResult{}, fmt.Errorf("fill external secret %q: %w", r.Cluster.SecretName(), err)
 	}
 
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
 
 	r.SetCondition(metav1.Condition{
 		Type:   v1.ClickHouseConditionTypeExternalSecretValid,
@@ -618,7 +613,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 	if !r.versionProbe.Completed() {
 		log.Info("version probe is not completed yet, waiting")
 
-		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepBlocked(chctrl.RequeueProbePoll), nil
 	}
 
 	cfgRev, err := getConfigurationRevisions(r)
@@ -732,7 +727,7 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 	case chctrl.StageNotReadyUpToDate, chctrl.StageUpdating:
 		log.Info("waiting for updated replicas to become ready", "replicas", replicasInStatus, "priority", highestStage.String())
 
-		requeueAfter = chctrl.RequeueOnRefreshTimeout
+		requeueAfter = chctrl.RequeueProbePoll
 	case chctrl.StageHasDiff:
 		// Leave one replica to rolling update. replicasInStatus must not be empty.
 		// Prefer replicas with higher id.
@@ -745,7 +740,7 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 
 		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
 
-		requeueAfter = chctrl.RequeueOnRefreshTimeout
+		requeueAfter = chctrl.RequeueProbePoll
 		replicasInStatus = []v1.ClickHouseReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:
@@ -856,7 +851,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Some databases are not created on all replicas",
 		})
 
-		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
 
 	case !staleReplicasCleanedUp:
 		r.SetCondition(metav1.Condition{
@@ -866,7 +861,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Some stale replicas are not cleaned up",
 		})
 
-		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
 
 	default:
 		r.SetCondition(metav1.Condition{

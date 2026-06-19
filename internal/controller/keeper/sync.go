@@ -299,7 +299,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 	r.evaluateReplicaConditions()
 
 	if !r.HorizontalScaleAllowed {
-		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
 	}
 
 	return chctrl.StepContinue(), nil
@@ -374,7 +374,7 @@ func (r *keeperReconciler) reconcileQuorumMembership(_ context.Context, log ctrl
 	// For running cluster, allow quorum membership changes only in stable state.
 	if !r.HorizontalScaleAllowed {
 		log.Info("Delaying horizontal scaling, cluster is not in stable state")
-		return chctrl.StepRequeue(chctrl.RequeueOnRefreshTimeout), nil
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
 	}
 
 	// Add single replica in quorum, allocating the first free id.
@@ -481,7 +481,7 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 	case chctrl.StageNotReadyUpToDate, chctrl.StageUpdating:
 		log.Info("waiting for updated replicas to become ready", "replicas", replicasInStatus, "priority", highestStage.String())
 
-		requeueAfter = chctrl.RequeueOnRefreshTimeout
+		requeueAfter = chctrl.RequeueProbePoll
 	case chctrl.StageHasDiff:
 		// Leave one replica to rolling update. replicasInStatus must not be empty.
 		// Prefer replicas with higher id.
@@ -494,7 +494,7 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 
 		log.Info(fmt.Sprintf("updating chosen replica %d with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
 
-		requeueAfter = chctrl.RequeueOnRefreshTimeout
+		requeueAfter = chctrl.RequeueProbePoll
 		replicasInStatus = []v1.KeeperReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:

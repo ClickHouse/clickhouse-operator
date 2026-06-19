@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/go-logr/zapr"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/types/container"
@@ -18,6 +17,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -32,7 +32,6 @@ const (
 	keeperHostname                 = "test-keeper"
 	clickhouseHostnameFormat       = "test-clickhouse-0-%d-0"
 	testPassword                   = "test-password"
-	testUsername                   = "operator"
 	keeperImage                    = "clickhouse/clickhouse-keeper:26.5"
 	clickhouseImage                = "clickhouse/clickhouse-server:26.5"
 	testConfigRevision             = "test-revision-v1"
@@ -150,7 +149,17 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 		chPort := strconv.FormatInt(PortNative, 10) + "/tcp"
 		chHTTPPort := strconv.FormatInt(PortHTTP, 10) + "/tcp"
-		conns := map[v1.ClickHouseReplicaID]clickhouse.Conn{}
+		hostTargets := map[string]string{}
+		cluster := v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Shards:   new(int32(1)),
+				Replicas: new(testReplicas),
+			},
+		}
 
 		for i := range testReplicas {
 			By(fmt.Sprintf("starting ClickHouse node %d", i))
@@ -194,36 +203,33 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			port, err := ctr.MappedPort(ctx, chPort)
 			Expect(err).NotTo(HaveOccurred())
 
-			conn, err := clickhouse.Open(&clickhouse.Options{
-				Addr: []string{net.JoinHostPort(host, port.Port())},
-				Auth: clickhouse.Auth{Username: testUsername, Password: testPassword},
-			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(conn.Ping(ctx)).To(Succeed())
-
-			conns[v1.ClickHouseReplicaID{ShardID: 0, Index: i}] = conn
+			hostTargets[cluster.HostnameByID(v1.ClickHouseReplicaID{Index: i})] = net.JoinHostPort(host, port.Port())
 		}
 
-		logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
-		logf.SetLogger(zapr.NewLogger(logger))
+		zapLogger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
+		logf.SetLogger(zapr.NewLogger(zapLogger))
+		logger := controllerutil.NewLogger(zapLogger)
 
-		cmd = &commander{
-			log: controllerutil.NewLogger(logger),
-			cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "default",
-				},
-				Spec: v1.ClickHouseClusterSpec{
-					Shards:   new(int32(1)),
-					Replicas: new(testReplicas),
-				},
-			},
-			auth:  clickhouse.Auth{Username: testUsername, Password: testPassword},
-			conns: conns,
+		dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, fmt.Errorf("split addr %q: %w", addr, err)
+			}
+
+			target, ok := hostTargets[host]
+			if !ok {
+				return nil, fmt.Errorf("no test container for host %q", host)
+			}
+
+			return (&net.Dialer{}).DialContext(ctx, "tcp", target)
 		}
+
+		secret := &corev1.Secret{Data: map[string][]byte{SecretKeyManagementPassword: []byte(testPassword)}}
+		cache := newConnCache()
+		cmd = newCommander(logger, &cluster, secret, dialer, cache)
+
 		DeferCleanup(func() {
-			cmd.Close()
+			cache.Close(logger)
 		})
 	})
 
@@ -261,8 +267,9 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
 		dbUUID := uuid.New().String()
 		q := `CREATE DATABASE testdb UUID '%s' ENGINE=Replicated('/clickhouse/databases/testdb', '{shard}', '{replica}')`
-		err := cmd.conns[id0].Exec(ctx, fmt.Sprintf(q, dbUUID))
+		conn, err := cmd.getConn(id0)
 		Expect(err).NotTo(HaveOccurred())
+		Expect(conn.Exec(ctx, fmt.Sprintf(q, dbUUID))).To(Succeed())
 
 		dbs, err := cmd.Databases(ctx, id0)
 		Expect(err).NotTo(HaveOccurred())
@@ -286,7 +293,8 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 	It("should sync all replicas in shard", func(ctx context.Context) {
 		By("creating test tables")
 
-		conn := cmd.conns[v1.ClickHouseReplicaID{ShardID: 0, Index: 0}]
+		conn, err := cmd.getConn(v1.ClickHouseReplicaID{ShardID: 0, Index: 0})
+		Expect(err).NotTo(HaveOccurred())
 		Expect(conn.Exec(ctx, `CREATE TABLE testdb.test (id UInt64) ENGINE=ReplicatedMergeTree ORDER BY id`)).To(Succeed())
 		Expect(conn.Exec(ctx, `INSERT INTO testdb.test SELECT number FROM numbers(10)`)).To(Succeed())
 
@@ -301,8 +309,11 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}, "5s", "100ms").To(Succeed())
 
 		var count uint64
-		for id, conn := range cmd.conns {
+		for id := range cmd.cluster.ReplicaIDs() {
 			By(fmt.Sprintf("verifying data is replicated to replica %d", id.Index))
+
+			conn, err := cmd.getConn(id)
+			Expect(err).NotTo(HaveOccurred())
 
 			row := conn.QueryRow(ctx, `SELECT count() FROM testdb.test`)
 			Expect(row.Err()).ToNot(HaveOccurred())
