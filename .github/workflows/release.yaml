@@ -144,11 +144,19 @@ jobs:
                   "title": "## 🧪 Tests",
                   "labels": ["test"]
                 }, {
+                  "title": "## 📚 Docs",
+                  "labels": ["docs"]
+                }, {
                   "title": "## 🧹 Chores",
-                  "labels": ["chore"]
+                  "labels": ["chore", "chores", "ci", "build", "refactor", "perf"]
                 }, {
                   "title": "## 📦 Uncategorized",
                   "labels": []
+                }],
+              "label_extractor": [{
+                  "pattern": "^([a-zA-Z]+)(\\([^)]*\\))?!?:.*",
+                  "on_property": "title",
+                  "target": "$1"
                 }]
             }
       - name: Create GitHub Release
@@ -268,4 +276,3 @@ jobs:
             --body "Bundle for clickhouse-operator ${VERSION}. Generated from https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}. Merge then submit upstream to k8s-operatorhub/community-operators following https://k8s-operatorhub.github.io/community-operators/packaging-operator/." \
             --head "${BRANCH}" \
             --base main
-      
