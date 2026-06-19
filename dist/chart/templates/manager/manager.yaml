@@ -82,7 +82,7 @@ spec:
         command:
         - /manager
         args:
-        {{- if .Values.metrics.enable }}
+        {{- if .Values.metrics.enabled }}
         - --metrics-bind-address=:{{ .Values.metrics.port }}
         {{- if not .Values.metrics.secure }}
         - --metrics-secure=false
@@ -95,17 +95,17 @@ spec:
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
-        {{- if and .Values.certManager.enable .Values.webhook.enable }}
+        {{- if and .Values.certManager.enabled .Values.webhook.enabled }}
         - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
-        {{- if and .Values.metrics.enable .Values.metrics.secure }}
+        {{- if and .Values.metrics.enabled .Values.metrics.secure }}
         - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
         {{- end }}
         {{- end }}
         env:
         - name: ENABLE_WEBHOOKS
-          value: {{ .Values.webhook.enable | quote }}
+          value: {{ .Values.webhook.enabled | quote }}
         - name: ENABLE_PDB
-          value: {{ .Values.controller.pdbManagement.enable | quote }}
+          value: {{ .Values.controller.pdbManagement.enabled | quote }}
         {{- if not (empty .Values.controller.watchNamespaces) }}
         - name: WATCH_NAMESPACE
           value: {{ join "," .Values.controller.watchNamespaces | quote }}
@@ -134,12 +134,12 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
         ports:
-        {{- if .Values.webhook.enable }}
+        {{- if .Values.webhook.enabled }}
         - containerPort: {{ .Values.webhook.port }}
           name: webhook-server
           protocol: TCP
         {{- end }}
-        {{- if .Values.metrics.enable }}
+        {{- if .Values.metrics.enabled }}
         - containerPort: {{ .Values.metrics.port }}
           name: metrics-server
           protocol: TCP
@@ -156,16 +156,16 @@ spec:
           {{- else }}
           {}
           {{- end }}
-        {{- if or .Values.manager.extraVolumeMounts .Values.certManager.enable }}
+        {{- if or .Values.manager.extraVolumeMounts .Values.certManager.enabled }}
         volumeMounts:
         {{- with .Values.manager.extraVolumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- if and .Values.certManager.enable .Values.webhook.enable }}
+        {{- if and .Values.certManager.enabled .Values.webhook.enabled }}
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: webhook-certs
           readOnly: true
-        {{- if and .Values.metrics.enable .Values.metrics.secure }}
+        {{- if and .Values.metrics.enabled .Values.metrics.secure }}
         - mountPath: /tmp/k8s-metrics-server/metrics-certs
           name: metrics-certs
           readOnly: true
@@ -182,16 +182,16 @@ spec:
       {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
       terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
       {{- end }}
-      {{- if or .Values.manager.extraVolumes .Values.certManager.enable }}
+      {{- if or .Values.manager.extraVolumes .Values.certManager.enabled }}
       volumes:
       {{- with .Values.manager.extraVolumes }}
       {{- toYaml . | nindent 6 }}
       {{- end }}
-      {{- if and .Values.certManager.enable .Values.webhook.enable }}
+      {{- if and .Values.certManager.enabled .Values.webhook.enabled }}
       - name: webhook-certs
         secret:
           secretName: webhook-server-cert
-      {{- if and .Values.metrics.enable .Values.metrics.secure }}
+      {{- if and .Values.metrics.enabled .Values.metrics.secure }}
       - name: metrics-certs
         secret:
           secretName: metrics-server-cert

@@ -63,12 +63,12 @@ Cribbed from the cert-manager organization.
 
 {{/*
 ServiceAccount name to use.
-If serviceAccount.enable is explicitly false and serviceAccount.name is set,
+If serviceAccount.enabled is explicitly false and serviceAccount.name is set,
 use that name. Otherwise, use the standard resourceName helper with
 "controller-manager" suffix.
 */}}
 {{- define "clickhouse-operator.serviceAccountName" -}}
-{{- if and (hasKey .Values.serviceAccount "enable") (not .Values.serviceAccount.enable) .Values.serviceAccount.name }}
+{{- if and (hasKey .Values.serviceAccount "enabled") (not .Values.serviceAccount.enabled) .Values.serviceAccount.name }}
 {{- .Values.serviceAccount.name }}
 {{- else }}
 {{- include "clickhouse-operator.resourceName" (dict "suffix" "controller-manager" "context" .) }}

@@ -28,7 +28,7 @@ controller:
   ## Disable means operator will not call any PDB related API.
   ##
   pdbManagement:
-    enable: true
+    enabled: true
 
 
 ## Configure the controller manager deployment
@@ -176,16 +176,16 @@ rbac:
   helpers:
     ## Install convenience admin/editor/viewer roles for CRDs
     ##
-    enable: false
+    enabled: false
 
 ## ServiceAccount configuration
 ##
 serviceAccount:
   # Install default ServiceAccount provided
-  enable: true
+  enabled: true
 
-  ## Existing ServiceAccount name (only when enable=false)
-  ## Note: When enable=true, respects nameOverride/fullnameOverride
+  ## Existing ServiceAccount name (only when enabled=false)
+  ## Note: When enabled=true, respects nameOverride/fullnameOverride
   ##
   # name: ""
 
@@ -201,7 +201,7 @@ serviceAccount:
 ##
 crd:
   # Install CRDs with the chart
-  enable: true
+  enabled: true
   # Keep CRDs when uninstalling
   keep: true
 
@@ -209,7 +209,7 @@ crd:
 ## Enable to expose /metrics endpoint
 ##
 metrics:
-  enable: true
+  enabled: true
   # Metrics server port
   port: 8080
   # Enable secure metrics: HTTPS with certs/auth (true) or HTTP (false).
@@ -220,7 +220,7 @@ metrics:
 ## Required for webhook certificates and metrics endpoint certificates.
 ##
 certManager:
-    enable: true
+    enabled: true
     ## Custom issuer configuration for cert-manager issued certificates.
     ##
     # issuerRef:
@@ -230,7 +230,7 @@ certManager:
 ## Webhook server configuration
 ##
 webhook:
-  enable: true
+  enabled: true
   # Webhook server port
   port: 9443
 
@@ -242,8 +242,13 @@ prometheus:
   scraping_annotations: false
   # Enable Prometheus ServiceMonitor for metrics scraping.
   # Requires prometheus-operator to be installed in the cluster.
-  enable: false
+  enabled: false
 
+
+## Kubernetes NetworkPolicies restricting ingress to the metrics and webhook ports.
+##
+networkPolicy:
+  enabled: false
 
 # Extra manifests to deploy as an array
 extraManifests: []

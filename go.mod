@@ -1,6 +1,6 @@
 module github.com/ClickHouse/clickhouse-operator
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
@@ -14,8 +14,8 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/moby/moby/api v1.54.2
-	github.com/onsi/ginkgo/v2 v2.29.0
-	github.com/onsi/gomega v1.41.0
+	github.com/onsi/ginkgo/v2 v2.31.0
+	github.com/onsi/gomega v1.42.0
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/testcontainers/testcontainers-go v0.42.0
 	go.uber.org/zap v1.28.0

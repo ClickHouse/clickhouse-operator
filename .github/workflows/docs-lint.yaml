@@ -16,7 +16,7 @@ jobs:
     name: vale-linter
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: errata-ai/vale-action@v2.1.1
         with:
           fail_on_error: 'true'
@@ -26,8 +26,8 @@ jobs:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: changes
         with:
           filters: |
@@ -46,7 +46,7 @@ jobs:
     name: API Reference Generated
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v6

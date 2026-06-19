@@ -31,6 +31,10 @@ linters:
     - errname
     - errorlint
     - nilerr
+    - nilnesserr
+    - asasalint
+    - canonicalheader
+    - goprintffuncname
     - gocritic
     - bodyclose
     - clickhouselint
@@ -67,20 +71,16 @@ linters:
     - mirror
     - mnd
     - musttag
-    - nakedret
     - noctx
     - nosprintfhostport
     - perfsprint
-    - predeclared
     - promlinter
-    - reassign
     - recvcheck
     - rowserrcheck
     - sloglint
     - sqlclosecheck
     - tagalign
     - unqueryvet
-    - unused
     - usetesting
     - whitespace
     - wrapcheck
