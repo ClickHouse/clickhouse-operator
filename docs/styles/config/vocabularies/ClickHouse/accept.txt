@@ -35,3 +35,6 @@ requeues
 RBAC
 idempotency
 keypair
+[Dd]istroless
+busybox
+coreutils

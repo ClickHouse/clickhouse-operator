@@ -1,0 +1,93 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/distroless
+title: Using distroless images
+keywords: ['kubernetes', 'distroless', 'security']
+description: 'How to run the ClickHouse Operator with the shell-free distroless server and Keeper images, and what to keep in mind for custom probes, hooks, and debugging.'
+doc_type: 'guide'
+---
+
+The ClickHouse server and Keeper images publish a `-distroless` variant (for example `clickhouse/clickhouse-server:26.5-distroless`). These images are built on a [distroless](https://github.com/GoogleContainerTools/distroless) base and ship **without a shell, `busybox`, or coreutils** to shrink the image and reduce the CVE surface. They are supported by the operator and verified end-to-end in the e2e suite.
+
+## Default behavior is shell-free {#default-behavior-is-shell-free}
+
+The operator never assumes a shell is present in the container. Everything it generates for the ClickHouse and Keeper containers works against the distroless images out of the box:
+
+- **Entrypoint** — the operator does not set a container `command`/`args`. It relies on the image entrypoint, which runs the statically linked `clickhouse` binary directly (`clickhouse docker-init`), not a shell wrapper.
+- **Probes** — a `tcpSocket` liveness probe on the native protocol port and an `httpGet` readiness probe (`/ping` for ClickHouse, `/ready` for Keeper). No shell.
+- **Version probe** — the operator runs `/usr/bin/clickhouse local --query …` as a short-lived `Job` to read the server version. It invokes the binary directly, not through `/bin/sh`.
+
+The operator also injects **no** default lifecycle hooks (`preStop`/`postStart`) and **no** default init containers, so there is nothing on the default path that needs a shell.
+
+## Using distroless images {#using-distroless-images}
+
+Set the `-distroless` tag on the cluster's container template:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  containerTemplate:
+    image:
+      tag: 26.5-distroless
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  containerTemplate:
+    image:
+      tag: 26.5-distroless
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+The reported `status.version` is the numeric server version (for example `26.5.1.882`); the `-distroless` suffix is part of the image tag only.
+
+## Caveat: custom overrides must stay shell-free {#caveat-custom-overrides-must-stay-shell-free}
+
+The CRDs let you override container probes and add lifecycle hooks and init containers. On a distroless image these overrides **must not rely on a shell**, because there is no `/bin/sh`, `bash`, or `busybox` in the image.
+
+<Note>
+Any user-supplied `exec` probe, `lifecycle` hook (`preStop`/`postStart`), or init container that runs inside the ClickHouse or Keeper container must invoke a binary that exists in the image — in practice `/usr/bin/clickhouse` — rather than a shell command.
+</Note>
+
+For example, replace a shell-based health check:
+
+```yaml
+# Will fail on a distroless image — there is no /bin/sh
+livenessProbe:
+  exec:
+    command: ["/bin/sh", "-c", "clickhouse client --query 'SELECT 1'"]
+```
+
+with one that calls the binary directly, or use the built-in `tcpSocket`/`httpGet` probes:
+
+```yaml
+livenessProbe:
+  exec:
+    command: ["/usr/bin/clickhouse", "client", "--query", "SELECT 1"]
+```
+
+Init containers that need shell utilities should use their own image (for example `busybox`) rather than inheriting the ClickHouse image.
+
+## Debugging {#debugging}
+
+Because the production distroless image has no shell, `kubectl exec … -- /bin/sh` will not work against it.
+
+<Tip>
+For interactive troubleshooting, use the `-distroless-debug` image variant (which includes a `busybox` shell) or attach an [ephemeral debug container](https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/#ephemeral-container) with a separate tools image. You can still open an interactive ClickHouse client session against any image with `kubectl exec`, since the client is the same self-contained binary.
+</Tip>
