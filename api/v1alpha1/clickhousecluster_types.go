@@ -50,7 +50,7 @@ type ClickHouseClusterSpec struct {
 	DataVolumeClaimSpec *corev1.PersistentVolumeClaimSpec `json:"dataVolumeClaimSpec,omitempty"`
 
 	// Additional per-pod PVC templates for JBOD / multi-disk storage.
-	// Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at /var/lib/clickhouse/disks/<name> and
+	// Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at `/var/lib/clickhouse/disks/<name>` and
 	// added to the generated JBOD storage policy.
 	// The set of disks is fixed at creation.
 	// +optional

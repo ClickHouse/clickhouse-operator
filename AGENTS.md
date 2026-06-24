@@ -148,3 +148,4 @@ Kustomize-based configuration: `config/default/` is the main overlay composing C
 - **Testing**: Ginkgo v2 BDD style with Gomega matchers. Dot imports for `ginkgo/v2` and `gomega` are allowed.
 - **Linting**: 80+ linters enabled in `.golangci.yml`. Notable: `wsl_v5` (whitespace), `mnd` (magic numbers, `2` is exempted), `godot` (comment periods), `ireturn` (interface return restrictions with whitelisted types)
 - **Generated files**: Never edit `zz_generated.deepcopy.go` or files in `config/crd/bases/`, `config/rbac/` directly
+- **Generated docs**: `docs/reference/api-reference.mdx` is generated from Go type comments in `api/v1alpha1/`. Never edit it directly — make changes in the source types and regenerate with `make docs-generate-api-ref`.
