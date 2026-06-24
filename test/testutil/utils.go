@@ -43,6 +43,12 @@ const (
 	logTailLines  = 10
 	BaseVersion   = "26.3"
 	UpdateVersion = "26.5"
+
+	// DistrolessSuffix selects the shell-free distroless production variant of an
+	// image tag (e.g. "26.3-distroless"). These images ship without /bin/sh,
+	// busybox, or coreutils (ClickHouse/ClickHouse#105678), so the operator must
+	// keep its probes, lifecycle, entrypoint, and version probe shell-free.
+	DistrolessSuffix = "-distroless"
 )
 
 var (

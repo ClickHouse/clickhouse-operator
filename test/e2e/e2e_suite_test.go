@@ -143,6 +143,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		"docker.io/clickhouse/clickhouse-server:" + UpdateVersion,
 		"docker.io/clickhouse/clickhouse-keeper:" + BaseVersion,
 		"docker.io/clickhouse/clickhouse-keeper:" + UpdateVersion,
+		// Shell-free distroless variants, exercised by the distroless compatibility specs.
+		"docker.io/clickhouse/clickhouse-server:" + BaseVersion + testutil.DistrolessSuffix,
+		"docker.io/clickhouse/clickhouse-keeper:" + BaseVersion + testutil.DistrolessSuffix,
 	})
 
 	By("installing CRDs")

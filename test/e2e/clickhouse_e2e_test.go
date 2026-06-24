@@ -102,7 +102,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 			WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, true)
 			ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
-			Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
+			// The reported version is numeric; the -distroless image tag carries the suffix.
+			wantVersion := strings.TrimSuffix(cr.Spec.ContainerTemplate.Image.Tag, testutil.DistrolessSuffix)
+			Expect(cr.Status.Version).To(HavePrefix(wantVersion))
 			ClickHouseRWChecks(ctx, &cr, &checks)
 		},
 			Entry("update log level", v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
@@ -115,6 +117,13 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Image: v1.ContainerImage{Tag: UpdateVersion},
 			}}),
 			Entry("scale up to 2 replicas", v1.ClickHouseClusterSpec{Replicas: new(int32(2))}),
+			// Rolls the running cluster onto the shell-free distroless image (no /bin/sh,
+			// busybox, or coreutils; ClickHouse/ClickHouse#105678). Reaching Ready exercises
+			// the clickhouse docker-init entrypoint, the TCPSocket/HTTPGet probes, and the
+			// clickhouse local version-probe Job against an image with no shell.
+			Entry("switch to the distroless image", v1.ClickHouseClusterSpec{ContainerTemplate: v1.ContainerTemplateSpec{
+				Image: v1.ContainerImage{Tag: BaseVersion + testutil.DistrolessSuffix},
+			}}),
 		)
 
 		DescribeTable("ClickHouse cluster updates", func(
