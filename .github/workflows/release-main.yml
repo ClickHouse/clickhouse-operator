@@ -33,7 +33,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Install jq
-        uses: dcarbone/install-jq-action@v3.2.0
+        uses: dcarbone/install-jq-action@v4.0.1
       - name: Build operator image
         run: make docker-buildx-latest
       - name: Install Helm
