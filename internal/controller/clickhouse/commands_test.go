@@ -257,7 +257,9 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 		By("running EnsureDefaultDatabaseEngine")
 
-		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeTrue())
+		// A non-empty Atomic `default` must not be dropped; the operator should
+		// report failure (SchemaInSync=false) rather than destroy data.
+		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeFalse())
 
 		By("verifying default database is still Atomic and the seeded table survived")
 

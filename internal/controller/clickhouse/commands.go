@@ -515,11 +515,12 @@ func (cmd *commander) ensureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 		}
 
 		// Never drop a populated `default`: converting it to Replicated would
-		// destroy existing tables. Leave it as-is so the data is preserved; the
-		// engine is only switched on an empty `default` below.
+		// destroy existing tables. Leave it as-is and surface the problem as an
+		// error so the operator reports SchemaInSync=false; the engine is only
+		// switched on an empty `default` below.
 		if count > 0 {
-			log.Warn("database `default` has tables, but its engine is not Replicated; leaving it as-is to avoid data loss (skipping Replicated conversion)")
-			return nil
+			log.Warn("database `default` has tables, but its engine is not Replicated; refusing to drop it to avoid data loss")
+			return fmt.Errorf("refusing to recreate non-empty `default` database as Replicated on replica %s: it has %d table(s), dropping it would lose data", id, count)
 		}
 
 		log.Debug("dropping default database")
