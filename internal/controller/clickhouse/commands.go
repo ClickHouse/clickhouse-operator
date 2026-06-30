@@ -514,8 +514,12 @@ func (cmd *commander) ensureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 			return fmt.Errorf("check tables in  %s: %w", id, err)
 		}
 
+		// Never drop a populated `default`: converting it to Replicated would
+		// destroy existing tables. Leave it as-is so the data is preserved; the
+		// engine is only switched on an empty `default` below.
 		if count > 0 {
-			log.Warn("database `default` has tables, but its engine is not Replicated, data loss is possible")
+			log.Warn("database `default` has tables, but its engine is not Replicated; leaving it as-is to avoid data loss (skipping Replicated conversion)")
+			return nil
 		}
 
 		log.Debug("dropping default database")

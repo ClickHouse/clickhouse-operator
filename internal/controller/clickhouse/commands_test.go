@@ -245,6 +245,35 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}
 	})
 
+	It("preserves a non-empty Atomic default instead of dropping it", func(ctx context.Context) {
+		id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+
+		By("seeding a table into the Atomic default database")
+
+		conn, err := cmd.getConn(id0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(conn.Exec(ctx, `CREATE TABLE default.seed (id UInt64) ENGINE=MergeTree ORDER BY id`)).To(Succeed())
+		Expect(conn.Exec(ctx, `INSERT INTO default.seed SELECT number FROM numbers(10)`)).To(Succeed())
+
+		By("running EnsureDefaultDatabaseEngine")
+
+		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeTrue())
+
+		By("verifying default database is still Atomic and the seeded table survived")
+
+		var engine string
+		Expect(conn.QueryRow(ctx, `SELECT engine FROM system.databases WHERE name='default'`).Scan(&engine)).To(Succeed())
+		Expect(engine).To(Equal("Atomic"))
+
+		var count uint64
+		Expect(conn.QueryRow(ctx, `SELECT count() FROM default.seed`).Scan(&count)).To(Succeed())
+		Expect(count).To(Equal(uint64(10)))
+
+		By("dropping the seed table so the default database is empty again")
+
+		Expect(conn.Exec(ctx, `DROP TABLE default.seed SYNC`)).To(Succeed())
+	})
+
 	It("converts default database from Atomic to Replicated", func(ctx context.Context) {
 		By("running EnsureDefaultDatabaseEngine")
 
