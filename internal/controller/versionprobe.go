@@ -268,6 +268,7 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 							Command:                  []string{versionProbeBinary},
 							Args:                     []string{"local", "--query", versionProbeQuery},
+							Env:                      []corev1.EnvVar{{Name: "MALLOC_CONF", Value: "narenas:2,dirty_decay_ms:0,muzzy_decay_ms:0"}},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse(DefaultProbeCPURequest),
