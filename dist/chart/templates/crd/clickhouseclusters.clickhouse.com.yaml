@@ -6491,6 +6491,20 @@ spec:
                         description: Maximum log file size.
                         type: string
                     type: object
+                  network:
+                    description: Network settings for the ClickHouse server, e.g.
+                      the addresses it listens on.
+                    properties:
+                      listenHost:
+                        description: |-
+                          ListenHost is the list of addresses the ClickHouse server listens on.
+                          Use it to conform to networking restrictions, e.g. ["0.0.0.0"] for IPv4-only,
+                          ["::"] for IPv6-only, or ["::", "0.0.0.0"] for dual-stack clusters.
+                          Defaults to ["::", "0.0.0.0"] when empty.
+                        items:
+                          type: string
+                        type: array
+                    type: object
                   tls:
                     description: TLS settings, allows to configure secure endpoints
                       and certificate verification for ClickHouse server.
