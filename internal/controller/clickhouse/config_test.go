@@ -139,6 +139,7 @@ var _ = Describe("networkConfigGenerator listen_host", func() {
 				return g
 			}
 		}
+
 		return nil
 	}
 
@@ -174,7 +175,10 @@ var _ = Describe("networkConfigGenerator listen_host", func() {
 		Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())
 		Expect(obj).To(HaveKey("listen_host"))
 
-		return obj["listen_host"].([]any)
+		hosts, ok := obj["listen_host"].([]any)
+		Expect(ok).To(BeTrue())
+
+		return hosts
 	}
 
 	It("defaults to dual-stack when listenHost is empty", func() {
