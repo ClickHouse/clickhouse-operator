@@ -352,6 +352,7 @@ type NetworkSettings struct {
 	// ["::"] for IPv6-only, or ["::", "0.0.0.0"] for dual-stack clusters.
 	// Defaults to ["::", "0.0.0.0"] when empty.
 	// +optional
+	// +listType=atomic
 	ListenHost []string `json:"listenHost,omitempty"`
 }
 

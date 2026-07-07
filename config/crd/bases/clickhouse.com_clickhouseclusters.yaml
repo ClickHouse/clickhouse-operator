@@ -6501,6 +6501,7 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
                     type: object
                   tls:
                     description: TLS settings, allows to configure secure endpoints
