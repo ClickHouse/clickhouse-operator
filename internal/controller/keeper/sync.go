@@ -670,7 +670,7 @@ func (r *keeperReconciler) evaluateVersionConditions(isUpdating bool) {
 		if s.Status.Version != "" {
 			versionByReplica[strconv.FormatInt(int64(id), 10)] = s.Status.Version
 
-			if observedVersion < s.Status.Version {
+			if observedVersion == "" || newerVersion(s.Status.Version, observedVersion) {
 				observedVersion = s.Status.Version
 			}
 		}
@@ -699,6 +699,17 @@ func (r *keeperReconciler) evaluateVersionConditions(isUpdating bool) {
 	} else {
 		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
 	}
+}
+
+func newerVersion(a, b string) bool {
+	parsedA, errA := upgrade.ParseBareVersion(a)
+	parsedB, errB := upgrade.ParseBareVersion(b)
+
+	if errA != nil || errB != nil {
+		return b < a
+	}
+
+	return upgrade.CompareVersions(parsedA, parsedB) > 0
 }
 
 func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logger, replicaID v1.KeeperReplicaID) (*ctrl.Result, error) {

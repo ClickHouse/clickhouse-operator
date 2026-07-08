@@ -198,6 +198,20 @@ var _ = Describe("Keeper version status", func() {
 		Expect(meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionUpgraded)).To(BeNil())
 	})
 
+	It("should report the numerically newest replica version across a .9 to .10 boundary", func() {
+		_, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		rec.ReplicaState = map[v1.KeeperReplicaID]replicaState{
+			0: {Status: serverStatus{Version: "25.9.1.100"}},
+			1: {Status: serverStatus{Version: "25.10.2.5"}},
+		}
+
+		rec.evaluateReplicaConditions()
+
+		Expect(rec.Cluster.Status.Version).To(Equal("25.10.2.5"))
+	})
+
 	It("should keep last known version when no live replica version is observed", func() {
 		_, rec, cancelEvents := setupReconciler()
 		defer cancelEvents()
