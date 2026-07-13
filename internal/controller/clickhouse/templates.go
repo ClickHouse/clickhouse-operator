@@ -443,22 +443,22 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 	cr := r.Cluster
 	protocols := buildProtocols(cr)
 
+	// Interserver listener opens before table loading, client listeners after:
+	// liveness survives slow synchronous loads, readiness implies serving queries.
 	livenessProbe := controller.DefaultLivenessProbeSettings
 	livenessProbe.ProbeHandler = corev1.ProbeHandler{
-		TCPSocket: &corev1.TCPSocketAction{
-			Port: intstr.FromInt32(PortNative),
+		HTTPGet: &corev1.HTTPGetAction{
+			Path:   "/ping",
+			Port:   intstr.FromInt32(PortInterserver),
+			Scheme: corev1.URISchemeHTTP,
 		},
-	}
-
-	if cr.Spec.Settings.TLS.Enabled && cr.Spec.Settings.TLS.Required {
-		livenessProbe.TCPSocket.Port.IntVal = PortNativeSecure
 	}
 
 	readinessProbe := controller.DefaultReadinessProbeSettings
 	readinessProbe.ProbeHandler = corev1.ProbeHandler{
 		HTTPGet: &corev1.HTTPGetAction{
 			Path:   "/ping",
-			Port:   intstr.FromInt32(PortInterserver),
+			Port:   intstr.FromInt32(PortManagementHTTP),
 			Scheme: corev1.URISchemeHTTP,
 		},
 	}
@@ -571,13 +571,14 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 type protocolType = string
 
 const (
-	protocolTypeInterserver protocolType = "interserver"
-	protocolTypePrometheus  protocolType = "prometheus"
-	protocolTypeManagement  protocolType = "management"
-	protocolTypeTCP         protocolType = "tcp"
-	protocolTypeTCPSecure   protocolType = "tcp-secure"
-	protocolTypeHTTP        protocolType = "http"
-	protocolTypeHTTPSecure  protocolType = "http-secure"
+	protocolTypeInterserver    protocolType = "interserver"
+	protocolTypePrometheus     protocolType = "prometheus"
+	protocolTypeManagement     protocolType = "management"
+	protocolTypeManagementHTTP protocolType = "management-http"
+	protocolTypeTCP            protocolType = "tcp"
+	protocolTypeTCPSecure      protocolType = "tcp-secure"
+	protocolTypeHTTP           protocolType = "http"
+	protocolTypeHTTPSecure     protocolType = "http-secure"
 )
 
 type protocol struct {
@@ -603,6 +604,11 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Type:        protocolTypeTCP,
 			Port:        PortManagement,
 			Description: "tcp-management",
+		},
+		protocolTypeManagementHTTP: {
+			Type:        protocolTypeHTTP,
+			Port:        PortManagementHTTP,
+			Description: "http-management",
 		},
 		protocolTypeTCP: {
 			Type: protocolTypeTCP,

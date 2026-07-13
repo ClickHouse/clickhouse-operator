@@ -59,7 +59,7 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageNotExists
 	}
 
-	if r.Error || r.ReloadError != nil {
+	if r.Error {
 		return chctrl.StageError
 	}
 
@@ -71,7 +71,8 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageHasDiff
 	}
 
-	if !r.Ready() || !r.Reloaded(rev.ReloadConfigRevision) {
+	// ReloadError is a retryable connectivity state, not a replica error:
+	if !r.Ready() || r.ReloadError != nil || !r.Reloaded(rev.ReloadConfigRevision) {
 		return chctrl.StageNotReadyUpToDate
 	}
 
@@ -479,9 +480,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			probe, err = r.commander.Probe(ctx, id)
 			if err != nil {
 				log.Debug("failed to probe replica", "replica_id", id, "error", err)
-			}
-
-			if cfg, ok := configMaps[id]; ok && !probe.Reloaded(cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash]) {
+			} else if cfg, ok := configMaps[id]; ok && !probe.Reloaded(cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash]) {
 				if reloadErr = r.commander.ReloadConfig(ctx, id); reloadErr != nil {
 					log.Debug("replica config reload failed", "replica_id", id, "error", reloadErr)
 				} else if probe, err = r.commander.Probe(ctx, id); err != nil {

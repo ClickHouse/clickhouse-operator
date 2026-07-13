@@ -13,11 +13,12 @@ import (
 )
 
 const (
-	PortManagement   = 9001
-	PortNative       = 9000
-	PortNativeSecure = 9440
-	PortHTTP         = 8123
-	PortHTTPSecure   = 8443
+	PortManagement     = 9001
+	PortManagementHTTP = 9002
+	PortNative         = 9000
+	PortNativeSecure   = 9440
+	PortHTTP           = 8123
+	PortHTTPSecure     = 8443
 
 	PortPrometheusScrape = 9363
 	PortInterserver      = 9009
