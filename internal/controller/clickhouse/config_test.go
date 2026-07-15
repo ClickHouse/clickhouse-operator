@@ -1,6 +1,8 @@
 package clickhouse
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -54,6 +56,39 @@ var _ = Describe("ConfigGenerator", func() {
 
 			obj := map[any]any{}
 			Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())
+			Expect(findExposedEnvVars(obj)).To(BeEmpty(), "env vars should be hidden in preprocessed config")
 		})
 	}
 })
+
+func findExposedEnvVars(value any) []string {
+	switch value := value.(type) {
+	case map[any]any:
+		if env, ok := value["@from_env"]; ok {
+			if _, ok := value["@hide_in_preprocessed"]; !ok {
+				return []string{fmt.Sprintf("%v", env)}
+			}
+		} else {
+			var exposed []string
+			for path, child := range value {
+				for _, e := range findExposedEnvVars(child) {
+					exposed = append(exposed, fmt.Sprintf("%v.%s", path, e))
+				}
+			}
+
+			return exposed
+		}
+
+	case []any:
+		var exposed []string
+		for i, child := range value {
+			for _, e := range findExposedEnvVars(child) {
+				exposed = append(exposed, fmt.Sprintf("%d.%s", i, e))
+			}
+		}
+
+		return exposed
+	}
+
+	return nil
+}

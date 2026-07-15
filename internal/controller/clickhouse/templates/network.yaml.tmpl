@@ -9,6 +9,7 @@ interserver_http_credentials:
   user: {{ .InterserverHTTPUser }}
   password:
     - "@from_env": {{ .InterserverHTTPPasswordEnvVar }}
+      "@hide_in_preprocessed": true
   allow_empty: false
 
 {{- /* use default tcp_port as management to use it in distributed queries */}}

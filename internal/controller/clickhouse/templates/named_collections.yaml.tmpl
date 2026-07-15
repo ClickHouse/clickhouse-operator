@@ -2,5 +2,6 @@ named_collections_storage:
   type: keeper_encrypted
   key_hex:
     "@from_env": {{ .NamedCollectionsKeyEnv }}
+    "@hide_in_preprocessed": true
   algorithm: aes_128_ctr
   path: {{ .NamedCollectionsPath }}

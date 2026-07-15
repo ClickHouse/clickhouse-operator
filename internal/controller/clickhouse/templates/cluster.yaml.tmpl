@@ -15,11 +15,13 @@ zookeeper:
     {{- end }}
   identity:
     "@from_env": {{ .KeeperIdentityEnv }}
+    "@hide_in_preprocessed": true
 
 remote_servers:
   default:
     secret:
       "@from_env": {{ .ClusterSecretEnv }}
+      "@hide_in_preprocessed": true
     shard:
     {{- $ctx := .}}
     {{- range $shard, $replicas := .ClusterHosts }}

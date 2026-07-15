@@ -5,6 +5,7 @@ users:
     {{- if .DefaultUserPasswordEnv }}
     {{ .DefaultUserType }}:
       - '@from_env': {{ .DefaultUserPasswordEnv }}
+        '@hide_in_preprocessed': true
     {{ else }}
     no_password:
     {{ end}}
@@ -13,7 +14,9 @@ users:
   {{ .OperatorUserName }}:
     profile: {{ .OperatorProfileName }}
     quota: default
-    password_sha256_hex: {{ .OperatorUserPasswordHash }}
+    password_sha256_hex:
+      '@hide_in_preprocessed': true
+      '#text': {{ .OperatorUserPasswordHash }}
     grants: {{/* TODO restrict */}}
       - query: "GRANT ALL ON *.*"
 profiles:
