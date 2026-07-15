@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -104,6 +105,10 @@ func validateAdditionalVolumeClaimTemplates(data *corev1.PersistentVolumeClaimSp
 
 		if tmpl.Name == "default" {
 			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q is reserved by the ClickHouse default disk", i, tmpl.Name))
+		}
+
+		if strings.HasSuffix(tmpl.Name, "-encrypted") {
+			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q is reserved: names ending in \"-encrypted\" collide with generated encrypted disk names", i, tmpl.Name))
 		}
 
 		if _, ok := seenNames[tmpl.Name]; ok {

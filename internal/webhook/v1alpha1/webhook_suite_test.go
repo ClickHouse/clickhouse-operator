@@ -129,10 +129,15 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	cancelManager()
 
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
+	if cancelManager != nil {
+		cancelManager()
+	}
+
+	if testEnv != nil {
+		err := testEnv.Stop()
+		Expect(err).NotTo(HaveOccurred())
+	}
 })
 
 var _ = BeforeEach(func() {

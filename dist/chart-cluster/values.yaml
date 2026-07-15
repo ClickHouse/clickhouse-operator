@@ -94,7 +94,7 @@ clickhouse:
     replicas: 3
 
     # Configuration parameters for ClickHouse server.
-    # settings: {}
+    settings: {}
 
     # Number of shards in the cluster.
     shards: 1

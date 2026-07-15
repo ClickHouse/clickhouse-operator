@@ -1,15 +1,39 @@
 storage_configuration:
   disks:
-{{- range . }}
+    default: {}
+{{- range .AdditionalDisks }}
     {{ .Name }}:
       path: {{ .Path }}
 {{- end }}
+{{- if .Encryption }}
+{{- range .Encryption.Disks }}
+    {{ .Name }}:
+      type: encrypted
+      disk: {{ .WrappedDisk }}
+      path: {{ .Path }}
+      algorithm: {{ $.Encryption.Algorithm }}
+      key_hex:
+        "@from_env": {{ $.Encryption.KeyEnv }}
+        "@hide_in_preprocessed": true
+{{- end }}
+{{- end }}
   policies:
+{{- if .AdditionalDisks }}
     default:
       volumes:
         main:
           disk:
             - default
-{{- range . }}
+{{- range .AdditionalDisks }}
             - {{ .Name }}
+{{- end }}
+{{- end }}
+{{- if .Encryption }}
+    {{ .Encryption.PolicyName }}:
+      volumes:
+        main:
+          disk:
+{{- range .Encryption.Disks }}
+            - {{ .Name }}
+{{- end }}
 {{- end }}

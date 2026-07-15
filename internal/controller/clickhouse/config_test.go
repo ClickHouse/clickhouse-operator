@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,9 @@ var _ = Describe("ConfigGenerator", func() {
 					{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "test2"}},
 				},
 				Settings: v1.ClickHouseSettings{
+					Encryption: &v1.EncryptionSettings{
+						PolicyName: "encrypted",
+					},
 					ExtraConfig: runtime.RawExtension{
 						Raw: []byte(`{"test": "value"}`),
 					},
@@ -59,6 +63,56 @@ var _ = Describe("ConfigGenerator", func() {
 			Expect(findExposedEnvVars(obj)).To(BeEmpty(), "env vars should be hidden in preprocessed config")
 		})
 	}
+
+	It("should generate valid disk encryption config", func() {
+		var g configGenerator
+		for _, generator := range generators {
+			if generator.Filename() == "10-storage-jbod.yaml" {
+				g = generator
+				break
+			}
+		}
+
+		Expect(g).ToNot(BeNil())
+
+		cfg := struct {
+			StorageConfiguration struct {
+				Disks map[string]struct {
+					Type, Disk, Path, Algorithm string
+					KeyHex                      map[string]string `yaml:"key_hex"`
+				} `yaml:"disks"`
+				Policies map[string]struct {
+					Volumes map[string]struct {
+						Disk []string
+					} `yaml:"volumes"`
+				} `yaml:"policies"`
+			} `yaml:"storage_configuration"`
+		}{}
+
+		Expect(g.Enabled(&ctx)).To(BeTrue())
+		data, err := g.Generate(&ctx, v1.ClickHouseReplicaID{})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(yaml.Unmarshal([]byte(data), &cfg)).To(Succeed())
+
+		var (
+			disks          []string
+			encryptedDisks []string
+		)
+		for disk, conf := range cfg.StorageConfiguration.Disks {
+			if strings.HasSuffix(disk, EncryptedDiskNameSuffix) {
+				Expect(conf.Type).To(Equal("encrypted"))
+				Expect(cfg.StorageConfiguration.Disks).To(HaveKey(strings.TrimSuffix(disk, EncryptedDiskNameSuffix)))
+				encryptedDisks = append(encryptedDisks, disk)
+			} else {
+				Expect(cfg.StorageConfiguration.Disks).To(HaveKey(disk + EncryptedDiskNameSuffix))
+				disks = append(disks, disk)
+			}
+		}
+
+		Expect(cfg.StorageConfiguration.Policies[ctx.Cluster.Spec.Settings.Encryption.PolicyName].Volumes["main"].Disk).To(ConsistOf(encryptedDisks))
+		Expect(cfg.StorageConfiguration.Policies["default"].Volumes["main"].Disk).To(ConsistOf(disks))
+	})
 })
 
 func findExposedEnvVars(value any) []string {

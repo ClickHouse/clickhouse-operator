@@ -514,6 +514,42 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			verifyDisks(resource.MustParse("2Gi"))
 		})
 
+		It("should generate encrypted storage policy if enabled", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("enc-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(1)),
+					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					DataVolumeClaimSpec: &defaultStorage,
+					Settings:            v1.ClickHouseSettings{Encryption: &v1.EncryptionSettings{}},
+				},
+			}
+
+			By("creating cluster CR with encryption enabled")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+
+			chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+			Expect(err).NotTo(HaveOccurred())
+
+			defer chClient.Close()
+
+			By("verifying the encrypted storage policy exists")
+
+			var policies int64
+			Expect(chClient.QueryRowReplica(ctx, v1.ClickHouseReplicaID{}, `SELECT count()::Int64 
+				FROM system.storage_policies WHERE
+				policy_name = 'encrypted' AND arrayAll(x -> endsWith(x,'_encrypted'), disks)`, &policies)).To(Succeed())
+			Expect(policies).To(BeNumerically(">=", 1))
+		})
+
 		It("should correctly configure access", func(ctx context.Context) {
 			var (
 				password    = fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec

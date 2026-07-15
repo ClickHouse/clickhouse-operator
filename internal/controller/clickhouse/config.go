@@ -122,7 +122,7 @@ func init() {
 		Raw:       storageJBODConfigTemplateStr,
 		Generator: storageJBODConfigGenerator,
 		Enabled: func(r *clickhouseReconciler) bool {
-			return len(r.Cluster.Spec.AdditionalVolumeClaimTemplates) > 0
+			return len(r.Cluster.Spec.AdditionalVolumeClaimTemplates) > 0 || r.Cluster.Spec.Settings.Encryption != nil
 		},
 	}} {
 		tmpl := template.Must(template.New("").Funcs(templateFuncs).Parse(templateSpec.Raw))
@@ -492,6 +492,26 @@ type additionalDisk struct {
 	Path string
 }
 
+// storageConfigParams is the template data for the storage configuration (JBOD disks and/or encryption).
+type storageConfigParams struct {
+	AdditionalDisks []additionalDisk
+	Encryption      *encryptionParams
+}
+
+type encryptionParams struct {
+	PolicyName string
+	KeyEnv     string
+	Algorithm  string
+	Disks      []encryptedDisk
+}
+
+// encryptedDisk is a ClickHouse `encrypted` disk wrapping a physical disk.
+type encryptedDisk struct {
+	Name        string
+	WrappedDisk string
+	Path        string
+}
+
 func storageJBODConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
 	disks := make([]additionalDisk, 0, len(r.Cluster.Spec.AdditionalVolumeClaimTemplates))
 	for _, d := range r.Cluster.Spec.AdditionalVolumeClaimTemplates {
@@ -501,9 +521,36 @@ func storageJBODConfigGenerator(tmpl *template.Template, r *clickhouseReconciler
 		})
 	}
 
+	params := storageConfigParams{AdditionalDisks: disks}
+
+	if enc := r.Cluster.Spec.Settings.Encryption; enc != nil {
+		policyName := enc.PolicyName
+		encrypted := make([]encryptedDisk, 0, 1+len(disks))
+		encrypted = append(encrypted, encryptedDisk{
+			Name:        DefaultDiskName + EncryptedDiskNameSuffix,
+			WrappedDisk: DefaultDiskName,
+			Path:        EncryptedDiskSubPath,
+		})
+
+		for _, d := range disks {
+			encrypted = append(encrypted, encryptedDisk{
+				Name:        d.Name + EncryptedDiskNameSuffix,
+				WrappedDisk: d.Name,
+				Path:        EncryptedDiskSubPath,
+			})
+		}
+
+		params.Encryption = &encryptionParams{
+			PolicyName: policyName,
+			KeyEnv:     EnvDiskEncryptionKey,
+			Algorithm:  DiskEncryptionAlgorithm,
+			Disks:      encrypted,
+		}
+	}
+
 	builder := strings.Builder{}
-	if err := tmpl.Execute(&builder, disks); err != nil {
-		return "", fmt.Errorf("template JBOD config: %w", err)
+	if err := tmpl.Execute(&builder, params); err != nil {
+		return "", fmt.Errorf("template storage config: %w", err)
 	}
 
 	return builder.String(), nil

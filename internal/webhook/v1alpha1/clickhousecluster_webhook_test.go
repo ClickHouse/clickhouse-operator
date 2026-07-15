@@ -492,5 +492,87 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 			Expect(k8sClient.Update(ctx, cluster)).To(Succeed())
 		})
+
+		It("Should default the encrypted storage policy name", func(ctx context.Context) {
+			cluster := base("enc-default-name")
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(k8sClient.Get(ctx, cluster.NamespacedName(), cluster)).To(Succeed())
+			Expect(cluster.Spec.Settings.Encryption).NotTo(BeNil())
+			Expect(cluster.Spec.Settings.Encryption.PolicyName).To(Equal("encrypted"))
+		})
+
+		It("Should reject an encrypted policy named 'default'", func(ctx context.Context) {
+			cluster := base("enc-policy-default")
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{PolicyName: "default"}
+
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("reserved"))
+		})
+
+		It("Should reject disabling encryption after creation", func(ctx context.Context) {
+			cluster := base("enc-disable")
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(k8sClient.Get(ctx, cluster.NamespacedName(), cluster)).To(Succeed())
+			cluster.Spec.Settings.Encryption = nil
+
+			err := k8sClient.Update(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot be disabled"))
+		})
+
+		It("Should reject renaming the encrypted storage policy after creation", func(ctx context.Context) {
+			cluster := base("enc-policy-rename")
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{PolicyName: "enc-a"}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(k8sClient.Get(ctx, cluster.NamespacedName(), cluster)).To(Succeed())
+			cluster.Spec.Settings.Encryption.PolicyName = "enc-b"
+
+			err := k8sClient.Update(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("policyName is immutable"))
+		})
+
+		It("Should allow enabling encryption on an existing cluster", func(ctx context.Context) {
+			cluster := base("enc-enable-later")
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(k8sClient.Get(ctx, cluster.NamespacedName(), cluster)).To(Succeed())
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{}
+
+			Expect(k8sClient.Update(ctx, cluster)).To(Succeed())
+		})
+
+		It("Should reject removing the settings block while encryption is enabled", func(ctx context.Context) {
+			cluster := base("enc-drop-settings")
+			cluster.Spec.Settings.Encryption = &chv1.EncryptionSettings{}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(k8sClient.Get(ctx, cluster.NamespacedName(), cluster)).To(Succeed())
+			cluster.Spec.Settings = chv1.ClickHouseSettings{}
+
+			err := k8sClient.Update(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot be disabled"))
+		})
+
+		It("Should reject an additional disk name ending in -encrypted", func(ctx context.Context) {
+			cluster := base("jbod-enc-suffix")
+			cluster.Spec.AdditionalVolumeClaimTemplates = []chv1.PersistentVolumeClaimTemplate{disk("data-encrypted", "1Gi")}
+
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("-encrypted"))
+		})
 	})
 })

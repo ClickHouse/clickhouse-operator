@@ -481,6 +481,7 @@ check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against
 		fi; \
 		ERRORS=$$($(CRD_SCHEMA_CHECKER) check-manifests \
 			--existing-crd-filename="$$BASELINE" --new-crd-filename="$$crd" 2>&1 \
+			| grep -v -E '^info: ' \
 			| grep -v -E '$(CRD_COMPAT_EMBEDDED_TYPE_RE)' || true); \
 		if [ -n "$$ERRORS" ]; then \
 			echo "$$ERRORS"; \

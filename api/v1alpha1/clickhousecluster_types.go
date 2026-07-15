@@ -55,6 +55,8 @@ type ClickHouseClusterSpec struct {
 	// The set of disks is fixed at creation.
 	// +optional
 	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=128
+	// +kubebuilder:validation:XValidation:rule="self.all(t, !has(t.metadata) || !t.metadata.name.endsWith('-encrypted'))",message="names ending in '-encrypted' are reserved for generated encrypted disk names"
 	AdditionalVolumeClaimTemplates []PersistentVolumeClaimTemplate `json:"additionalVolumeClaimTemplates,omitempty"`
 
 	// Additional labels that are added to resources.
@@ -73,6 +75,7 @@ type ClickHouseClusterSpec struct {
 
 	// Configuration parameters for ClickHouse server.
 	// +optional
+	// +kubebuilder:default:={}
 	Settings ClickHouseSettings `json:"settings,omitempty"`
 
 	// ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution.
@@ -170,6 +173,7 @@ func (s *ClickHouseClusterSpec) WithDefaults() {
 }
 
 // ClickHouseSettings defines ClickHouse server settings options.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.encryption) || has(self.encryption)",message="encryption cannot be disabled after it has been enabled"
 type ClickHouseSettings struct {
 	// Specifies source and type of the password for `default` ClickHouse user.
 	// +optional
@@ -182,6 +186,11 @@ type ClickHouseSettings struct {
 	// TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server.
 	// +optional
 	TLS ClusterTLSSpec `json:"tls,omitempty"`
+
+	// Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.
+	// Opt in per table with `SETTINGS storage_policy = '<policyName>'`.
+	// +optional
+	Encryption *EncryptionSettings `json:"encryption,omitempty"`
 
 	// Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas
 	// after scale down.
@@ -201,6 +210,20 @@ type ClickHouseSettings struct {
 	// +optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	ExtraUsersConfig runtime.RawExtension `json:"extraUsersConfig,omitempty"`
+}
+
+// EncryptionSettings enables at-rest encryption of table data. When present, the operator generates an
+// encrypted ClickHouse storage policy wrapping every data disk; tables opt in via `SETTINGS storage_policy`.
+// Encryption cannot be disabled once enabled.
+type EncryptionSettings struct {
+	// PolicyName is the name of the generated encrypted storage policy.
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="policyName is immutable"
+	// +kubebuilder:validation:XValidation:rule="self != 'default'",message="policyName 'default' is reserved; the encrypted policy must not replace the default storage policy"
+	// +kubebuilder:default=encrypted
+	// +optional
+	PolicyName string `json:"policyName,omitempty"`
 }
 
 // ClickHouseClusterStatus defines the observed state of ClickHouseCluster.

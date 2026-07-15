@@ -34,6 +34,12 @@ const (
 	ClientConfigFileName     = "config.yaml"
 	AdditionalDiskBasePath   = internal.ClickHouseDataPath + "/disks/"
 
+	// DefaultDiskName is the built-in ClickHouse disk; at-rest encryption wraps it and each JBOD disk with an encrypted disk.
+	DefaultDiskName         = "default"
+	EncryptedDiskNameSuffix = "_encrypted"
+	EncryptedDiskSubPath    = "encrypted/"
+	DiskEncryptionAlgorithm = "AES_128_CTR"
+
 	TLSConfigPath       = "/etc/clickhouse-server/tls/"
 	CertificateFilename = "clickhouse-server.crt"
 	KeyFilename         = "clickhouse-server.key"
@@ -60,15 +66,18 @@ const (
 	EnvKeeperIdentity      = "CLICKHOUSE_KEEPER_IDENTITY"
 	EnvClusterSecret       = "CLICKHOUSE_CLUSTER_SECRET"
 	EnvNamedCollectionsKey = "CLICKHOUSE_NAMED_COLLECTIONS_KEY"
+	EnvDiskEncryptionKey   = "CLICKHOUSE_DISK_ENCRYPTION_KEY"
 
 	SecretKeyInterserverPassword = "interserver-password"
 	SecretKeyManagementPassword  = "management-password"
 	SecretKeyKeeperIdentity      = "keeper-identity"
 	SecretKeyClusterSecret       = "cluster-secret"
 	SecretKeyNamedCollectionsKey = "named-collections-key"
+	SecretKeyDiskEncryptionKey   = "disk-encryption-key"
 
-	// NamedCollectionsKeyByteLen is the AES-128 key size in bytes (16 bytes = 32 hex chars).
+	// NamedCollectionsKeyByteLen and DiskEncryptionKeyByteLen are AES-128 key sizes in bytes (16 bytes = 32 hex chars).
 	NamedCollectionsKeyByteLen = 16
+	DiskEncryptionKeyByteLen   = 16
 )
 
 type secretSpec struct {
@@ -110,6 +119,13 @@ var (
 			Generate: func() any { return controllerutil.GenerateRandomBytes(NamedCollectionsKeyByteLen) },
 			Enabled: func(cluster *v1.ClickHouseCluster) bool {
 				return upgrade.VersionAtLeast(cluster.Status.Version, minVersionNamedCollections)
+			},
+		},
+		{Key: SecretKeyDiskEncryptionKey, Env: EnvDiskEncryptionKey, Format: "%x",
+			Hint:     fmt.Sprintf("hex-encoded %d-byte AES key", DiskEncryptionKeyByteLen),
+			Generate: func() any { return controllerutil.GenerateRandomBytes(DiskEncryptionKeyByteLen) },
+			Enabled: func(cluster *v1.ClickHouseCluster) bool {
+				return cluster.Spec.Settings.Encryption != nil
 			},
 		},
 	}
