@@ -190,7 +190,7 @@ spec:
       {{- if and .Values.certManager.enabled .Values.webhook.enabled }}
       - name: webhook-certs
         secret:
-          secretName: webhook-server-cert
+          secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-server-cert" "context" $) }}
       {{- if and .Values.metrics.enabled .Values.metrics.secure }}
       - name: metrics-certs
         secret:

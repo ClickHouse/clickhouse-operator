@@ -20,5 +20,5 @@ spec:
     kind: Issuer
     name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "selfsigned-issuer" "context" $) }}
   {{- end }}
-  secretName: webhook-server-cert
+  secretName: {{ include "clickhouse-operator.resourceName" (dict "suffix" "webhook-server-cert" "context" $) }}
 {{- end }}
