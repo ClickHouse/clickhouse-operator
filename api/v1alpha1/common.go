@@ -240,16 +240,25 @@ type PodTemplateSpec struct {
 	SecurityContext *corev1.PodSecurityContext `json:"securityContext,omitempty"`
 
 	// TopologyZoneKey is the key of node labels.
-	// Nodes that have a label with this key and identical values are considered to be in the same topology zone.
-	// Set it to enable default TopologySpreadConstraints and Affinity rules to spread pods across zones.
-	// Recommended to be set to "topology.kubernetes.io/zone"
+	// Nodes that have a label with this key and identical values are considered to be in the same topology domain,
+	// e.g. the same availability zone for "topology.kubernetes.io/zone" or the same node for "kubernetes.io/hostname".
+	// Set it to balance pods holding the same data (replicas of one shard for ClickHouse, all replicas for Keeper)
+	// across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
+	// Pods of different shards may share a domain, so multiple pods per domain are allowed.
+	// With fewer domains than replicas, several replicas share a domain, still evenly balanced.
+	// ClickHouse pods additionally prefer domains hosting the Keeper pods they use.
+	// Recommended to be set to "topology.kubernetes.io/zone".
 	// +optional
 	TopologyZoneKey *string `json:"topologyZoneKey,omitempty"`
 
 	// NodeHostnameKey is the key of node labels.
 	// Nodes that have a label with this key and identical values are considered to be on the same node.
-	// Set it to enable default AntiAffinity rules to spread replicas from the different shards across nodes.
-	// Recommended to be set to "kubernetes.io/hostname"
+	// Set it to enforce exclusive node occupancy: a required PodAntiAffinity rule across all pods of the cluster,
+	// at most one pod per node regardless of shard. Requires at least as many nodes as pods;
+	// with fewer nodes the excess pods stay Pending.
+	// To spread replicas of the same shard across nodes while packing several pods per node,
+	// set TopologyZoneKey to "kubernetes.io/hostname" instead.
+	// Recommended to be set to "kubernetes.io/hostname".
 	// +optional
 	NodeHostnameKey *string `json:"nodeHostnameKey,omitempty"`
 
