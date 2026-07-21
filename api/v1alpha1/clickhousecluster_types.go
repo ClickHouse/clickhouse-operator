@@ -197,7 +197,7 @@ type ClickHouseSettings struct {
 	// Supports only Replicated and integration databases.
 	// +optional
 	// +kubebuilder:default:=true
-	EnableDatabaseSync bool `json:"enableDatabaseSync,omitempty"`
+	EnableDatabaseSync *bool `json:"enableDatabaseSync,omitempty"`
 
 	// Additional ClickHouse configuration that will be merged with the default one.
 	// +nullable

@@ -763,7 +763,7 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 }
 
 func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	if !r.Cluster.Spec.Settings.EnableDatabaseSync {
+	if enabled := r.Cluster.Spec.Settings.EnableDatabaseSync; enabled != nil && !*enabled {
 		log.Debug("database sync is disabled, skipping")
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ClickHouseConditionTypeSchemaInSync,

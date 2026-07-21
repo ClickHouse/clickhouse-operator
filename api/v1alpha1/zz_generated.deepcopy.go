@@ -229,6 +229,11 @@ func (in *ClickHouseSettings) DeepCopyInto(out *ClickHouseSettings) {
 		*out = new(EncryptionSettings)
 		**out = **in
 	}
+	if in.EnableDatabaseSync != nil {
+		in, out := &in.EnableDatabaseSync, &out.EnableDatabaseSync
+		*out = new(bool)
+		**out = **in
+	}
 	in.ExtraConfig.DeepCopyInto(&out.ExtraConfig)
 	in.ExtraUsersConfig.DeepCopyInto(&out.ExtraUsersConfig)
 }
