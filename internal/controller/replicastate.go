@@ -54,15 +54,15 @@ type RevisionState struct {
 	PVCRevisions map[string]string
 }
 
-// ReplicaState holds resources owned by a single replica.
-type ReplicaState struct {
+// ReplicaResources holds resources owned by a single replica.
+type ReplicaResources struct {
 	STS  *appsv1.StatefulSet
 	CFG  *corev1.ConfigMap
 	PVCs map[string]*corev1.PersistentVolumeClaim
 }
 
-// Updated checks whether StatefulSet controller applied updates.
-func (s ReplicaState) Updated() bool {
+// StatefulSetUpdated checks whether StatefulSet controller applied updates.
+func (s ReplicaResources) StatefulSetUpdated() bool {
 	if s.STS == nil {
 		return false
 	}
@@ -72,7 +72,7 @@ func (s ReplicaState) Updated() bool {
 }
 
 // ReplicaHasDiff checks whether any replica resources should be updated.
-func (rev RevisionState) ReplicaHasDiff(state ReplicaState) bool {
+func (rev RevisionState) ReplicaHasDiff(state ReplicaResources) bool {
 	if state.STS == nil {
 		return true
 	}
@@ -107,36 +107,52 @@ func (rev RevisionState) ReplicaHasDiff(state ReplicaState) bool {
 	return false
 }
 
-var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
+// ReplicaState holds the observed state of a single replica.
+type ReplicaState struct {
+	ReplicaResources
 
-// CheckPodError checks if the pod of the given StatefulSet have permanent errors preventing it from starting.
-func CheckPodError(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (bool, error) {
-	var pod corev1.Pod
+	Pod          *corev1.Pod
+	StartupError *string
+}
+
+// GetReplicaPod loads the Pod of the given StatefulSet.
+func GetReplicaPod(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (*corev1.Pod, error) {
+	pod := &corev1.Pod{}
 
 	podName := sts.Name + "-0"
 
 	if err := client.Get(ctx, types.NamespacedName{
 		Namespace: sts.Namespace,
 		Name:      podName,
-	}, &pod); err != nil {
+	}, pod); err != nil {
 		if !k8serrors.IsNotFound(err) {
-			return false, fmt.Errorf("get clickhouse pod %q: %w", podName, err)
+			return nil, fmt.Errorf("get pod %q: %w", podName, err)
 		}
 
 		log.Info("pod does not exist", "pod", podName, "statefulset", sts.Name)
 
-		return false, nil
+		return nil, nil
 	}
 
-	isError := false
-	for _, status := range pod.Status.ContainerStatuses {
-		if status.State.Waiting != nil && slices.Contains(podErrorStatuses, status.State.Waiting.Reason) {
-			log.Info("pod in error state", "pod", podName, "reason", status.State.Waiting.Reason)
+	return pod, nil
+}
 
-			isError = true
-			break
+var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
+
+// PodStartupError reports a non-empty description if Pod experience startup errors.
+func PodStartupError(pod *corev1.Pod) *string {
+	if pod == nil {
+		return nil
+	}
+
+	for _, statuses := range [][]corev1.ContainerStatus{pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses} {
+		for _, status := range statuses {
+			waiting := status.State.Waiting
+			if waiting != nil && slices.Contains(podErrorStatuses, waiting.Reason) {
+				return new(fmt.Sprintf("container %q: %s: %s", status.Name, waiting.Reason, waiting.Message))
+			}
 		}
 	}
 
-	return isError, nil
+	return nil
 }

@@ -52,7 +52,9 @@ var _ = Describe("UpdateStage", func() {
 				ReloadConfigRevision:      rev.ReloadConfigRevision,
 				UsersReloadConfigRevision: rev.ReloadConfigRevision,
 			},
-			ReplicaState: chctrl.ReplicaState{STS: sts, CFG: cfg},
+			ReplicaState: chctrl.ReplicaState{
+				ReplicaResources: chctrl.ReplicaResources{STS: sts, CFG: cfg},
+			},
 		}
 	}
 
@@ -62,6 +64,8 @@ var _ = Describe("UpdateStage", func() {
 
 	It("should treat a reload failure as NotReadyUpToDate, not Error", func() {
 		replica := settledReplica()
+		replica.ReloadConfigRevision = ""
+		replica.UsersReloadConfigRevision = ""
 		replica.ReloadError = errors.New("dial tcp: connect: connection refused")
 
 		Expect(replica.UpdateStage(rev)).To(Equal(chctrl.StageNotReadyUpToDate))
@@ -76,10 +80,18 @@ var _ = Describe("UpdateStage", func() {
 		Expect(replica.UpdateStage(rev)).To(Equal(chctrl.StageHasDiff))
 	})
 
-	It("should report NotReadyUpToDate when the probe returned nothing", func() {
+	It("should report Updating while waiting for a reload result", func() {
 		replica := settledReplica()
 		replica.replicaProbe = replicaProbe{}
 
-		Expect(replica.UpdateStage(rev)).To(Equal(chctrl.StageNotReadyUpToDate))
+		Expect(replica.UpdateStage(rev)).To(Equal(chctrl.StageUpdating))
+	})
+
+	It("should wait for an existing StatefulSet update before a new diff", func() {
+		replica := settledReplica()
+		replica.STS.Status.ObservedGeneration = 0
+		ctrlutil.AddSpecHashToObject(replica.STS, "next-sts-rev")
+
+		Expect(replica.UpdateStage(rev)).To(Equal(chctrl.StageUpdating))
 	})
 })

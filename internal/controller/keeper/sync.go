@@ -27,7 +27,6 @@ import (
 type replicaState struct {
 	chctrl.ReplicaState
 
-	Error  bool
 	Status serverStatus
 }
 
@@ -45,7 +44,7 @@ func (r replicaState) Ready(replicaCount int) bool {
 }
 
 func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
-	return rev.ReplicaHasDiff(r.ReplicaState)
+	return rev.ReplicaHasDiff(r.ReplicaResources)
 }
 
 func (r replicaState) UpdateStage(rev chctrl.RevisionState, replicaCount int) chctrl.ReplicaUpdateStage {
@@ -53,11 +52,11 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState, replicaCount int) ch
 		return chctrl.StageNotExists
 	}
 
-	if r.Error {
+	if r.StartupError != nil {
 		return chctrl.StageError
 	}
 
-	if !r.Updated() {
+	if !r.StatefulSetUpdated() {
 		return chctrl.StageUpdating
 	}
 
@@ -226,15 +225,15 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			return -1, replicaState{}, fmt.Errorf("get StatefulSet replica ID: %w", err)
 		}
 
-		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
+		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), &sts)
 		if err != nil {
-			log.Warn("failed to check replica pod error", "statefulset", sts.Name, "error", err)
-
-			hasError = true
+			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
 		}
 
+		startupErr := chctrl.PodStartupError(pod)
+
 		var status serverStatus
-		if !hasError && sts.Status.ReadyReplicas > 0 {
+		if startupErr == nil && sts.Status.ReadyReplicas > 0 {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
@@ -242,28 +241,30 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 				r.Cluster.Spec.Settings.TLS.Required)
 		}
 
-		pvcs, pvcErr := r.GetReplicaPVCs(ctx, &sts)
-		if pvcErr != nil {
-			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
+		pvcs, err := r.GetReplicaPVCs(ctx, &sts)
+		if err != nil {
+			log.Error(err, "failed to get PVCs for replica", "replica_id", id)
 		}
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
 		return id, replicaState{
-			Error:  hasError,
 			Status: status,
 
 			ReplicaState: chctrl.ReplicaState{
-				STS:  &sts,
-				CFG:  configMaps[id],
-				PVCs: pvcs,
+				ReplicaResources: chctrl.ReplicaResources{
+					STS:  &sts,
+					CFG:  configMaps[id],
+					PVCs: pvcs,
+				},
+				Pod:          pod,
+				StartupError: startupErr,
 			},
 		}, nil
 	})
 	for id, res := range execResults {
 		if res.Err != nil {
-			log.Info("failed to load replica state", "error", res.Err, "replica_id", id)
-			continue
+			return chctrl.StepResult{}, fmt.Errorf("load replica state %d: %w", id, res.Err)
 		}
 
 		if _, ok := r.ReplicaState[id]; !ok {
@@ -285,7 +286,6 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			if _, exists := r.ReplicaState[id]; !exists {
 				log.Info("adding missing replica from quorum config", "replica_id", id)
 				r.ReplicaState[id] = replicaState{
-					Error:  false,
 					Status: serverStatus{},
 				}
 			}
@@ -556,16 +556,18 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 }
 
 func (r *keeperReconciler) evaluateReplicaConditions() {
-	var errorIDs, notReadyIDs, notUpdatedIDs []string
-
-	replicasByMode := map[string][]v1.KeeperReplicaID{}
+	var (
+		notReadyIDs, notUpdatedIDs []string
+		startupErrors              = map[string]string{}
+		replicasByMode             = map[string][]v1.KeeperReplicaID{}
+	)
 
 	r.Cluster.Status.ReadyReplicas = 0
 	for id, replica := range r.ReplicaState {
 		idStr := fmt.Sprintf("%d", id)
 
-		if replica.Error {
-			errorIDs = append(errorIDs, idStr)
+		if replica.StartupError != nil {
+			startupErrors[idStr] = *replica.StartupError
 		}
 
 		if !replica.Ready(len(r.ReplicaState)) {
@@ -575,12 +577,12 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 			replicasByMode[replica.Status.ServerState] = append(replicasByMode[replica.Status.ServerState], id)
 		}
 
-		if replica.HasDiff(r.revs) || !replica.Updated() {
+		if replica.HasDiff(r.revs) || !replica.StatefulSetUpdated() {
 			notUpdatedIDs = append(notUpdatedIDs, idStr)
 		}
 	}
 
-	r.SetCondition(chctrl.ReplicaStartupCondition(errorIDs))
+	r.SetCondition(chctrl.ReplicaStartupCondition(startupErrors))
 	r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
 	r.SetCondition(chctrl.ConfigSyncCondition(nil, notUpdatedIDs, nil))
 	r.evaluateVersionConditions(len(notUpdatedIDs) > 0)
@@ -731,8 +733,7 @@ func (r *keeperReconciler) updateReplica(ctx context.Context, log ctrlutil.Logge
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
 		Existing:  replica.ReplicaState,
-		HasError:  replica.Error,
-		Desired: chctrl.ReplicaState{
+		Desired: chctrl.ReplicaResources{
 			CFG:  configMap,
 			STS:  statefulSet,
 			PVCs: chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, nil),

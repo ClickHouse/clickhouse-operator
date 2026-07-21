@@ -215,8 +215,7 @@ func (rm *ResourceManager) Delete(ctx context.Context, resource client.Object, a
 type ReplicaUpdateInput struct {
 	Revisions RevisionState
 	Existing  ReplicaState
-	Desired   ReplicaState
-	HasError  bool
+	Desired   ReplicaResources
 }
 
 // ReconcileReplicaResources reconciles a replica's ConfigMap, StatefulSet and PVC.
@@ -297,27 +296,18 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 			return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 		}
 
-		// Delete stuck pod if in error state so the StatefulSet controller can recreate it
-		if input.HasError {
-			podName := input.Existing.STS.Name + "-0"
-			pod := &corev1.Pod{}
-
-			err = rm.ctrl.GetClient().Get(ctx, types.NamespacedName{Namespace: input.Existing.STS.Namespace, Name: podName}, pod)
-			if err != nil {
-				if k8serrors.IsNotFound(err) {
-					return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
-				}
-
-				log.Warn("failed to get error pod", "pod", podName, "error", err)
-
+		// Delete stuck pod if in error state so the StatefulSet controller can recreate it.
+		if input.Existing.StartupError != nil {
+			pod := input.Existing.Pod
+			if pod == nil {
 				return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil
 			}
 
 			if pod.Labels[appsv1.ControllerRevisionHashLabelKey] != input.Existing.STS.Status.UpdateRevision {
-				log.Info("deleting pod stuck in error state", "pod", podName)
+				log.Info("deleting pod stuck in error state", "pod", pod.Name)
 
-				if err = rm.ctrl.GetClient().Delete(ctx, pod); err != nil {
-					log.Warn("failed to delete stuck pod", "pod", podName, "error", err)
+				if err = rm.Delete(ctx, pod, v1.EventActionReconciling, client.Preconditions{UID: &pod.UID}); err != nil {
+					log.Warn("failed to delete stuck pod", "pod", pod.Name, "error", err)
 				}
 
 				return &ctrlruntime.Result{RequeueAfter: RequeueProbePoll}, nil

@@ -39,7 +39,6 @@ type replicaState struct {
 	chctrl.ReplicaState
 
 	ReloadError error
-	Error       bool
 }
 
 func (r replicaState) Ready() bool {
@@ -51,7 +50,7 @@ func (r replicaState) Ready() bool {
 }
 
 func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
-	return rev.ReplicaHasDiff(r.ReplicaState)
+	return rev.ReplicaHasDiff(r.ReplicaResources)
 }
 
 func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdateStage {
@@ -59,11 +58,11 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageNotExists
 	}
 
-	if r.Error {
+	if r.StartupError != nil {
 		return chctrl.StageError
 	}
 
-	if !r.Updated() {
+	if !r.StatefulSetUpdated() {
 		return chctrl.StageUpdating
 	}
 
@@ -71,8 +70,12 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState) chctrl.ReplicaUpdate
 		return chctrl.StageHasDiff
 	}
 
+	if !r.Reloaded(rev.ReloadConfigRevision) && r.ReloadError == nil {
+		return chctrl.StageUpdating
+	}
+
 	// ReloadError is a retryable connectivity state, not a replica error:
-	if !r.Ready() || r.ReloadError != nil || !r.Reloaded(rev.ReloadConfigRevision) {
+	if !r.Ready() || r.ReloadError != nil {
 		return chctrl.StageNotReadyUpToDate
 	}
 
@@ -461,19 +464,19 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			return v1.ClickHouseReplicaID{}, replicaState{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
 		}
 
-		hasError, err := chctrl.CheckPodError(ctx, log, r.GetClient(), &sts)
+		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), &sts)
 		if err != nil {
-			log.Warn("failed to check replica pod error", "statefulset", sts.Name, "error", err)
-
-			hasError = true
+			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
 		}
+
+		startupErr := chctrl.PodStartupError(pod)
 
 		var (
 			probe     replicaProbe
 			reloadErr error
 		)
 
-		if !hasError && sts.Status.ReadyReplicas > 0 && r.commander != nil {
+		if startupErr == nil && sts.Status.ReadyReplicas > 0 && r.commander != nil {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
@@ -498,20 +501,22 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 
 		return id, replicaState{
 			ReloadError:  reloadErr,
-			Error:        hasError,
 			replicaProbe: probe,
 			ReplicaState: chctrl.ReplicaState{
-				STS:  &sts,
-				CFG:  configMaps[id],
-				PVCs: pvcs,
+				ReplicaResources: chctrl.ReplicaResources{
+					STS:  &sts,
+					CFG:  configMaps[id],
+					PVCs: pvcs,
+				},
+				Pod:          pod,
+				StartupError: startupErr,
 			},
 		}, nil
 	})
 
 	for id, res := range execResults {
 		if res.Err != nil {
-			log.Info("failed to load replica state", "error", res.Err, "replica_id", id)
-			continue
+			return chctrl.StepResult{}, fmt.Errorf("load replica state %s: %w", id, res.Err)
 		}
 
 		if _, ok := r.ReplicaState[id]; !ok {
@@ -542,7 +547,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 	results := ctrlutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
 		replica := r.ReplicaState[id]
-		if replica.Error || replica.STS == nil || replica.STS.Status.ReadyReplicas == 0 {
+		if replica.StartupError != nil || replica.STS == nil || replica.STS.Status.ReadyReplicas == 0 {
 			return id, struct{}{}, nil
 		}
 
@@ -652,7 +657,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 			id := v1.ClickHouseReplicaID{ShardID: shard, Index: index}
 			replica := r.ReplicaState[id]
 
-			if replica.HasDiff(r.revs) || !replica.Updated() {
+			if replica.HasDiff(r.revs) || !replica.StatefulSetUpdated() {
 				notUpdated = append(notUpdated, id.String())
 			}
 
@@ -875,7 +880,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 }
 
 func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	var replicasToRemove = map[v1.ClickHouseReplicaID]chctrl.ReplicaState{}
+	var replicasToRemove = map[v1.ClickHouseReplicaID]chctrl.ReplicaResources{}
 
 	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
 	if err != nil {
@@ -887,7 +892,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			continue
 		}
 
-		replicasToRemove[id] = chctrl.ReplicaState{
+		replicasToRemove[id] = chctrl.ReplicaResources{
 			CFG: configMap,
 		}
 	}
@@ -941,8 +946,9 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 
 func (r *clickhouseReconciler) evaluateReplicaConditions() {
 	var (
-		errorIDs, notReadyIDs []string
-		notReadyShards        []int32
+		startupErrors  = map[string]string{}
+		notReadyIDs    []string
+		notReadyShards []int32
 	)
 
 	for shard := range r.Cluster.Shards() {
@@ -951,8 +957,8 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 			id := v1.ClickHouseReplicaID{ShardID: shard, Index: index}
 			replica := r.ReplicaState[id]
 
-			if replica.Error {
-				errorIDs = append(errorIDs, id.String())
+			if replica.StartupError != nil {
+				startupErrors[id.String()] = *replica.StartupError
 			}
 
 			if !replica.Ready() {
@@ -974,7 +980,7 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 	exists := len(r.ReplicaState)
 	expected := int(r.Cluster.Replicas() * r.Cluster.Shards())
 
-	r.SetCondition(chctrl.ReplicaStartupCondition(errorIDs))
+	r.SetCondition(chctrl.ReplicaStartupCondition(startupErrors))
 	r.SetCondition(chctrl.ClusterSizeCondition(exists, expected))
 
 	if r.commander == nil {
@@ -1028,8 +1034,7 @@ func (r *clickhouseReconciler) updateReplica(ctx context.Context, log ctrlutil.L
 	result, err := r.ReconcileReplicaResources(ctx, log, chctrl.ReplicaUpdateInput{
 		Revisions: r.revs,
 		Existing:  replica.ReplicaState,
-		HasError:  replica.Error,
-		Desired: chctrl.ReplicaState{
+		Desired: chctrl.ReplicaResources{
 			CFG:  configMap,
 			STS:  statefulSet,
 			PVCs: chctrl.DesiredPVCs(r.Cluster.Spec.DataVolumeClaimSpec, r.Cluster.Spec.AdditionalVolumeClaimTemplates),

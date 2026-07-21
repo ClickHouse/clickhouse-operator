@@ -3,8 +3,11 @@ package controller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	gcmp "github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -16,6 +19,8 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
+
+const maxConditionMessageLength = 32 * 1024
 
 // clusterStatus constrains pointer-to-status types (*ClickHouseClusterStatus, *KeeperClusterStatus).
 type clusterStatus[S any] interface {
@@ -208,9 +213,28 @@ func replicaCondition(condType v1.ConditionType, ids []string, falseReason, true
 }
 
 // ReplicaStartupCondition evaluates ReplicaStartupSucceeded.
-func ReplicaStartupCondition(errorIDs []string) metav1.Condition {
-	return replicaCondition(v1.ConditionTypeReplicaStartupSucceeded, errorIDs,
-		v1.ConditionReasonReplicaError, v1.ConditionReasonReplicasRunning, "Replicas have startup errors")
+func ReplicaStartupCondition(startupErrors map[string]string) metav1.Condition {
+	if len(startupErrors) == 0 {
+		return metav1.Condition{
+			Type:   v1.ConditionTypeReplicaStartupSucceeded,
+			Status: metav1.ConditionTrue,
+			Reason: v1.ConditionReasonReplicasRunning,
+		}
+	}
+
+	details := make([]string, 0, len(startupErrors))
+	for _, id := range slices.Sorted(maps.Keys(startupErrors)) {
+		details = append(details, fmt.Sprintf("%s: %v", id, startupErrors[id]))
+	}
+
+	message := fmt.Sprintf("Replicas have startup errors: [%s]", strings.Join(details, " "))
+
+	return metav1.Condition{
+		Type:    v1.ConditionTypeReplicaStartupSucceeded,
+		Status:  metav1.ConditionFalse,
+		Reason:  v1.ConditionReasonReplicaError,
+		Message: truncateString(message, maxConditionMessageLength),
+	}
 }
 
 // HealthyCondition evaluates Healthy.
@@ -241,4 +265,19 @@ func ClusterSizeCondition(existing, expected int) metav1.Condition {
 	default:
 		return metav1.Condition{Type: v1.ConditionTypeClusterSizeAligned, Status: metav1.ConditionTrue, Reason: v1.ConditionReasonUpToDate}
 	}
+}
+
+func truncateString(value string, maxLength int) string {
+	const suffix = "..."
+
+	if len(value) <= maxLength {
+		return value
+	}
+
+	value = value[:maxLength-len(suffix)]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+
+	return value + suffix
 }
