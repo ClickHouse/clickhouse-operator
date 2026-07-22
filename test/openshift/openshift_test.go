@@ -94,6 +94,12 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	k8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 
+	By("waiting for project API service")
+	Expect(testutil.MustRun(ctx, "oc", "wait",
+		"--for=jsonpath={.status.conditions[?(@.type=='Available')].status}=True",
+		"apiservice", "v1.project.openshift.io", "--timeout=5m",
+	)).To(Succeed())
+
 	By("creating project")
 	Eventually(func(g Gomega) {
 		if _, err := testutil.Run(exec.CommandContext(ctx, "oc", "get", "project", namespace)); err == nil {
@@ -102,7 +108,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 		out, err := testutil.Run(exec.CommandContext(ctx, "oc", "adm", "new-project", namespace))
 		g.Expect(err).NotTo(HaveOccurred(), string(out))
-	}, "2m", "5s").Should(Succeed())
+	}, "5m", "5s").Should(Succeed())
 
 	DeferCleanup(func(ctx context.Context) {
 		_, _ = testutil.Run(exec.CommandContext(ctx, "oc", "delete", "project", namespace,
@@ -115,7 +121,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: namespace}, &ns)).To(Succeed())
 		_, ok := ns.Annotations["openshift.io/sa.scc.uid-range"]
 		g.Expect(ok).To(BeTrue(), "waiting for SCC uid-range annotation")
-	}, "2m", "5s").Should(Succeed())
+	}, "5m", "5s").Should(Succeed())
 
 	manifests := fmt.Sprintf(catalogManifests,
 		namespace,

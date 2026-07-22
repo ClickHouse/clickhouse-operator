@@ -8,20 +8,24 @@ env:
   kind-version: 'v0.32.0'
 permissions:
   contents: read
-  statuses: write
-  checks: write
-  pull-requests: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Detect non-docs changes
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
         with:
           predicate-quantifier: 'every'
@@ -36,19 +40,30 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
-          
+          cache: false
+
+      - name: Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-lint-
 
       - name: Go Tidy
         run: go mod tidy && git diff --exit-code
@@ -60,17 +75,17 @@ jobs:
         run: make manifests && git diff --exit-code
 
       - name: Lint with golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.12.2
 
       - name: Lint with codespell
-        uses: codespell-project/actions-codespell@v2.2
+        uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579 # v2.2
         with:
           config: ci/.codespellrc
 
       - name: actionlint
-        uses: raven-actions/actionlint@v2
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
         with:
           flags: '-config-file ci/actionlint.yaml'
 
@@ -84,14 +99,15 @@ jobs:
       github.event_name == 'pull_request' &&
       !contains(github.event.pull_request.labels.*.name, 'crd-breaking-change')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
 
@@ -100,16 +116,17 @@ jobs:
 
   bundle:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     env:
       VERSION: 0.0.1
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
 
@@ -117,7 +134,7 @@ jobs:
         run: make bundle
 
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           cluster_name: 'test-bundle'
           version: ${{ env.kind-version }}
@@ -136,16 +153,31 @@ jobs:
 
   build_and_test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      checks: write
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
+          cache: false
+
+      - name: Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-unit-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-unit-
 
       - name: Go Mod
         run: go mod download
@@ -162,7 +194,7 @@ jobs:
           make test-ci
 
       - name: Test Report
-        uses: dorny/test-reporter@v3
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         if: ${{ !cancelled() }}
         with:
           name: Unit tests
@@ -172,16 +204,28 @@ jobs:
 
   fuzz_specs:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
+          cache: false
+
+      - name: Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-fuzz-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-fuzz-
 
       - name: Go Mod
         run: go mod download
@@ -191,14 +235,15 @@ jobs:
 
   helm-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
 
@@ -222,6 +267,7 @@ jobs:
 
   compat-e2e-test:
     runs-on: [ubuntu-latest]
+    timeout-minutes: 60
     needs: [ changes ]
     if: needs.changes.outputs.code == 'true'
     strategy:
@@ -230,40 +276,51 @@ jobs:
         include:
           - name: minimal-k8s-all-deploy-methods
             k8s_image: v1.28.15
-            clickhouse_version: "26.5"
+            clickhouse_version: "26.6.2.81"
             deploy_target: test-compat-e2e
           - name: maximal-k8s-all-deploy-methods
             k8s_image: v1.36.1
-            clickhouse_version: "26.5"
+            clickhouse_version: "26.6.2.81"
             deploy_target: test-compat-e2e
           - name: olm-deploy-method
             k8s_image: v1.28.15
-            clickhouse_version: "26.5"
+            clickhouse_version: "26.6.2.81"
             deploy_target: test-compat-e2e-olm
           - name: supported-clickhouse-compatibility
             k8s_image: v1.30.13
-            clickhouse_version: "26.5,26.5-distroless,26.4,26.3,25.8"
+            clickhouse_version: "26.6.2.81-distroless,26.5.5.8,26.4.5.143,26.3.17.56,25.8.28.1"
             deploy_target: test-compat-e2e-manifest
           - name: operator-upgrade
             k8s_image: v1.30.13
-            clickhouse_version: "26.5"
+            clickhouse_version: "26.6.2.81"
             deploy_target: test-compat-e2e-upgrade
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-tags: 'true'
 
       - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
+          cache: false
+
+      - name: Go cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-compat-e2e-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-compat-e2e-
 
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           cluster_name: kind
           version: ${{ env.kind-version }}
@@ -278,9 +335,16 @@ jobs:
 
       - name: Pre-pull ClickHouse images into Kind
         run: |
+          pull() {
+            for _ in 1 2 3; do
+              if docker pull "$1"; then return 0; fi
+              sleep 15
+            done
+            return 1
+          }
           for version in $(echo "${{ matrix.clickhouse_version }}" | tr ',' ' '); do
             for image in clickhouse/clickhouse-keeper clickhouse/clickhouse-server; do
-              docker pull "docker.io/${image}:${version}"
+              pull "docker.io/${image}:${version}"
               kind load docker-image "docker.io/${image}:${version}"
             done
           done
@@ -291,7 +355,7 @@ jobs:
           CLICKHOUSE_VERSION: ${{ matrix.clickhouse_version }}
 
       - name: Upload test report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ !cancelled() }}
         with:
           name: e2e-report-${{ matrix.name }}
@@ -307,12 +371,13 @@ jobs:
       matrix:
         shard: [ 1, 2, 3, 4 ]
     runs-on: [self-hosted, amd-medium]
+    timeout-minutes: 45
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
 
@@ -320,7 +385,7 @@ jobs:
         run: go mod download
 
       - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1
         with:
           cluster_name: kind
           version: ${{ env.kind-version }}
@@ -334,7 +399,7 @@ jobs:
         run:  make test-e2e
 
       - name: Upload test report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ !cancelled() }}
         with:
           name: e2e-report-shard-${{ matrix.shard }}
@@ -345,13 +410,17 @@ jobs:
   e2e-report:
     needs: [ changes, compat-e2e-test, e2e-test ]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write
     if: ${{ !cancelled() && needs.changes.outputs.code == 'true' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download all e2e test reports
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: e2e-report-*
 
@@ -359,7 +428,7 @@ jobs:
         run: python3 ci/merge-junit-reports.py
 
       - name: Test Report
-        uses: dorny/test-reporter@v3
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         with:
           name: E2E tests
           badge-title: E2E tests
@@ -380,9 +449,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+      checks: write
     env:
       KUBECONFIG: /home/runner/okd-install/auth/kubeconfig
       VERSION: 0.0.99-test
+      PLATFORMS: linux/amd64
       IMG: ghcr.io/clickhouse/clickhouse-operator:test
       BUNDLE_IMG: ghcr.io/clickhouse/clickhouse-operator-bundle:test
       CATALOG_IMG: ghcr.io/clickhouse/clickhouse-operator-catalog:test
@@ -391,17 +462,17 @@ jobs:
       OPENSHIFT_CHANNEL: stable-v0
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: 'go.mod'
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -420,7 +491,7 @@ jobs:
         run: make test-compat-e2e-olm-openshift
 
       - name: Test Report
-        uses: dorny/test-reporter@v3
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
         with:
           name: E2E tests
           badge-title: E2E tests
@@ -434,6 +505,7 @@ jobs:
   ci-success-check:
     name: All CI checks passed
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [ changes, lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test, check-crd-compat ]
     if: always()
     steps:

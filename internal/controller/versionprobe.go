@@ -28,6 +28,8 @@ const (
 	DefaultProbeMemoryRequest = "256Mi"
 	versionProbeBinary        = "/usr/bin/clickhouse"
 	versionProbeQuery         = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
+	versionProbeBackoffLimit  = int32(1)
+	versionProbeDeadline      = int64(90)
 )
 
 // VersionProbeConfig holds parameters for the version probe Job.
@@ -244,20 +246,21 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 			Annotations: maps.Clone(cfg.Annotations),
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: new(int32(0)),
+			BackoffLimit: new(versionProbeBackoffLimit),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels:      maps.Clone(cfg.Labels),
 					Annotations: maps.Clone(cfg.Annotations),
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy:      corev1.RestartPolicyNever,
-					ImagePullSecrets:   cfg.PodTemplate.ImagePullSecrets,
-					SecurityContext:    DefaultPodSecurityContext(),
-					NodeSelector:       cfg.PodTemplate.NodeSelector,
-					Tolerations:        cfg.PodTemplate.Tolerations,
-					ServiceAccountName: cfg.PodTemplate.ServiceAccountName,
-					SchedulerName:      cfg.PodTemplate.SchedulerName,
+					ActiveDeadlineSeconds: new(versionProbeDeadline),
+					RestartPolicy:         corev1.RestartPolicyNever,
+					ImagePullSecrets:      cfg.PodTemplate.ImagePullSecrets,
+					SecurityContext:       DefaultPodSecurityContext(),
+					NodeSelector:          cfg.PodTemplate.NodeSelector,
+					Tolerations:           cfg.PodTemplate.Tolerations,
+					ServiceAccountName:    cfg.PodTemplate.ServiceAccountName,
+					SchedulerName:         cfg.PodTemplate.SchedulerName,
 					Containers: []corev1.Container{
 						{
 							Name:                     v1.VersionProbeContainerName,
@@ -344,12 +347,16 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 	}
 
 	if len(podList.Items) > 1 {
-		log.Warn("more than one pods found for version probe job")
+		log.Debug("multiple pods found for version probe job")
 	}
 
 	for _, pod := range podList.Items {
+		if pod.Status.Phase != corev1.PodSucceeded {
+			continue
+		}
+
 		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Name == v1.VersionProbeContainerName && cs.State.Terminated != nil {
+			if cs.Name == v1.VersionProbeContainerName && cs.State.Terminated != nil && cs.State.Terminated.ExitCode == 0 {
 				version, err := controllerutil.ParseVersion(cs.State.Terminated.Message)
 				if err != nil {
 					return "", fmt.Errorf("parse version probe from job container output: %w", err)
@@ -360,5 +367,5 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 		}
 	}
 
-	return "", errors.New("no termination message found in version probe job pods")
+	return "", errors.New("no successful version probe container found")
 }

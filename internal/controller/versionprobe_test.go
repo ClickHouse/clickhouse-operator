@@ -35,7 +35,7 @@ func baseJob() batchv1.Job {
 			},
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit: new(int32(0)),
+			BackoffLimit: new(int32(1)),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -46,7 +46,8 @@ func baseJob() batchv1.Job {
 					},
 				},
 				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
+					ActiveDeadlineSeconds: new(int64(90)),
+					RestartPolicy:         corev1.RestartPolicyNever,
 					SecurityContext: &corev1.PodSecurityContext{
 						FSGroup: new(int64(1000)),
 					},
@@ -381,6 +382,10 @@ var _ = Describe("VersionProbe caching", func() {
 		By("verifying the probe runs the shell-free distroless command")
 
 		container := jobs.Items[0].Spec.Template.Spec.Containers[0]
+		Expect(jobs.Items[0].Spec.BackoffLimit).NotTo(BeNil())
+		Expect(*jobs.Items[0].Spec.BackoffLimit).To(Equal(versionProbeBackoffLimit))
+		Expect(jobs.Items[0].Spec.Template.Spec.ActiveDeadlineSeconds).NotTo(BeNil())
+		Expect(*jobs.Items[0].Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(versionProbeDeadline))
 		Expect(container.Command).To(Equal([]string{"/usr/bin/clickhouse"}))
 		Expect(container.Args).To(Equal([]string{"local", "--query", "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"}))
 	})
@@ -407,5 +412,83 @@ var _ = Describe("VersionProbe caching", func() {
 		var jobs batchv1.JobList
 		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
 		Expect(jobs.Items).To(HaveLen(1))
+	})
+
+	It("should retain a failed probe Job with the same spec", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:    batchv1.JobFailed,
+			Status:  corev1.ConditionTrue,
+			Message: "deadline exceeded",
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).To(MatchError("deadline exceeded"))
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+	})
+
+	It("should read version from the second Pod", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Pending).To(BeTrue())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+
+		job := jobs.Items[0]
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}
+		Expect(rm.ctrl.GetClient().Status().Update(ctx, &job)).To(Succeed())
+
+		createProbePod := func(name string, phase corev1.PodPhase, exitCode int32, message string) {
+			pod := corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: job.Namespace,
+					Name:      name,
+					Labels: map[string]string{
+						batchv1.ControllerUidLabel: string(job.UID),
+						batchv1.JobNameLabel:       job.Name,
+					},
+				},
+				Status: corev1.PodStatus{
+					Phase: phase,
+					ContainerStatuses: []corev1.ContainerStatus{{
+						Name: v1.VersionProbeContainerName,
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: exitCode,
+							Message:  message,
+						}},
+					}},
+				},
+			}
+
+			Expect(rm.ctrl.GetClient().Create(ctx, &pod)).To(Succeed())
+		}
+
+		createProbePod("failed", corev1.PodFailed, 1, "invalid version")
+		createProbePod("succeeded", corev1.PodSucceeded, 0, "ClickHouse server version 26.5.5.8")
+
+		result, err = rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Version).To(Equal("26.5.5.8"))
 	})
 })

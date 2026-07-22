@@ -214,11 +214,13 @@ func CompleteVersionProbeJob(ctx context.Context, suite TestSuit, namespace, spe
 		ExpectWithOffset(1, suite.Client.Create(ctx, pod)).To(Succeed())
 		By("Setting version job pod status: " + pod.Name)
 		pod.Status = corev1.PodStatus{
+			Phase: corev1.PodSucceeded,
 			ContainerStatuses: []corev1.ContainerStatus{{
 				Name: v1.VersionProbeContainerName,
 				State: corev1.ContainerState{
 					Terminated: &corev1.ContainerStateTerminated{
-						Message: "ClickHouse server version " + version,
+						ExitCode: 0,
+						Message:  "ClickHouse server version " + version,
 					},
 				},
 			}},

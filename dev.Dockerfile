@@ -1,6 +1,4 @@
-FROM ubuntu:latest
-
-RUN apt-get update && apt-get install -y ca-certificates
+FROM alpine:3
 
 ARG USER_ID=65532
 USER $USER_ID:$USER_ID

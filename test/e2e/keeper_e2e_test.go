@@ -58,7 +58,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(ctx, &cr, 3*time.Minute, true)
+		WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
 		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 		KeeperRWChecks(ctx, &cr, &checks)
@@ -291,9 +291,6 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 })
 
 func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
 	EventuallyWithOffset(1, func(g Gomega) {
 		var cluster v1.KeeperCluster

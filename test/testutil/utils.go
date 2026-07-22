@@ -41,8 +41,8 @@ const (
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
 	logTailLines  = 10
-	BaseVersion   = "26.3"
-	UpdateVersion = "26.5"
+	BaseVersion   = "26.3.17.56"
+	UpdateVersion = "26.6.2.81"
 )
 
 var (
@@ -334,16 +334,19 @@ func DumpNamespacePodLogs(ctx context.Context, config *rest.Config, namespace st
 			return
 		}
 
+		header := fmt.Sprintf("Container logs %s/%s/%s:\n", namespace, name, container)
+		full.WriteString(header)
+		short.WriteString(header)
+
 		if len(logs) == 0 {
+			full.WriteString("<empty>\n\n")
+			short.WriteString("<empty>\n\n")
 			return
 		}
 
-		header := fmt.Sprintf("Container logs %s/%s/%s:\n", namespace, name, container)
-		full.WriteString(header)
 		full.WriteString(logs)
 		full.WriteString("\n\n")
 
-		short.WriteString(header)
 		short.WriteString(tailLines(logs, logTailLines))
 		short.WriteString("\n\n")
 	}

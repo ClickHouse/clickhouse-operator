@@ -45,12 +45,12 @@ const (
 
 var releases = map[string][]upgrade.ClickHouseVersion{
 	upgrade.ChannelStable: {
-		{Major: 26, Minor: 2, Patch: 1, Build: 1},
-		{Major: 26, Minor: 1, Patch: 1, Build: 1},
+		{Major: 26, Minor: 6, Patch: 2, Build: 81},
+		{Major: 26, Minor: 5, Patch: 5, Build: 8},
 	},
 	upgrade.ChannelLTS: {
-		{Major: 26, Minor: 3, Patch: 1, Build: 1},
-		{Major: 25, Minor: 8, Patch: 1, Build: 1},
+		{Major: 26, Minor: 3, Patch: 17, Build: 56},
+		{Major: 25, Minor: 8, Patch: 28, Build: 1},
 	},
 }
 
@@ -215,11 +215,6 @@ var _ = JustAfterEach(func(ctx context.Context) {
 })
 
 func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) {
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		deadline = time.Now().Add(time.Minute)
-	}
-
 	Eventually(func() int {
 		var pods corev1.PodList
 		Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
@@ -227,7 +222,7 @@ func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, a
 		})).To(Succeed())
 
 		return len(pods.Items)
-	}).WithTimeout(time.Until(deadline)).WithPolling(pollingInterval).Should(Equal(replicas))
+	}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(Equal(replicas))
 }
 
 func CheckPodReady(pod *corev1.Pod) bool {

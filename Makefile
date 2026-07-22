@@ -558,7 +558,7 @@ bundle-buildx: ## Build and push bundle docker image for cross-platform support
 
 .PHONY: scorecard
 scorecard: operator-sdk
-	$(OPERATOR_SDK) scorecard bundle
+	$(OPERATOR_SDK) scorecard bundle --wait-time=2m
 
 .PHONY: opm
 OPM = $(LOCALBIN)/opm
