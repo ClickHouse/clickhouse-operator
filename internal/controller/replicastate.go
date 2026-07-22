@@ -139,7 +139,7 @@ func GetReplicaPod(ctx context.Context, log util.Logger, client client.Client, s
 
 var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}
 
-// PodStartupError reports a non-empty description if Pod experience startup errors.
+// PodStartupError reports a non-empty description if Pod experiences startup errors.
 func PodStartupError(pod *corev1.Pod) *string {
 	if pod == nil {
 		return nil
