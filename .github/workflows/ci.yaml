@@ -363,8 +363,47 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+  e2e-shard-plan:
+    needs: [ changes ]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: 'go.mod'
+
+      - name: Go Mod
+        run: go mod download
+
+      - name: Download previous e2e timings
+        run: bash ci/download-e2e-last-run.sh .ci/e2e-timings
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Plan e2e shards
+        run: |
+          go run ./tools/e2e-shard-planner \
+            -report-path .ci/e2e-timings/latest \
+            -shards 4 \
+            -output .ci/e2e-shard-plan/e2e-shard-plan.json
+
+      - name: Upload e2e shard plan
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-shard-plan
+          path: .ci/e2e-shard-plan/e2e-shard-plan.json
+          if-no-files-found: error
+
   e2e-test:
-    needs: [ lint, changes ]
+    needs: [ lint, changes, e2e-shard-plan ]
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
@@ -375,6 +414,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Download e2e shard plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: e2e-shard-plan
+          path: .ci/e2e-shard-plan
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -396,6 +441,7 @@ jobs:
         env:
           E2E_SHARD_INDEX: ${{ matrix.shard }}
           E2E_SHARD_TOTAL: "4"
+          E2E_SHARD_PLAN: ${{ github.workspace }}/.ci/e2e-shard-plan/e2e-shard-plan.json
         run:  make test-e2e
 
       - name: Collect failure diagnostics
@@ -523,7 +569,7 @@ jobs:
     name: All CI checks passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [ changes, lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-test, check-crd-compat ]
+    needs: [ changes, lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-shard-plan, e2e-test, check-crd-compat ]
     if: always()
     steps:
       - name: Determine CI status

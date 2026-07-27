@@ -2,8 +2,9 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sethvargo/go-envconfig"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -54,9 +56,62 @@ var releases = map[string][]upgrade.ClickHouseVersion{
 	},
 }
 
+type shardingConfig struct {
+	Index    int    `env:"E2E_SHARD_INDEX, default=0"`
+	Total    int    `env:"E2E_SHARD_TOTAL, default=0"`
+	PlanPath string `env:"E2E_SHARD_PLAN"`
+
+	shardAssignments map[string]int
+}
+
+func (c *shardingConfig) Load() error {
+	if err := envconfig.Process(context.Background(), c); err != nil {
+		return fmt.Errorf("load sharding config from env: %w", err)
+	}
+
+	if c.Total <= 1 {
+		return nil
+	}
+
+	if c.PlanPath == "" {
+		return errors.New("sharding plan path must be set if more than 1 shard")
+	}
+
+	if c.Index < 1 || c.Index > c.Total {
+		return fmt.Errorf("invalid shard index %d, should be between 1 and %d", c.Index, c.Total)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(c.PlanPath))
+	if err != nil {
+		return fmt.Errorf("read e2e shard plan: %w", err)
+	}
+
+	if err = json.Unmarshal(data, &c.shardAssignments); err != nil {
+		return fmt.Errorf("decode e2e shard plan: %w", err)
+	}
+
+	return nil
+}
+
+func (c *shardingConfig) Enabled(spec string) (bool, error) {
+	if c.Total <= 1 {
+		return true, nil
+	}
+
+	shard, ok := c.shardAssignments[spec]
+	if !ok {
+		return false, fmt.Errorf("test %q is not assigned in sharding plan", spec)
+	}
+
+	if shard < 1 || shard > c.Total {
+		return false, fmt.Errorf("invalid assignment for %q", spec)
+	}
+
+	return shard == c.Index, nil
+}
+
 var (
-	shardIndex     int
-	shardTotal     int
+	sharding       shardingConfig
 	k8sClient      client.Client
 	config         *rest.Config
 	podDialer      controllerutil.DialContextFunc
@@ -73,6 +128,10 @@ var (
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
+
+	if err := sharding.Load(); err != nil {
+		t.Fatalf("failed to load sharding config: %v", err)
+	}
 
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting clickhouse-operator suite\n")
 
@@ -91,26 +150,6 @@ var _ = ReportBeforeSuite(func(report Report) {
 	if len(offenders) > 0 {
 		Fail("Ordered containers are not allowed (sharding-incompatible):\n" + strings.Join(offenders, "\n"))
 	}
-
-	indexStr := os.Getenv("E2E_SHARD_INDEX")
-
-	totalStr := os.Getenv("E2E_SHARD_TOTAL")
-	if indexStr == "" && totalStr == "" {
-		return
-	}
-
-	total, err := strconv.Atoi(totalStr)
-	if err != nil || total < 1 {
-		Fail(fmt.Sprintf("invalid E2E_SHARD_TOTAL=%q", totalStr))
-	}
-
-	index, err := strconv.Atoi(indexStr)
-	if err != nil || index < 1 || index > total {
-		Fail(fmt.Sprintf("invalid E2E_SHARD_INDEX=%q (total=%d)", indexStr, total))
-	}
-
-	shardIndex = index
-	shardTotal = total
 })
 
 var _ = BeforeSuite(func(ctx context.Context) {
@@ -193,16 +232,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	}
 })
 
-var _ = JustBeforeEach(func() {
-	if shardTotal <= 1 {
-		return
+var _ = BeforeEach(func() {
+	enabled, err := sharding.Enabled(CurrentSpecReport().FullText())
+	if err != nil {
+		Fail(err.Error())
 	}
 
-	h := fnv.New32a()
-
-	_, _ = h.Write([]byte(CurrentSpecReport().FullText()))
-	if int(h.Sum32()%uint32(shardTotal))+1 != shardIndex {
-		Skip(fmt.Sprintf("not in shard %d/%d", shardIndex, shardTotal))
+	if !enabled {
+		Skip(fmt.Sprintf("not in shard %d/%d", sharding.Index, sharding.Total))
 	}
 })
 
