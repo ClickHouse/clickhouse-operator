@@ -267,11 +267,16 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 							Image:                    cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy:          cfg.ContainerTemplate.ImagePullPolicy,
 							SecurityContext:          DefaultContainerSecurityContext(),
-							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 							Command:                  []string{versionProbeBinary},
-							Args:                     []string{"local", "--query", versionProbeQuery},
-							Env:                      []corev1.EnvVar{{Name: "MALLOC_CONF", Value: "narenas:2,dirty_decay_ms:0,muzzy_decay_ms:0,thp:never"}},
+							Args: []string{
+								"local",
+								"--logger.console=1",
+								"--logger.level=debug",
+								"--query", versionProbeQuery,
+							},
+							Env: []corev1.EnvVar{{Name: "MALLOC_CONF", Value: "narenas:2,dirty_decay_ms:0,muzzy_decay_ms:0,thp:never"}},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse(DefaultProbeCPURequest),

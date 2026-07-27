@@ -398,6 +398,23 @@ jobs:
           E2E_SHARD_TOTAL: "4"
         run:  make test-e2e
 
+      - name: Collect failure diagnostics
+        if: ${{ failure() && !cancelled() }}
+        run: |
+          mkdir -p failure-diagnostics
+          kind export logs --name kind failure-diagnostics/kind || true
+          kubectl get pods,jobs -A -o wide > failure-diagnostics/pods-jobs.txt 2>&1 || true
+          kubectl get events -A --sort-by=.metadata.creationTimestamp > failure-diagnostics/events.txt 2>&1 || true
+
+      - name: Upload failure diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ failure() && !cancelled() }}
+        with:
+          name: e2e-kind-logs-shard-${{ matrix.shard }}
+          path: failure-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Upload test report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: ${{ !cancelled() }}
