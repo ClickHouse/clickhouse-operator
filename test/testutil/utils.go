@@ -227,7 +227,16 @@ func DumpNamespaceDiagnostics(ctx context.Context, config *rest.Config, cli clie
 	}
 
 	if strings.TrimSpace(events) != "" {
+		path, writeErr := (&DumpResult{Full: events}).WriteFull(dir, fmt.Sprintf("events-%s.log", report.FullText()))
+		if writeErr != nil {
+			GinkgoWriter.Printf("failed to write events dump: %v\n", writeErr)
+		}
+
 		GinkgoWriter.Printf("\n=== Namespace Events (since test start) ===\n%s\n", events)
+
+		if path != "" {
+			GinkgoWriter.Printf("Full events dump: %s\n", path)
+		}
 	}
 }
 

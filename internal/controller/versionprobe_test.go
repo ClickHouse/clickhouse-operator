@@ -387,7 +387,13 @@ var _ = Describe("VersionProbe caching", func() {
 		Expect(jobs.Items[0].Spec.Template.Spec.ActiveDeadlineSeconds).NotTo(BeNil())
 		Expect(*jobs.Items[0].Spec.Template.Spec.ActiveDeadlineSeconds).To(Equal(versionProbeDeadline))
 		Expect(container.Command).To(Equal([]string{"/usr/bin/clickhouse"}))
-		Expect(container.Args).To(Equal([]string{"local", "--query", "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"}))
+		Expect(container.Args).To(Equal([]string{
+			"local",
+			"--logger.console=1",
+			"--logger.level=debug",
+			"--query", "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()",
+		}))
+		Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError))
 	})
 
 	It("should miss cache when image changes", func(ctx context.Context) {

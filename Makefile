@@ -154,7 +154,7 @@ fuzz: fuzz-keeper fuzz-clickhouse ## Run all fuzz tests
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-e2e: ## Run all e2e tests. Honors E2E_SHARD_INDEX / E2E_SHARD_TOTAL for CI sharding.
-	go test ./test/e2e/ -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml
+	go test ./test/e2e/ -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml --ginkgo.json-report=report/ginkgo-report.json
 
 .PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
 test-keeper-e2e: ## Run keeper e2e tests.
