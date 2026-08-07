@@ -149,7 +149,18 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		})
 
 		Expect(suite.Client.List(ctx, &services, listOpts)).To(Succeed())
-		Expect(services.Items).To(HaveLen(1))
+		Expect(services.Items).To(HaveLen(1 + int(cr.Replicas()*cr.Shards())))
+
+		serviceNames := make(map[string]struct{}, len(services.Items))
+		for _, service := range services.Items {
+			serviceNames[service.Name] = struct{}{}
+		}
+
+		Expect(serviceNames).To(HaveKey(cr.HeadlessServiceName()))
+
+		for id := range cr.ReplicaIDs() {
+			Expect(serviceNames).To(HaveKey(cr.InternalServiceNameByReplicaID(id)))
+		}
 
 		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(HaveLen(2))

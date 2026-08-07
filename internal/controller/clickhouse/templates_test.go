@@ -346,6 +346,89 @@ var _ = Describe("SecurityContext defaults", func() {
 	})
 })
 
+var _ = Describe("Service templates", func() {
+	cr := &v1.ClickHouseCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: v1.ClickHouseClusterSpec{
+			AdditionalPorts: []v1.AdditionalPort{{
+				Name: "extra",
+				Port: 19000,
+			}},
+		},
+	}
+
+	It("should expose internal ports through a per-replica internal service", func() {
+		id := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
+		service := templateInternalService(cr, id)
+
+		ports := map[string]int32{}
+		for _, port := range service.Spec.Ports {
+			ports[port.Name] = port.Port
+		}
+
+		Expect(service.Name).To(Equal(cr.InternalServiceNameByReplicaID(id)))
+		Expect(service.Spec.ClusterIP).To(Equal(corev1.ClusterIPNone))
+		Expect(service.Spec.PublishNotReadyAddresses).To(BeTrue())
+		Expect(service.Labels).To(SatisfyAll(
+			HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"),
+			HaveKeyWithValue(controllerutil.LabelClickHouseReplicaID, "1"),
+		))
+		Expect(service.Spec.Selector).To(SatisfyAll(
+			HaveKeyWithValue(controllerutil.LabelAppKey, cr.SpecificName()),
+			HaveKeyWithValue(controllerutil.LabelRoleKey, controllerutil.LabelClickHouseValue),
+			HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"),
+			HaveKeyWithValue(controllerutil.LabelClickHouseReplicaID, "1"),
+		))
+		Expect(ports).To(Equal(map[string]int32{
+			protocolTypeInterserver:    PortInterserver,
+			protocolTypeManagement:     PortManagement,
+			protocolTypeManagementHTTP: PortManagementHTTP,
+		}))
+
+		for index := 1; index < len(service.Spec.Ports); index++ {
+			Expect(service.Spec.Ports[index-1].Name < service.Spec.Ports[index].Name).To(BeTrue())
+		}
+	})
+
+	It("should keep the public headless service as the StatefulSet governing service", func() {
+		r := &clickhouseReconciler{Cluster: cr}
+		sts, err := templateStatefulSet(r, v1.ClickHouseReplicaID{}, "fixed-cfg-rev")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.ServiceName).To(Equal(cr.HeadlessServiceName()))
+	})
+
+	It("should expose secure user ports only through the public headless service", func() {
+		secure := cr.DeepCopy()
+		secure.Spec.Settings.TLS.Enabled = true
+		secure.Spec.Settings.TLS.Required = true
+
+		publicPorts := map[string]int32{}
+		for _, port := range templateHeadlessService(secure).Spec.Ports {
+			publicPorts[port.Name] = port.Port
+		}
+
+		Expect(publicPorts).To(HaveKeyWithValue(protocolTypeTCPSecure, int32(PortNativeSecure)))
+		Expect(publicPorts).To(HaveKeyWithValue(protocolTypeHTTPSecure, int32(PortHTTPSecure)))
+		Expect(publicPorts).NotTo(HaveKey(protocolTypeTCP))
+		Expect(publicPorts).NotTo(HaveKey(protocolTypeHTTP))
+	})
+
+	It("should not expose internal ports through the public headless service", func() {
+		publicPorts := map[string]int32{}
+		for _, port := range templateHeadlessService(cr).Spec.Ports {
+			publicPorts[port.Name] = port.Port
+		}
+
+		Expect(publicPorts).To(HaveKeyWithValue("extra", int32(19000)))
+		Expect(publicPorts).NotTo(HaveKey(protocolTypeInterserver))
+		Expect(publicPorts).NotTo(HaveKey(protocolTypeManagement))
+		Expect(publicPorts).NotTo(HaveKey(protocolTypeManagementHTTP))
+	})
+})
+
 var _ = Describe("PDB", func() {
 	var cr *v1.ClickHouseCluster
 

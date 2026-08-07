@@ -68,11 +68,11 @@ spec:
             properties:
               additionalPorts:
                 description: |-
-                  AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.
+                  AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.
                   The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
                 items:
                   description: AdditionalPort declares one extra TCP port to expose
-                    on the ClickHouse Pod and the operator-managed headless Service.
+                    on the ClickHouse Pod and the public headless Service.
                   properties:
                     name:
                       description: |-

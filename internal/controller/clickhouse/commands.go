@@ -466,7 +466,7 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 		cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
 
 		conn, err := clickhouse.Open(&clickhouse.Options{
-			Addr:        []string{net.JoinHostPort(cmd.cluster.HostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
+			Addr:        []string{net.JoinHostPort(cmd.cluster.InternalHostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
 			Auth:        cmd.auth,
 			DialContext: cmd.dialer,
 			Debugf: func(format string, args ...any) {

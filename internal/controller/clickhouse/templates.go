@@ -19,11 +19,23 @@ import (
 )
 
 func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
+	return templateService(cr, cr.HeadlessServiceName(), false)
+}
+
+func templateInternalService(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID) *corev1.Service {
+	service := templateService(cr, cr.InternalServiceNameByReplicaID(id), true)
+	maps.Copy(service.Labels, id.Labels())
+	maps.Copy(service.Spec.Selector, id.Labels())
+
+	return service
+}
+
+func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *corev1.Service {
 	protocols := buildProtocols(cr)
 
 	ports := make([]corev1.ServicePort, 0, len(protocols))
 	for name, proto := range protocols {
-		if proto.Port == 0 {
+		if proto.Port == 0 || proto.Internal != internal {
 			continue
 		}
 
@@ -35,13 +47,15 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		})
 	}
 
-	for _, p := range cr.Spec.AdditionalPorts {
-		ports = append(ports, corev1.ServicePort{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       p.Name,
-			Port:       p.Port,
-			TargetPort: intstr.FromInt32(p.Port),
-		})
+	if !internal {
+		for _, p := range cr.Spec.AdditionalPorts {
+			ports = append(ports, corev1.ServicePort{
+				Protocol:   corev1.ProtocolTCP,
+				Name:       p.Name,
+				Port:       p.Port,
+				TargetPort: intstr.FromInt32(p.Port),
+			})
+		}
 	}
 
 	controllerutil.SortKey(ports, func(port corev1.ServicePort) string {
@@ -54,7 +68,7 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.HeadlessServiceName(),
+			Name:      name,
 			Namespace: cr.Namespace,
 			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
 				controllerutil.LabelAppKey: cr.SpecificName(),
@@ -63,11 +77,12 @@ func templateHeadlessService(cr *v1.ClickHouseCluster) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
-			ClusterIP: "None",
+			ClusterIP: corev1.ClusterIPNone,
 			// Publish not-yet-ready pod addresses so replicas can resolve and reach peers before they report Ready
 			PublishNotReadyAddresses: true,
 			Selector: map[string]string{
-				controllerutil.LabelAppKey: cr.SpecificName(),
+				controllerutil.LabelAppKey:  cr.SpecificName(),
+				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
 			},
 		},
 	}
@@ -586,6 +601,7 @@ type protocol struct {
 	Port        int32  `yaml:"port,omitempty"`
 	Impl        string `yaml:"impl,omitempty"`
 	Description string `yaml:"description,omitempty"`
+	Internal    bool   `yaml:"-"`
 }
 
 func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
@@ -594,6 +610,7 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Type:        protocolTypeInterserver,
 			Port:        PortInterserver,
 			Description: protocolTypeInterserver,
+			Internal:    true,
 		},
 		protocolTypePrometheus: {
 			Type:        protocolTypePrometheus,
@@ -604,11 +621,13 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Type:        protocolTypeTCP,
 			Port:        PortManagement,
 			Description: "tcp-management",
+			Internal:    true,
 		},
 		protocolTypeManagementHTTP: {
 			Type:        protocolTypeHTTP,
 			Port:        PortManagementHTTP,
 			Description: "http-management",
+			Internal:    true,
 		},
 		protocolTypeTCP: {
 			Type: protocolTypeTCP,

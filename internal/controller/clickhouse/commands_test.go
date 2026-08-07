@@ -203,7 +203,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			port, err := ctr.MappedPort(ctx, chPort)
 			Expect(err).NotTo(HaveOccurred())
 
-			hostTargets[cluster.HostnameByID(v1.ClickHouseReplicaID{Index: i})] = net.JoinHostPort(host, port.Port())
+			hostTargets[cluster.InternalHostnameByID(v1.ClickHouseReplicaID{Index: i})] = net.JoinHostPort(host, port.Port())
 		}
 
 		zapLogger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
