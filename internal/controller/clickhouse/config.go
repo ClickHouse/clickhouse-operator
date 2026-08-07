@@ -316,7 +316,7 @@ func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id
 	for shard := range r.Cluster.Shards() {
 		hosts := make([]string, r.Cluster.Replicas())
 		for replica := range r.Cluster.Replicas() {
-			hosts[replica] = r.Cluster.HostnameByID(v1.ClickHouseReplicaID{ShardID: shard, Index: replica})
+			hosts[replica] = r.Cluster.InternalHostnameByID(v1.ClickHouseReplicaID{ShardID: shard, Index: replica})
 		}
 
 		clusterHosts[shard] = hosts
@@ -354,6 +354,7 @@ func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id
 }
 
 type networkConfigParams struct {
+	InterserverHTTPHost           string
 	InterserverHTTPPort           uint16
 	InterserverHTTPUser           string
 	InterserverHTTPPasswordEnvVar string
@@ -366,7 +367,7 @@ type namedProtocol struct {
 	Protocol protocol
 }
 
-func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
 	var protocols []namedProtocol
 	for name, proto := range buildProtocols(r.Cluster) {
 		if name == "interserver" || name == "management" {
@@ -382,6 +383,7 @@ func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ 
 	controllerutil.SortKey(protocols, func(p namedProtocol) string { return p.Name })
 
 	params := networkConfigParams{
+		InterserverHTTPHost:           r.Cluster.InternalHostnameByID(id),
 		InterserverHTTPPort:           PortInterserver,
 		InterserverHTTPUser:           InterserverUserName,
 		InterserverHTTPPasswordEnvVar: EnvInterserverPassword,

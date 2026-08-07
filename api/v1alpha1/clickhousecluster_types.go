@@ -98,7 +98,7 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	ExternalSecret *ExternalSecret `json:"externalSecret,omitempty"`
 
-	// AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the operator-managed headless Service.
+	// AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.
 	// The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
 	// +listType=map
 	// +listMapKey=name
@@ -106,7 +106,7 @@ type ClickHouseClusterSpec struct {
 	AdditionalPorts []AdditionalPort `json:"additionalPorts,omitempty"`
 }
 
-// AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and the operator-managed headless Service.
+// AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and the public headless Service.
 type AdditionalPort struct {
 	// Name uniquely identifies the port within the list. Used as both the container port name and the Service port name.
 	// This must be a DNS_LABEL.
@@ -447,6 +447,11 @@ func (v *ClickHouseCluster) HeadlessServiceName() string {
 	return v.SpecificResourceName("headless")
 }
 
+// InternalServiceNameByReplicaID returns name of the internal headless Service for a replica.
+func (v *ClickHouseCluster) InternalServiceNameByReplicaID(id ClickHouseReplicaID) string {
+	return v.SpecificResourceName(fmt.Sprintf("internal-%d-%d", id.ShardID, id.Index))
+}
+
 // PodDisruptionBudgetNameByShard returns name of the PodDisruptionBudget for the specific shard.
 func (v *ClickHouseCluster) PodDisruptionBudgetNameByShard(shard int32) string {
 	return v.SpecificResourceName(strconv.FormatInt(int64(shard), 10))
@@ -480,6 +485,11 @@ func (v *ClickHouseCluster) KeeperClusterNamespacedName() types.NamespacedName {
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
 func (v *ClickHouseCluster) HostnameByID(id ClickHouseReplicaID) string {
 	return formatPodHostname(v.StatefulSetNameByReplicaID(id), v.HeadlessServiceName(), v.Namespace, v.Spec.ClusterDomain)
+}
+
+// InternalHostnameByID returns the internal domain name for the specific replica.
+func (v *ClickHouseCluster) InternalHostnameByID(id ClickHouseReplicaID) string {
+	return formatServiceHostname(v.InternalServiceNameByReplicaID(id), v.Namespace, v.Spec.ClusterDomain)
 }
 
 // +kubebuilder:object:root=true

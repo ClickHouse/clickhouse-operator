@@ -5,6 +5,7 @@ listen_try: 1
 {{- /* can't use composable protocol for interserver, because server disables replication,
       if interserver_http_port is not set */}}
 interserver_http_port: {{ .InterserverHTTPPort }}
+interserver_http_host: {{ .InterserverHTTPHost }}
 interserver_http_credentials:
   user: {{ .InterserverHTTPUser }}
   password:

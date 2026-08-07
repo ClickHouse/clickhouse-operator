@@ -26,6 +26,7 @@ const (
 	reservedClickHousePortInterserver      = 9009
 	reservedClickHousePortPrometheusScrape = 9363
 	reservedClickHousePortManagement       = 9001
+	reservedClickHousePortManagementHTTP   = 9002
 )
 
 // SetupClickHouseWebhookWithManager registers the webhook for ClickHouseCluster in the manager.
@@ -164,16 +165,18 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		reservedClickHousePortInterserver:      "interserver",
 		reservedClickHousePortPrometheusScrape: "Prometheus metrics",
 		reservedClickHousePortManagement:       "management",
+		reservedClickHousePortManagementHTTP:   "management HTTP",
 	}
 
 	reservedPortNames := map[string]struct{}{
-		"http":        {},
-		"http-secure": {},
-		"tcp":         {},
-		"tcp-secure":  {},
-		"interserver": {},
-		"prometheus":  {},
-		"management":  {},
+		"http":            {},
+		"http-secure":     {},
+		"tcp":             {},
+		"tcp-secure":      {},
+		"interserver":     {},
+		"prometheus":      {},
+		"management":      {},
+		"management-http": {},
 	}
 
 	for i, p := range obj.Spec.AdditionalPorts {

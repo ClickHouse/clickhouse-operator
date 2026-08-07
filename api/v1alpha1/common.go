@@ -494,6 +494,14 @@ func formatPodHostname(stsName, serviceName, namespace, domain string) string {
 	return fmt.Sprintf("%s-0.%s.%s.svc.%s", stsName, serviceName, namespace, domain)
 }
 
+func formatServiceHostname(serviceName, namespace, domain string) string {
+	if domain == "" {
+		domain = DefaultClusterDomain
+	}
+
+	return fmt.Sprintf("%s.%s.svc.%s", serviceName, namespace, domain)
+}
+
 // TemplateMeta defines supported metadata settings for template objects.
 type TemplateMeta struct {
 	// Labels are labels applied to the template objects.

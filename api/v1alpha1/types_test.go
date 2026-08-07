@@ -137,6 +137,33 @@ var _ = Describe("ClickHouseCluster", func() {
 		})
 	})
 
+	Describe("InternalHostnameByID", func() {
+		var cluster *ClickHouseCluster
+
+		BeforeEach(func() {
+			cluster = &ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test-ns",
+				},
+				Spec: ClickHouseClusterSpec{},
+			}
+		})
+
+		It("should use the internal service with the default cluster domain", func() {
+			id := ClickHouseReplicaID{ShardID: 0, Index: 1}
+			hostname := cluster.InternalHostnameByID(id)
+			Expect(cluster.InternalServiceNameByReplicaID(id)).To(Equal("test-clickhouse-internal-0-1"))
+			Expect(hostname).To(Equal("test-clickhouse-internal-0-1.test-ns.svc." + testDefaultClusterDomain))
+		})
+
+		It("should use a custom cluster domain", func() {
+			cluster.Spec.ClusterDomain = "k8s.example.com"
+			hostname := cluster.InternalHostnameByID(ClickHouseReplicaID{ShardID: 1, Index: 2})
+			Expect(hostname).To(Equal("test-clickhouse-internal-1-2.test-ns.svc.k8s.example.com"))
+		})
+	})
+
 	Describe("SpecificResourceName", func() {
 		It("should add suffix", func() {
 			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: "test"}}

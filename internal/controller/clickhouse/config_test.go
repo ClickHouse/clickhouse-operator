@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"fmt"
 	"strings"
+	"text/template"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -112,6 +113,22 @@ var _ = Describe("ConfigGenerator", func() {
 
 		Expect(cfg.StorageConfiguration.Policies[ctx.Cluster.Spec.Settings.Encryption.PolicyName].Volumes["main"].Disk).To(ConsistOf(encryptedDisks))
 		Expect(cfg.StorageConfiguration.Policies["default"].Volumes["main"].Disk).To(ConsistOf(disks))
+	})
+
+	It("should use internal replica hostnames for remote servers", func() {
+		data, err := clusterConfigGenerator(template.Must(template.New("").Parse(clusterConfigTemplateStr)), &ctx, v1.ClickHouseReplicaID{})
+		Expect(err).ToNot(HaveOccurred())
+
+		for id := range ctx.Cluster.ReplicaIDs() {
+			Expect(data).To(ContainSubstring("host: " + ctx.Cluster.InternalHostnameByID(id)))
+		}
+	})
+
+	It("should set the internal hostname as the interserver HTTP host", func() {
+		id := v1.ClickHouseReplicaID{ShardID: 1, Index: 2}
+		data, err := networkConfigGenerator(template.Must(template.New("").Parse(networkConfigTemplateStr)), &ctx, id)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(data).To(ContainSubstring("interserver_http_host: " + ctx.Cluster.InternalHostnameByID(id)))
 	})
 })
 

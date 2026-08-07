@@ -263,6 +263,25 @@ func (c *ClickHouseClient) QueryRowReplica(
 	return nil
 }
 
+// ExecReplica executes a query on the specified ClickHouse replica.
+func (c *ClickHouseClient) ExecReplica(
+	ctx context.Context,
+	id v1.ClickHouseReplicaID,
+	query string,
+	args ...any,
+) error {
+	conn, ok := c.clients[id]
+	if !ok {
+		return fmt.Errorf("replica %v not found", id)
+	}
+
+	if err := conn.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("exec query: %w", err)
+	}
+
+	return nil
+}
+
 // Query executes a query on one of the ClickHouse cluster nodes.
 func (c *ClickHouseClient) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
 	if len(c.clients) == 0 {

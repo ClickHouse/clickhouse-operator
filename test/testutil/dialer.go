@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,7 +20,9 @@ import (
 )
 
 const (
-	portForwardProtocol = "portforward.k8s.io"
+	portForwardProtocol             = "portforward.k8s.io"
+	maxKubernetesResourceNameLength = 63
+	resourceNameHashLength          = 4
 )
 
 // streamConn wraps an httpstream.Stream (SPDY data stream) as a net.Conn.
@@ -56,7 +59,7 @@ func (a spdyAddr) String() string  { return string(a) }
 
 // NewPortForwardDialer returns a DialContextFunc that connects to pods inside a Kubernetes cluster
 // by creating SPDY port-forward streams through the API server.
-// Pod hostnames are expected in the format: {podName}.{serviceName}.{namespace}.svc.{domain}.
+// It resolves both Pod and Service hostnames to their target Pod.
 func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 	return func(_ context.Context, addr string) (net.Conn, error) {
 		host, portStr, err := net.SplitHostPort(addr)
@@ -64,21 +67,14 @@ func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 			return nil, fmt.Errorf("split host port %q: %w", addr, err)
 		}
 
-		// Parse pod hostname: {podName}.{serviceName}.{namespace}.svc.{domain}
-		parts := strings.SplitN(host, ".", 4)
-		if len(parts) < 3 {
-			return nil, fmt.Errorf(
-				"can't parse pod hostname %q: expected {pod}.{service}.{namespace}[.svc.domain]",
-				host,
-			)
-		}
-
-		podName := parts[0]
-		namespace := parts[2]
-
 		clientset, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			return nil, fmt.Errorf("create k8s client: %w", err)
+		}
+
+		namespace, podName, err := podForHostname(host)
+		if err != nil {
+			return nil, err
 		}
 
 		transport, upgrader, err := spdy.RoundTripperFor(config)
@@ -144,4 +140,40 @@ func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 			addr:     addr,
 		}, nil
 	}
+}
+
+// podForHostname returns the Pod addressed by a Kubernetes Pod or Service hostname.
+func podForHostname(hostname string) (string, string, error) {
+	parts := strings.Split(hostname, ".")
+	if len(parts) < 3 {
+		return "", "", fmt.Errorf("can't parse Kubernetes hostname %q", hostname)
+	}
+
+	// Pod hostname {pod}.{service}.{namespace}.svc.{domain}: the fourth label
+	// distinguishes it from a Service in a namespace named "svc".
+	if (len(parts) >= 4 && parts[3] == "svc") || parts[2] != "svc" {
+		return parts[2], parts[0], nil
+	}
+
+	// Service hostname: {service}.{namespace}.svc.{domain}.
+	serviceName, namespace := parts[0], parts[1]
+
+	internalServiceIndex := strings.LastIndex(serviceName, "-internal-")
+	if internalServiceIndex < 1 || internalServiceIndex+len("-internal-") == len(serviceName) {
+		return "", "", fmt.Errorf("can't parse internal service hostname %q", hostname)
+	}
+
+	hashStart := internalServiceIndex - resourceNameHashLength
+	if len(serviceName) == maxKubernetesResourceNameLength && hashStart > 0 && serviceName[hashStart-1] == '-' {
+		_, err := strconv.ParseUint(
+			serviceName[hashStart:internalServiceIndex], 16, resourceNameHashLength*4,
+		)
+		if err == nil {
+			return "", "", fmt.Errorf("can't reconstruct Pod from truncated Service %q", serviceName)
+		}
+	}
+
+	podName := serviceName[:internalServiceIndex] + "-" + serviceName[internalServiceIndex+len("-internal-"):] + "-0"
+
+	return namespace, podName, nil
 }

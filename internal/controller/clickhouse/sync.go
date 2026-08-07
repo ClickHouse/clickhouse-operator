@@ -126,7 +126,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},
-		{Name: "Service", Fn: r.reconcileService, Always: true},
+		{Name: "Services", Fn: r.reconcileService, Always: true},
 		{Name: "ClusterSecret", Fn: r.reconcileClusterSecret, Always: true},
 		{Name: "ExternalSecret", Fn: r.reconcileExternalSecret, Always: true},
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
@@ -187,9 +187,15 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 }
 
 func (r *clickhouseReconciler) reconcileService(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	service := templateHeadlessService(r.Cluster)
-	if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("reconcile service resource: %w", err)
+	services := []*corev1.Service{templateHeadlessService(r.Cluster)}
+	for id := range r.Cluster.ReplicaIDs() {
+		services = append(services, templateInternalService(r.Cluster, id))
+	}
+
+	for _, service := range services {
+		if _, err := r.ReconcileService(ctx, log, service, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("reconcile service %q: %w", service.Name, err)
+		}
 	}
 
 	return chctrl.StepContinue(), nil
@@ -879,8 +885,14 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	return chctrl.StepContinue(), nil
 }
 
+type resourcesWithService struct {
+	chctrl.ReplicaResources
+
+	Service *corev1.Service
+}
+
 func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	var replicasToRemove = map[v1.ClickHouseReplicaID]chctrl.ReplicaResources{}
+	var replicasToRemove = map[v1.ClickHouseReplicaID]resourcesWithService{}
 
 	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
 	if err != nil {
@@ -892,8 +904,30 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			continue
 		}
 
-		replicasToRemove[id] = chctrl.ReplicaResources{
-			CFG: configMap,
+		replicasToRemove[id] = resourcesWithService{
+			ReplicaResources: chctrl.ReplicaResources{
+				CFG: configMap,
+			},
+		}
+	}
+
+	services, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Service, *corev1.ServiceList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list internal Services: %w", err)
+	}
+
+	for id, service := range services {
+		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
+			continue
+		}
+
+		if res, ok := replicasToRemove[id]; ok {
+			res.Service = service
+			replicasToRemove[id] = res
+		} else {
+			replicasToRemove[id] = resourcesWithService{
+				Service: service,
+			}
 		}
 	}
 
@@ -915,8 +949,13 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 	for id, res := range replicasToRemove {
 		inSync := !r.unsyncedShards[id.ShardID]
 
-		// Always delete orphaned ConfigMaps.
-		if res.CFG != nil && (inSync || res.STS == nil) {
+		// Delete StatefulSets only after the shard synced surviving replicas.
+		if res.STS != nil && !inSync {
+			log.Info("shard sync failed, skipping replica deletion", "replica_id", id)
+			continue
+		}
+
+		if res.CFG != nil {
 			log.Info("removing replica configmap", "replica_id", id, "configmap", res.CFG.Name)
 
 			if err := r.Delete(ctx, res.CFG, v1.EventActionReconciling); err != nil {
@@ -924,20 +963,20 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			}
 		}
 
-		// Delete StatefulSets only if the entire shard is removed or shard sync succeeded.
-		if res.STS == nil {
-			continue
+		if res.STS != nil {
+			log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
+
+			if err := r.Delete(ctx, res.STS, v1.EventActionReconciling); err != nil {
+				log.Error(err, "failed to delete replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
+			}
 		}
 
-		if !inSync {
-			log.Info("shard sync failed, skipping replica deletion", "replica_id", id)
-			continue
-		}
+		if res.Service != nil {
+			log.Info("removing replica service", "replica_id", id, "service", res.Service.Name)
 
-		log.Info("removing replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
-
-		if err := r.Delete(ctx, res.STS, v1.EventActionReconciling); err != nil {
-			log.Error(err, "failed to delete replica statefulset", "replica_id", id, "statefulset", res.STS.Name)
+			if err := r.Delete(ctx, res.Service, v1.EventActionReconciling); err != nil {
+				log.Error(err, "failed to delete replica service", "replica_id", id, "service", res.Service.Name)
+			}
 		}
 	}
 
