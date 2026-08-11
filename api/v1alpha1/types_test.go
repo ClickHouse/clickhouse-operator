@@ -58,6 +58,15 @@ var _ = Describe("KeeperCluster", func() {
 })
 
 var _ = Describe("ClickHouseCluster", func() {
+	DescribeTable("DatabaseSyncEnabled", func(value *bool, expected bool) {
+		settings := ClickHouseSettings{EnableDatabaseSync: value}
+		Expect(settings.DatabaseSyncEnabled()).To(Equal(expected))
+	},
+		Entry("defaults to enabled", nil, true),
+		Entry("is explicitly enabled", new(true), true),
+		Entry("is explicitly disabled", new(false), false),
+	)
+
 	Describe("KeeperClusterNamespacedName", func() {
 		It("should default the keeper namespace to the ClickHouseCluster namespace", func() {
 			cluster := &ClickHouseCluster{

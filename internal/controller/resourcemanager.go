@@ -211,6 +211,61 @@ func (rm *ResourceManager) Delete(ctx context.Context, resource client.Object, a
 	return nil
 }
 
+// UpdatePodCondition patches a condition in the Pod status.
+func (rm *ResourceManager) UpdatePodCondition(ctx context.Context, pod *corev1.Pod, cond corev1.PodCondition) error {
+	cli := rm.ctrl.GetClient()
+	key := client.ObjectKeyFromObject(pod)
+	uid := pod.GetUID()
+	first := true
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if !first {
+			if err := cli.Get(ctx, key, pod); err != nil {
+				if k8serrors.IsNotFound(err) {
+					return nil
+				}
+
+				return fmt.Errorf("get pod %q: %w", key, err)
+			}
+
+			// Pod is changed or terminating, canceling
+			if uid != pod.UID || !pod.DeletionTimestamp.IsZero() {
+				return nil
+			}
+		}
+
+		before := pod.DeepCopy()
+		first = false
+		found := false
+
+		for i := range pod.Status.Conditions {
+			if pod.Status.Conditions[i].Type != cond.Type {
+				continue
+			}
+
+			if pod.Status.Conditions[i].Status == cond.Status {
+				return nil
+			}
+
+			pod.Status.Conditions[i] = cond
+			found = true
+
+			break
+		}
+
+		if !found {
+			pod.Status.Conditions = append(pod.Status.Conditions, cond)
+		}
+
+		return cli.Status().Patch(ctx, pod, client.StrategicMergeFrom(before, client.MergeFromWithOptimisticLock{}))
+	})
+	if err != nil {
+		return fmt.Errorf("update pod %q condition: %w", key, err)
+	}
+
+	return nil
+}
+
 // ReplicaUpdateInput contains the parameters needed to reconcile a StatefulSet for a replica.
 type ReplicaUpdateInput struct {
 	Revisions RevisionState
@@ -386,4 +441,19 @@ func ListReplicaResources[
 	}
 
 	return result, nil
+}
+
+// PodConditionTrue reports whether the Pod condition is true.
+func PodConditionTrue(pod *corev1.Pod, conditionType corev1.PodConditionType) bool {
+	if pod == nil {
+		return false
+	}
+
+	for _, c := range pod.Status.Conditions {
+		if c.Type == conditionType {
+			return c.Status == corev1.ConditionTrue
+		}
+	}
+
+	return false
 }

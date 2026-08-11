@@ -746,3 +746,41 @@ var _ = Describe("keeper watch mapping", func() {
 		}))
 	})
 })
+
+var _ = Describe("pod watch mapping", func() {
+	It("should enqueue the ClickHouse cluster that owns a labeled Pod", func(ctx context.Context) {
+		cluster := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "example",
+				Namespace: "clickhouse-ns",
+			},
+		}
+
+		requests := (&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: cluster.Namespace,
+				Labels: map[string]string{
+					controllerutil.LabelClusterKey: cluster.Name,
+					controllerutil.LabelRoleKey:    controllerutil.LabelClickHouseValue,
+				},
+			},
+		})
+
+		Expect(requests).To(ConsistOf(reconcile.Request{NamespacedName: cluster.NamespacedName()}))
+	})
+
+	It("should ignore Pods without the ClickHouse role or cluster label", func(ctx context.Context) {
+		Expect((&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+				controllerutil.LabelClusterKey: "example",
+				controllerutil.LabelRoleKey:    controllerutil.LabelVersionProbe,
+			}},
+		})).To(BeEmpty())
+
+		Expect((&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+			}},
+		})).To(BeEmpty())
+	})
+})

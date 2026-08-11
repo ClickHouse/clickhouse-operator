@@ -310,8 +310,9 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 
 	// Set reserved labels after overrides to ensure they are not modified by user overrides.
 	job.Labels = controllerutil.MergeMaps(job.Labels, map[string]string{
-		controllerutil.LabelAppKey:  rm.owner.SpecificName(),
-		controllerutil.LabelRoleKey: controllerutil.LabelVersionProbe,
+		controllerutil.LabelAppKey:     rm.owner.SpecificName(),
+		controllerutil.LabelClusterKey: rm.owner.GetName(),
+		controllerutil.LabelRoleKey:    controllerutil.LabelVersionProbe,
 	})
 
 	specHash, err := controllerutil.DeepHashObject(job.Spec)

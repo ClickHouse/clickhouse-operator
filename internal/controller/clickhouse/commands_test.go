@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -257,9 +256,10 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 		By("running EnsureDefaultDatabaseEngine")
 
-		// A non-empty Atomic `default` must not be dropped; the operator should
-		// report failure (SchemaInSync=false) rather than destroy data.
-		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeFalse())
+		// A non-empty Atomic `default` must not be dropped: the cluster reports SchemaInSync=False until the user resolves it.
+		replicated, err := cmd.EnsureReplicaDefaultDatabaseEngine(ctx, cmd.log, id0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(replicated).To(BeFalse())
 
 		By("verifying default database is still Atomic and the seeded table survived")
 
@@ -279,7 +279,11 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 	It("converts default database from Atomic to Replicated", func(ctx context.Context) {
 		By("running EnsureDefaultDatabaseEngine")
 
-		Expect(cmd.EnsureDefaultDatabaseEngine(ctx, cmd.log, slices.Collect(cmd.cluster.ReplicaIDs()))).To(BeTrue())
+		for id := range cmd.cluster.ReplicaIDs() {
+			replicated, err := cmd.EnsureReplicaDefaultDatabaseEngine(ctx, cmd.log, id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(replicated).To(BeTrue())
+		}
 
 		By("verifying default database is now Replicated")
 

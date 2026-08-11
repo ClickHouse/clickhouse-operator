@@ -46,6 +46,14 @@ var _ = Describe("UpdateStage", func() {
 		cfg := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-0-0-configmap"}}
 		ctrlutil.AddObjectConfigHash(cfg, rev.ConfigurationRevision)
 
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-0-0-0"},
+			Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+				Type:   corev1.PodReady,
+				Status: corev1.ConditionTrue,
+			}}},
+		}
+
 		return replicaState{
 			replicaProbe: replicaProbe{
 				Version:                   "26.5.1.1",
@@ -54,6 +62,7 @@ var _ = Describe("UpdateStage", func() {
 			},
 			ReplicaState: chctrl.ReplicaState{
 				ReplicaResources: chctrl.ReplicaResources{STS: sts, CFG: cfg},
+				Pod:              pod,
 			},
 		}
 	}
