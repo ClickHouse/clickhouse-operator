@@ -295,22 +295,45 @@ type namedCollectionValue struct {
 	Value string
 }
 
-func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
-	keeperNodes := make([]keeperNode, 0, r.keeper.Replicas())
+// keeperNodes returns the coordination servers ClickHouse should connect to, either the
+// externally managed ensemble from the spec or the KeeperCluster owned by the operator.
+func (r *clickhouseReconciler) keeperNodes() []keeperNode {
+	if external := r.Cluster.Spec.ExternalKeeper; external != nil {
+		secure := external.TLS == v1.ExternalKeeperTLSEnabled
+
+		nodes := make([]keeperNode, 0, len(external.Nodes))
+		for _, node := range external.Nodes {
+			nodes = append(nodes, keeperNode{
+				Host:   node.Host,
+				Port:   node.Port,
+				Secure: secure,
+			})
+		}
+
+		return nodes
+	}
+
+	nodes := make([]keeperNode, 0, r.keeper.Replicas())
 	for _, host := range r.keeper.Hostnames() {
 		if r.keeper.Spec.Settings.TLS.Enabled {
-			keeperNodes = append(keeperNodes, keeperNode{
+			nodes = append(nodes, keeperNode{
 				Host:   host,
 				Port:   keeper.PortNativeSecure,
 				Secure: true,
 			})
 		} else {
-			keeperNodes = append(keeperNodes, keeperNode{
+			nodes = append(nodes, keeperNode{
 				Host: host,
 				Port: keeper.PortNative,
 			})
 		}
 	}
+
+	return nodes
+}
+
+func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
+	keeperNodes := r.keeperNodes()
 
 	clusterHosts := make([][]string, r.Cluster.Shards())
 	for shard := range r.Cluster.Shards() {

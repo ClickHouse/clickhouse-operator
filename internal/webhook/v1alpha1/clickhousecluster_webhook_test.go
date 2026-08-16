@@ -23,7 +23,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 				Namespace: "default",
 				Name:      "test-default",
 				Spec: chv1.ClickHouseClusterSpec{
-					KeeperClusterRef: chv1.KeeperClusterReference{
+					KeeperClusterRef: &chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
 					},
 				},
@@ -50,7 +50,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 				Namespace: "default",
 				Name:      "test-partial-resources",
 				Spec: chv1.ClickHouseClusterSpec{
-					KeeperClusterRef: chv1.KeeperClusterReference{
+					KeeperClusterRef: &chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
 					},
 					ContainerTemplate: chv1.ContainerTemplateSpec{
@@ -74,7 +74,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 				Namespace: "default",
 				Name:      "test-default",
 				Spec: chv1.ClickHouseClusterSpec{
-					KeeperClusterRef: chv1.KeeperClusterReference{
+					KeeperClusterRef: &chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
 					},
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{
@@ -98,7 +98,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Namespace: "default",
 			Name:      "test-validate",
 			Spec: chv1.ClickHouseClusterSpec{
-				KeeperClusterRef: chv1.KeeperClusterReference{
+				KeeperClusterRef: &chv1.KeeperClusterReference{
 					Name: "some-keeper-cluster",
 				},
 			},
@@ -133,6 +133,55 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("keeperClusterRef.namespace"))
+		})
+
+		It("Should accept an externally managed keeper instead of a reference", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.KeeperClusterRef = nil
+			cluster.Spec.ExternalKeeper = &chv1.ExternalKeeperSpec{
+				Nodes: []chv1.ExternalKeeperNode{
+					{Host: "keeper-1.example.internal", Port: 9181},
+					{Host: "keeper-2.example.internal", Port: 9181},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(cluster.Spec.ExternalKeeper.TLS).To(Equal(chv1.ExternalKeeperTLSDisabled))
+		})
+
+		It("Should default the externally managed keeper port", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.KeeperClusterRef = nil
+			cluster.Spec.ExternalKeeper = &chv1.ExternalKeeperSpec{
+				Nodes: []chv1.ExternalKeeperNode{{Host: "keeper-1.example.internal"}},
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+
+			Expect(cluster.Spec.ExternalKeeper.Nodes[0].Port).To(BeEquivalentTo(9181))
+		})
+
+		It("Should reject both keeperClusterRef and externalKeeper", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.ExternalKeeper = &chv1.ExternalKeeperSpec{
+				Nodes: []chv1.ExternalKeeperNode{{Host: "keeper-1.example.internal", Port: 9181}},
+			}
+
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
+		})
+
+		It("Should reject neither keeperClusterRef nor externalKeeper", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.KeeperClusterRef = nil
+
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("must be set"))
 		})
 
 		It("Should check certificate passed if TLS enabled", func(ctx context.Context) {
@@ -368,7 +417,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			return &chv1.ClickHouseCluster{
 				Namespace: "default", Name: name,
 				Spec: chv1.ClickHouseClusterSpec{
-					KeeperClusterRef:    chv1.KeeperClusterReference{Name: "some-keeper-cluster"},
+					KeeperClusterRef:    &chv1.KeeperClusterReference{Name: "some-keeper-cluster"},
 					DataVolumeClaimSpec: dataVolume(),
 				},
 			}

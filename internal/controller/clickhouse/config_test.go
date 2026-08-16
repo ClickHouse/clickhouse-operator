@@ -121,6 +121,48 @@ var _ = Describe("ConfigGenerator", func() {
 		}
 	})
 
+	DescribeTable("should render zookeeper nodes from an externally managed keeper",
+		func(tls v1.ExternalKeeperTLSPolicy, port int32, expectedSecure int) {
+			original := ctx.Cluster
+			DeferCleanup(func() { ctx.Cluster = original })
+
+			cluster := original.DeepCopy()
+			cluster.Spec.KeeperClusterRef = nil
+			cluster.Spec.ExternalKeeper = &v1.ExternalKeeperSpec{
+				TLS: tls,
+				Nodes: []v1.ExternalKeeperNode{
+					{Host: "keeper-1.example.internal", Port: port},
+					{Host: "keeper-2.example.internal", Port: port},
+				},
+			}
+			ctx.Cluster = cluster
+
+			data, err := clusterConfigGenerator(template.Must(template.New("").Parse(clusterConfigTemplateStr)), &ctx, v1.ClickHouseReplicaID{})
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg := struct {
+				Zookeeper struct {
+					Nodes []struct {
+						Host   string
+						Port   int32
+						Secure int
+					}
+				}
+			}{}
+			Expect(yaml.Unmarshal([]byte(data), &cfg)).To(Succeed())
+
+			Expect(cfg.Zookeeper.Nodes).To(HaveLen(2))
+
+			for i, node := range cfg.Zookeeper.Nodes {
+				Expect(node.Host).To(Equal(fmt.Sprintf("keeper-%d.example.internal", i+1)))
+				Expect(node.Port).To(Equal(port))
+				Expect(node.Secure).To(Equal(expectedSecure))
+			}
+		},
+		Entry("plain text", v1.ExternalKeeperTLSDisabled, int32(9181), 0),
+		Entry("over TLS", v1.ExternalKeeperTLSEnabled, int32(9281), 1),
+	)
+
 	It("should set the internal hostname as the interserver HTTP host", func() {
 		id := v1.ClickHouseReplicaID{ShardID: 1, Index: 2}
 		data, err := networkConfigGenerator(template.Must(template.New("").Parse(networkConfigTemplateStr)), &ctx, id)

@@ -405,7 +405,7 @@ var _ = Describe("KeeperClustersForClickHouse", func() {
 		cluster := &v1.ClickHouseCluster{
 			Name: "test", Namespace: "ch-ns",
 			Spec: v1.ClickHouseClusterSpec{
-				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum", Namespace: "keeper-ns"},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: "quorum", Namespace: "keeper-ns"},
 			},
 		}
 
@@ -418,7 +418,7 @@ var _ = Describe("KeeperClustersForClickHouse", func() {
 		cluster := &v1.ClickHouseCluster{
 			Name: "test", Namespace: "ch-ns",
 			Spec: v1.ClickHouseClusterSpec{
-				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum"},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: "quorum"},
 			},
 		}
 
