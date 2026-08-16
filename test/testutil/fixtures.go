@@ -52,7 +52,7 @@ func (b *ClickHouseBuilder) WithStorage(storage corev1.PersistentVolumeClaimSpec
 
 // WithKeeper sets the KeeperCluster reference.
 func (b *ClickHouseBuilder) WithKeeper(name string) *ClickHouseBuilder {
-	b.cr.Spec.KeeperClusterRef = v1.KeeperClusterReference{Name: name}
+	b.cr.Spec.KeeperClusterRef = &v1.KeeperClusterReference{Name: name}
 	return b
 }
 

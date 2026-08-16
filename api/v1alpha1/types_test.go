@@ -70,7 +70,7 @@ var _ = Describe("ClickHouseCluster", func() {
 				Name:      "test",
 				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
-					KeeperClusterRef: KeeperClusterReference{
+					KeeperClusterRef: &KeeperClusterReference{
 						Name: "keeper",
 					},
 				},
@@ -87,7 +87,7 @@ var _ = Describe("ClickHouseCluster", func() {
 				Name:      "test",
 				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
-					KeeperClusterRef: KeeperClusterReference{
+					KeeperClusterRef: &KeeperClusterReference{
 						Name:      "keeper",
 						Namespace: "keeper-ns",
 					},
