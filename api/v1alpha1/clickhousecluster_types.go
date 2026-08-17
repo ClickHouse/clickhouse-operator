@@ -212,6 +212,11 @@ type ClickHouseSettings struct {
 	ExtraUsersConfig runtime.RawExtension `json:"extraUsersConfig,omitempty"`
 }
 
+// DatabaseSyncEnabled reports whether database schema synchronization is enabled.
+func (s *ClickHouseSettings) DatabaseSyncEnabled() bool {
+	return s.EnableDatabaseSync == nil || *s.EnableDatabaseSync
+}
+
 // EncryptionSettings enables at-rest encryption of table data. When present, the operator generates an
 // encrypted ClickHouse storage policy wrapping every data disk; tables opt in via `SETTINGS storage_policy`.
 // Encryption cannot be disabled once enabled.

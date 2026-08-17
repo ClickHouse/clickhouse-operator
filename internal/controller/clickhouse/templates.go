@@ -71,15 +71,17 @@ func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *core
 			Name:      name,
 			Namespace: cr.Namespace,
 			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-				controllerutil.LabelAppKey: cr.SpecificName(),
+				controllerutil.LabelAppKey:     cr.SpecificName(),
+				controllerutil.LabelClusterKey: cr.Name,
 			}),
 			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		},
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
 			ClusterIP: corev1.ClusterIPNone,
-			// Publish not-yet-ready pod addresses so replicas can resolve and reach peers before they report Ready
-			PublishNotReadyAddresses: true,
+			// Internal Services publish not-yet-ready addresses so replicas and the operator can
+			// reach peers before they report Ready; the public Service gates client traffic on readiness.
+			PublishNotReadyAddresses: internal,
 			Selector: map[string]string{
 				controllerutil.LabelAppKey:  cr.SpecificName(),
 				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
@@ -99,6 +101,7 @@ func templatePodDisruptionBudget(cr *v1.ClickHouseCluster, shardID int32) *polic
 			Namespace: cr.Namespace,
 			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
 				controllerutil.LabelAppKey:            cr.SpecificName(),
+				controllerutil.LabelClusterKey:        cr.Name,
 				controllerutil.LabelClickHouseShardID: strconv.Itoa(int(shardID)),
 			}),
 			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
@@ -136,7 +139,8 @@ func templateClusterSecrets(cr *v1.ClickHouseCluster, existing corev1.Secret) (c
 	secret.Name = cr.SecretName()
 	secret.Namespace = cr.Namespace
 	secret.Labels = controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-		controllerutil.LabelAppKey: cr.SpecificName(),
+		controllerutil.LabelAppKey:     cr.SpecificName(),
+		controllerutil.LabelClusterKey: cr.Name,
 	})
 	secret.Annotations = controllerutil.MergeMaps(cr.Spec.Annotations)
 	changed := !maps.Equal(secret.Labels, existing.Labels) || !maps.Equal(secret.Annotations, existing.Annotations)
@@ -244,7 +248,8 @@ func templateConfigMap(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (*cor
 			Name:      r.Cluster.ConfigMapNameByReplicaID(id),
 			Namespace: r.Cluster.Namespace,
 			Labels: controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
-				controllerutil.LabelAppKey: r.Cluster.SpecificName(),
+				controllerutil.LabelAppKey:     r.Cluster.SpecificName(),
+				controllerutil.LabelClusterKey: r.Cluster.Name,
 			}),
 			Annotations: r.Cluster.Spec.Annotations,
 		},
@@ -260,6 +265,7 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID, cfg
 
 	resourceLabels := controllerutil.MergeMaps(r.Cluster.Spec.Labels, id.Labels(), map[string]string{
 		controllerutil.LabelAppKey:         r.Cluster.SpecificName(),
+		controllerutil.LabelClusterKey:     r.Cluster.Name,
 		controllerutil.LabelInstanceK8sKey: r.Cluster.SpecificName(),
 		controllerutil.LabelRoleKey:        controllerutil.LabelClickHouseValue,
 		controllerutil.LabelAppK8sKey:      controllerutil.LabelClickHouseValue,
@@ -366,6 +372,9 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		Volumes:         volumes,
 		Containers:      []corev1.Container{container},
 		SecurityContext: controller.DefaultPodSecurityContext(),
+		ReadinessGates: []corev1.PodReadinessGate{{
+			ConditionType: v1.ReplicaInitializedCondition,
+		}},
 	}
 
 	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {

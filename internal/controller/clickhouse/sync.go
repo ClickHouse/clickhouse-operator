@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -41,12 +42,23 @@ type replicaState struct {
 	ReloadError error
 }
 
+// Queryable reports whether the replica can process queries.
+func (r replicaState) Queryable() bool {
+	return r.Version != ""
+}
+
+// Initialized reports whether the operator completed replica initialization.
+func (r replicaState) Initialized() bool {
+	return chctrl.PodConditionTrue(r.Pod, v1.ReplicaInitializedCondition)
+}
+
+// Ready reports whether the replica is serving client traffic.
 func (r replicaState) Ready() bool {
-	if r.STS == nil {
+	if !r.Queryable() || r.Pod == nil {
 		return false
 	}
 
-	return r.Version != "" && r.STS.Status.ReadyReplicas == 1 // Not reliable, but allows to wait until pod is `green`
+	return chctrl.PodConditionTrue(r.Pod, corev1.PodReady)
 }
 
 func (r replicaState) HasDiff(rev chctrl.RevisionState) bool {
@@ -103,10 +115,11 @@ type clickhouseReconciler struct {
 	secret    corev1.Secret
 	commander *commander
 
-	versionProbe   chctrl.VersionProbeResult
-	readyReplicas  []v1.ClickHouseReplicaID
-	revs           chctrl.RevisionState
-	unsyncedShards map[int32]bool // Populated by reconcileDatabaseSync, consumed by reconcileCleanUp.
+	versionProbe      chctrl.VersionProbeResult
+	reachableReplicas []v1.ClickHouseReplicaID
+	readyReplicas     []v1.ClickHouseReplicaID
+	revs              chctrl.RevisionState
+	unsyncedShards    map[int32]bool // Populated by reconcileDatabaseSync, consumed by reconcileCleanUp.
 }
 
 func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
@@ -482,7 +495,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			reloadErr error
 		)
 
-		if startupErr == nil && sts.Status.ReadyReplicas > 0 && r.commander != nil {
+		if startupErr == nil && chctrl.PodConditionTrue(pod, corev1.ContainersReady) && r.commander != nil {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
@@ -553,7 +566,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 	results := ctrlutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
 		replica := r.ReplicaState[id]
-		if replica.StartupError != nil || replica.STS == nil || replica.STS.Status.ReadyReplicas == 0 {
+		if !replica.Queryable() {
 			return id, struct{}{}, nil
 		}
 
@@ -774,8 +787,21 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 }
 
 func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	if enabled := r.Cluster.Spec.Settings.EnableDatabaseSync; enabled != nil && !*enabled {
+	if !r.Cluster.Spec.Settings.DatabaseSyncEnabled() {
 		log.Debug("database sync is disabled, skipping")
+
+		ids := make([]v1.ClickHouseReplicaID, 0, len(r.ReplicaState))
+		for id := range r.ReplicaState {
+			if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
+				ids = append(ids, id)
+			}
+		}
+
+		result := chctrl.StepContinue()
+		if !r.initializeReplicas(ctx, log, ids) {
+			result = chctrl.StepRequeue(chctrl.RequeueProbePoll)
+		}
+
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ClickHouseConditionTypeSchemaInSync,
 			Status:  metav1.ConditionTrue,
@@ -783,7 +809,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			Message: "Database schema sync is disabled",
 		})
 
-		return chctrl.StepContinue(), nil
+		return result, nil
 	}
 
 	if r.commander == nil {
@@ -792,59 +818,65 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	}
 
 	var (
-		allReplicasReady       = len(r.readyReplicas) == len(r.ReplicaState)
-		allDefaultDatabaseSet  = allReplicasReady
-		allDatabasesSynced     = allReplicasReady
-		staleReplicasCleanedUp = true
+		allReplicasReachable            = len(r.reachableReplicas) == len(r.ReplicaState)
+		allDatabasesSynced              = allReplicasReachable
+		allReplicasInitialized          = allReplicasReachable
+		staleReplicasCleanedUp          = true
+		nonReplicatedDefaultDatabaseIDs []string
+		initializationCandidates        []v1.ClickHouseReplicaID
 	)
 
-	if !r.commander.EnsureDefaultDatabaseEngine(ctx, log, r.readyReplicas) {
-		allDefaultDatabaseSet = false
+	desiredReplicas := make([]v1.ClickHouseReplicaID, 0, len(r.reachableReplicas))
+	for _, id := range r.reachableReplicas {
+		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
+			desiredReplicas = append(desiredReplicas, id)
+		}
 	}
 
-	if len(r.readyReplicas) >= 2 {
-		if !r.commander.SyncDatabases(ctx, log, r.readyReplicas) {
+	defaultDBRes := ctrlutil.ExecuteParallel(desiredReplicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, bool, error) {
+		if r.ReplicaState[id].Initialized() {
+			return id, true, nil
+		}
+
+		replicated, err := r.commander.EnsureReplicaDefaultDatabaseEngine(ctx, log, id)
+
+		return id, replicated, err
+	})
+	for id, res := range defaultDBRes {
+		if res.Err != nil {
+			log.Info("failed to recreate default database as Replicated", "replica_id", id, "error", res.Err)
+
+			allReplicasInitialized = false
+
+			continue
+		}
+
+		if !res.Result {
+			nonReplicatedDefaultDatabaseIDs = append(nonReplicatedDefaultDatabaseIDs, id.String())
+		}
+
+		initializationCandidates = append(initializationCandidates, id)
+	}
+
+	schemaSynced := true
+
+	if len(r.reachableReplicas) >= 2 {
+		if !r.commander.SyncDatabases(ctx, log, r.reachableReplicas) {
+			schemaSynced = false
 			allDatabasesSynced = false
 		}
 	} else {
 		log.Info("no replicas to replicate schema, skipping")
 	}
 
-	shardHasReadyReplica := map[int32]bool{}
-	for _, id := range r.readyReplicas {
-		shardHasReadyReplica[id.ShardID] = true
+	if schemaSynced && !r.initializeReplicas(ctx, log, initializationCandidates) {
+		allReplicasInitialized = false
 	}
 
-	// Sync only shards that are going to drop some replicas.
-	runningReplicas := map[v1.ClickHouseReplicaID]struct{}{}
-	shardsToSyncSet := map[int32]struct{}{}
+	drainingShards := r.unloadRemovedReplicas(ctx, log)
+	runningReplicas := r.syncShardsPendingRemoval(ctx, log, drainingShards)
 
-	for id := range r.ReplicaState {
-		runningReplicas[id] = struct{}{}
-
-		if id.ShardID < r.Cluster.Shards() && id.Index >= r.Cluster.Replicas() {
-			if shardHasReadyReplica[id.ShardID] {
-				shardsToSyncSet[id.ShardID] = struct{}{}
-			} else {
-				log.Debug("no ready replicas in shard, skipping sync", "shard", id.ShardID)
-				r.unsyncedShards[id.ShardID] = true
-			}
-		}
-	}
-
-	syncRes := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(shardsToSyncSet)), func(shardID int32) (int32, struct{}, error) {
-		log.Info("pre scale-down shard sync", "shard_id", shardID)
-		return shardID, struct{}{}, r.commander.SyncShard(ctx, log, shardID)
-	})
-
-	for id, res := range syncRes {
-		if res.Err != nil {
-			log.Info("failed to sync shard", "shard_id", id, "error", res.Err)
-			r.unsyncedShards[id] = true
-		}
-	}
-
-	if len(r.readyReplicas) > 0 {
+	if len(r.reachableReplicas) > 0 {
 		if err := r.commander.CleanupDatabaseReplicas(ctx, log, runningReplicas); err != nil {
 			log.Warn("failed to cleanup database replicas", "error", err)
 
@@ -853,7 +885,18 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	}
 
 	switch {
-	case !allDefaultDatabaseSet || !allDatabasesSynced:
+	case len(nonReplicatedDefaultDatabaseIDs) > 0:
+		slices.Sort(nonReplicatedDefaultDatabaseIDs)
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ClickHouseConditionTypeSchemaInSync,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ClickHouseConditionDefaultDatabaseNotReplicated,
+			Message: "Default database is not Replicated on replicas: " + strings.Join(nonReplicatedDefaultDatabaseIDs, ", "),
+		})
+
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
+
+	case !allReplicasInitialized || !allDatabasesSynced:
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ClickHouseConditionTypeSchemaInSync,
 			Status:  metav1.ConditionFalse,
@@ -882,7 +925,148 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 		})
 	}
 
+	if len(drainingShards) > 0 {
+		log.Info("waiting for replicas scheduled for deletion to stop serving client traffic", "shards", slices.Sorted(maps.Keys(drainingShards)))
+
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
+	}
+
 	return chctrl.StepContinue(), nil
+}
+
+// initializeReplicas marks the gated replicas as initialized to open client traffic; it reports whether all succeeded.
+func (r *clickhouseReconciler) initializeReplicas(ctx context.Context, log ctrlutil.Logger, ids []v1.ClickHouseReplicaID) bool {
+	res := ctrlutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		state := r.ReplicaState[id]
+		if state.Initialized() {
+			return id, struct{}{}, nil
+		}
+
+		if state.Pod == nil {
+			return id, struct{}{}, errors.New("pod does not exist yet")
+		}
+
+		if err := r.UpdatePodCondition(ctx, state.Pod, corev1.PodCondition{
+			Type:               v1.ReplicaInitializedCondition,
+			LastTransitionTime: metav1.Now(),
+			Status:             corev1.ConditionTrue,
+			Reason:             v1.ReplicaInitializedReason,
+			Message:            "Replica initialization completed",
+		}); err != nil {
+			return id, struct{}{}, fmt.Errorf("update Pod status with initialized condition: %w", err)
+		}
+
+		return id, struct{}{}, nil
+	})
+
+	initialized := true
+
+	for id, repl := range res {
+		if repl.Err != nil {
+			log.Info("failed to mark replica initialized", "replica_id", id, "error", repl.Err)
+
+			initialized = false
+		}
+	}
+
+	return initialized
+}
+
+// unloadRemovedReplicas withdraws client traffic from replicas scheduled for deletion, returns the shards whose replicas are still being unpublished.
+func (r *clickhouseReconciler) unloadRemovedReplicas(ctx context.Context, log ctrlutil.Logger) map[int32]bool {
+	drainingShards := map[int32]bool{}
+	replicasToDrain := make([]v1.ClickHouseReplicaID, 0, len(r.ReplicaState))
+	removedReplicas := make([]v1.ClickHouseReplicaID, 0, len(r.ReplicaState))
+
+	for id, state := range r.ReplicaState {
+		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
+			continue
+		}
+
+		removedReplicas = append(removedReplicas, id)
+
+		if state.Initialized() {
+			replicasToDrain = append(replicasToDrain, id)
+		}
+	}
+
+	if len(removedReplicas) == 0 {
+		return drainingShards
+	}
+
+	drainRes := ctrlutil.ExecuteParallel(replicasToDrain, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		if err := r.UpdatePodCondition(ctx, r.ReplicaState[id].Pod, corev1.PodCondition{
+			Type:               v1.ReplicaInitializedCondition,
+			LastTransitionTime: metav1.Now(),
+			Status:             corev1.ConditionFalse,
+			Reason:             v1.ReplicaDeletionReason,
+			Message:            "Replica is scheduled for deletion",
+		}); err != nil {
+			return id, struct{}{}, fmt.Errorf("update Pod status with deletion condition: %w", err)
+		}
+
+		return id, struct{}{}, nil
+	})
+	for id, res := range drainRes {
+		if res.Err != nil {
+			log.Info("failed to unload client traffic from replica scheduled for deletion", "replica_id", id, "error", res.Err)
+
+			r.unsyncedShards[id.ShardID] = true
+
+			continue
+		}
+
+		drainingShards[id.ShardID] = true
+	}
+
+	return drainingShards
+}
+
+// syncShardsPendingRemoval syncs shards that are about to drop replicas and reports the replicas still running.
+func (r *clickhouseReconciler) syncShardsPendingRemoval(ctx context.Context, log ctrlutil.Logger, drainingShards map[int32]bool) map[v1.ClickHouseReplicaID]struct{} {
+	shardHasReachableReplica := map[int32]bool{}
+	for _, id := range r.reachableReplicas {
+		shardHasReachableReplica[id.ShardID] = true
+	}
+
+	// Sync only shards that are going to drop replicas partially.
+	runningReplicas := map[v1.ClickHouseReplicaID]struct{}{}
+	shardsToSyncSet := map[int32]struct{}{}
+
+	for id := range r.ReplicaState {
+		runningReplicas[id] = struct{}{}
+
+		if id.ShardID < r.Cluster.Shards() && id.Index < r.Cluster.Replicas() {
+			continue
+		}
+
+		switch {
+		case drainingShards[id.ShardID]:
+			log.Debug("replica scheduled for deletion is still serving client traffic, delaying sync", "shard", id.ShardID)
+			r.unsyncedShards[id.ShardID] = true
+		case id.ShardID >= r.Cluster.Shards():
+			// Whole shard removal drops the shard data by design, no surviving replicas to sync.
+		case shardHasReachableReplica[id.ShardID]:
+			shardsToSyncSet[id.ShardID] = struct{}{}
+		default:
+			log.Debug("no reachable replicas in shard, skipping sync", "shard", id.ShardID)
+			r.unsyncedShards[id.ShardID] = true
+		}
+	}
+
+	syncRes := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(shardsToSyncSet)), func(shardID int32) (int32, struct{}, error) {
+		log.Info("pre scale-down shard sync", "shard_id", shardID)
+		return shardID, struct{}{}, r.commander.SyncShard(ctx, log, shardID)
+	})
+
+	for id, res := range syncRes {
+		if res.Err != nil {
+			log.Info("failed to sync shard", "shard_id", id, "error", res.Err)
+			r.unsyncedShards[id] = true
+		}
+	}
+
+	return runningReplicas
 }
 
 type resourcesWithService struct {
@@ -949,7 +1133,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 	for id, res := range replicasToRemove {
 		inSync := !r.unsyncedShards[id.ShardID]
 
-		// Delete StatefulSets only after the shard synced surviving replicas.
+		// Delete StatefulSets only after the shard unloaded client traffic and synced surviving replicas.
 		if res.STS != nil && !inSync {
 			log.Info("shard sync failed, skipping replica deletion", "replica_id", id)
 			continue
@@ -998,6 +1182,10 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 
 			if replica.StartupError != nil {
 				startupErrors[id.String()] = *replica.StartupError
+			}
+
+			if replica.Queryable() {
+				r.reachableReplicas = append(r.reachableReplicas, id)
 			}
 
 			if !replica.Ready() {
