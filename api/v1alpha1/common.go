@@ -264,13 +264,21 @@ type PodTemplateSpec struct {
 
 	// InitContainers is the list of init containers to run before the main server container starts.
 	// Merged with operator defaults by name.
-	// with the same name.
 	// +optional
 	// +patchMergeKey=name
 	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=name
 	InitContainers []corev1.Container `json:"initContainers,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
+
+	// Containers is the list of additional containers to run alongside the main server container.
+	// Merged with the operator-managed container by name.
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	Containers []corev1.Container `json:"containers,omitempty" patchMergeKey:"name" patchStrategy:"merge"`
 }
 
 // ContainerTemplateSpec describes the container configuration overrides for the cluster's containers.

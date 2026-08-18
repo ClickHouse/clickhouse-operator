@@ -520,4 +520,43 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 			Expect(podSpec.InitContainers[0].Image).To(Equal("another"))
 		})
 	})
+
+	Describe("Containers", func() {
+		It("should add additional containers", func() {
+			podSpec, err := ApplyPodTemplateOverrides(
+				&corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "server", Image: "clickhouse"}},
+				},
+				&v1.PodTemplateSpec{
+					Containers: []corev1.Container{
+						{Name: "backup", Image: "clickhouse-backup"},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(podSpec.Containers).To(ContainElements(
+				corev1.Container{Name: "server", Image: "clickhouse"},
+				corev1.Container{Name: "backup", Image: "clickhouse-backup"},
+			))
+		})
+
+		It("should merge containers with the same name", func() {
+			podSpec, err := ApplyPodTemplateOverrides(
+				&corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "server", Image: "clickhouse"}},
+				},
+				&v1.PodTemplateSpec{
+					Containers: []corev1.Container{
+						{Name: "server", Image: "another"},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(podSpec.Containers).To(HaveLen(1))
+			Expect(podSpec.Containers[0].Name).To(Equal("server"))
+			Expect(podSpec.Containers[0].Image).To(Equal("another"))
+		})
+	})
 })
