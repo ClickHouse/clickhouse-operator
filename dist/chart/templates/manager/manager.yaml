@@ -107,6 +107,8 @@ spec:
           value: {{ .Values.webhook.enabled | quote }}
         - name: ENABLE_PDB
           value: {{ .Values.controller.pdbManagement.enabled | quote }}
+        - name: ENABLE_NETWORK_POLICY
+          value: {{ .Values.controller.networkPolicyManagement.enabled | quote }}
         {{- if not (empty .Values.controller.watchNamespaces) }}
         - name: WATCH_NAMESPACE
           value: {{ join "," .Values.controller.watchNamespaces | quote }}

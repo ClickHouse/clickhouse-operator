@@ -25,46 +25,53 @@ var _ = DescribeTable("Environment variables parsing",
 		Expect(result).To(BeEquivalentTo(expected))
 	},
 	Entry("default values", nil, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      true,
-		WatchNamespace: nil,
+		EnableWebhooks:      true,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
+		WatchNamespace:      nil,
 	}),
 	Entry("explicit enabled webhook", map[string]string{
 		"ENABLE_WEBHOOKS": "true",
 	}, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      true,
+		EnableWebhooks:      true,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
 	}),
 	Entry("explicit disabled webhook", map[string]string{
 		"ENABLE_WEBHOOKS": "false",
 	}, Environment{
-		EnableWebhooks: false,
-		EnablePDB:      true,
+		EnableWebhooks:      false,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
 	}),
 	Entry("explicit disabled PDB management", map[string]string{
 		"ENABLE_PDB": "false",
 	}, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      false,
+		EnableWebhooks:      true,
+		EnablePDB:           false,
+		EnableNetworkPolicy: true,
 	}),
 	Entry("parse single namespace", map[string]string{
 		"WATCH_NAMESPACE": "target_namespace",
 	}, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      true,
-		WatchNamespace: []string{"target_namespace"},
+		EnableWebhooks:      true,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
+		WatchNamespace:      []string{"target_namespace"},
 	}),
 	Entry("parse multiple namespace", map[string]string{
 		"WATCH_NAMESPACE": "target,namespace",
 	}, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      true,
-		WatchNamespace: []string{"target", "namespace"},
+		EnableWebhooks:      true,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
+		WatchNamespace:      []string{"target", "namespace"},
 	}),
 	Entry("empty namespace behaves as not set", map[string]string{
 		"WATCH_NAMESPACE": "",
 	}, Environment{
-		EnableWebhooks: true,
-		EnablePDB:      true,
+		EnableWebhooks:      true,
+		EnablePDB:           true,
+		EnableNetworkPolicy: true,
 	}),
 )

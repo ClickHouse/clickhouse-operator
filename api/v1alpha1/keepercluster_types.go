@@ -14,6 +14,24 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
+// KeeperNetworkPolicySpec configures the NetworkPolicy managed for the Keeper cluster.
+// The managed policy covers cluster-internal traffic only: the raft port is restricted to
+// the Keeper replicas and the client and control ports to ClickHouse clusters and the
+// operator. Any other ingress, including metrics scraping, must be allowed by additional
+// user-defined NetworkPolicies.
+type KeeperNetworkPolicySpec struct {
+	// Policy controls whether the operator manages a NetworkPolicy restricting ingress to the Keeper Pods.
+	// Defaults to "Disabled" when unset.
+	// +optional
+	// +kubebuilder:default:=Disabled
+	Policy NetworkPolicyPolicy `json:"policy,omitempty"`
+}
+
+// Enabled returns true if the operator should manage the Keeper cluster NetworkPolicy.
+func (s *KeeperNetworkPolicySpec) Enabled() bool {
+	return s != nil && s.Policy == NetworkPolicyEnabled
+}
+
 // KeeperClusterSpec defines the desired state of KeeperCluster.
 type KeeperClusterSpec struct {
 	// Number of replicas in the cluster
@@ -49,6 +67,10 @@ type KeeperClusterSpec struct {
 	// (preserving quorum for a 2F+1 cluster); single-replica clusters use maxUnavailable=1.
 	// +optional
 	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
+
+	// NetworkPolicy configures the NetworkPolicy managed for the Keeper cluster.
+	// +optional
+	NetworkPolicy *KeeperNetworkPolicySpec `json:"networkPolicy,omitempty"`
 
 	// Configuration parameters for ClickHouse Keeper server.
 	// +optional

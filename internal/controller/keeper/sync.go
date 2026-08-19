@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,9 +79,10 @@ type keeperReconciler struct {
 	statusManager
 	chctrl.ResourceManager
 
-	Dialer    ctrlutil.DialContextFunc
-	Checker   *upgrade.Checker
-	EnablePDB bool
+	Dialer              ctrlutil.DialContextFunc
+	Checker             *upgrade.Checker
+	EnablePDB           bool
+	EnableNetworkPolicy bool
 
 	Cluster      *v1.KeeperCluster
 	ReplicaState map[v1.KeeperReplicaID]replicaState
@@ -111,6 +113,10 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 		{Name: "QuorumMembership", Fn: r.reconcileQuorumMembership},
 		{Name: "CommonResources", Fn: r.reconcileCommonResources},
 	}
+	if r.EnableNetworkPolicy {
+		steps = append(steps, chctrl.ReconcileStep{Name: "NetworkPolicy", Fn: r.reconcileNetworkPolicy, Always: true})
+	}
+
 	if r.EnablePDB {
 		steps = append(steps, chctrl.ReconcileStep{Name: "PodDisruptionBudget", Fn: r.reconcilePodDisruptionBudget})
 	}
@@ -445,6 +451,35 @@ func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctr
 
 	if _, err = r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling); err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("reconcile quorum config: %w", err)
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *keeperReconciler) reconcileNetworkPolicy(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if r.Cluster.Spec.NetworkPolicy.Enabled() {
+		desired := templateNetworkPolicy(r.Cluster)
+		if _, err := r.ReconcileResource(ctx, log, desired, []string{"Spec"}, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("reconcile NetworkPolicy: %w", err)
+		}
+
+		return chctrl.StepContinue(), nil
+	}
+
+	var policies networkingv1.NetworkPolicyList
+	if err := r.GetClient().List(ctx, &policies,
+		ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list NetworkPolicies: %w", err)
+	}
+
+	for _, policy := range policies.Items {
+		if !metav1.IsControlledBy(&policy, r.Cluster) {
+			continue
+		}
+
+		if err := r.Delete(ctx, &policy, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("delete NetworkPolicy %s: %w", policy.Name, err)
+		}
 	}
 
 	return chctrl.StepContinue(), nil

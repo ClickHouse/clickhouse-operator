@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,7 @@ import (
 	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -288,3 +290,67 @@ func newKeeperCluster(f *randfill.Filler) *v1.KeeperCluster {
 
 	return cr
 }
+
+var _ = Describe("TemplateNetworkPolicy", func() {
+	newCluster := func(spec v1.KeeperClusterSpec) *v1.KeeperCluster {
+		spec.NetworkPolicy = &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled}
+
+		return &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+			Spec:       spec,
+		}
+	}
+
+	rulePorts := func(rule networkingv1.NetworkPolicyIngressRule) []int32 {
+		ports := make([]int32, 0, len(rule.Ports))
+		for _, p := range rule.Ports {
+			ports = append(ports, p.Port.IntVal)
+		}
+
+		return ports
+	}
+
+	It("should restrict raft to replicas and keep client ports open", func() {
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}))
+
+		podLabels := map[string]string{
+			controllerutil.LabelAppKey:  "test-keeper",
+			controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+		}
+		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(np.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+		Expect(np.Spec.Ingress).To(HaveLen(2))
+
+		Expect(np.Spec.Ingress[0].From).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].From[0].PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(rulePorts(np.Spec.Ingress[0])).To(Equal([]int32{PortInterserver}))
+
+		Expect(np.Spec.Ingress[1].From).To(Equal([]networkingv1.NetworkPolicyPeer{
+			controller.RolePeer(controllerutil.LabelClickHouseValue),
+			controller.RolePeer(controllerutil.LabelOperatorValue),
+		}))
+		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNative, PortHTTPControl}))
+	})
+
+	It("should open secure port alongside plain port when TLS is enabled", func() {
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{
+			Settings: v1.KeeperSettings{TLS: v1.ClusterTLSSpec{Enabled: true}},
+		}))
+
+		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNative, PortNativeSecure, PortHTTPControl}))
+	})
+
+	It("should open only secure client port when TLS is required", func() {
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{
+			Settings: v1.KeeperSettings{TLS: v1.ClusterTLSSpec{Enabled: true, Required: true}},
+		}))
+
+		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNativeSecure, PortHTTPControl}))
+	})
+
+	It("should generate identical policies across invocations", func() {
+		cluster := newCluster(v1.KeeperClusterSpec{})
+
+		Expect(templateNetworkPolicy(cluster)).To(Equal(templateNetworkPolicy(cluster)))
+	})
+})
