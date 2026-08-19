@@ -29,6 +29,7 @@ spec:
       labels:
         control-plane: controller-manager
         app.kubernetes.io/name: clickhouse-operator
+        clickhouse.com/role: operator
     spec:
       affinity:
         nodeAffinity:

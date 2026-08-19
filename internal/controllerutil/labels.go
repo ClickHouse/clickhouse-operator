@@ -27,6 +27,7 @@ const (
 	LabelKeeperAllReplicas = "all-replicas"
 	LabelClickHouseValue   = "clickhouse-server"
 	LabelVersionProbe      = "version-probe"
+	LabelOperatorValue     = "operator"
 )
 
 // DiskLabel returns the label set identifying a disk's volumeClaimTemplate/PVC by name.
