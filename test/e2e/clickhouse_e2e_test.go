@@ -19,7 +19,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1552,6 +1554,107 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(pod.Spec.TopologySpreadConstraints).NotTo(BeEmpty())
 			Expect(keeperZones).To(HaveKey(zone), "ClickHouse pod %s in zone %s without keeper", pod.Name, zone)
 		}
+	})
+
+	It("should manage the cluster NetworkPolicies", func(ctx context.Context) {
+		var (
+			ns   = testNamespace(ctx)
+			name = fmt.Sprintf("np-test-%d", rand.Uint32()) //nolint:gosec
+		)
+
+		keeper := v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      name,
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas:            new(int32(3)),
+				DataVolumeClaimSpec: &defaultStorage,
+				ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+				NetworkPolicy:       &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
+			},
+		}
+		cluster := v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns,
+				Name:      name,
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:            new(int32(2)),
+				DataVolumeClaimSpec: &defaultStorage,
+				KeeperClusterRef: v1.KeeperClusterReference{
+					Name: name,
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+				NetworkPolicy:     &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
+			},
+		}
+
+		npKey := types.NamespacedName{Namespace: ns, Name: cluster.SpecificName()}
+		keeperNpKey := types.NamespacedName{Namespace: ns, Name: keeper.SpecificName()}
+
+		By("creating keeper cluster with enabled NetworkPolicies", func() {
+			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
+			})
+			WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
+		})
+
+		By("creating ClickHouse cluster with NetworkPolicies", func() {
+			Expect(k8sClient.Create(ctx, &cluster)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
+			})
+			WaitClickHouseUpdatedAndReady(ctx, &cluster, 2*time.Minute)
+			ClickHouseRWChecks(ctx, &cluster, new(0))
+		})
+
+		By("operator creates the NetworkPolicy with the expected shape")
+		Eventually(func(g Gomega) {
+			var np networkingv1.NetworkPolicy
+			g.Expect(k8sClient.Get(ctx, npKey, &np)).To(Succeed())
+			g.Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cluster.SpecificName()))
+			g.Expect(np.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+			g.Expect(np.Spec.Ingress).To(HaveLen(2)) // replicas + operator
+			g.Expect(np.OwnerReferences).To(HaveLen(1))
+			g.Expect(np.OwnerReferences[0].Name).To(Equal(cluster.Name))
+		}).WithTimeout(2 * time.Minute).WithPolling(pollingInterval).Should(Succeed())
+
+		By("operator admits the referencing cluster in the Keeper NetworkPolicy")
+		Eventually(func(g Gomega) {
+			var np networkingv1.NetworkPolicy
+			g.Expect(k8sClient.Get(ctx, keeperNpKey, &np)).To(Succeed())
+			g.Expect(np.Spec.PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, keeper.SpecificName()))
+			g.Expect(np.Spec.Ingress).To(HaveLen(2)) // replicas + clients
+			g.Expect(np.OwnerReferences).To(HaveLen(1))
+			g.Expect(np.OwnerReferences[0].Name).To(Equal(keeper.Name))
+
+			clients := np.Spec.Ingress[1].From
+			g.Expect(clients).To(HaveLen(2)) // operator + referencing cluster
+			g.Expect(clients[1].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cluster.SpecificName()))
+		}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(Succeed())
+
+		By("disabling cluster networkPolicy removes its policy")
+		Expect(k8sClient.Get(ctx, cluster.NamespacedName(), &cluster)).To(Succeed())
+		cluster.Spec.NetworkPolicy.Policy = v1.NetworkPolicyDisabled
+		Expect(k8sClient.Update(ctx, &cluster)).To(Succeed())
+
+		Eventually(func() bool {
+			var np networkingv1.NetworkPolicy
+			return k8serrors.IsNotFound(k8sClient.Get(ctx, npKey, &np))
+		}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(BeTrue())
+		Expect(k8sClient.Get(ctx, keeperNpKey, &networkingv1.NetworkPolicy{})).To(Succeed())
+
+		By("disabling keeper networkPolicy removes its object")
+		Expect(k8sClient.Get(ctx, keeper.NamespacedName(), &keeper)).To(Succeed())
+		keeper.Spec.NetworkPolicy.Policy = v1.NetworkPolicyDisabled
+		Expect(k8sClient.Update(ctx, &keeper)).To(Succeed())
+
+		Eventually(func() bool {
+			var np networkingv1.NetworkPolicy
+			return k8serrors.IsNotFound(k8sClient.Get(ctx, keeperNpKey, &np))
+		}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(BeTrue())
 	})
 })
 

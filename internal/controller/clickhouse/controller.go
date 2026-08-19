@@ -33,17 +33,16 @@ import (
 type ClusterController struct {
 	client.Client
 
-	Scheme    *runtime.Scheme
-	Recorder  events.EventRecorder
-	Logger    controllerutil.Logger
-	Webhook   webhookv1.ClickHouseClusterWebhook
-	Checker   *upgrade.Checker
-	Dialer    controllerutil.DialContextFunc
-	EnablePDB bool
-	connCache *connCache
+	Scheme              *runtime.Scheme
+	Recorder            events.EventRecorder
+	Logger              controllerutil.Logger
+	Webhook             webhookv1.ClickHouseClusterWebhook
+	Checker             *upgrade.Checker
+	Dialer              controllerutil.DialContextFunc
+	EnablePDB           bool
+	EnableNetworkPolicy bool
+	connCache           *connCache
 }
-
-const keeperClusterReferenceField = "clickhouse.com/keeperClusterReference"
 
 func keeperReferenceFieldValue(cluster *v1.ClickHouseCluster) []string {
 	keeperKey := cluster.KeeperClusterNamespacedName()
@@ -121,10 +120,11 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		statusManager:   chctrl.NewStatusManager(cc, cluster),
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
 
-		Dialer:    cc.Dialer,
-		Checker:   cc.Checker,
-		EnablePDB: cc.EnablePDB,
-		connCache: cc.connCache,
+		Dialer:              cc.Dialer,
+		Checker:             cc.Checker,
+		EnablePDB:           cc.EnablePDB,
+		EnableNetworkPolicy: cc.EnableNetworkPolicy,
+		connCache:           cc.connCache,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.ClickHouseReplicaID]replicaState{},
@@ -161,22 +161,23 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool) error {
 	namedLogger := log.Named("clickhouse")
 
 	clickhouseController := &ClusterController{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Recorder:  mgr.GetEventRecorder("clickhouse-controller"),
-		Logger:    namedLogger,
-		Webhook:   webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
-		Checker:   checker,
-		Dialer:    dialer,
-		EnablePDB: enablePDB,
-		connCache: newConnCache(),
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorder("clickhouse-controller"),
+		Logger:              namedLogger,
+		Webhook:             webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
+		Checker:             checker,
+		Dialer:              dialer,
+		EnablePDB:           enablePDB,
+		EnableNetworkPolicy: enableNetworkPolicy,
+		connCache:           newConnCache(),
 	}
 
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ClickHouseCluster{}, keeperClusterReferenceField, func(obj client.Object) []string {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ClickHouseCluster{}, chctrl.KeeperClusterReferenceField, func(obj client.Object) []string {
 		cluster, ok := obj.(*v1.ClickHouseCluster)
 		if !ok {
 			return nil
@@ -201,8 +202,11 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.Service{}).
-		Owns(&batchv1.Job{}).
-		Owns(&networkingv1.NetworkPolicy{})
+		Owns(&batchv1.Job{})
+
+	if enableNetworkPolicy {
+		controllerBuilder = controllerBuilder.Owns(&networkingv1.NetworkPolicy{})
+	}
 
 	if enablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
@@ -237,7 +241,7 @@ func (cc *ClusterController) clickHouseClustersForKeeper(ctx context.Context, ob
 	// List all ClickHouseClusters that reference this KeeperCluster
 	var chList v1.ClickHouseClusterList
 	if err := cc.List(ctx, &chList, client.MatchingFields{
-		keeperClusterReferenceField: zk.NamespacedName().String(),
+		chctrl.KeeperClusterReferenceField: zk.NamespacedName().String(),
 	}); err != nil {
 		return nil
 	}

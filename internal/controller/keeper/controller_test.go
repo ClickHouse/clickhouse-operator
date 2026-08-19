@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
@@ -297,5 +298,37 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
 		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(BeEmpty())
+	})
+})
+
+var _ = Describe("KeeperClustersForClickHouse", func() {
+	It("should map a ClickHouse cluster to its referenced keeper", func(ctx context.Context) {
+		cluster := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ch-ns"},
+			Spec: v1.ClickHouseClusterSpec{
+				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum", Namespace: "keeper-ns"},
+			},
+		}
+
+		Expect(keeperClustersForClickHouse(ctx, cluster)).To(Equal([]reconcile.Request{
+			{NamespacedName: types.NamespacedName{Namespace: "keeper-ns", Name: "quorum"}},
+		}))
+	})
+
+	It("should default the keeper namespace to the cluster namespace", func(ctx context.Context) {
+		cluster := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ch-ns"},
+			Spec: v1.ClickHouseClusterSpec{
+				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum"},
+			},
+		}
+
+		Expect(keeperClustersForClickHouse(ctx, cluster)).To(Equal([]reconcile.Request{
+			{NamespacedName: types.NamespacedName{Namespace: "ch-ns", Name: "quorum"}},
+		}))
+	})
+
+	It("should skip clusters without a keeper reference", func(ctx context.Context) {
+		Expect(keeperClustersForClickHouse(ctx, &v1.ClickHouseCluster{})).To(BeNil())
 	})
 })

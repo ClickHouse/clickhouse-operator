@@ -14,16 +14,24 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-
-	networkingv1 "k8s.io/api/networking/v1"
 )
 
-// NetworkPolicySpec configures the NetworkPolicy managed for the cluster.
-type NetworkPolicySpec struct {
-	Enabled         bool                             `json:"enabled,omitempty"`
-	Backend         string                           `json:"backend,omitempty"`
-	AllowedClients  []networkingv1.NetworkPolicyPeer `json:"allowedClients,omitempty"`
-	MonitoringPeers []networkingv1.NetworkPolicyPeer `json:"monitoringPeers,omitempty"`
+// ClickHouseNetworkPolicySpec configures the NetworkPolicy managed for the ClickHouse cluster.
+// The managed policy covers cluster-internal traffic:
+// - Inter replica connectivity
+// - Access from the operator to the cluster
+// Any other ingress, including client connections and metrics scraping, requires user-defined NetworkPolicies.
+type ClickHouseNetworkPolicySpec struct {
+	// Policy controls whether the operator manages a NetworkPolicy restricting ingress to the cluster Pods.
+	// Defaults to "Disabled" when unset.
+	// +optional
+	// +kubebuilder:default:=Disabled
+	Policy NetworkPolicyPolicy `json:"policy,omitempty"`
+}
+
+// Enabled returns true if the operator should manage the cluster NetworkPolicy.
+func (s *ClickHouseNetworkPolicySpec) Enabled() bool {
+	return s != nil && s.Policy == NetworkPolicyEnabled
 }
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
@@ -83,8 +91,9 @@ type ClickHouseClusterSpec struct {
 	// +optional
 	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
 
-	// NetworkPolicy configures network policy of cluster.
-	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty"`
+	// NetworkPolicy configures the NetworkPolicy managed for the cluster.
+	// +optional
+	NetworkPolicy *ClickHouseNetworkPolicySpec `json:"networkPolicy,omitempty"`
 
 	// Configuration parameters for ClickHouse server.
 	// +optional

@@ -310,8 +310,8 @@ var _ = Describe("TemplateNetworkPolicy", func() {
 		return ports
 	}
 
-	It("should restrict raft to replicas and keep client ports open", func() {
-		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}))
+	It("should restrict raft to replicas and client ports to the operator", func() {
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}), nil)
 
 		podLabels := map[string]string{
 			controllerutil.LabelAppKey:  "test-keeper",
@@ -326,31 +326,31 @@ var _ = Describe("TemplateNetworkPolicy", func() {
 		Expect(rulePorts(np.Spec.Ingress[0])).To(Equal([]int32{PortInterserver}))
 
 		Expect(np.Spec.Ingress[1].From).To(Equal([]networkingv1.NetworkPolicyPeer{
-			controller.RolePeer(controllerutil.LabelClickHouseValue),
 			controller.RolePeer(controllerutil.LabelOperatorValue),
 		}))
-		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNative, PortHTTPControl}))
-	})
-
-	It("should open secure port alongside plain port when TLS is enabled", func() {
-		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{
-			Settings: v1.KeeperSettings{TLS: v1.ClusterTLSSpec{Enabled: true}},
-		}))
-
 		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNative, PortNativeSecure, PortHTTPControl}))
 	})
 
-	It("should open only secure client port when TLS is required", func() {
-		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{
-			Settings: v1.KeeperSettings{TLS: v1.ClusterTLSSpec{Enabled: true, Required: true}},
-		}))
+	It("should admit referencing ClickHouse clusters to the client ports", func() {
+		clickhouseClusters := []v1.ClickHouseCluster{
+			{ObjectMeta: metav1.ObjectMeta{Name: "alpha", Namespace: "ns-a"}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "beta", Namespace: "ns-b"}},
+		}
 
-		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNativeSecure, PortHTTPControl}))
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}), clickhouseClusters)
+
+		clients := np.Spec.Ingress[1].From
+		Expect(clients).To(HaveLen(3))
+		Expect(clients[0]).To(Equal(controller.RolePeer(controllerutil.LabelOperatorValue)))
+		Expect(clients[1].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, "ns-a"))
+		Expect(clients[1].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "alpha-clickhouse"))
+		Expect(clients[2].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, "ns-b"))
+		Expect(clients[2].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "beta-clickhouse"))
 	})
 
 	It("should generate identical policies across invocations", func() {
 		cluster := newCluster(v1.KeeperClusterSpec{})
 
-		Expect(templateNetworkPolicy(cluster)).To(Equal(templateNetworkPolicy(cluster)))
+		Expect(templateNetworkPolicy(cluster, nil)).To(Equal(templateNetworkPolicy(cluster, nil)))
 	})
 })

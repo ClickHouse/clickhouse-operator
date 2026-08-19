@@ -15,10 +15,11 @@ import (
 )
 
 // KeeperNetworkPolicySpec configures the NetworkPolicy managed for the Keeper cluster.
-// The managed policy covers cluster-internal traffic only: the raft port is restricted to
-// the Keeper replicas and the client and control ports to ClickHouse clusters and the
-// operator. Any other ingress, including metrics scraping, must be allowed by additional
-// user-defined NetworkPolicies.
+// The managed policy covers cluster-internal traffic:
+// - Inter replica connectivity
+// - Access from the operator to the cluster
+// - Access from ClickHouse clusters referencing this Keeper cluster
+// Any other ingress, including metrics scraping, requires user-defined NetworkPolicies.
 type KeeperNetworkPolicySpec struct {
 	// Policy controls whether the operator manages a NetworkPolicy restricting ingress to the Keeper Pods.
 	// Defaults to "Disabled" when unset.

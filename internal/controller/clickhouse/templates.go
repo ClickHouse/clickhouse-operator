@@ -8,6 +8,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -820,4 +821,52 @@ func buildMounts(r *clickhouseReconciler) []corev1.VolumeMount {
 	}
 
 	return volumeMounts
+}
+
+const networkPolicyKind = "NetworkPolicy"
+
+func templateNetworkPolicy(cr *v1.ClickHouseCluster) *networkingv1.NetworkPolicy {
+	app := cr.SpecificName()
+
+	podLabels := map[string]string{
+		controllerutil.LabelAppKey:  app,
+		controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+	}
+
+	self := networkingv1.NetworkPolicyPeer{
+		PodSelector: &metav1.LabelSelector{MatchLabels: podLabels},
+	}
+
+	ingress := []networkingv1.NetworkPolicyIngressRule{
+		{
+			From:  []networkingv1.NetworkPolicyPeer{self},
+			Ports: controller.TCPPorts(PortInterserver, PortManagement),
+		},
+		{
+			// The management ports serve the operator, which may run in any namespace.
+			From:  []networkingv1.NetworkPolicyPeer{controller.RolePeer(controllerutil.LabelOperatorValue)},
+			Ports: controller.TCPPorts(PortManagement, PortManagementHTTP),
+		},
+	}
+
+	return &networkingv1.NetworkPolicy{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       networkPolicyKind,
+			APIVersion: "networking.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      app,
+			Namespace: cr.Namespace,
+			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+				controllerutil.LabelAppKey:     app,
+				controllerutil.LabelClusterKey: cr.Name,
+			}),
+			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: podLabels},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress:     ingress,
+		},
+	}
 }

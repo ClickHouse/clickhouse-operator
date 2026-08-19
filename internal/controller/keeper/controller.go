@@ -15,7 +15,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
@@ -49,6 +51,7 @@ type ClusterController struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -138,6 +141,20 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 	return cc.Dialer
 }
 
+func keeperClustersForClickHouse(_ context.Context, obj client.Object) []reconcile.Request {
+	cluster, ok := obj.(*v1.ClickHouseCluster)
+	if !ok {
+		return nil
+	}
+
+	keeperKey := cluster.KeeperClusterNamespacedName()
+	if keeperKey.Name == "" {
+		return nil
+	}
+
+	return []reconcile.Request{{NamespacedName: keeperKey}}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool) error {
 	namedLogger := log.Named("keeper")
@@ -162,7 +179,13 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.Pod{})
 
 	if enableNetworkPolicy {
-		controllerBuilder = controllerBuilder.Owns(&networkingv1.NetworkPolicy{})
+		controllerBuilder = controllerBuilder.
+			Owns(&networkingv1.NetworkPolicy{}).
+			Watches(
+				&v1.ClickHouseCluster{},
+				handler.EnqueueRequestsFromMapFunc(keeperClustersForClickHouse),
+				builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+			)
 	}
 
 	if enablePDB {

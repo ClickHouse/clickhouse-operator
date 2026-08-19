@@ -679,7 +679,7 @@ func buildMounts(cr *v1.KeeperCluster) []corev1.VolumeMount {
 	return volumeMounts
 }
 
-func templateNetworkPolicy(cr *v1.KeeperCluster) *networkingv1.NetworkPolicy {
+func templateNetworkPolicy(cr *v1.KeeperCluster, clickhouseClusters []v1.ClickHouseCluster) *networkingv1.NetworkPolicy {
 	app := cr.SpecificName()
 
 	podLabels := map[string]string{
@@ -691,19 +691,29 @@ func templateNetworkPolicy(cr *v1.KeeperCluster) *networkingv1.NetworkPolicy {
 		PodSelector: &metav1.LabelSelector{MatchLabels: podLabels},
 	}
 
+	clients := make([]networkingv1.NetworkPolicyPeer, 0, 1+len(clickhouseClusters))
+	clients = append(clients, controller.RolePeer(controllerutil.LabelOperatorValue))
+
+	for _, clickhouse := range clickhouseClusters {
+		clients = append(clients, networkingv1.NetworkPolicyPeer{
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{corev1.LabelMetadataName: clickhouse.Namespace},
+			},
+			PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				controllerutil.LabelAppKey:  clickhouse.SpecificName(),
+				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+			}},
+		})
+	}
+
 	ingress := []networkingv1.NetworkPolicyIngressRule{
 		{
 			From:  []networkingv1.NetworkPolicyPeer{self},
 			Ports: controller.TCPPorts(PortInterserver),
 		},
 		{
-			// Client and control ports serve ClickHouse clusters and the operator,
-			// which may connect from any namespace.
-			From: []networkingv1.NetworkPolicyPeer{
-				controller.RolePeer(controllerutil.LabelClickHouseValue),
-				controller.RolePeer(controllerutil.LabelOperatorValue),
-			},
-			Ports: controller.TCPPorts(clientPorts(cr)...),
+			From:  clients,
+			Ports: controller.TCPPorts(PortNative, PortNativeSecure, PortHTTPControl),
 		},
 	}
 
@@ -726,18 +736,4 @@ func templateNetworkPolicy(cr *v1.KeeperCluster) *networkingv1.NetworkPolicy {
 			Ingress:     ingress,
 		},
 	}
-}
-
-func clientPorts(cr *v1.KeeperCluster) []int32 {
-	var ports []int32
-
-	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
-		ports = append(ports, PortNative)
-	}
-
-	if cr.Spec.Settings.TLS.Enabled {
-		ports = append(ports, PortNativeSecure)
-	}
-
-	return append(ports, PortHTTPControl)
 }

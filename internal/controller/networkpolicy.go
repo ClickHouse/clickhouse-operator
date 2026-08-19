@@ -9,6 +9,10 @@ import (
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
+// KeeperClusterReferenceField indexes ClickHouseClusters by their referenced KeeperCluster "namespace/name".
+// Registered by the ClickHouse controller setup; the Keeper controller requires it on the same manager.
+const KeeperClusterReferenceField = "clickhouse.com/keeperClusterReference"
+
 // RolePeer matches pods carrying the given clickhouse.com/role label in any namespace.
 func RolePeer(role string) networkingv1.NetworkPolicyPeer {
 	return networkingv1.NetworkPolicyPeer{

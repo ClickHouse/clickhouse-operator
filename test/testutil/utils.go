@@ -27,6 +27,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -298,6 +299,7 @@ func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace st
 		&batchv1.JobList{},
 		&appsv1.StatefulSetList{},
 		&policyv1.PodDisruptionBudgetList{},
+		&networkingv1.NetworkPolicyList{},
 	}
 
 	var errs []error
