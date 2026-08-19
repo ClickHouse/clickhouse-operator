@@ -34,6 +34,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
 
 const (
@@ -240,11 +242,55 @@ func DumpNamespaceDiagnostics(ctx context.Context, config *rest.Config, cli clie
 	}
 }
 
+func formatPodState(pod *corev1.Pod) string {
+	containers := slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses)
+
+	parts := make([]string, 0, 1+len(containers))
+	parts = append(parts, "phase="+string(pod.Status.Phase))
+
+	for _, cs := range containers {
+		state := fmt.Sprintf("ready=%t", cs.Ready)
+
+		switch {
+		case cs.State.Waiting != nil:
+			state = "waiting=" + cs.State.Waiting.Reason
+		case cs.State.Terminated != nil:
+			state = "terminated=" + cs.State.Terminated.Reason
+		}
+
+		parts = append(parts, fmt.Sprintf("%s[%s restarts=%d]", cs.Name, state, cs.RestartCount))
+	}
+
+	return strings.Join(parts, " ")
+}
+
+// FormatConditions renders conditions as "Type=Status(Reason): message" entries.
+func FormatConditions(conditions []metav1.Condition) string {
+	if len(conditions) == 0 {
+		return "<no conditions>"
+	}
+
+	parts := make([]string, 0, len(conditions))
+
+	for _, cond := range conditions {
+		part := fmt.Sprintf("%s=%s(%s)", cond.Type, cond.Status, cond.Reason)
+		if cond.Status != metav1.ConditionTrue && cond.Message != "" {
+			part += ": " + cond.Message
+		}
+
+		parts = append(parts, part)
+	}
+
+	return strings.Join(parts, "; ")
+}
+
 // DumpNamespaceResources collects all resources in the namespace.
 // The full dump contains the complete JSON representation of each resource,
 // while the short dump contains only the resource type and object names.
 func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace string) (DumpResult, error) {
 	resources := []client.ObjectList{
+		&v1.ClickHouseClusterList{},
+		&v1.KeeperClusterList{},
 		&corev1.ConfigMapList{},
 		&corev1.SecretList{},
 		&corev1.ServiceList{},
@@ -277,8 +323,14 @@ func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace st
 		full.Write(marshalled)
 		full.WriteString("\n\n")
 
-		// Short dump: resource type + object names only.
-		names := extractObjectNames(resource)
+		// Short dump: one state line per object where a summary exists,
+		// resource type + object names otherwise.
+		states, names := summarizeObjects(resource)
+		for _, state := range states {
+			short.WriteString(state)
+			short.WriteString("\n")
+		}
+
 		if len(names) > 0 {
 			_, _ = fmt.Fprintf(&short, "%T: %s\n", resource, strings.Join(names, ", "))
 		}
@@ -287,15 +339,36 @@ func DumpNamespaceResources(ctx context.Context, cli client.Client, namespace st
 	return DumpResult{Short: short.String(), Full: full.String()}, errors.Join(errs...)
 }
 
-func extractObjectNames(list client.ObjectList) []string {
+func summarizeObjects(list client.ObjectList) (states, names []string) {
 	items := reflect.ValueOf(list).Elem().FieldByName("Items")
 
-	names := make([]string, 0, items.Len())
 	for i := range items.Len() {
-		names = append(names, items.Index(i).Addr().Interface().(client.Object).GetName()) //nolint:forcetypeassert
+		obj := items.Index(i).Addr().Interface().(client.Object) //nolint:forcetypeassert
+
+		if state := summarizeObject(obj); state != "" {
+			states = append(states, state)
+		} else {
+			names = append(names, obj.GetName())
+		}
 	}
 
-	return names
+	return states, names
+}
+
+func summarizeObject(obj client.Object) string {
+	switch o := obj.(type) {
+	case *v1.ClickHouseCluster:
+		return fmt.Sprintf("ClickHouseCluster %s: %s", o.Name, FormatConditions(o.Status.Conditions))
+	case *v1.KeeperCluster:
+		return fmt.Sprintf("KeeperCluster %s: %s", o.Name, FormatConditions(o.Status.Conditions))
+	case *batchv1.Job:
+		return fmt.Sprintf("Job %s: active=%d succeeded=%d failed=%d",
+			o.Name, o.Status.Active, o.Status.Succeeded, o.Status.Failed)
+	case *corev1.Pod:
+		return fmt.Sprintf("Pod %s: %s", o.Name, formatPodState(o))
+	}
+
+	return ""
 }
 
 func dumpPodLogs(ctx context.Context, clientset kubernetes.Clientset, ns, name, container string) (string, error) {

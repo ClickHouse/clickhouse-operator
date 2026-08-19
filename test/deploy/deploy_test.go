@@ -419,11 +419,9 @@ var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
 		DeferCleanup(func(ctx context.Context) {
 			Expect(k8sClient.Delete(ctx, &keeperCR)).To(Succeed())
 		})
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m",
-			"--for=condition=Ready", "keepercluster/"+keeperName)).To(Succeed())
+		waitClusterReady(ctx, &keeperCR)
 		Expect(k8sClient.Create(ctx, &chCR)).To(Succeed())
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m",
-			"--for=condition=Ready", "clickhousecluster/"+chName)).To(Succeed())
+		waitClusterReady(ctx, &chCR)
 
 		By("writing test data", func() {
 			// A freshly formed keeper ensemble re-elects for a while, so retry through transient leader loss.
@@ -530,12 +528,14 @@ func testHelmCluster(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"keepercluster/"+keeperName)).To(Succeed())
+		waitClusterReady(ctx, &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
+		})
 
 		By("Waiting for ClickHouse to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"clickhousecluster/"+chName)).To(Succeed())
+		waitClusterReady(ctx, &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: chName},
+		})
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
@@ -565,8 +565,7 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"keepercluster/"+keeper.Name)).To(Succeed())
+		waitClusterReady(ctx, &keeper)
 
 		ch := v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -591,13 +590,32 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for ClickHouse to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=5m", "--for=condition=Ready",
-			"clickhousecluster/"+ch.Name)).To(Succeed())
+		waitClusterReady(ctx, &ch)
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
 	tableArgs[0] = body
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
+}
+
+func waitClusterReady(ctx context.Context, cluster client.Object) {
+	GinkgoHelper()
+
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
+
+		var conditions []metav1.Condition
+
+		switch cr := cluster.(type) {
+		case *v1.ClickHouseCluster:
+			conditions = cr.Status.Conditions
+		case *v1.KeeperCluster:
+			conditions = cr.Status.Conditions
+		}
+
+		g.Expect(meta.IsStatusConditionTrue(conditions, v1.ConditionTypeReady)).
+			To(BeTrue(), "%T %s not ready: %s", cluster, cluster.GetName(), testutil.FormatConditions(conditions))
+	}, "5m", "5s").Should(Succeed())
 }
 
 func templateTestResources(ctx context.Context, namespace string) string {
