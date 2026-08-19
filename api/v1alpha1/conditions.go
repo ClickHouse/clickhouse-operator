@@ -1,5 +1,7 @@
 package v1alpha1
 
+import corev1 "k8s.io/api/core/v1"
+
 // ConditionType represents the type of condition.
 type ConditionType = string
 
@@ -73,10 +75,11 @@ const (
 	// should operate normally after scale down, but it does not mean that all replicas have the same schema.
 	ClickHouseConditionTypeSchemaInSync ConditionType = "SchemaInSync"
 
-	ClickHouseConditionSchemaSyncDisabled   ConditionReason = "SchemaSyncDisabled"
-	ClickHouseConditionReplicasInSync       ConditionReason = "ReplicasInSync"
-	ClickHouseConditionDatabasesNotCreated  ConditionReason = "DatabasesNotCreated"
-	ClickHouseConditionReplicasNotCleanedUp ConditionReason = "ReplicasNotCleanedUp"
+	ClickHouseConditionSchemaSyncDisabled           ConditionReason = "SchemaSyncDisabled"
+	ClickHouseConditionReplicasInSync               ConditionReason = "ReplicasInSync"
+	ClickHouseConditionDatabasesNotCreated          ConditionReason = "DatabasesNotCreated"
+	ClickHouseConditionDefaultDatabaseNotReplicated ConditionReason = "DefaultDatabaseNotReplicated"
+	ClickHouseConditionReplicasNotCleanedUp         ConditionReason = "ReplicasNotCleanedUp"
 
 	// ClickHouseConditionTypeExternalSecretValid indicates whether the externally managed Secret contains all required keys.
 	// This condition is present only when spec.externalSecret is configured; it is removed when externalSecret is unset.
@@ -100,4 +103,11 @@ const (
 	KeeperConditionReasonNoQuorum                 ConditionReason = "NoQuorum"
 	KeeperConditionReasonWaitingFollowers         ConditionReason = "WaitingFollowers"
 	KeeperConditionReasonReadyToScale             ConditionReason = "ReadyToScale"
+)
+
+// Special condition added to the ClickHouseCluster pods to indicate that replica is initialized by the operator.
+const (
+	ReplicaInitializedCondition corev1.PodConditionType = "clickhouse.com/ReplicaInitialized"
+	ReplicaInitializedReason    ConditionReason         = "ReplicaInitialized"
+	ReplicaDeletionReason       ConditionReason         = "ReplicaScheduledForDeletion"
 )

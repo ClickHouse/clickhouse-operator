@@ -15,6 +15,7 @@ const (
 	LabelInstanceK8sKey = "app.kubernetes.io/instance"
 
 	LabelRoleKey             = "clickhouse.com/role"
+	LabelClusterKey          = "clickhouse.com/cluster"
 	LabelKeeperReplicaID     = "clickhouse.com/keeper-replica-id"
 	LabelClickHouseShardID   = "clickhouse.com/shard-id"
 	LabelClickHouseReplicaID = "clickhouse.com/replica-id"

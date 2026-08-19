@@ -360,6 +360,26 @@ var _ = Describe("Service templates", func() {
 		},
 	}
 
+	It("should expose client ports through the public headless service and gate them on readiness", func() {
+		service := templateHeadlessService(cr)
+
+		ports := map[string]int32{}
+		for _, port := range service.Spec.Ports {
+			ports[port.Name] = port.Port
+		}
+
+		Expect(service.Name).To(Equal(cr.HeadlessServiceName()))
+		Expect(service.Spec.PublishNotReadyAddresses).To(BeFalse())
+		Expect(service.Spec.Selector).To(SatisfyAll(
+			HaveKeyWithValue(controllerutil.LabelAppKey, cr.SpecificName()),
+			HaveKeyWithValue(controllerutil.LabelRoleKey, controllerutil.LabelClickHouseValue),
+		))
+		Expect(ports).To(HaveKeyWithValue(protocolTypeTCP, int32(PortNative)))
+		Expect(ports).To(HaveKeyWithValue(protocolTypeHTTP, int32(PortHTTP)))
+		Expect(ports).To(HaveKeyWithValue(protocolTypePrometheus, int32(PortPrometheusScrape)))
+		Expect(ports).To(HaveKeyWithValue("extra", int32(19000)))
+	})
+
 	It("should expose internal ports through a per-replica internal service", func() {
 		id := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
 		service := templateInternalService(cr, id)
@@ -373,6 +393,7 @@ var _ = Describe("Service templates", func() {
 		Expect(service.Spec.ClusterIP).To(Equal(corev1.ClusterIPNone))
 		Expect(service.Spec.PublishNotReadyAddresses).To(BeTrue())
 		Expect(service.Labels).To(SatisfyAll(
+			HaveKeyWithValue(controllerutil.LabelClusterKey, cr.Name),
 			HaveKeyWithValue(controllerutil.LabelClickHouseShardID, "0"),
 			HaveKeyWithValue(controllerutil.LabelClickHouseReplicaID, "1"),
 		))
@@ -398,6 +419,22 @@ var _ = Describe("Service templates", func() {
 		sts, err := templateStatefulSet(r, v1.ClickHouseReplicaID{}, "fixed-cfg-rev")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(sts.Spec.ServiceName).To(Equal(cr.HeadlessServiceName()))
+	})
+
+	It("should always add the initialization readiness gate", func() {
+		gate := corev1.PodReadinessGate{ConditionType: v1.ReplicaInitializedCondition}
+
+		sts, err := templateStatefulSet(&clickhouseReconciler{Cluster: cr}, v1.ClickHouseReplicaID{}, "fixed-cfg-rev")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.ReadinessGates).To(ContainElement(gate))
+
+		// The gate must survive disabling database sync, or the pods would never become Ready.
+		disabled := cr.DeepCopy()
+		disabled.Spec.Settings.EnableDatabaseSync = new(false)
+
+		sts, err = templateStatefulSet(&clickhouseReconciler{Cluster: disabled}, v1.ClickHouseReplicaID{}, "fixed-cfg-rev")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(sts.Spec.Template.Spec.ReadinessGates).To(ContainElement(gate))
 	})
 
 	It("should expose secure user ports only through the public headless service", func() {

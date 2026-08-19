@@ -58,6 +58,7 @@ func keeperReferenceFieldValue(cluster *v1.ClickHouseCluster) []string {
 // +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters/finalizers,verbs=update
 
 // +kubebuilder:rbac:groups="",resources=configmaps;services;pods,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups="",resources=pods/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets;persistentvolumeclaims,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
@@ -190,11 +191,14 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 			&v1.KeeperCluster{},
 			handler.EnqueueRequestsFromMapFunc(clickhouseController.clickHouseClustersForKeeper),
 		).
+		Watches(
+			&corev1.Pod{},
+			handler.EnqueueRequestsFromMapFunc(clickhouseController.clickHouseClustersForPod),
+		).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.Pod{}).
 		Owns(&batchv1.Job{})
 
 	if enablePDB {
@@ -246,4 +250,16 @@ func (cc *ClusterController) clickHouseClustersForKeeper(ctx context.Context, ob
 	}
 
 	return requests
+}
+
+func (cc *ClusterController) clickHouseClustersForPod(_ context.Context, obj client.Object) []reconcile.Request {
+	cluster := obj.GetLabels()[controllerutil.LabelClusterKey]
+	if cluster == "" || obj.GetLabels()[controllerutil.LabelRoleKey] != controllerutil.LabelClickHouseValue {
+		return nil
+	}
+
+	return []reconcile.Request{{NamespacedName: types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      cluster,
+	}}}
 }
