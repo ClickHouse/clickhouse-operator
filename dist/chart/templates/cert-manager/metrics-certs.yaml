@@ -11,8 +11,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   dnsNames:
-  - clickhouse-operator-metrics-service.{{ .Release.Namespace }}.svc
-  - clickhouse-operator-metrics-service.{{ .Release.Namespace }}.svc.cluster.local
+  - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc
+  - {{ include "clickhouse-operator.resourceName" (dict "suffix" "metrics-service" "context" $) }}.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef:
   {{- if .Values.certManager.issuerRef}}
     {{ .Values.certManager.issuerRef | toYaml | nindent 4 }}
