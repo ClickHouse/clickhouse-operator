@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo/v2"
@@ -21,7 +22,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 
@@ -46,7 +46,7 @@ var (
 	//go:embed olm_manifests.yaml.tmpl
 	olmManifests string
 
-	config               *rest.Config
+	env                  *testutil.Env
 	k8sClient            client.Client
 	currentTestNamespace string
 	versionEntries       []any
@@ -98,9 +98,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
-	var err error
-
-	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	Expect(err).NotTo(HaveOccurred())
 
 	dc, err := discovery.NewDiscoveryClientForConfig(config)
@@ -118,6 +116,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).NotTo(HaveOccurred())
+
+	env = &testutil.Env{Client: k8sClient, Config: config, Dialer: testutil.NewPortForwardDialer(config)}
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {
@@ -129,7 +129,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 	ns := currentTestNamespace
 	currentTestNamespace = ""
 
-	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, ns, reportDir)
+	testutil.DumpNamespaceDiagnostics(ctx, env, ns, reportDir)
 })
 
 var _ = Describe("Manifests deployment", Ordered, ContinueOnFailure, Label("manifest"), func() {
@@ -151,11 +151,7 @@ var _ = Describe("Manifests deployment", Ordered, ContinueOnFailure, Label("mani
 		})
 
 		By("Waiting controller to be ready")
-		Eventually(func(g Gomega) {
-			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "wait", "-n", namespace,
-				"--timeout=120s", "--for=condition=Available", "deployment/clickhouse-operator-controller-manager"))
-			g.Expect(err).ToNot(HaveOccurred(), string(out))
-		}, "2m", "100ms").Should(Succeed())
+		env.WaitDeploymentAvailable(ctx, namespace, "clickhouse-operator-controller-manager", 2*time.Minute)
 	})
 
 	testDeployment(namespace)
@@ -189,7 +185,7 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 		})
 
 		By("creating test namespace")
-		testutil.EnsureNamespace(ctx, k8sClient, namespace)
+		testutil.EnsureNamespace(ctx, env, namespace)
 
 		// Enforce upstream Pod Security Admission at "restricted" level on the OLM test namespace.
 		By("labeling test namespace with PSA enforce=restricted")
@@ -236,8 +232,11 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 		})
 
 		By("waiting for catalog server to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "wait", "-n", namespace, "--timeout=120s",
-			"--for=condition=Ready", "pod/test-catalog-server")).To(Succeed())
+		Eventually(func(g Gomega) {
+			var pod corev1.Pod
+			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: "test-catalog-server"}, &pod)).To(Succeed())
+			g.Expect(testutil.CheckPodReady(&pod)).To(BeTrue())
+		}, "2m", testutil.PollInterval).Should(Succeed())
 
 		By("waiting for ClusterServiceVersion to succeed")
 		Eventually(func(g Gomega) {
@@ -248,11 +247,7 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 		}, "5m", "5s").Should(Succeed())
 
 		By("Waiting controller to be ready")
-		Eventually(func(g Gomega) {
-			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "wait", "-n", namespace,
-				"--timeout=120s", "--for=condition=Available", "deployment/clickhouse-operator-controller-manager"))
-			g.Expect(err).ToNot(HaveOccurred(), string(out))
-		}, "2m", "100ms").Should(Succeed())
+		env.WaitDeploymentAvailable(ctx, namespace, "clickhouse-operator-controller-manager", 2*time.Minute)
 	})
 
 	testDeployment(namespace)
@@ -300,11 +295,7 @@ var _ = Describe("Helm deployment", Ordered, ContinueOnFailure, Label("helm"), f
 			})
 
 			By("Waiting controller to be ready")
-			Eventually(func(g Gomega) {
-				out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "wait", "-n", namespace,
-					"--timeout=120s", "--for=condition=Available", "deployment/"+namespace+"-controller-manager"))
-				g.Expect(err).ToNot(HaveOccurred(), string(out))
-			}, "2m", "100ms").Should(Succeed())
+			env.WaitDeploymentAvailable(ctx, namespace, namespace+"-controller-manager", 2*time.Minute)
 		})
 
 		testHelmCluster(namespace)
@@ -385,15 +376,11 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		})
 
 		By("waiting for the released operator to be ready")
-		Eventually(func(g Gomega) {
-			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "wait", "-n", namespace,
-				"--timeout=120s", "--for=condition=Available", "deployment/"+deploymentName))
-			g.Expect(err).ToNot(HaveOccurred(), string(out))
-		}, "2m", "100ms").Should(Succeed())
+		env.WaitDeploymentAvailable(ctx, namespace, deploymentName, 2*time.Minute)
 	})
 
 	It("should reconcile cluster after upgrade without data loss", func(ctx context.Context) {
-		dialer := testutil.NewPortForwardDialer(config)
+		dialer := env.Dialer
 
 		keeperCR := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
@@ -419,9 +406,9 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		DeferCleanup(func(ctx context.Context) {
 			Expect(k8sClient.Delete(ctx, &keeperCR)).To(Succeed())
 		})
-		waitClusterReady(ctx, &keeperCR)
+		env.WaitClusterReady(ctx, &keeperCR, 5*time.Minute)
 		Expect(k8sClient.Create(ctx, &chCR)).To(Succeed())
-		waitClusterReady(ctx, &chCR)
+		env.WaitClusterReady(ctx, &chCR, 5*time.Minute)
 
 		By("writing test data", func() {
 			// A freshly formed keeper ensemble re-elects for a while, so retry through transient leader loss.
@@ -452,8 +439,7 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 			"--set", "manager.image.tag=" + testTag,
 			"--set", "manager.image.pullPolicy=Never",
 		}, helmArgs...)...)).To(Succeed())
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "rollout", "status",
-			"--timeout=3m", "deployment/"+deploymentName)).To(Succeed())
+		env.WaitDeploymentAvailable(ctx, namespace, deploymentName, 3*time.Minute)
 
 		By("updating keeper and verifying it stays writable", func() {
 			Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &keeperCR)).To(Succeed())
@@ -528,14 +514,14 @@ func testHelmCluster(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		waitClusterReady(ctx, &v1.KeeperCluster{
+		env.WaitClusterReady(ctx, &v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
-		})
+		}, 5*time.Minute)
 
 		By("Waiting for ClickHouse to be ready")
-		waitClusterReady(ctx, &v1.ClickHouseCluster{
+		env.WaitClusterReady(ctx, &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: chName},
-		})
+		}, 5*time.Minute)
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
@@ -565,7 +551,7 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		waitClusterReady(ctx, &keeper)
+		env.WaitClusterReady(ctx, &keeper, 5*time.Minute)
 
 		ch := v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -590,32 +576,12 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for ClickHouse to be ready")
-		waitClusterReady(ctx, &ch)
+		env.WaitClusterReady(ctx, &ch, 5*time.Minute)
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)
 	tableArgs[0] = body
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
-}
-
-func waitClusterReady(ctx context.Context, cluster client.Object) {
-	GinkgoHelper()
-
-	Eventually(func(g Gomega) {
-		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
-
-		var conditions []metav1.Condition
-
-		switch cr := cluster.(type) {
-		case *v1.ClickHouseCluster:
-			conditions = cr.Status.Conditions
-		case *v1.KeeperCluster:
-			conditions = cr.Status.Conditions
-		}
-
-		g.Expect(meta.IsStatusConditionTrue(conditions, v1.ConditionTypeReady)).
-			To(BeTrue(), "%T %s not ready: %s", cluster, cluster.GetName(), testutil.FormatConditions(conditions))
-	}, "5m", "5s").Should(Succeed())
 }
 
 func templateTestResources(ctx context.Context, namespace string) string {

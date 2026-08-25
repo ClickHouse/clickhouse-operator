@@ -13,9 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
@@ -24,7 +22,7 @@ import (
 
 var _ = Describe("Keeper controller", Label("keeper"), func() {
 	DescribeTable("standalone keeper updates", func(ctx context.Context, specUpdate v1.KeeperClusterSpec) {
-		ns := testNamespace(ctx)
+		ns := testutil.EnsureTestNamespace(ctx, env)
 
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -49,8 +47,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(ctx, &cr, time.Minute, false)
-		KeeperRWChecks(ctx, &cr, &checks)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, time.Minute, false)
+		env.KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
@@ -58,10 +56,10 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
 		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
-		KeeperRWChecks(ctx, &cr, &checks)
+		env.KeeperRWChecks(ctx, &cr, &checks)
 	},
 		Entry("update log level", v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			Logger: v1.LoggerConfig{Level: "warning"},
@@ -78,7 +76,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 	)
 
 	DescribeTable("keeper cluster updates", func(ctx context.Context, baseReplicas int, specUpdate v1.KeeperClusterSpec) {
-		ns := testNamespace(ctx)
+		ns := testutil.EnsureTestNamespace(ctx, env)
 
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -103,8 +101,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
-		KeeperRWChecks(ctx, &cr, &checks)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+		env.KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
@@ -112,8 +110,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
-		KeeperRWChecks(ctx, &cr, &checks)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
+		env.KeeperRWChecks(ctx, &cr, &checks)
 	},
 		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
 			Logger: v1.LoggerConfig{Level: "warning"},
@@ -132,7 +130,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 
 	Describe("secure keeper cluster", func() {
 		It("should create secure cluster", func(ctx context.Context) {
-			ns := testNamespace(ctx)
+			ns := testutil.EnsureTestNamespace(ctx, env)
 
 			suffix := rand.Uint32() //nolint:gosec
 			certName := fmt.Sprintf("keeper-cert-%d", suffix)
@@ -205,13 +203,13 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("creating secure keeper cluster CR")
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
-			WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
-			KeeperRWChecks(ctx, &cr, new(0))
+			env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			env.KeeperRWChecks(ctx, &cr, new(0))
 		})
 	})
 
 	It("should work with custom data folder mount", func(ctx context.Context) {
-		ns := testNamespace(ctx)
+		ns := testutil.EnsureTestNamespace(ctx, env)
 
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -249,14 +247,14 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		})
 
 		By("waiting for diskless keeper to be ready")
-		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
 
 		By("verifying keeper is functional with basic read/write")
-		KeeperRWChecks(ctx, &cr, new(0))
+		env.KeeperRWChecks(ctx, &cr, new(0))
 	})
 
 	It("should recreate stuck pods", func(ctx context.Context) {
-		ns := testNamespace(ctx)
+		ns := testutil.EnsureTestNamespace(ctx, env)
 
 		cr := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -286,68 +284,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			Tag: BaseVersion,
 		}
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
-		WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
-		KeeperRWChecks(ctx, &cr, new(0))
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
+		env.KeeperRWChecks(ctx, &cr, new(0))
 	})
 })
-
-func WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool) {
-	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
-	EventuallyWithOffset(1, func(g Gomega) {
-		var cluster v1.KeeperCluster
-		g.Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
-
-		if isUpdate {
-			// Intentional global assertion to fail suite if update order is wrong.
-			Expect(CheckUpdateOrder(ctx, &client.ListOptions{
-				Namespace: cluster.Namespace,
-				LabelSelector: labels.SelectorFromSet(map[string]string{
-					controllerutil.LabelAppKey: cluster.SpecificName(),
-				}),
-			}, controllerutil.LabelKeeperReplicaID, cluster.Status.StatefulSetRevision)).To(Succeed())
-		}
-
-		g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
-		g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas()))
-
-		for _, conditionType := range []v1.ConditionType{
-			v1.ConditionTypeReady,
-			v1.ConditionTypeHealthy,
-			v1.ConditionTypeClusterSizeAligned,
-			v1.ConditionTypeConfigurationInSync,
-		} {
-			cond := meta.FindStatusCondition(cluster.Status.Conditions, conditionType)
-			g.Expect(cond).ToNot(BeNil())
-			g.Expect(cond.Status).To(
-				Equal(metav1.ConditionTrue),
-				fmt.Sprintf("condition %s is false: %s", cond.Type, cond.Message),
-			)
-		}
-	}, timeout).WithPolling(pollingInterval).Should(Succeed())
-	// Needed for replica deletion to not forward deleting pods.
-	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
-	count := int(cr.Replicas())
-	WaitReplicaCount(ctx, k8sClient, cr.Namespace, cr.SpecificName(), count)
-}
-
-func KeeperRWChecks(ctx context.Context, cr *v1.KeeperCluster, checksDone *int) {
-	ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), cr)).To(Succeed())
-
-	By("connecting to cluster")
-
-	cli, err := testutil.NewKeeperClient(ctx, podDialer, cr)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
-
-	defer cli.Close()
-
-	By("writing new test data")
-	ExpectWithOffset(1, cli.CheckWrite(*checksDone)).To(Succeed())
-	*checksDone++
-
-	By("reading all test data")
-
-	for i := range *checksDone {
-		ExpectWithOffset(1, cli.CheckRead(i)).To(Succeed(), "check read %d failed", i)
-	}
-}

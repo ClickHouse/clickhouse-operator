@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -61,6 +62,7 @@ spec:
 var (
 	k8sClient      client.Client
 	config         *rest.Config
+	env            *testutil.Env
 	namespace      = "e2e-" + testutil.CurrentSpecHash()
 	versionEntries []any
 )
@@ -93,6 +95,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	Expect(v1.AddToScheme(scheme.Scheme)).To(Succeed())
 	k8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
+
+	env = &testutil.Env{Client: k8sClient, Config: config, Dialer: testutil.NewPortForwardDialer(config)}
 
 	By("waiting for project API service")
 	Expect(testutil.MustRun(ctx, "oc", "wait",
@@ -162,8 +166,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	}, "5m", "5s").Should(Succeed())
 
 	By("waiting controller to be ready")
-	Expect(testutil.MustRun(ctx, "kubectl", "wait", "-n", namespace, "--timeout=2m",
-		"--for=condition=Available", "deployment/clickhouse-operator-controller-manager")).To(Succeed())
+	env.WaitDeploymentAvailable(ctx, namespace, "clickhouse-operator-controller-manager", 2*time.Minute)
 })
 
 func envOrDefault(key, def string) string {
@@ -188,7 +191,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 		"-n", "openshift-operator-lifecycle-manager", "-l", "app=catalog-operator", "--tail=100"))
 	AddReportEntry("=== catalog-operator log", string(catalogLog))
 
-	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, namespace, "report")
+	testutil.DumpNamespaceDiagnostics(ctx, env, namespace, "report")
 })
 
 var _ = Describe("OLM deployment on OpenShift", func() {
@@ -209,8 +212,7 @@ var _ = Describe("OLM deployment on OpenShift", func() {
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &keeper) })
 
 		By("Waiting for KeeperCluster to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=15m", "--for=condition=Ready",
-			"keepercluster/"+keeper.Name)).To(Succeed())
+		env.WaitClusterReady(ctx, &keeper, 15*time.Minute)
 
 		ch := v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -229,7 +231,6 @@ var _ = Describe("OLM deployment on OpenShift", func() {
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &ch) })
 
 		By("Waiting for ClickHouse to be ready")
-		Expect(testutil.MustRun(ctx, "kubectl", "-n", namespace, "wait", "--timeout=15m", "--for=condition=Ready",
-			"clickhousecluster/"+ch.Name)).To(Succeed())
+		env.WaitClusterReady(ctx, &ch, 15*time.Minute)
 	})
 })
