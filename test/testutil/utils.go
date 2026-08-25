@@ -43,8 +43,8 @@ const (
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
 	logTailLines  = 10
-	BaseVersion   = "26.3.17.56"
-	UpdateVersion = "26.6.2.81"
+	BaseVersion   = "26.3.21.7"
+	UpdateVersion = "26.7.5.10"
 )
 
 var (

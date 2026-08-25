@@ -132,7 +132,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, ns, reportDir)
 })
 
-var _ = Describe("Manifests deployment", Ordered, Label("manifest"), func() {
+var _ = Describe("Manifests deployment", Ordered, ContinueOnFailure, Label("manifest"), func() {
 	namespace := "clickhouse-operator-system"
 
 	BeforeAll(func(ctx context.Context) {
@@ -161,7 +161,7 @@ var _ = Describe("Manifests deployment", Ordered, Label("manifest"), func() {
 	testDeployment(namespace)
 })
 
-var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
+var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), func() {
 	namespace := "clickhouse-operator-olm"
 
 	BeforeAll(func(ctx context.Context) {
@@ -258,7 +258,7 @@ var _ = Describe("OLM deployment", Ordered, Label("olm"), func() {
 	testDeployment(namespace)
 })
 
-var _ = Describe("Helm deployment", Ordered, Label("helm"), func() {
+var _ = Describe("Helm deployment", Ordered, ContinueOnFailure, Label("helm"), func() {
 	DescribeTableSubtree("with", func(name string, values map[string]any) {
 		namespace := "clickhouse-operator-" + name
 		BeforeAll(func(ctx context.Context) {
@@ -343,7 +343,7 @@ spec:
 	)
 })
 
-var _ = Describe("Operator upgrade", Ordered, Label("upgrade"), func() {
+var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"), func() {
 	const (
 		namespace      = "clickhouse-operator-upgrade"
 		releaseName    = namespace

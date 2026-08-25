@@ -268,6 +268,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 				ContainerTemplate: v1.ContainerTemplateSpec{
 					Image: v1.ContainerImage{
 						Repository: "invalid",
+						Tag:        BaseVersion,
 					},
 				},
 			},

@@ -55,6 +55,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					// Use standalone keeper for ClickHouse tests to save resources in CI
 					Replicas:            new(int32(1)),
 					DataVolumeClaimSpec: &defaultStorage,
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
@@ -1467,6 +1470,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Spec: v1.KeeperClusterSpec{
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{Tag: BaseVersion},
+				},
 				PodTemplate: v1.PodTemplateSpec{
 					TopologyZoneKey: new("topology.kubernetes.io/zone"),
 					NodeHostnameKey: new("kubernetes.io/hostname"),
@@ -1509,6 +1515,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				DataVolumeClaimSpec: &defaultStorage,
 				KeeperClusterRef: v1.KeeperClusterReference{
 					Name: keeperName,
+				},
+				ContainerTemplate: v1.ContainerTemplateSpec{
+					Image: v1.ContainerImage{Tag: BaseVersion},
 				},
 				PodTemplate: v1.PodTemplateSpec{
 					TopologyZoneKey: new("topology.kubernetes.io/zone"),

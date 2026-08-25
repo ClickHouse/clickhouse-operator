@@ -31,8 +31,8 @@ const (
 	keeperHostname                 = "test-keeper"
 	clickhouseHostnameFormat       = "test-clickhouse-0-%d-0"
 	testPassword                   = "test-password"
-	keeperImage                    = "clickhouse/clickhouse-keeper:26.6.2.81"
-	clickhouseImage                = "clickhouse/clickhouse-server:26.6.2.81"
+	keeperImage                    = "clickhouse/clickhouse-keeper:26.7.5.10"
+	clickhouseImage                = "clickhouse/clickhouse-server:26.7.5.10"
 	testConfigRevision             = "test-revision-v1"
 )
 
