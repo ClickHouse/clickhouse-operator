@@ -27,6 +27,10 @@ const (
 	certmanagerVersion = "v1.19.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
+	networkPolicyControllerVersion = "v1.1.1"
+	networkPolicyControllerURLTmpl = "https://raw.githubusercontent.com" +
+		"/kubernetes-sigs/kube-network-policies/%s/install.yaml"
+
 	logTailLines  = 10
 	BaseVersion   = "26.3.21.7"
 	UpdateVersion = "26.7.5.10"
@@ -82,6 +86,25 @@ func InstallCRDs(ctx context.Context) error {
 // UninstallCRDs removes the CRDs from the cluster using make uninstall.
 func UninstallCRDs(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "make", "uninstall", "ignore-not-found=true")
+	_, err := Run(cmd)
+
+	return err
+}
+
+// InstallNetworkPolicyController installs kube-network-policies so the default kind CNI enforces NetworkPolicies.
+func InstallNetworkPolicyController(ctx context.Context) error {
+	url := fmt.Sprintf(networkPolicyControllerURLTmpl, networkPolicyControllerVersion)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", url)
+	if _, err := Run(cmd); err != nil {
+		return err
+	}
+
+	cmd = exec.CommandContext(ctx, "kubectl", "rollout", "status", "daemonset/kube-network-policies",
+		"--namespace", "kube-system",
+		"--timeout", "2m",
+	)
+
 	_, err := Run(cmd)
 
 	return err

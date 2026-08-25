@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -1562,6 +1563,17 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			name = fmt.Sprintf("np-test-%d", rand.Uint32()) //nolint:gosec
 		)
 
+		By("denying all ingress in the test namespace by default", func() {
+			denyAll := &networkingv1.NetworkPolicy{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "default-deny-ingress"},
+				Spec: networkingv1.NetworkPolicySpec{
+					PodSelector: metav1.LabelSelector{},
+					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+				},
+			}
+			Expect(k8sClient.Create(ctx, denyAll)).To(Succeed())
+		})
+
 		keeper := v1.KeeperCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: ns,
@@ -1610,6 +1622,26 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			env.ClickHouseRWChecks(ctx, &cluster, new(0))
 		})
 
+		By("allowing client traffic with a user-defined policy", func() {
+			nativePort := intstr.FromInt32(9000)
+			allowClients := &networkingv1.NetworkPolicy{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "allow-clients"},
+				Spec: networkingv1.NetworkPolicySpec{
+					PodSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{controllerutil.LabelAppKey: cluster.SpecificName()},
+					},
+					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+					Ingress: []networkingv1.NetworkPolicyIngressRule{{
+						From: []networkingv1.NetworkPolicyPeer{{
+							PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"role": "allowed"}},
+						}},
+						Ports: []networkingv1.NetworkPolicyPort{{Protocol: new(corev1.ProtocolTCP), Port: &nativePort}},
+					}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, allowClients)).To(Succeed())
+		})
+
 		By("operator creates the NetworkPolicy with the expected shape")
 		Eventually(func(g Gomega) {
 			var np networkingv1.NetworkPolicy
@@ -1634,6 +1666,42 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			g.Expect(clients).To(HaveLen(2)) // operator + referencing cluster
 			g.Expect(clients[1].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cluster.SpecificName()))
 		}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(Succeed())
+
+		// Probes wearing the cluster pod labels match the managed policies' internal peers exactly.
+		clickhousePodLabels := map[string]string{
+			controllerutil.LabelAppKey:  cluster.SpecificName(),
+			controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+		}
+		keeperPodLabels := map[string]string{
+			controllerutil.LabelAppKey:  keeper.SpecificName(),
+			controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+		}
+
+		replicaHost := cluster.HostnameByID(v1.ClickHouseReplicaID{})
+		replicaInternalHost := cluster.InternalHostnameByID(v1.ClickHouseReplicaID{})
+		keeperHost := keeper.HostnameByID(0)
+
+		connectivityChecks := []struct {
+			name   string
+			target string
+			port   int
+			labels map[string]string
+		}{
+			{name: "a client matching the user-defined policy can reach the native port", target: replicaHost, port: 9000,
+				labels: map[string]string{"role": "allowed"}},
+			{name: "replica can reach the interserver port", target: replicaInternalHost, port: 9009,
+				labels: clickhousePodLabels},
+			{name: "keeper replica can reach the raft port", target: keeperHost, port: 9234, labels: keeperPodLabels},
+			{name: "clickhouse can reach the keeper client port", target: keeperHost, port: 2181, labels: clickhousePodLabels},
+		}
+
+		for i, tc := range connectivityChecks {
+			By("allowed: " + tc.name)
+
+			probe := env.RunConnectivityProbe(ctx, ns, fmt.Sprintf("probe-%d", i), tc.target, tc.port, tc.labels)
+			Eventually(env.ProbePhase(ctx, probe)).WithTimeout(time.Minute).WithPolling(pollingInterval).
+				Should(Equal(corev1.PodSucceeded))
+		}
 
 		By("disabling cluster networkPolicy removes its policy")
 		Expect(k8sClient.Get(ctx, cluster.NamespacedName(), &cluster)).To(Succeed())

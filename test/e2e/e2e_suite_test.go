@@ -198,6 +198,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	By("installing the cert-manager")
 	Expect(testutil.InstallCertManager(ctx)).To(Succeed())
 
+	By("installing the NetworkPolicy controller")
+	Expect(testutil.InstallNetworkPolicyController(ctx)).To(Succeed())
+
 	By("setting up the manager")
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
