@@ -83,6 +83,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	By("installing the cert-manager")
 	Expect(testutil.InstallCertManager(ctx)).To(Succeed())
 
+	By("installing the NetworkPolicy controller")
+	Expect(testutil.InstallNetworkPolicyController(ctx)).To(Succeed())
+
 	Expect(testutil.MustRun(ctx, "helm",
 		"upgrade", "--install", "prometheus", "-n", "prometheus", "--create-namespace",
 		"oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack",
@@ -543,6 +546,7 @@ func testDeployment(namespace string) {
 						Tag: version,
 					},
 				},
+				NetworkPolicy: &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
 			},
 		}
 		Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
@@ -568,6 +572,7 @@ func testDeployment(namespace string) {
 						Tag: version,
 					},
 				},
+				NetworkPolicy: &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
 			},
 		}
 		Expect(k8sClient.Create(ctx, &ch)).To(Succeed())
