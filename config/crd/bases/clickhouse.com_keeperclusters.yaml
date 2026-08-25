@@ -1095,6 +1095,20 @@ spec:
                   type: string
                 description: Additional labels that are added to resources.
                 type: object
+              networkPolicy:
+                description: NetworkPolicy configures the NetworkPolicy managed for
+                  the Keeper cluster.
+                properties:
+                  policy:
+                    default: Disabled
+                    description: |-
+                      Policy controls whether the operator manages a NetworkPolicy restricting ingress to the Keeper Pods.
+                      Defaults to "Disabled" when unset.
+                    enum:
+                    - Enabled
+                    - Disabled
+                    type: string
+                type: object
               podDisruptionBudget:
                 description: |-
                   PodDisruptionBudget configures the PDB created for the Keeper cluster.

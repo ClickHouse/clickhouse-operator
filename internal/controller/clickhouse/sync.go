@@ -14,6 +14,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -101,10 +102,11 @@ type clickhouseReconciler struct {
 	statusManager
 	chctrl.ResourceManager
 
-	Dialer    ctrlutil.DialContextFunc
-	Checker   *upgrade.Checker
-	EnablePDB bool
-	connCache *connCache
+	Dialer              ctrlutil.DialContextFunc
+	Checker             *upgrade.Checker
+	EnablePDB           bool
+	EnableNetworkPolicy bool
+	connCache           *connCache
 
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
@@ -145,10 +147,17 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		{Name: "ActiveReplicaStatus", Fn: r.reconcileActiveReplicaStatus, Always: true},
 		{Name: "Warnings", Fn: r.reconcileWarnings, Always: true},
 		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},
-		{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
-		{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
-		{Name: "CleanUp", Fn: r.reconcileCleanUp},
 	}
+
+	if r.EnableNetworkPolicy {
+		steps = append(steps, chctrl.ReconcileStep{Name: "NetworkPolicy", Fn: r.reconcileNetworkPolicy, Always: true})
+	}
+
+	steps = append(steps,
+		chctrl.ReconcileStep{Name: "ReplicaResources", Fn: r.reconcileReplicaResources},
+		chctrl.ReconcileStep{Name: "DatabaseSync", Fn: r.reconcileDatabaseSync},
+		chctrl.ReconcileStep{Name: "CleanUp", Fn: r.reconcileCleanUp},
+	)
 
 	if r.EnablePDB {
 		steps = append(steps,
@@ -1161,6 +1170,31 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 			if err := r.Delete(ctx, res.Service, v1.EventActionReconciling); err != nil {
 				log.Error(err, "failed to delete replica service", "replica_id", id, "service", res.Service.Name)
 			}
+		}
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *clickhouseReconciler) reconcileNetworkPolicy(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if r.Cluster.Spec.NetworkPolicy.Enabled() {
+		desired := templateNetworkPolicy(r.Cluster)
+		if _, err := r.ReconcileResource(ctx, log, desired, []string{"Spec"}, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("reconcile NetworkPolicy: %w", err)
+		}
+
+		return chctrl.StepContinue(), nil
+	}
+
+	var policies networkingv1.NetworkPolicyList
+	if err := r.GetClient().List(ctx, &policies,
+		ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list NetworkPolicies: %w", err)
+	}
+
+	for _, policy := range policies.Items {
+		if err := r.Delete(ctx, &policy, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("delete NetworkPolicy %s: %w", policy.Name, err)
 		}
 	}
 

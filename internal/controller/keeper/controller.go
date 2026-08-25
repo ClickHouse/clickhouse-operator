@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,7 +15,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
@@ -27,13 +30,14 @@ import (
 type ClusterController struct {
 	client.Client
 
-	Scheme    *runtime.Scheme
-	Recorder  events.EventRecorder
-	Logger    controllerutil.Logger
-	Webhook   webhookv1.KeeperClusterWebhook
-	Checker   *upgrade.Checker
-	Dialer    controllerutil.DialContextFunc
-	EnablePDB bool
+	Scheme              *runtime.Scheme
+	Recorder            events.EventRecorder
+	Logger              controllerutil.Logger
+	Webhook             webhookv1.KeeperClusterWebhook
+	Checker             *upgrade.Checker
+	Dialer              controllerutil.DialContextFunc
+	EnablePDB           bool
+	EnableNetworkPolicy bool
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -46,6 +50,8 @@ type ClusterController struct {
 // +kubebuilder:rbac:groups=apps,resources=statefulsets/status,verbs=get
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;delete
+// +kubebuilder:rbac:groups=clickhouse.com,resources=clickhouseclusters,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -98,9 +104,10 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		statusManager:   chctrl.NewStatusManager(cc, cluster),
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
 
-		Dialer:    cc.Dialer,
-		Checker:   cc.Checker,
-		EnablePDB: cc.EnablePDB,
+		Dialer:              cc.Dialer,
+		Checker:             cc.Checker,
+		EnablePDB:           cc.EnablePDB,
+		EnableNetworkPolicy: cc.EnableNetworkPolicy,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
@@ -134,19 +141,34 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 	return cc.Dialer
 }
 
+func keeperClustersForClickHouse(_ context.Context, obj client.Object) []reconcile.Request {
+	cluster, ok := obj.(*v1.ClickHouseCluster)
+	if !ok {
+		return nil
+	}
+
+	keeperKey := cluster.KeeperClusterNamespacedName()
+	if keeperKey.Name == "" {
+		return nil
+	}
+
+	return []reconcile.Request{{NamespacedName: keeperKey}}
+}
+
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Recorder:  mgr.GetEventRecorder("keeper-controller"),
-		Logger:    namedLogger,
-		Webhook:   webhookv1.KeeperClusterWebhook{Log: namedLogger},
-		Checker:   checker,
-		Dialer:    dialer,
-		EnablePDB: enablePDB,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorder("keeper-controller"),
+		Logger:              namedLogger,
+		Webhook:             webhookv1.KeeperClusterWebhook{Log: namedLogger},
+		Checker:             checker,
+		Dialer:              dialer,
+		EnablePDB:           enablePDB,
+		EnableNetworkPolicy: enableNetworkPolicy,
 	}
 
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
@@ -155,6 +177,16 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Pod{})
+
+	if enableNetworkPolicy {
+		controllerBuilder = controllerBuilder.
+			Owns(&networkingv1.NetworkPolicy{}).
+			Watches(
+				&v1.ClickHouseCluster{},
+				handler.EnqueueRequestsFromMapFunc(keeperClustersForClickHouse),
+				builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+			)
+	}
 
 	if enablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})

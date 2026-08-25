@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,6 +17,7 @@ import (
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -818,3 +820,50 @@ func newClickHouseCluster(f *randfill.Filler) *v1.ClickHouseCluster {
 
 	return cr
 }
+
+var _ = Describe("TemplateNetworkPolicy", func() {
+	newCluster := func() *v1.ClickHouseCluster {
+		return &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+			Spec: v1.ClickHouseClusterSpec{
+				NetworkPolicy: &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
+			},
+		}
+	}
+
+	rulePorts := func(rule networkingv1.NetworkPolicyIngressRule) []int32 {
+		ports := make([]int32, 0, len(rule.Ports))
+		for _, p := range rule.Ports {
+			ports = append(ports, p.Port.IntVal)
+		}
+
+		return ports
+	}
+
+	It("should restrict internal traffic to replicas and the operator", func() {
+		np := templateNetworkPolicy(newCluster())
+
+		podLabels := map[string]string{
+			controllerutil.LabelAppKey:  "test-clickhouse",
+			controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
+		}
+		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(np.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+		Expect(np.Spec.Ingress).To(HaveLen(2))
+
+		Expect(np.Spec.Ingress[0].From).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].From[0].PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(rulePorts(np.Spec.Ingress[0])).To(Equal([]int32{PortInterserver, PortManagement}))
+
+		Expect(np.Spec.Ingress[1].From).To(Equal([]networkingv1.NetworkPolicyPeer{
+			controller.RolePeer(controllerutil.LabelOperatorValue),
+		}))
+		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortManagement, PortManagementHTTP}))
+	})
+
+	It("should generate identical policies across invocations", func() {
+		cluster := newCluster()
+
+		Expect(templateNetworkPolicy(cluster)).To(Equal(templateNetworkPolicy(cluster)))
+	})
+})

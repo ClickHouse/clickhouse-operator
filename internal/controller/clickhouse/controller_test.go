@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	webhookv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
@@ -722,7 +723,7 @@ var _ = Describe("keeper watch mapping", func() {
 			Client: fake.NewClientBuilder().
 				WithScheme(testScheme).
 				WithObjects(referencedCluster, sameNameDifferentNamespace).
-				WithIndex(&v1.ClickHouseCluster{}, keeperClusterReferenceField, func(obj client.Object) []string {
+				WithIndex(&v1.ClickHouseCluster{}, chctrl.KeeperClusterReferenceField, func(obj client.Object) []string {
 					cluster, ok := obj.(*v1.ClickHouseCluster)
 					if !ok {
 						return nil

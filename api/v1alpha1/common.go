@@ -70,6 +70,17 @@ type LoggerConfig struct {
 	Count int64 `json:"count,omitempty"`
 }
 
+// NetworkPolicyPolicy controls whether the operator manages a NetworkPolicy for the cluster.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type NetworkPolicyPolicy string
+
+const (
+	// NetworkPolicyEnabled makes the operator manage a NetworkPolicy restricting ingress to the cluster Pods.
+	NetworkPolicyEnabled NetworkPolicyPolicy = "Enabled"
+	// NetworkPolicyDisabled disables the managed NetworkPolicy, the operator deletes it if present.
+	NetworkPolicyDisabled NetworkPolicyPolicy = "Disabled"
+)
+
 // PDBPolicy controls whether PodDisruptionBudgets are created.
 // +kubebuilder:validation:Enum=Enabled;Disabled;Ignored
 type PDBPolicy string

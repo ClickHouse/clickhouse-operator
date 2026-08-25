@@ -201,11 +201,13 @@ func run() error {
 		upgradeChecker = upgrade.NewChecker(updater)
 	}
 
-	if err = keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB); err != nil {
+	err = keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy)
+	if err != nil {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 
-	if err = clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB); err != nil {
+	err = clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy)
+	if err != nil {
 		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}
 

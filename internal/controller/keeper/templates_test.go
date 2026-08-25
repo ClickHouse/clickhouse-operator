@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,7 @@ import (
 	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -288,3 +290,67 @@ func newKeeperCluster(f *randfill.Filler) *v1.KeeperCluster {
 
 	return cr
 }
+
+var _ = Describe("TemplateNetworkPolicy", func() {
+	newCluster := func(spec v1.KeeperClusterSpec) *v1.KeeperCluster {
+		spec.NetworkPolicy = &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled}
+
+		return &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+			Spec:       spec,
+		}
+	}
+
+	rulePorts := func(rule networkingv1.NetworkPolicyIngressRule) []int32 {
+		ports := make([]int32, 0, len(rule.Ports))
+		for _, p := range rule.Ports {
+			ports = append(ports, p.Port.IntVal)
+		}
+
+		return ports
+	}
+
+	It("should restrict raft to replicas and client ports to the operator", func() {
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}), nil)
+
+		podLabels := map[string]string{
+			controllerutil.LabelAppKey:  "test-keeper",
+			controllerutil.LabelRoleKey: controllerutil.LabelKeeperValue,
+		}
+		Expect(np.Spec.PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(np.Spec.PolicyTypes).To(Equal([]networkingv1.PolicyType{networkingv1.PolicyTypeIngress}))
+		Expect(np.Spec.Ingress).To(HaveLen(2))
+
+		Expect(np.Spec.Ingress[0].From).To(HaveLen(1))
+		Expect(np.Spec.Ingress[0].From[0].PodSelector.MatchLabels).To(Equal(podLabels))
+		Expect(rulePorts(np.Spec.Ingress[0])).To(Equal([]int32{PortInterserver}))
+
+		Expect(np.Spec.Ingress[1].From).To(Equal([]networkingv1.NetworkPolicyPeer{
+			controller.RolePeer(controllerutil.LabelOperatorValue),
+		}))
+		Expect(rulePorts(np.Spec.Ingress[1])).To(Equal([]int32{PortNative, PortNativeSecure, PortHTTPControl}))
+	})
+
+	It("should admit referencing ClickHouse clusters to the client ports", func() {
+		clickhouseClusters := []v1.ClickHouseCluster{
+			{ObjectMeta: metav1.ObjectMeta{Name: "alpha", Namespace: "ns-a"}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "beta", Namespace: "ns-b"}},
+		}
+
+		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}), clickhouseClusters)
+
+		clients := np.Spec.Ingress[1].From
+		Expect(clients).To(HaveLen(3))
+		Expect(clients[0]).To(Equal(controller.RolePeer(controllerutil.LabelOperatorValue)))
+		Expect(clients[1].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, "ns-a"))
+		Expect(clients[1].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "alpha-clickhouse"))
+		Expect(clients[2].NamespaceSelector.MatchLabels).To(HaveKeyWithValue(corev1.LabelMetadataName, "ns-b"))
+		Expect(clients[2].PodSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, "beta-clickhouse"))
+	})
+
+	It("should generate identical policies across invocations", func() {
+		cluster := newCluster(v1.KeeperClusterSpec{})
+
+		Expect(templateNetworkPolicy(cluster, nil)).To(Equal(templateNetworkPolicy(cluster, nil)))
+	})
+})

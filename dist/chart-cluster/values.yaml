@@ -82,6 +82,9 @@ clickhouse:
     # Additional labels that are added to resources.
     # labels: {}
 
+    # NetworkPolicy configures the NetworkPolicy managed for the cluster.
+    # networkPolicy: {}
+
     # PodDisruptionBudget configures the PDB created for each shard.
     # When unset, the operator defaults to maxUnavailable=1 for single-replica
     # shards and minAvailable=1 for multi-replica shards.
@@ -142,6 +145,9 @@ keeper:
 
     # Additional labels that are added to resources.
     # labels: {}
+
+    # NetworkPolicy configures the NetworkPolicy managed for the Keeper cluster.
+    # networkPolicy: {}
 
     # PodDisruptionBudget configures the PDB created for the Keeper cluster.
     # When unset, the operator defaults to maxUnavailable=replicas/2

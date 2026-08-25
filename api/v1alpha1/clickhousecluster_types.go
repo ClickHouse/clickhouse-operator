@@ -16,6 +16,24 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
+// ClickHouseNetworkPolicySpec configures the NetworkPolicy managed for the ClickHouse cluster.
+// The managed policy covers cluster-internal traffic:
+// - Inter replica connectivity
+// - Access from the operator to the cluster
+// Any other ingress, including client connections and metrics scraping, requires user-defined NetworkPolicies.
+type ClickHouseNetworkPolicySpec struct {
+	// Policy controls whether the operator manages a NetworkPolicy restricting ingress to the cluster Pods.
+	// Defaults to "Disabled" when unset.
+	// +optional
+	// +kubebuilder:default:=Disabled
+	Policy NetworkPolicyPolicy `json:"policy,omitempty"`
+}
+
+// Enabled returns true if the operator should manage the cluster NetworkPolicy.
+func (s *ClickHouseNetworkPolicySpec) Enabled() bool {
+	return s != nil && s.Policy == NetworkPolicyEnabled
+}
+
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 type ClickHouseClusterSpec struct {
 	// Number of replicas in the single shard.
@@ -72,6 +90,10 @@ type ClickHouseClusterSpec struct {
 	// shards and minAvailable=1 for multi-replica shards.
 	// +optional
 	PodDisruptionBudget *PodDisruptionBudgetSpec `json:"podDisruptionBudget,omitempty"`
+
+	// NetworkPolicy configures the NetworkPolicy managed for the cluster.
+	// +optional
+	NetworkPolicy *ClickHouseNetworkPolicySpec `json:"networkPolicy,omitempty"`
 
 	// Configuration parameters for ClickHouse server.
 	// +optional

@@ -1,22 +1,26 @@
 package keeper
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
@@ -78,9 +82,10 @@ type keeperReconciler struct {
 	statusManager
 	chctrl.ResourceManager
 
-	Dialer    ctrlutil.DialContextFunc
-	Checker   *upgrade.Checker
-	EnablePDB bool
+	Dialer              ctrlutil.DialContextFunc
+	Checker             *upgrade.Checker
+	EnablePDB           bool
+	EnableNetworkPolicy bool
 
 	Cluster      *v1.KeeperCluster
 	ReplicaState map[v1.KeeperReplicaID]replicaState
@@ -111,6 +116,10 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 		{Name: "QuorumMembership", Fn: r.reconcileQuorumMembership},
 		{Name: "CommonResources", Fn: r.reconcileCommonResources},
 	}
+	if r.EnableNetworkPolicy {
+		steps = append(steps, chctrl.ReconcileStep{Name: "NetworkPolicy", Fn: r.reconcileNetworkPolicy, Always: true})
+	}
+
 	if r.EnablePDB {
 		steps = append(steps, chctrl.ReconcileStep{Name: "PodDisruptionBudget", Fn: r.reconcilePodDisruptionBudget})
 	}
@@ -445,6 +454,41 @@ func (r *keeperReconciler) reconcileCommonResources(ctx context.Context, log ctr
 
 	if _, err = r.ReconcileConfigMap(ctx, log, configMap, v1.EventActionReconciling); err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("reconcile quorum config: %w", err)
+	}
+
+	return chctrl.StepContinue(), nil
+}
+
+func (r *keeperReconciler) reconcileNetworkPolicy(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if r.Cluster.Spec.NetworkPolicy.Enabled() {
+		var clickhouseClusters v1.ClickHouseClusterList
+		if err := r.GetClient().List(ctx, &clickhouseClusters,
+			client.MatchingFields{chctrl.KeeperClusterReferenceField: r.Cluster.NamespacedName().String()}); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("list referencing ClickHouseClusters: %w", err)
+		}
+
+		slices.SortFunc(clickhouseClusters.Items, func(a, b v1.ClickHouseCluster) int {
+			return cmp.Or(strings.Compare(a.Namespace, b.Namespace), strings.Compare(a.Name, b.Name))
+		})
+
+		desired := templateNetworkPolicy(r.Cluster, clickhouseClusters.Items)
+		if _, err := r.ReconcileResource(ctx, log, desired, []string{"Spec"}, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("reconcile NetworkPolicy: %w", err)
+		}
+
+		return chctrl.StepContinue(), nil
+	}
+
+	var policies networkingv1.NetworkPolicyList
+	if err := r.GetClient().List(ctx, &policies,
+		ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())); err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list NetworkPolicies: %w", err)
+	}
+
+	for _, policy := range policies.Items {
+		if err := r.Delete(ctx, &policy, v1.EventActionReconciling); err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("delete NetworkPolicy %s: %w", policy.Name, err)
+		}
 	}
 
 	return chctrl.StepContinue(), nil
