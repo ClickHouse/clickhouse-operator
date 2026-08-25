@@ -123,6 +123,7 @@ ClickHouseSettings defines ClickHouse server settings options.
 | `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
 | `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
 | `encryption` | [EncryptionSettings](#encryptionsettings) | Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.<br />Opt in per table with `SETTINGS storage_policy = '<policyName>'`. | false |  |
+| `network` | [NetworkSettings](#networksettings) | Network settings for the ClickHouse server, e.g. the addresses it listens on. | false |  |
 | `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |
 | `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one. | false |  |
 | `extraUsersConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse users configuration that will be merged with the default one. | false |  |
@@ -366,6 +367,17 @@ NamedTemplateMeta defines supported metadata settings for template objects that 
 
 Appears in:
 - [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+## NetworkSettings {#networksettings}
+
+NetworkSettings defines ClickHouse server network listening configuration.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `listenHost` | string array | ListenHost is the list of addresses the ClickHouse server listens on.<br />Use it to conform to networking restrictions, e.g. ["0.0.0.0"] for IPv4-only,<br />["::"] for IPv6-only, or ["::", "0.0.0.0"] for dual-stack clusters.<br />Defaults to ["::", "0.0.0.0"] when empty. | false |  |
+
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
 
 ## PDBPolicy {#pdbpolicy}
 

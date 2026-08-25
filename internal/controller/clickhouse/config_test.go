@@ -132,6 +132,64 @@ var _ = Describe("ConfigGenerator", func() {
 	})
 })
 
+var _ = Describe("networkConfigGenerator listen_host", func() {
+	networkGenerator := func() configGenerator {
+		for _, g := range generators {
+			if g.Filename() == "00-network.yaml" {
+				return g
+			}
+		}
+
+		return nil
+	}
+
+	newReconciler := func(listenHost []string) *clickhouseReconciler {
+		return &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(1)),
+					Shards:              new(int32(1)),
+					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
+					Settings: v1.ClickHouseSettings{
+						Network: v1.NetworkSettings{ListenHost: listenHost},
+					},
+				},
+				Status: v1.ClickHouseClusterStatus{Version: "25.12.1.1"},
+			},
+			keeper: v1.KeeperCluster{Spec: v1.KeeperClusterSpec{Replicas: new(int32(1))}},
+		}
+	}
+
+	generateListenHost := func(listenHost []string) []any {
+		gen := networkGenerator()
+		Expect(gen).ToNot(BeNil())
+
+		data, err := gen.Generate(newReconciler(listenHost), v1.ClickHouseReplicaID{})
+		Expect(err).ToNot(HaveOccurred())
+
+		obj := map[string]any{}
+		Expect(yaml.Unmarshal([]byte(data), &obj)).To(Succeed())
+		Expect(obj).To(HaveKey("listen_host"))
+
+		hosts, ok := obj["listen_host"].([]any)
+		Expect(ok).To(BeTrue())
+
+		return hosts
+	}
+
+	It("defaults to dual-stack when listenHost is empty", func() {
+		Expect(generateListenHost(nil)).To(Equal([]any{"::", "0.0.0.0"}))
+	})
+
+	It("honors a custom IPv4-only listenHost override", func() {
+		Expect(generateListenHost([]string{"0.0.0.0"})).To(Equal([]any{"0.0.0.0"}))
+	})
+})
+
 func findExposedEnvVars(value any) []string {
 	switch value := value.(type) {
 	case map[any]any:

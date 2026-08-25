@@ -345,6 +345,17 @@ type ClusterTLSSpec struct {
 	CABundle *CABundleSelector `json:"caBundle,omitempty"`
 }
 
+// NetworkSettings defines ClickHouse server network listening configuration.
+type NetworkSettings struct {
+	// ListenHost is the list of addresses the ClickHouse server listens on.
+	// Use it to conform to networking restrictions, e.g. ["0.0.0.0"] for IPv4-only,
+	// ["::"] for IPv6-only, or ["::", "0.0.0.0"] for dual-stack clusters.
+	// Defaults to ["::", "0.0.0.0"] when empty.
+	// +optional
+	// +listType=atomic
+	ListenHost []string `json:"listenHost,omitempty"`
+}
+
 // CABundleSelector selects a key holding a CA bundle from a Secret in the cluster's namespace.
 type CABundleSelector struct {
 	// The name of the secret in the cluster's namespace to select from.

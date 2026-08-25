@@ -192,6 +192,10 @@ type ClickHouseSettings struct {
 	// +optional
 	Encryption *EncryptionSettings `json:"encryption,omitempty"`
 
+	// Network settings for the ClickHouse server, e.g. the addresses it listens on.
+	// +optional
+	Network NetworkSettings `json:"network,omitempty"`
+
 	// Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas
 	// after scale down.
 	// Supports only Replicated and integration databases.
