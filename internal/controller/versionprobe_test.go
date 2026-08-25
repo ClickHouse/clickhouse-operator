@@ -3,9 +3,12 @@ package controller
 import (
 	"context"
 
+	"time"
+
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -420,7 +423,7 @@ var _ = Describe("VersionProbe caching", func() {
 		Expect(jobs.Items).To(HaveLen(1))
 	})
 
-	It("should retain a failed probe Job with the same spec", func(ctx context.Context) {
+	It("should retain a failed probe Job during the retry cooldown", func(ctx context.Context) {
 		rm, log := setupProbeTest()
 		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
 
@@ -431,15 +434,80 @@ var _ = Describe("VersionProbe caching", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		job.Status.Conditions = []batchv1.JobCondition{{
-			Type:    batchv1.JobFailed,
-			Status:  corev1.ConditionTrue,
-			Message: "deadline exceeded",
+			Type:               batchv1.JobFailed,
+			Status:             corev1.ConditionTrue,
+			Message:            "deadline exceeded",
+			LastTransitionTime: metav1.Now(),
 		}}
 		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
 
 		result, err := rm.VersionProbe(ctx, log, cfg)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Err).To(MatchError("deadline exceeded"))
+		Expect(result.Pending).To(BeTrue())
+		Expect(result.RetryAfter).To(BeNumerically(">", 0))
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+	})
+
+	It("should recreate a failed probe Job with backoff after the retry cooldown", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:               batchv1.JobFailed,
+			Status:             corev1.ConditionTrue,
+			Message:            "deadline exceeded",
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).NotTo(HaveOccurred())
+		Expect(result.Pending).To(BeTrue())
+		Expect(result.RetryAfter).To(BeZero())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+		Expect(jobs.Items[0].Annotations).To(HaveKeyWithValue(versionProbeRetryAnnotation, "1"))
+	})
+
+	It("should grow the retry cooldown with the recorded attempt count", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Annotations = controllerutil.MergeMaps(job.Annotations, map[string]string{
+			versionProbeRetryAnnotation: "3",
+		})
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:               batchv1.JobFailed,
+			Status:             corev1.ConditionTrue,
+			Message:            "deadline exceeded",
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).To(MatchError("deadline exceeded"))
+		Expect(result.Pending).To(BeTrue())
+		Expect(result.RetryAfter).To(BeNumerically(">", 5*time.Minute))
 
 		var jobs batchv1.JobList
 		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
