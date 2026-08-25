@@ -49,20 +49,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		BeforeEach(func(ctx context.Context) {
 			ns = testutil.EnsureTestNamespace(ctx, env)
 
-			keeper = v1.KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      fmt.Sprintf("clickhouse-test-%d", rand.Uint32()), //nolint:gosec
-				},
-				Spec: v1.KeeperClusterSpec{
-					// Use standalone keeper for ClickHouse tests to save resources in CI
-					Replicas:            new(int32(1)),
-					DataVolumeClaimSpec: &defaultStorage,
-					ContainerTemplate: v1.ContainerTemplateSpec{
-						Image: v1.ContainerImage{Tag: BaseVersion},
-					},
-				},
-			}
+			name := fmt.Sprintf("clickhouse-test-%d", rand.Uint32()) //nolint:gosec
+			// Use standalone keeper for ClickHouse tests to save resources in CI
+			keeper = testutil.NewKeeperCluster(ns, name).WithStorage(defaultStorage).Cluster()
 			Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
 			DeferCleanup(func(ctx context.Context) {
 				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
@@ -108,7 +97,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
 			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, validateUpdateOrder)
-			ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 			Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 			env.ClickHouseRWChecks(ctx, &cr, &checks)
 		},
@@ -1727,8 +1716,10 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 })
 
 func podUIDsByName(ctx context.Context, cr *v1.ClickHouseCluster) map[string]types.UID {
+	GinkgoHelper()
+
 	var pods corev1.PodList
-	ExpectWithOffset(1, k8sClient.List(ctx, &pods, client.InNamespace(cr.Namespace),
+	Expect(k8sClient.List(ctx, &pods, client.InNamespace(cr.Namespace),
 		client.MatchingLabels{controllerutil.LabelAppKey: cr.SpecificName()})).To(Succeed())
 
 	out := make(map[string]types.UID, len(pods.Items))
@@ -1740,6 +1731,8 @@ func podUIDsByName(ctx context.Context, cr *v1.ClickHouseCluster) map[string]typ
 }
 
 func validateUpdateOrder(ctx context.Context, cr *v1.ClickHouseCluster) {
+	GinkgoHelper()
+
 	// CheckUpdateOrder returns an error only for update-order invariant violations: fail hard.
 	for shard := range cr.Shards() {
 		Expect(env.CheckUpdateOrder(ctx, &client.ListOptions{
@@ -1753,6 +1746,8 @@ func validateUpdateOrder(ctx context.Context, cr *v1.ClickHouseCluster) {
 }
 
 func validateReadyIsInitialized(ctx context.Context, cr *v1.ClickHouseCluster) {
+	GinkgoHelper()
+
 	pods := corev1.PodList{}
 	if err := k8sClient.List(ctx, &pods, client.InNamespace(cr.Namespace), client.MatchingLabels{
 		controllerutil.LabelAppKey: cr.SpecificName(),

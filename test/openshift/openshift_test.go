@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,15 +12,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
@@ -83,20 +77,8 @@ func TestOpenShift(t *testing.T) {
 }
 
 var _ = BeforeSuite(func(ctx context.Context) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		kubeconfig = filepath.Join(homedir.HomeDir(), ".kube", "config")
-	}
-
-	var err error
-
-	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-	Expect(err).NotTo(HaveOccurred())
-	Expect(v1.AddToScheme(scheme.Scheme)).To(Succeed())
-	k8sClient, err = client.New(config, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-
-	env = &testutil.Env{Client: k8sClient, Config: config, Dialer: testutil.NewPortForwardDialer(config)}
+	env = testutil.SetupEnv(testutil.SetupOptions{})
+	config, k8sClient = env.Config, env.Client
 
 	By("waiting for project API service")
 	Expect(testutil.MustRun(ctx, "oc", "wait",
@@ -196,37 +178,14 @@ var _ = JustAfterEach(func(ctx context.Context) {
 
 var _ = Describe("OLM deployment on OpenShift", func() {
 	It("should deploy cluster with default settings", func(ctx context.Context) {
-		keeper := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "keeper",
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(1)),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{Tag: testutil.BaseVersion},
-				},
-			},
-		}
+		keeper := testutil.NewKeeperCluster(namespace, "keeper").Cluster()
 		Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &keeper) })
 
 		By("Waiting for KeeperCluster to be ready")
 		env.WaitClusterReady(ctx, &keeper, 15*time.Minute)
 
-		ch := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ch",
-			},
-			Spec: v1.ClickHouseClusterSpec{
-				Replicas:         new(int32(1)),
-				KeeperClusterRef: v1.KeeperClusterReference{Name: keeper.Name},
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{Tag: testutil.BaseVersion},
-				},
-			},
-		}
+		ch := testutil.NewClickHouseCluster(namespace, "ch").WithKeeper(keeper.Name).Cluster()
 		Expect(k8sClient.Create(ctx, &ch)).To(Succeed())
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &ch) })
 
