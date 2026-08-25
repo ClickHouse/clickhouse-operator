@@ -27,6 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -47,12 +48,12 @@ const (
 
 var releases = map[string][]upgrade.ClickHouseVersion{
 	upgrade.ChannelStable: {
-		{Major: 26, Minor: 6, Patch: 2, Build: 81},
-		{Major: 26, Minor: 5, Patch: 5, Build: 8},
+		{Major: 26, Minor: 7, Patch: 5, Build: 10},
+		{Major: 26, Minor: 6, Patch: 3, Build: 62},
 	},
 	upgrade.ChannelLTS: {
-		{Major: 26, Minor: 3, Patch: 17, Build: 56},
-		{Major: 25, Minor: 8, Patch: 28, Build: 1},
+		{Major: 26, Minor: 3, Patch: 21, Build: 7},
+		{Major: 25, Minor: 8, Patch: 32, Build: 4},
 	},
 }
 
@@ -170,10 +171,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	// +kubebuilder:scaffold:scheme
 
-	k8sClient, err = client.New(config, client.Options{
+	baseClient, err := client.NewWithWatch(config, client.Options{
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).NotTo(HaveOccurred())
+
+	k8sClient = interceptor.NewClient(baseClient, interceptor.Funcs{
+		Create: requireExplicitImageTag,
+	})
 
 	By("pre-loading clickhouse images into kind")
 
@@ -250,6 +255,27 @@ var _ = JustAfterEach(func(ctx context.Context) {
 
 	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, testNamespace(ctx), "report")
 })
+
+func requireExplicitImageTag(
+	ctx context.Context, cli client.WithWatch, obj client.Object, opts ...client.CreateOption,
+) error {
+	switch cr := obj.(type) {
+	case *clickhousecomv1alpha1.ClickHouseCluster:
+		if cr.Spec.ContainerTemplate.Image.Tag == "" {
+			return fmt.Errorf("refusing to create ClickHouseCluster %q without an explicit image tag", cr.Name)
+		}
+	case *clickhousecomv1alpha1.KeeperCluster:
+		if cr.Spec.ContainerTemplate.Image.Tag == "" {
+			return fmt.Errorf("refusing to create KeeperCluster %q without an explicit image tag", cr.Name)
+		}
+	}
+
+	if err := cli.Create(ctx, obj, opts...); err != nil {
+		return fmt.Errorf("create %T: %w", obj, err)
+	}
+
+	return nil
+}
 
 func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) {
 	Eventually(func() int {
