@@ -137,6 +137,7 @@ func (e *Env) WaitDeploymentAvailable(ctx context.Context, namespace, name strin
 		}
 
 		g.Expect(deploy.Status.ObservedGeneration).To(BeNumerically(">=", deploy.Generation))
+		g.Expect(deploy.Status.Replicas).To(Equal(replicas))
 		g.Expect(deploy.Status.UpdatedReplicas).To(Equal(replicas))
 		g.Expect(deploy.Status.AvailableReplicas).To(Equal(replicas))
 	}, timeout, PollInterval).Should(Succeed())
