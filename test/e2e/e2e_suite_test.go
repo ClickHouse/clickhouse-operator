@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +16,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sethvargo/go-envconfig"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -40,7 +38,7 @@ import (
 )
 
 const (
-	pollingInterval = time.Millisecond * 100
+	pollingInterval = testutil.PollInterval
 
 	BaseVersion   = testutil.BaseVersion
 	UpdateVersion = testutil.UpdateVersion
@@ -113,6 +111,7 @@ func (c *shardingConfig) Enabled(spec string) (bool, error) {
 
 var (
 	sharding       shardingConfig
+	env            *testutil.Env
 	k8sClient      client.Client
 	config         *rest.Config
 	podDialer      controllerutil.DialContextFunc
@@ -216,6 +215,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	upgradeChecker := upgrade.NewChecker(updater)
 	podDialer = testutil.NewPortForwardDialer(config)
+	env = &testutil.Env{Client: k8sClient, Config: config, Dialer: podDialer}
 	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true)).To(Succeed())
 	Expect(clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true)).To(Succeed())
 	// +kubebuilder:scaffold:builder
@@ -253,7 +253,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 		return
 	}
 
-	testutil.DumpNamespaceDiagnostics(ctx, config, k8sClient, testNamespace(ctx), "report")
+	testutil.DumpNamespaceDiagnostics(ctx, env, testutil.TestNamespace(), "report")
 })
 
 func requireExplicitImageTag(
@@ -275,86 +275,4 @@ func requireExplicitImageTag(
 	}
 
 	return nil
-}
-
-func WaitReplicaCount(ctx context.Context, k8sClient client.Client, namespace, app string, replicas int) {
-	Eventually(func() int {
-		var pods corev1.PodList
-		Expect(k8sClient.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-			controllerutil.LabelAppKey: app,
-		})).To(Succeed())
-
-		return len(pods.Items)
-	}).WithTimeout(time.Minute).WithPolling(pollingInterval).Should(Equal(replicas))
-}
-
-func CheckPodReady(pod *corev1.Pod) bool {
-	for _, cond := range pod.Status.Conditions {
-		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-
-	return false
-}
-
-// CheckUpdateOrder lists StatefulSets for the given app and validates rolling update invariants:
-// 1. Updated StatefulSets form a contiguous group from the highest replica ID
-// 2. At most one StatefulSet has zero ready replicas (the one currently being updated).
-func CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replicaLabel, stsRev string) error {
-	var stsList appsv1.StatefulSetList
-	Expect(k8sClient.List(ctx, &stsList, selector)).To(Succeed())
-
-	if len(stsList.Items) < 2 {
-		return nil
-	}
-
-	notReadyCount := 0
-	updated := make([]bool, len(stsList.Items))
-
-	for _, sts := range stsList.Items {
-		index, err := strconv.Atoi(sts.Labels[replicaLabel])
-		Expect(err).NotTo(HaveOccurred())
-
-		if sts.Status.ReadyReplicas != 1 {
-			notReadyCount++
-		}
-
-		updated[index] = controllerutil.GetSpecHashFromObject(&sts) == stsRev
-	}
-
-	if notReadyCount > 1 {
-		return fmt.Errorf("%d replicas not ready, expected at most 1", notReadyCount)
-	}
-
-	// The controller updates the highest-index replica first.
-	// If it doesn't match the target revisions, either the rollout hasn't started
-	// or the revisions are stale (cluster status read before the STS list) — skip.
-	if !updated[len(updated)-1] {
-		return nil
-	}
-
-	// find the first updated replica (lowest index that matches target)
-	updatedID := 0
-	for i, isUpdated := range updated {
-		if isUpdated {
-			updatedID = i
-			break
-		}
-	}
-
-	// all replicas above the first updated one must also be updated
-	for i := updatedID + 1; i < len(updated); i++ {
-		if !updated[i] {
-			return fmt.Errorf("replica %d updated before %d", updatedID, i)
-		}
-	}
-
-	return nil
-}
-
-func testNamespace(ctx context.Context) string {
-	ns := "e2e-" + testutil.CurrentSpecHash()
-	testutil.EnsureNamespace(ctx, k8sClient, ns)
-	return ns
 }
