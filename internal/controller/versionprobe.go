@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -22,15 +25,36 @@ import (
 )
 
 const (
-	DefaultProbeCPULimit      = "1"
-	DefaultProbeCPURequest    = "250m"
-	DefaultProbeMemoryLimit   = "256Mi"
-	DefaultProbeMemoryRequest = "256Mi"
-	versionProbeBinary        = "/usr/bin/clickhouse"
-	versionProbeQuery         = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
-	versionProbeBackoffLimit  = int32(1)
-	versionProbeDeadline      = int64(90)
+	DefaultProbeCPULimit        = "1"
+	DefaultProbeCPURequest      = "250m"
+	DefaultProbeMemoryLimit     = "256Mi"
+	DefaultProbeMemoryRequest   = "256Mi"
+	versionProbeBinary          = "/usr/bin/clickhouse"
+	versionProbeQuery           = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
+	versionProbeBackoffLimit    = int32(4)
+	versionProbeDeadline        = int64(300)
+	versionProbeRetryAnnotation = "clickhouse.com/version-probe-retry"
+	versionProbeRetryMaxDelay   = 32 * time.Minute
 )
+
+// versionProbeRetryBackoff is a backoff config for failed version probe jobs recreation.
+var versionProbeRetryBackoff = wait.Backoff{
+	Duration: time.Minute,
+	Factor:   2,
+	Cap:      versionProbeRetryMaxDelay,
+}
+
+func versionProbeRetryDelay(attempt int) time.Duration {
+	backoff := versionProbeRetryBackoff
+	backoff.Steps = attempt + 1
+
+	delay := backoff.Duration
+	for range attempt + 1 {
+		delay = backoff.Step()
+	}
+
+	return delay
+}
 
 // VersionProbeConfig holds parameters for the version probe Job.
 type VersionProbeConfig struct {
@@ -58,6 +82,8 @@ type VersionProbeResult struct {
 	Pending bool
 	// Err if version probe failed it contains the error.
 	Err error
+	// RetryAfter is the remaining cooldown before a failed probe Job is recreated.
+	RetryAfter time.Duration
 	// Revision is the image hash of the probe, set on successful completion.
 	Revision string
 }
@@ -133,7 +159,36 @@ func (rm *ResourceManager) VersionProbe(
 			return VersionProbeResult{Pending: true}, nil
 		}
 
-		return VersionProbeResult{Err: errors.New(c.Message)}, nil
+		attempt, _ := strconv.Atoi(existingJob.Annotations[versionProbeRetryAnnotation])
+
+		if cooldown := versionProbeRetryDelay(attempt) - time.Since(c.LastTransitionTime.Time); cooldown > 0 {
+			return VersionProbeResult{Pending: true, RetryAfter: cooldown, Err: errors.New(c.Message)}, nil
+		}
+
+		log.Debug("retry cooldown elapsed, recreating failed version probe job", "attempt", attempt+1)
+
+		if delErr := rm.Delete(
+			ctx,
+			&existingJob,
+			v1.EventActionVersionCheck,
+			client.PropagationPolicy(metav1.DeletePropagationBackground),
+		); delErr != nil {
+			return VersionProbeResult{}, fmt.Errorf("delete failed version probe job: %w", delErr)
+		}
+
+		job.Annotations = controllerutil.MergeMaps(job.Annotations, map[string]string{
+			versionProbeRetryAnnotation: strconv.Itoa(attempt + 1),
+		})
+
+		if err = rm.Create(ctx, &job, v1.EventActionVersionCheck); err != nil {
+			if k8serrors.IsAlreadyExists(err) {
+				return VersionProbeResult{Pending: true}, nil
+			}
+
+			return VersionProbeResult{}, fmt.Errorf("recreate version probe job: %w", err)
+		}
+
+		return VersionProbeResult{Pending: true}, nil
 	}
 
 	if c, ok := getJobCondition(&existingJob, batchv1.JobComplete); !ok || c.Status != corev1.ConditionTrue {

@@ -469,7 +469,7 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 		meta.RemoveStatusCondition(r.Cluster.GetStatus().GetConditions(), v1.ConditionTypeVersionUpgraded)
 	}
 
-	return chctrl.StepContinue(), nil
+	return chctrl.StepRequeue(probeResult.RetryAfter), nil
 }
 
 func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {

@@ -468,8 +468,21 @@ CRD_BASE_REF ?= origin/main
 # that are structural to the k8s API, not operator design choices. These are automatically
 # suppressed by ratcheting for existing fields, but appear when adding new fields that embed core types.
 CRD_COMPAT_EMBEDDED_TYPE_RE := (securityContext|windowsOptions)\.|metadata\.(labels|annotations) |resources\.(limits|requests) |selector\.matchLabels|nodeSelector
+# Budget below etcd's ~1MiB per-object cap so CRD growth fails CI before installs break.
+CRD_MAX_BYTES ?= 800000
+.PHONY: check-crd-size
+check-crd-size: ## Fail if any CRD manifest exceeds $(CRD_MAX_BYTES) bytes.
+	@FAILED=0; \
+	for crd in config/crd/bases/*.yaml; do \
+		SIZE=$$(wc -c < "$$crd"); \
+		if [ "$$SIZE" -gt $(CRD_MAX_BYTES) ]; then \
+			echo "$$crd is $$SIZE bytes, exceeds budget of $(CRD_MAX_BYTES) (etcd object cap is ~1MiB)"; \
+			FAILED=1; \
+		fi; \
+	done; \
+	exit $$FAILED
 .PHONY: check-crd-compat
-check-crd-compat: crd-schema-checker ## Check CRD backward compatibility against $(CRD_BASE_REF).
+check-crd-compat: crd-schema-checker check-crd-size ## Check CRD backward compatibility against $(CRD_BASE_REF).
 	@FAILED=0; \
 	for crd in config/crd/bases/*.yaml; do \
 		echo "Checking $$crd against $(CRD_BASE_REF)..."; \
