@@ -1558,7 +1558,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 	It("should manage the cluster NetworkPolicies", func(ctx context.Context) {
 		var (
-			ns   = testNamespace(ctx)
+			ns   = testutil.EnsureTestNamespace(ctx, env)
 			name = fmt.Sprintf("np-test-%d", rand.Uint32()) //nolint:gosec
 		)
 
@@ -1598,7 +1598,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func(ctx context.Context) {
 				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
 			})
-			WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
+			env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
 		})
 
 		By("creating ClickHouse cluster with NetworkPolicies", func() {
@@ -1606,8 +1606,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func(ctx context.Context) {
 				Expect(k8sClient.Delete(ctx, &cluster)).To(Succeed())
 			})
-			WaitClickHouseUpdatedAndReady(ctx, &cluster, 2*time.Minute)
-			ClickHouseRWChecks(ctx, &cluster, new(0))
+			env.WaitClickHouseUpdatedAndReady(ctx, &cluster, 2*time.Minute)
+			env.ClickHouseRWChecks(ctx, &cluster, new(0))
 		})
 
 		By("operator creates the NetworkPolicy with the expected shape")
