@@ -12,6 +12,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -19,6 +20,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -298,6 +300,54 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
 		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
 		Expect(pdbs.Items).To(BeEmpty())
+	})
+
+	It("should not recreate resources while the cluster is being deleted", func(ctx context.Context) {
+		By("creating a cluster to delete")
+
+		deletingCR := &v1.KeeperCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "deleting",
+				Namespace: "default",
+			},
+			Spec: v1.KeeperClusterSpec{
+				Replicas: new(int32(1)),
+			},
+		}
+		Expect(suite.Client.Create(ctx, deletingCR)).To(Succeed())
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: deletingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ReplicaCreated":  1,
+			"ClusterNotReady": 1,
+		})
+
+		stsKey := types.NamespacedName{
+			Namespace: deletingCR.Namespace,
+			Name:      deletingCR.StatefulSetNameByReplicaID(0),
+		}
+
+		var sts appsv1.StatefulSet
+		Expect(suite.Client.Get(ctx, stsKey, &sts)).To(Succeed())
+
+		By("foreground-deleting the cluster so it stays pending deletion")
+		Expect(suite.Client.Delete(ctx, deletingCR, client.PropagationPolicy(metav1.DeletePropagationForeground))).To(Succeed())
+		Expect(suite.Client.Get(ctx, deletingCR.NamespacedName(), deletingCR)).To(Succeed())
+		Expect(deletingCR.DeletionTimestamp.IsZero()).To(BeFalse())
+
+		By("removing a dependent as foreground garbage collection would")
+		Expect(suite.Client.Delete(ctx, &sts)).To(Succeed())
+
+		By("reconciling the deleting cluster")
+
+		result, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: deletingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeZero())
+
+		By("checking the dependent was not recreated")
+		Expect(k8serrors.IsNotFound(suite.Client.Get(ctx, stsKey, &sts))).To(BeTrue())
 	})
 })
 

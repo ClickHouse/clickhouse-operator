@@ -72,6 +72,12 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	logger := cc.Logger.WithContext(ctx, cluster)
 
+	if !cluster.DeletionTimestamp.IsZero() {
+		logger.Info("keeper cluster is being deleted, skipping reconcile")
+
+		return ctrl.Result{}, nil
+	}
+
 	if err := cc.Webhook.Default(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("fill defaults before reconcile: %w", err)
 	}

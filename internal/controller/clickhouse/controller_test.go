@@ -16,6 +16,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -686,6 +687,60 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(&secret), &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKey(SecretKeyManagementPassword))
 		Expect(secret.Data).To(HaveKey(SecretKeyClusterSecret))
+	})
+
+	It("should not recreate resources while the cluster is being deleted", func(ctx context.Context) {
+		By("creating a cluster to delete")
+
+		deletingCR := &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "deleting",
+				Namespace: "default",
+			},
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:         new(int32(1)),
+				Shards:           new(int32(1)),
+				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+			},
+		}
+		Expect(suite.Client.Create(ctx, deletingCR)).To(Succeed())
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: deletingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.CompleteVersionProbeJob(ctx, suite, deletingCR.Namespace, deletingCR.SpecificName(), "26.1.1.1")
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: deletingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+
+		stsKey := types.NamespacedName{
+			Namespace: deletingCR.Namespace,
+			Name:      deletingCR.StatefulSetNameByReplicaID(v1.ClickHouseReplicaID{ShardID: 0, Index: 0}),
+		}
+
+		var sts appsv1.StatefulSet
+		Expect(suite.Client.Get(ctx, stsKey, &sts)).To(Succeed())
+
+		By("foreground-deleting the cluster so it stays pending deletion")
+		Expect(suite.Client.Delete(ctx, deletingCR, client.PropagationPolicy(metav1.DeletePropagationForeground))).To(Succeed())
+		Expect(suite.Client.Get(ctx, deletingCR.NamespacedName(), deletingCR)).To(Succeed())
+		Expect(deletingCR.DeletionTimestamp.IsZero()).To(BeFalse())
+
+		By("removing a dependent as foreground garbage collection would")
+		Expect(suite.Client.Delete(ctx, &sts)).To(Succeed())
+
+		By("reconciling the deleting cluster")
+
+		result, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: deletingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeZero())
+
+		By("checking the dependent was not recreated")
+		Expect(k8serrors.IsNotFound(suite.Client.Get(ctx, stsKey, &sts))).To(BeTrue())
 	})
 })
 
