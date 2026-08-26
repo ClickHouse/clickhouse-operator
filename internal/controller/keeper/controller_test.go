@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -128,6 +130,59 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		})
 	})
 
+	It("should not write anything on repeated reconciles of a settled cluster", func(ctx context.Context) {
+		listOpts := controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
+
+		collect := func() map[string]string {
+			rvs := map[string]string{}
+
+			var cluster v1.KeeperCluster
+			Expect(suite.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
+			rvs["KeeperCluster/"+cluster.Name] = cluster.ResourceVersion
+
+			lists := []client.ObjectList{
+				&corev1.PodList{},
+				&corev1.PersistentVolumeClaimList{},
+				&corev1.ServiceList{},
+				&corev1.ConfigMapList{},
+				&appsv1.StatefulSetList{},
+				&policyv1.PodDisruptionBudgetList{},
+				&networkingv1.NetworkPolicyList{},
+			}
+			for _, list := range lists {
+				Expect(suite.Client.List(ctx, list, listOpts)).To(Succeed())
+				Expect(meta.EachListItem(list, func(obj runtime.Object) error {
+					o := obj.(client.Object) //nolint:forcetypeassert
+					rvs[fmt.Sprintf("%T/%s", o, o.GetName())] = o.GetResourceVersion()
+
+					return nil
+				})).To(Succeed())
+			}
+
+			return rvs
+		}
+
+		By("settling the cluster with one extra reconcile")
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"HorizontalScaleBlocked": 1,
+		})
+
+		before := collect()
+
+		By("reconciling the unchanged cluster repeatedly")
+
+		for range 5 {
+			_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		Expect(collect()).To(Equal(before), "repeated reconciles must not update any resource")
+	})
+
 	It("should propagate meta attributes for every resource", func() {
 		expectedOwnerRef := metav1.OwnerReference{
 			Kind:               "KeeperCluster",
@@ -210,10 +265,6 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(updatedCR.Status.CurrentRevision))
 		Expect(updatedCR.Status.ConfigurationRevision).NotTo(Equal(cr.Status.ConfigurationRevision))
 		Expect(updatedCR.Status.StatefulSetRevision).NotTo(Equal(cr.Status.StatefulSetRevision))
-
-		testutil.AssertEvents(recorder.Events, map[string]int{
-			"HorizontalScaleBlocked": 1,
-		})
 	})
 
 	It("should add extra config in configmap", func(ctx context.Context) {

@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -63,6 +65,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 				Replicas:         new(int32(2)),
 				Shards:           new(int32(2)),
 				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+				NetworkPolicy:    &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
 				Labels: map[string]string{
 					"test-label": "test-val",
 				},
@@ -91,7 +94,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Dialer: func(context.Context, string) (net.Conn, error) {
 				return nil, errors.New("disabled")
 			},
-			EnablePDB: true,
+			EnablePDB:           true,
+			EnableNetworkPolicy: true,
 		}
 
 		keeper := &v1.KeeperCluster{
@@ -175,6 +179,57 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
 		Expect(statefulsets.Items).To(HaveLen(4))
+	})
+
+	It("should not write anything on repeated reconciles of a settled cluster", func(ctx context.Context) {
+		collect := func() map[string]string {
+			rvs := map[string]string{}
+
+			var cluster v1.ClickHouseCluster
+			Expect(suite.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
+			rvs["ClickHouseCluster/"+cluster.Name] = cluster.ResourceVersion
+
+			lists := []client.ObjectList{
+				&corev1.PodList{},
+				&corev1.PersistentVolumeClaimList{},
+				&corev1.ServiceList{},
+				&corev1.SecretList{},
+				&corev1.ConfigMapList{},
+				&appsv1.StatefulSetList{},
+				&policyv1.PodDisruptionBudgetList{},
+				&networkingv1.NetworkPolicyList{},
+				&batchv1.JobList{},
+			}
+			for _, list := range lists {
+				Expect(suite.Client.List(ctx, list, listOpts)).To(Succeed())
+				Expect(meta.EachListItem(list, func(obj k8sruntime.Object) error {
+					o := obj.(client.Object) //nolint:forcetypeassert
+					rvs[fmt.Sprintf("%T/%s", o, o.GetName())] = o.GetResourceVersion()
+
+					return nil
+				})).To(Succeed())
+			}
+
+			return rvs
+		}
+
+		By("settling the cluster with one extra reconcile")
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		before := collect()
+		Expect(before).To(HaveKey(ContainSubstring("NetworkPolicy")),
+			"managed NetworkPolicy must exist for the snapshot to cover it")
+
+		By("reconciling the unchanged cluster repeatedly")
+
+		for range 5 {
+			_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		Expect(collect()).To(Equal(before), "repeated reconciles must not update any resource")
 	})
 
 	It("should reconcile a cluster that references Keeper in another namespace", func(ctx context.Context) {
