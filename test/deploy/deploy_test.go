@@ -12,7 +12,6 @@ import (
 	"text/template"
 	"time"
 
-	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -21,9 +20,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -99,28 +95,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "config")
+	env = testutil.SetupEnv(testutil.SetupOptions{CertManagerScheme: true})
+	k8sClient = env.Client
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	Expect(err).NotTo(HaveOccurred())
-
-	dc, err := discovery.NewDiscoveryClientForConfig(config)
+	dc, err := discovery.NewDiscoveryClientForConfig(env.Config)
 	Expect(err).NotTo(HaveOccurred())
 	serverVersion, err := dc.ServerVersion()
 	Expect(err).NotTo(HaveOccurred())
 	By("running on Kubernetes " + serverVersion.GitVersion)
-
-	Expect(v1.AddToScheme(scheme.Scheme)).To(Succeed())
-	Expect(certv1.AddToScheme(scheme.Scheme)).To(Succeed())
-
-	// +kubebuilder:scaffold:scheme
-
-	k8sClient, err = client.New(config, client.Options{
-		Scheme: scheme.Scheme,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	env = &testutil.Env{Client: k8sClient, Config: config, Dialer: testutil.NewPortForwardDialer(config)}
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {
@@ -385,23 +367,17 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 	It("should reconcile cluster after upgrade without data loss", func(ctx context.Context) {
 		dialer := env.Dialer
 
-		keeperCR := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
-			Spec: v1.KeeperClusterSpec{
-				Replicas:            new(int32(3)),
-				DataVolumeClaimSpec: storage,
-				ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: version}},
-			},
-		}
-		chCR := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: chName},
-			Spec: v1.ClickHouseClusterSpec{
-				Replicas:            new(int32(2)),
-				DataVolumeClaimSpec: storage,
-				KeeperClusterRef:    v1.KeeperClusterReference{Name: keeperName},
-				ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: version}},
-			},
-		}
+		keeperCR := testutil.NewKeeperCluster(namespace, keeperName).
+			WithReplicas(3).
+			WithStorage(*storage).
+			WithTag(version).
+			Cluster()
+		chCR := testutil.NewClickHouseCluster(namespace, chName).
+			WithReplicas(2).
+			WithStorage(*storage).
+			WithKeeper(keeperName).
+			WithTag(version).
+			Cluster()
 
 		By("deploying keeper and clickhouse on the released operator")
 
@@ -534,21 +510,10 @@ func testHelmCluster(namespace string) {
 
 func testDeployment(namespace string) {
 	body := func(ctx context.Context, version string) {
-		keeper := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "keeper-" + version,
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(1)),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: version,
-					},
-				},
-				NetworkPolicy: &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
-			},
-		}
+		keeper := testutil.NewKeeperCluster(namespace, "keeper-"+version).
+			WithTag(version).
+			WithNetworkPolicy(v1.NetworkPolicyEnabled).
+			Cluster()
 		Expect(k8sClient.Create(ctx, &keeper)).To(Succeed())
 		DeferCleanup(func(ctx context.Context) {
 			_ = k8sClient.Delete(ctx, &keeper)
@@ -557,24 +522,11 @@ func testDeployment(namespace string) {
 		By("Waiting for KeeperCluster to be ready")
 		env.WaitClusterReady(ctx, &keeper, 5*time.Minute)
 
-		ch := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: namespace,
-				Name:      "ch-" + version,
-			},
-			Spec: v1.ClickHouseClusterSpec{
-				Replicas: new(int32(1)),
-				KeeperClusterRef: v1.KeeperClusterReference{
-					Name: keeper.Name,
-				},
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: version,
-					},
-				},
-				NetworkPolicy: &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
-			},
-		}
+		ch := testutil.NewClickHouseCluster(namespace, "ch-"+version).
+			WithKeeper(keeper.Name).
+			WithTag(version).
+			WithNetworkPolicy(v1.NetworkPolicyEnabled).
+			Cluster()
 		Expect(k8sClient.Create(ctx, &ch)).To(Succeed())
 		DeferCleanup(func(ctx context.Context) {
 			_ = k8sClient.Delete(ctx, &ch)

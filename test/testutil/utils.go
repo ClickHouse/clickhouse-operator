@@ -156,6 +156,8 @@ func GetProjectDir() (string, error) {
 
 // SetupCA sets up a self-signed CA issuer and a CA certificate in the given namespace.
 func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suffix uint32) {
+	GinkgoHelper()
+
 	ssIssuer := certv1.ClusterIssuer{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
@@ -261,6 +263,8 @@ func TestNamespace() string {
 
 // EnsureNamespace ensures the test namespace is created and active.
 func EnsureNamespace(ctx context.Context, env *Env, name string) {
+	GinkgoHelper()
+
 	cli := env.Client
 
 	DeferCleanup(func(ctx context.Context) {
@@ -280,11 +284,11 @@ func EnsureNamespace(ctx context.Context, env *Env, name string) {
 	err := cli.Get(ctx, types.NamespacedName{Name: name}, &ns)
 
 	if k8serrors.IsNotFound(err) {
-		ExpectWithOffset(1, cli.Create(ctx, &ns)).To(Succeed())
+		Expect(cli.Create(ctx, &ns)).To(Succeed())
 		return
 	}
 
-	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	if ns.Status.Phase != corev1.NamespaceTerminating {
 		return
@@ -295,12 +299,15 @@ func EnsureNamespace(ctx context.Context, env *Env, name string) {
 		return k8serrors.IsNotFound(err)
 	}, "5s", "100ms").Should(BeTrue())
 
-	ExpectWithOffset(1, cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})).To(Succeed())
+	Expect(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})).To(Succeed())
 }
 
 // EnsureTestNamespace ensures that unique per test namespace is created and returns its name.
 func EnsureTestNamespace(ctx context.Context, env *Env) string {
+	GinkgoHelper()
+
 	ns := TestNamespace()
 	EnsureNamespace(ctx, env, ns)
+
 	return ns
 }

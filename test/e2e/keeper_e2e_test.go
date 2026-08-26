@@ -24,21 +24,10 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 	DescribeTable("standalone keeper updates", func(ctx context.Context, specUpdate v1.KeeperClusterSpec) {
 		ns := testutil.EnsureTestNamespace(ctx, env)
 
-		cr := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("test-%d", rand.Uint32()), //nolint:gosec
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(1)),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: BaseVersion,
-					},
-				},
-				DataVolumeClaimSpec: &defaultStorage,
-			},
-		}
+		name := fmt.Sprintf("test-%d", rand.Uint32()) //nolint:gosec
+		cr := testutil.NewKeeperCluster(ns, name).
+			WithStorage(defaultStorage).
+			Cluster()
 		checks := 0
 
 		By("creating cluster CR")
@@ -57,7 +46,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
 		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
-		ExpectWithOffset(1, k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 		env.KeeperRWChecks(ctx, &cr, &checks)
 	},
@@ -78,21 +67,11 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 	DescribeTable("keeper cluster updates", func(ctx context.Context, baseReplicas int, specUpdate v1.KeeperClusterSpec) {
 		ns := testutil.EnsureTestNamespace(ctx, env)
 
-		cr := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(baseReplicas)),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: BaseVersion,
-					},
-				},
-				DataVolumeClaimSpec: &defaultStorage,
-			},
-		}
+		name := fmt.Sprintf("keeper-%d", rand.Uint32()) //nolint:gosec
+		cr := testutil.NewKeeperCluster(ns, name).
+			WithReplicas(int32(baseReplicas)).
+			WithStorage(defaultStorage).
+			Cluster()
 		checks := 0
 
 		By("creating cluster CR")
@@ -135,30 +114,20 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			suffix := rand.Uint32() //nolint:gosec
 			certName := fmt.Sprintf("keeper-cert-%d", suffix)
 
-			cr := v1.KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      fmt.Sprintf("keeper-%d", rand.Uint32()), //nolint:gosec
-				},
-				Spec: v1.KeeperClusterSpec{
-					Replicas: new(int32(3)),
-					ContainerTemplate: v1.ContainerTemplateSpec{
-						Image: v1.ContainerImage{
-							Tag: BaseVersion,
+			name := fmt.Sprintf("keeper-%d", rand.Uint32()) //nolint:gosec
+			cr := testutil.NewKeeperCluster(ns, name).
+				WithReplicas(3).
+				WithStorage(defaultStorage).
+				WithSettings(v1.KeeperSettings{
+					TLS: v1.ClusterTLSSpec{
+						Enabled:  true,
+						Required: true,
+						ServerCertSecret: &corev1.LocalObjectReference{
+							Name: certName,
 						},
 					},
-					DataVolumeClaimSpec: &defaultStorage,
-					Settings: v1.KeeperSettings{
-						TLS: v1.ClusterTLSSpec{
-							Enabled:  true,
-							Required: true,
-							ServerCertSecret: &corev1.LocalObjectReference{
-								Name: certName,
-							},
-						},
-					},
-				},
-			}
+				}).
+				Cluster()
 
 			issuer := &certv1.Issuer{
 				ObjectMeta: metav1.ObjectMeta{
@@ -211,33 +180,24 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 	It("should work with custom data folder mount", func(ctx context.Context) {
 		ns := testutil.EnsureTestNamespace(ctx, env)
 
-		cr := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("custom-disk-%d", rand.Uint32()), //nolint:gosec
-			},
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(1)),
-				ContainerTemplate: v1.ContainerTemplateSpec{
-					Image: v1.ContainerImage{
-						Tag: BaseVersion,
+		// Diskless configuration: no storage, data on an emptyDir mount.
+		name := fmt.Sprintf("custom-disk-%d", rand.Uint32()) //nolint:gosec
+		cr := testutil.NewKeeperCluster(ns, name).
+			WithContainerTemplate(v1.ContainerTemplateSpec{
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      "custom-data",
+					MountPath: "/var/lib/clickhouse",
+				}},
+			}).
+			WithPodTemplate(v1.PodTemplateSpec{
+				Volumes: []corev1.Volume{{
+					Name: "custom-data",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
 					},
-					VolumeMounts: []corev1.VolumeMount{{
-						Name:      "custom-data",
-						MountPath: "/var/lib/clickhouse",
-					}},
-				},
-				DataVolumeClaimSpec: nil, // Diskless configuration
-				PodTemplate: v1.PodTemplateSpec{
-					Volumes: []corev1.Volume{{
-						Name: "custom-data",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					}},
-				},
-			},
-		}
+				}},
+			}).
+			Cluster()
 
 		By("creating diskless keeper cluster CR")
 		Expect(k8sClient.Create(ctx, &cr)).To(Succeed())

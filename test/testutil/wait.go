@@ -30,8 +30,10 @@ func (e *Env) WaitClickHouseUpdatedAndReady(
 	timeout time.Duration,
 	validators ...ClickHouseValidator,
 ) {
+	GinkgoHelper()
+
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
-	EventuallyWithOffset(1, func(g Gomega) {
+	Eventually(func(g Gomega) {
 		var cluster v1.ClickHouseCluster
 		g.Expect(e.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
 		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
@@ -71,8 +73,10 @@ func (e *Env) WaitClickHouseUpdatedAndReady(
 func (e *Env) WaitKeeperUpdatedAndReady(
 	ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool,
 ) {
+	GinkgoHelper()
+
 	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
-	EventuallyWithOffset(1, func(g Gomega) {
+	Eventually(func(g Gomega) {
 		var cluster v1.KeeperCluster
 		g.Expect(e.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
 		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
@@ -102,7 +106,7 @@ func (e *Env) WaitKeeperUpdatedAndReady(
 	e.WaitReplicaCount(ctx, cr.Namespace, cr.SpecificName(), int(cr.Replicas()))
 }
 
-// WaitClusterReady waits for the Ready condition only, reporting all conditions on failure.
+// WaitClusterReady waits for the Ready and Healthy conditions, reporting all conditions on failure.
 func (e *Env) WaitClusterReady(ctx context.Context, cluster client.Object, timeout time.Duration) {
 	GinkgoHelper()
 
@@ -118,8 +122,10 @@ func (e *Env) WaitClusterReady(ctx context.Context, cluster client.Object, timeo
 			conditions = cr.Status.Conditions
 		}
 
-		g.Expect(meta.IsStatusConditionTrue(conditions, v1.ConditionTypeReady)).
-			To(BeTrue(), "%T %s not ready: %s", cluster, cluster.GetName(), formatConditions(conditions))
+		for _, conditionType := range []v1.ConditionType{v1.ConditionTypeReady, v1.ConditionTypeHealthy} {
+			g.Expect(meta.IsStatusConditionTrue(conditions, conditionType)).
+				To(BeTrue(), "%T %s %s not true: %s", cluster, cluster.GetName(), conditionType, formatConditions(conditions))
+		}
 	}, timeout, "5s").Should(Succeed())
 }
 
@@ -145,6 +151,8 @@ func (e *Env) WaitDeploymentAvailable(ctx context.Context, namespace, name strin
 
 // WaitReplicaCount waits until the pod count for the app label matches replicas.
 func (e *Env) WaitReplicaCount(ctx context.Context, namespace, app string, replicas int) {
+	GinkgoHelper()
+
 	Eventually(func(g Gomega) int {
 		var pods corev1.PodList
 		g.Expect(e.Client.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
@@ -170,6 +178,8 @@ func CheckPodReady(pod *corev1.Pod) bool {
 // 1. Updated StatefulSets form a contiguous group from the highest replica ID
 // 2. At most one StatefulSet has zero ready replicas (the one currently being updated).
 func (e *Env) CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replicaLabel, stsRev string) error {
+	GinkgoHelper()
+
 	var stsList appsv1.StatefulSetList
 	Expect(e.Client.List(ctx, &stsList, selector)).To(Succeed())
 
