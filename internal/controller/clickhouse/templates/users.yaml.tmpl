@@ -10,7 +10,8 @@ users:
     no_password:
     {{ end}}
     grants:
-      - query: "GRANT ALL ON *.* WITH GRANT OPTION"
+      query:
+        - "GRANT ALL ON *.* WITH GRANT OPTION"
   {{ .OperatorUserName }}:
     profile: {{ .OperatorProfileName }}
     quota: default
@@ -18,7 +19,8 @@ users:
       '@hide_in_preprocessed': true
       '#text': {{ .OperatorUserPasswordHash }}
     grants: {{/* TODO restrict */}}
-      - query: "GRANT ALL ON *.*"
+      query:
+        - "GRANT ALL ON *.*"
 profiles:
   {{ .DefaultProfileName }}:
     log_queries: 1

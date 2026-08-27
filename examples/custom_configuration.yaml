@@ -29,4 +29,5 @@ spec:
           password_sha256_hex: "8e67dd1355714239acde098b6f1cf906bde45be6db826dc2caca7536e07ae844"
           profile: default
           grants:
-            - query: "GRANT SELECT ON *.*"
+            query:
+              - "GRANT SELECT ON *.*"

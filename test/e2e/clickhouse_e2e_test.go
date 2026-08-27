@@ -749,7 +749,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Data: map[string]string{
 					"user.yaml": fmt.Sprintf(`{"users": {"%s": {
 					"password_sha256_hex": "%s",
-					"grants": [{"query": "GRANT ALL ON *.*"}]
+					"grants": {"query": ["GRANT ALL ON *.*"]}
 				}}}`, auth.Username, controllerutil.Sha256Hash([]byte(auth.Password))),
 					"config.yaml": `{"max_table_size_to_drop": 7}`,
 				},
@@ -1199,7 +1199,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 
 				cr.Spec.Settings.ExtraUsersConfig.Raw = []byte(fmt.Sprintf(`{"users": {"e2e_test_user": {
-					"password_sha256_hex": "%s", "grants": [{"query": "GRANT ALL ON *.* WITH GRANT OPTION"}]}}}`,
+					"password_sha256_hex": "%s",
+					"grants": {"query": ["GRANT ALL ON *.* WITH GRANT OPTION"]}}}}`,
 					controllerutil.Sha256Hash([]byte(password)),
 				))
 				Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
