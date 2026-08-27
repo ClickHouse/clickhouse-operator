@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -97,6 +98,10 @@ func run() error {
 	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
+
+	if err := validateVersionUpdateInterval(versionUpdateInterval, disableVersionUpdateChecks); err != nil {
+		return err
+	}
 
 	logger := zap.NewRaw(zap.UseFlagOptions(&opts))
 	ctrl.SetLogger(zapr.NewLogger(logger))
@@ -243,4 +248,12 @@ func run() error {
 	}
 
 	return nil
+}
+
+func validateVersionUpdateInterval(interval time.Duration, disableChecks bool) error {
+	if disableChecks || interval > 0 {
+		return nil
+	}
+
+	return errors.New("--version-update-interval must be greater than 0 when version update checks are enabled")
 }
