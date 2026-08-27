@@ -99,12 +99,12 @@ func run() error {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
+	logger := zap.NewRaw(zap.UseFlagOptions(&opts))
+	ctrl.SetLogger(zapr.NewLogger(logger))
+
 	if err := validateVersionUpdateInterval(versionUpdateInterval, disableVersionUpdateChecks); err != nil {
 		return err
 	}
-
-	logger := zap.NewRaw(zap.UseFlagOptions(&opts))
-	ctrl.SetLogger(zapr.NewLogger(logger))
 
 	disableHTTP2 := func(c *tls.Config) {
 		setupLog.Info("disabling http/2")

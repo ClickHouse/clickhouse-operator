@@ -26,7 +26,7 @@ var _ = DescribeTable(
 	},
 	Entry("should reject zero interval if checks are enabled", time.Duration(0), false, true),
 	Entry("should reject negative interval if checks are enabled", -time.Second, false, true),
-	Entry("should accept positive interval if checks are enabled", time.Hour, false, false),
+	Entry("should accept the smallest positive interval if checks are enabled", time.Nanosecond, false, false),
 	Entry("should allow zero interval if checks are disabled", time.Duration(0), true, false),
 	Entry("should allow negative interval if checks are disabled", -time.Second, true, false),
 )
