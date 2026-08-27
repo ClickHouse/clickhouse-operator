@@ -530,15 +530,11 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return id, replicaState{
 			ReloadError:  reloadErr,
 			replicaProbe: probe,
-			ReplicaState: chctrl.ReplicaState{
-				ReplicaResources: chctrl.ReplicaResources{
-					STS:  &sts,
-					CFG:  configMaps[id],
-					PVCs: pvcs,
-				},
-				Pod:          pod,
-				StartupError: startupErr,
-			},
+			STS:          &sts,
+			CFG:          configMaps[id],
+			PVCs:         pvcs,
+			Pod:          pod,
+			StartupError: startupErr,
 		}, nil
 	})
 
@@ -1098,9 +1094,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 
 		replicasToRemove[id] = resourcesWithService{
-			ReplicaResources: chctrl.ReplicaResources{
-				CFG: configMap,
-			},
+			CFG: configMap,
 		}
 	}
 

@@ -49,10 +49,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		configs      corev1.ConfigMapList
 		statefulsets appsv1.StatefulSetList
 		cr           = &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "standalone",
-				Namespace: "default",
-			},
+			Name:      "standalone",
+			Namespace: "default",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 				Labels: map[string]string{
@@ -359,10 +357,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		By("creating a cluster to delete")
 
 		deletingCR := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "deleting",
-				Namespace: "default",
-			},
+			Name:      "deleting",
+			Namespace: "default",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 			},
@@ -407,27 +403,27 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 var _ = Describe("KeeperClustersForClickHouse", func() {
 	It("should map a ClickHouse cluster to its referenced keeper", func(ctx context.Context) {
 		cluster := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ch-ns"},
+			Name: "test", Namespace: "ch-ns",
 			Spec: v1.ClickHouseClusterSpec{
 				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum", Namespace: "keeper-ns"},
 			},
 		}
 
 		Expect(keeperClustersForClickHouse(ctx, cluster)).To(Equal([]reconcile.Request{
-			{NamespacedName: types.NamespacedName{Namespace: "keeper-ns", Name: "quorum"}},
+			{Namespace: "keeper-ns", Name: "quorum"},
 		}))
 	})
 
 	It("should default the keeper namespace to the cluster namespace", func(ctx context.Context) {
 		cluster := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "ch-ns"},
+			Name: "test", Namespace: "ch-ns",
 			Spec: v1.ClickHouseClusterSpec{
 				KeeperClusterRef: v1.KeeperClusterReference{Name: "quorum"},
 			},
 		}
 
 		Expect(keeperClustersForClickHouse(ctx, cluster)).To(Equal([]reconcile.Request{
-			{NamespacedName: types.NamespacedName{Namespace: "ch-ns", Name: "quorum"}},
+			{Namespace: "ch-ns", Name: "quorum"},
 		}))
 	})
 

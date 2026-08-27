@@ -18,7 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -159,10 +158,8 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 	GinkgoHelper()
 
 	ssIssuer := certv1.ClusterIssuer{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("issuer-%d", suffix),
-		},
+		Namespace: namespace,
+		Name:      fmt.Sprintf("issuer-%d", suffix),
 		Spec: certv1.IssuerSpec{
 			IssuerConfig: certv1.IssuerConfig{
 				SelfSigned: &certv1.SelfSignedIssuer{},
@@ -179,10 +176,8 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 	})
 
 	caCert := certv1.Certificate{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("ca-cert-%d", suffix),
-		},
+		Namespace: namespace,
+		Name:      fmt.Sprintf("ca-cert-%d", suffix),
 		Spec: certv1.CertificateSpec{
 			IssuerRef: cmmeta.IssuerReference{
 				Kind: "ClusterIssuer",
@@ -203,10 +198,8 @@ func SetupCA(ctx context.Context, k8sClient client.Client, namespace string, suf
 	})
 
 	issuer := certv1.Issuer{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: namespace,
-			Name:      fmt.Sprintf("issuer-%d", suffix),
-		},
+		Namespace: namespace,
+		Name:      fmt.Sprintf("issuer-%d", suffix),
 		Spec: certv1.IssuerSpec{
 			IssuerConfig: certv1.IssuerConfig{
 				CA: &certv1.CAIssuer{
@@ -268,7 +261,7 @@ func EnsureNamespace(ctx context.Context, env *Env, name string) {
 	cli := env.Client
 
 	DeferCleanup(func(ctx context.Context) {
-		ns := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		ns := corev1.Namespace{Name: name}
 
 		err := cli.Get(ctx, types.NamespacedName{Name: name}, &ns)
 		if err != nil {
@@ -280,7 +273,7 @@ func EnsureNamespace(ctx context.Context, env *Env, name string) {
 		}
 	})
 
-	ns := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	ns := corev1.Namespace{Name: name}
 	err := cli.Get(ctx, types.NamespacedName{Name: name}, &ns)
 
 	if k8serrors.IsNotFound(err) {
@@ -299,7 +292,7 @@ func EnsureNamespace(ctx context.Context, env *Env, name string) {
 		return k8serrors.IsNotFound(err)
 	}, "5s", "100ms").Should(BeTrue())
 
-	Expect(cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})).To(Succeed())
+	Expect(cli.Create(ctx, &corev1.Namespace{Name: name})).To(Succeed())
 }
 
 // EnsureTestNamespace ensures that unique per test namespace is created and returns its name.

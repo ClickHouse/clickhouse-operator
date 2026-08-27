@@ -10,7 +10,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/randfill"
@@ -32,9 +31,7 @@ var _ = Describe("ServerRevision", func() {
 		var err error
 
 		baseCR = &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 			},
@@ -81,7 +78,7 @@ var _ = Describe("ServerRevision", func() {
 var _ = Describe("ExtraConfig", func() {
 	It("should add extra config as a separate ConfigMap key", func() {
 		cr := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Name: "test",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 				Settings: v1.KeeperSettings{
@@ -98,8 +95,8 @@ var _ = Describe("ExtraConfig", func() {
 
 	It("should not include extra config key when empty", func() {
 		cr := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test"},
-			Spec:       v1.KeeperClusterSpec{Replicas: new(int32(1))},
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{Replicas: new(int32(1))},
 		}
 		data, err := generateConfigForSingleReplica(cr, 1)
 		Expect(err).NotTo(HaveOccurred())
@@ -113,10 +110,8 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 
 	BeforeEach(func() {
 		cr = &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test",
-				Namespace: "default",
-			},
+			Name:      "test",
+			Namespace: "default",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(3)),
 			},
@@ -211,9 +206,7 @@ var _ = Describe("templatePodDisruptionBudget", func() {
 var _ = Describe("getStatefulSetRevision", func() {
 	It("should not depend on data disk spec", func() {
 		cr := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
@@ -274,15 +267,13 @@ func FuzzClusterSpec(f *testing.F) {
 
 func newKeeperCluster(f *randfill.Filler) *v1.KeeperCluster {
 	cr := &v1.KeeperCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-			Labels: map[string]string{
-				"app": "clickhouse-operator",
-			},
-			Annotations: map[string]string{
-				"annotation1": "value1",
-			},
+		Name:      "test",
+		Namespace: "default",
+		Labels: map[string]string{
+			"app": "clickhouse-operator",
+		},
+		Annotations: map[string]string{
+			"annotation1": "value1",
 		},
 	}
 	f.Fill(&cr.Spec)
@@ -296,8 +287,8 @@ var _ = Describe("TemplateNetworkPolicy", func() {
 		spec.NetworkPolicy = &v1.KeeperNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled}
 
 		return &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
-			Spec:       spec,
+			Name: "test", Namespace: "test-ns",
+			Spec: spec,
 		}
 	}
 
@@ -333,8 +324,8 @@ var _ = Describe("TemplateNetworkPolicy", func() {
 
 	It("should admit referencing ClickHouse clusters to the client ports", func() {
 		clickhouseClusters := []v1.ClickHouseCluster{
-			{ObjectMeta: metav1.ObjectMeta{Name: "alpha", Namespace: "ns-a"}},
-			{ObjectMeta: metav1.ObjectMeta{Name: "beta", Namespace: "ns-b"}},
+			{Name: "alpha", Namespace: "ns-a"},
+			{Name: "beta", Namespace: "ns-b"},
 		}
 
 		np := templateNetworkPolicy(newCluster(v1.KeeperClusterSpec{}), clickhouseClusters)

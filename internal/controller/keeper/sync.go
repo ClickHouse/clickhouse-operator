@@ -260,15 +260,11 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return id, replicaState{
 			Status: status,
 
-			ReplicaState: chctrl.ReplicaState{
-				ReplicaResources: chctrl.ReplicaResources{
-					STS:  &sts,
-					CFG:  configMaps[id],
-					PVCs: pvcs,
-				},
-				Pod:          pod,
-				StartupError: startupErr,
-			},
+			STS:          &sts,
+			CFG:          configMaps[id],
+			PVCs:         pvcs,
+			Pod:          pod,
+			StartupError: startupErr,
 		}, nil
 	})
 	for id, res := range execResults {

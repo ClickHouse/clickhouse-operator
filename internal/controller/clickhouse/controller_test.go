@@ -59,10 +59,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		statefulsets appsv1.StatefulSetList
 		jobs         batchv1.JobList
 		cr           = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "standalone",
-				Namespace: "default",
-			},
+			Name:      "standalone",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(2)),
 				Shards:           new(int32(2)),
@@ -101,10 +99,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		}
 
 		keeper := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      keeperName,
-				Namespace: "default",
-			},
+			Name:      keeperName,
+			Namespace: "default",
 		}
 		Expect(suite.Client.Create(ctx, keeper)).To(Succeed())
 		Expect(suite.Client.Get(ctx, keeper.NamespacedName(), keeper)).To(Succeed())
@@ -236,17 +232,13 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 	It("should reconcile a cluster that references Keeper in another namespace", func(ctx context.Context) {
 		keeperNamespace := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "keeper-remote",
-			},
+			Name: "keeper-remote",
 		}
 		Expect(suite.Client.Create(ctx, keeperNamespace)).To(Succeed())
 
 		keeper := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "remote-keeper",
-				Namespace: keeperNamespace.Name,
-			},
+			Name:      "remote-keeper",
+			Namespace: keeperNamespace.Name,
 		}
 		Expect(suite.Client.Create(ctx, keeper)).To(Succeed())
 		Expect(suite.Client.Get(ctx, keeper.NamespacedName(), keeper)).To(Succeed())
@@ -258,10 +250,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Status().Update(ctx, keeper)).To(Succeed())
 
 		crossNamespaceCluster := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "cross-namespace",
-				Namespace: "default",
-			},
+			Name:      "cross-namespace",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: new(int32(1)),
 				Shards:   new(int32(1)),
@@ -570,10 +560,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		By("creating a new cluster with DataVolumeClaimSpec")
 
 		pvcCR := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pvc-test",
-				Namespace: "default",
-			},
+			Name:      "pvc-test",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(2)),
 				Shards:           new(int32(1)),
@@ -666,20 +654,16 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		By("creating a new cluster with ExternalSecret")
 
 		secret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "default",
-				Name:      "eso-managed-secret",
-			},
+			Namespace: "default",
+			Name:      "eso-managed-secret",
 			Data: map[string][]byte{
 				SecretKeyInterserverPassword: []byte("interserver-pass"),
 			},
 		}
 
 		esoCR := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "ext-secret",
-				Namespace: "default",
-			},
+			Name:      "ext-secret",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
 				ExternalSecret: &v1.ExternalSecret{
@@ -750,10 +734,8 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		By("creating a cluster to delete")
 
 		deletingCR := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "deleting",
-				Namespace: "default",
-			},
+			Name:      "deleting",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(1)),
 				Shards:           new(int32(1)),
@@ -808,10 +790,8 @@ var _ = Describe("keeper watch mapping", func() {
 		Expect(v1.AddToScheme(testScheme)).To(Succeed())
 
 		referencedCluster := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "cross-namespace-cluster",
-				Namespace: "clickhouse-ns",
-			},
+			Name:      "cross-namespace-cluster",
+			Namespace: "clickhouse-ns",
 			Spec: v1.ClickHouseClusterSpec{
 				KeeperClusterRef: v1.KeeperClusterReference{
 					Name:      "keeper",
@@ -820,10 +800,8 @@ var _ = Describe("keeper watch mapping", func() {
 			},
 		}
 		sameNameDifferentNamespace := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "same-name-different-namespace",
-				Namespace: "other-ns",
-			},
+			Name:      "same-name-different-namespace",
+			Namespace: "other-ns",
 			Spec: v1.ClickHouseClusterSpec{
 				KeeperClusterRef: v1.KeeperClusterReference{
 					Name: "keeper",
@@ -847,15 +825,11 @@ var _ = Describe("keeper watch mapping", func() {
 		}
 
 		Expect(controller.clickHouseClustersForKeeper(ctx, &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "keeper",
-				Namespace: "keeper-ns",
-			},
+			Name:      "keeper",
+			Namespace: "keeper-ns",
 		})).To(ConsistOf(reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      referencedCluster.Name,
-				Namespace: referencedCluster.Namespace,
-			},
+			Name:      referencedCluster.Name,
+			Namespace: referencedCluster.Namespace,
 		}))
 	})
 })
@@ -863,19 +837,15 @@ var _ = Describe("keeper watch mapping", func() {
 var _ = Describe("pod watch mapping", func() {
 	It("should enqueue the ClickHouse cluster that owns a labeled Pod", func(ctx context.Context) {
 		cluster := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "example",
-				Namespace: "clickhouse-ns",
-			},
+			Name:      "example",
+			Namespace: "clickhouse-ns",
 		}
 
 		requests := (&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: cluster.Namespace,
-				Labels: map[string]string{
-					controllerutil.LabelClusterKey: cluster.Name,
-					controllerutil.LabelRoleKey:    controllerutil.LabelClickHouseValue,
-				},
+			Namespace: cluster.Namespace,
+			Labels: map[string]string{
+				controllerutil.LabelClusterKey: cluster.Name,
+				controllerutil.LabelRoleKey:    controllerutil.LabelClickHouseValue,
 			},
 		})
 
@@ -884,16 +854,16 @@ var _ = Describe("pod watch mapping", func() {
 
 	It("should ignore Pods without the ClickHouse role or cluster label", func(ctx context.Context) {
 		Expect((&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+			Labels: map[string]string{
 				controllerutil.LabelClusterKey: "example",
 				controllerutil.LabelRoleKey:    controllerutil.LabelVersionProbe,
-			}},
+			},
 		})).To(BeEmpty())
 
 		Expect((&ClusterController{}).clickHouseClustersForPod(ctx, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+			Labels: map[string]string{
 				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,
-			}},
+			},
 		})).To(BeEmpty())
 	})
 })

@@ -248,10 +248,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 		It("controls Pod readiness gate to allow client traffic only for initialized replicas", func(ctx context.Context) {
 			cr := v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      fmt.Sprintf("gate-%d", time.Now().UnixNano()),
-				},
+				Namespace: ns,
+				Name:      fmt.Sprintf("gate-%d", time.Now().UnixNano()),
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(2)),
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -342,10 +340,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					},
 					PodTemplate: v1.PodTemplateSpec{
 						Volumes: []corev1.Volume{{
-							Name: "custom-data",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
+							Name:     "custom-data",
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						}},
 					},
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -389,10 +385,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 							Name: "BROKEN_REF",
 							ValueFrom: &corev1.EnvVarSource{
 								SecretKeyRef: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "nonexistent-secret",
-									},
-									Key: "key",
+									Name: "nonexistent-secret",
+									Key:  "key",
 								},
 							},
 						}},
@@ -504,7 +498,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			By("creating an expandable StorageClass")
 
 			sc := &storagev1.StorageClass{
-				ObjectMeta:           metav1.ObjectMeta{Name: fmt.Sprintf("jbod-expandable-%d", rand.Uint32())}, //nolint:gosec
+				Name:                 fmt.Sprintf("jbod-expandable-%d", rand.Uint32()), //nolint:gosec
 				Provisioner:          "rancher.io/local-path",
 				VolumeBindingMode:    new(storagev1.VolumeBindingWaitForFirstConsumer),
 				AllowVolumeExpansion: new(true),
@@ -523,10 +517,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}
 
 			cr := v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      "jbod",
-				},
+				Namespace: ns,
+				Name:      "jbod",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(1)),
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -535,8 +527,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
 					DataVolumeClaimSpec: &diskSpec,
 					AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
-						{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk1"}, Spec: diskSpec},
-						{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk2"}, Spec: diskSpec},
+						{Name: "disk1", Spec: diskSpec},
+						{Name: "disk2", Spec: diskSpec},
 					},
 				},
 			}
@@ -639,10 +631,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			)
 
 			secret := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
-					Namespace: ns,
-				},
+				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
+				Namespace: ns,
 				Data: map[string][]byte{
 					"password": []byte(passwordSHA),
 				},
@@ -742,10 +732,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}
 
 			customConfigMap := corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("custom-config-%d", rand.Uint32()), //nolint:gosec
-					Namespace: ns,
-				},
+				Name:      fmt.Sprintf("custom-config-%d", rand.Uint32()), //nolint:gosec
+				Namespace: ns,
 				Data: map[string]string{
 					"user.yaml": fmt.Sprintf(`{"users": {"%s": {
 					"password_sha256_hex": "%s",
@@ -769,32 +757,24 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Volumes: []corev1.Volume{
 							{
 								Name: "custom-user",
-								VolumeSource: corev1.VolumeSource{
-									ConfigMap: &corev1.ConfigMapVolumeSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: customConfigMap.Name,
-										},
-										Items: []corev1.KeyToPath{
-											{
-												Key:  "user.yaml",
-												Path: "custom.yaml",
-											},
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									Name: customConfigMap.Name,
+									Items: []corev1.KeyToPath{
+										{
+											Key:  "user.yaml",
+											Path: "custom.yaml",
 										},
 									},
 								},
 							},
 							{
 								Name: "custom-config",
-								VolumeSource: corev1.VolumeSource{
-									ConfigMap: &corev1.ConfigMapVolumeSource{
-										LocalObjectReference: corev1.LocalObjectReference{
-											Name: customConfigMap.Name,
-										},
-										Items: []corev1.KeyToPath{{
-											Key:  "config.yaml",
-											Path: "max_size.yaml",
-										}},
-									},
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									Name: customConfigMap.Name,
+									Items: []corev1.KeyToPath{{
+										Key:  "config.yaml",
+										Path: "max_size.yaml",
+									}},
 								},
 							},
 						},
@@ -929,10 +909,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		It("should generate correct sharded cluster configuration", func(ctx context.Context) {
 			password := fmt.Sprintf("test-password-%d", rand.Uint32()) //nolint:gosec
 			secret := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
-					Namespace: ns,
-				},
+				Name:      fmt.Sprintf("default-pass-%d", rand.Uint32()), //nolint:gosec
+				Namespace: ns,
 				Data: map[string][]byte{
 					"password_sha": []byte(controllerutil.Sha256Hash([]byte(password))),
 				},
@@ -1133,10 +1111,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 			password := "e2e-test-password"
 			extSecret := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      secretName,
-				},
+				Namespace: ns,
+				Name:      secretName,
 				Data: map[string][]byte{
 					chctrl.SecretKeyInterserverPassword: []byte(password),
 					chctrl.SecretKeyManagementPassword:  []byte(password),
@@ -1292,10 +1268,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		testutil.SetupCA(ctx, k8sClient, ns, suffix)
 
 		keeperCR := &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("keeper-%d", suffix),
-			},
+			Namespace: ns,
+			Name:      fmt.Sprintf("keeper-%d", suffix),
 			Spec: v1.KeeperClusterSpec{
 				Replicas: new(int32(1)),
 				ContainerTemplate: v1.ContainerTemplateSpec{
@@ -1316,10 +1290,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 		}
 		keeperCert := &certv1.Certificate{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
-			},
+			Namespace: ns,
+			Name:      fmt.Sprintf("keeper-cert-%d", suffix),
 			Spec: certv1.CertificateSpec{
 				IssuerRef: mcertv1.IssuerReference{
 					Name: issuer,
@@ -1333,10 +1305,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 		}
 		baseCr := &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("clickhouse-%d", suffix),
-			},
+			Namespace: ns,
+			Name:      fmt.Sprintf("clickhouse-%d", suffix),
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: new(int32(2)),
 				KeeperClusterRef: v1.KeeperClusterReference{
@@ -1364,10 +1334,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 		}
 		chCert := &certv1.Certificate{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      fmt.Sprintf("ch-cert-%d", suffix),
-			},
+			Namespace: ns,
+			Name:      fmt.Sprintf("ch-cert-%d", suffix),
 			Spec: certv1.CertificateSpec{
 				IssuerRef: mcertv1.IssuerReference{
 					Name: issuer,
@@ -1459,10 +1427,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		By("creating Keeper with affinity settings")
 
 		keeper := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      keeperName,
-			},
+			Namespace: ns,
+			Name:      keeperName,
 			Spec: v1.KeeperClusterSpec{
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
@@ -1502,10 +1468,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		By("creating ClickHouse with affinity settings")
 
 		cluster := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      keeperName,
-			},
+			Namespace: ns,
+			Name:      keeperName,
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
@@ -1558,7 +1522,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 		By("denying all ingress in the test namespace by default", func() {
 			denyAll := &networkingv1.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "default-deny-ingress"},
+				Namespace: ns, Name: "default-deny-ingress",
 				Spec: networkingv1.NetworkPolicySpec{
 					PodSelector: metav1.LabelSelector{},
 					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
@@ -1568,10 +1532,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		})
 
 		keeper := v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      name,
-			},
+			Namespace: ns,
+			Name:      name,
 			Spec: v1.KeeperClusterSpec{
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
@@ -1580,10 +1542,8 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			},
 		}
 		cluster := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns,
-				Name:      name,
-			},
+			Namespace: ns,
+			Name:      name,
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:            new(int32(2)),
 				DataVolumeClaimSpec: &defaultStorage,
@@ -1618,7 +1578,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		By("allowing client traffic with a user-defined policy", func() {
 			nativePort := intstr.FromInt32(9000)
 			allowClients := &networkingv1.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "allow-clients"},
+				Namespace: ns, Name: "allow-clients",
 				Spec: networkingv1.NetworkPolicySpec{
 					PodSelector: metav1.LabelSelector{
 						MatchLabels: map[string]string{controllerutil.LabelAppKey: cluster.SpecificName()},

@@ -295,11 +295,9 @@ func imageRevision(cfg VersionProbeConfig) (string, error) {
 
 func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision string) (batchv1.Job, error) {
 	job := batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:   rm.owner.GetNamespace(),
-			Labels:      maps.Clone(cfg.Labels),
-			Annotations: maps.Clone(cfg.Annotations),
-		},
+		Namespace:   rm.owner.GetNamespace(),
+		Labels:      maps.Clone(cfg.Labels),
+		Annotations: maps.Clone(cfg.Annotations),
 		Spec: batchv1.JobSpec{
 			BackoffLimit: new(versionProbeBackoffLimit),
 			Template: corev1.PodTemplateSpec{

@@ -23,10 +23,8 @@ var _ = Describe("UpdateStage", func() {
 
 	settledReplica := func() replicaState {
 		sts := &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:       "test-0-0",
-				Generation: 1,
-			},
+			Name:       "test-0-0",
+			Generation: 1,
 			Spec: appsv1.StatefulSetSpec{
 				Template: corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
@@ -43,11 +41,11 @@ var _ = Describe("UpdateStage", func() {
 		}
 		ctrlutil.AddSpecHashToObject(sts, rev.StatefulSetRevision)
 
-		cfg := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "test-0-0-configmap"}}
+		cfg := &corev1.ConfigMap{Name: "test-0-0-configmap"}
 		ctrlutil.AddObjectConfigHash(cfg, rev.ConfigurationRevision)
 
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-0-0-0"},
+			Name: "test-0-0-0",
 			Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
 				Type:   corev1.PodReady,
 				Status: corev1.ConditionTrue,
@@ -55,15 +53,11 @@ var _ = Describe("UpdateStage", func() {
 		}
 
 		return replicaState{
-			replicaProbe: replicaProbe{
-				Version:                   "26.5.1.1",
-				ReloadConfigRevision:      rev.ReloadConfigRevision,
-				UsersReloadConfigRevision: rev.ReloadConfigRevision,
-			},
-			ReplicaState: chctrl.ReplicaState{
-				ReplicaResources: chctrl.ReplicaResources{STS: sts, CFG: cfg},
-				Pod:              pod,
-			},
+			Version:                   "26.5.1.1",
+			ReloadConfigRevision:      rev.ReloadConfigRevision,
+			UsersReloadConfigRevision: rev.ReloadConfigRevision,
+			STS:                       sts, CFG: cfg,
+			Pod: pod,
 		}
 	}
 

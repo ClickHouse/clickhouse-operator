@@ -56,18 +56,14 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	}
 
 	return &corev1.Service{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.HeadlessServiceName(),
-			Namespace: cr.Namespace,
-			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-				controllerutil.LabelAppKey: cr.SpecificName(),
-			}),
-			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
-		},
+		Kind:       "Service",
+		APIVersion: "v1",
+		Name:       cr.HeadlessServiceName(),
+		Namespace:  cr.Namespace,
+		Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+			controllerutil.LabelAppKey: cr.SpecificName(),
+		}),
+		Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		Spec: corev1.ServiceSpec{
 			Ports:     ports,
 			ClusterIP: "None",
@@ -90,18 +86,14 @@ func templatePodDisruptionBudget(cr *v1.KeeperCluster) *policyv1.PodDisruptionBu
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PodDisruptionBudget",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.SpecificName(),
-			Namespace: cr.Namespace,
-			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-				controllerutil.LabelAppKey: cr.SpecificName(),
-			}),
-			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
-		},
+		Kind:       "PodDisruptionBudget",
+		APIVersion: "v1",
+		Name:       cr.SpecificName(),
+		Namespace:  cr.Namespace,
+		Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+			controllerutil.LabelAppKey: cr.SpecificName(),
+		}),
+		Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -148,19 +140,15 @@ func templateQuorumConfig(r *keeperReconciler) (*corev1.ConfigMap, error) {
 	}
 
 	configmap := &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.QuorumConfigMapName(),
-			Namespace: cr.Namespace,
-			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-				controllerutil.LabelAppKey:          cr.SpecificName(),
-				controllerutil.LabelKeeperReplicaID: controllerutil.LabelKeeperAllReplicas,
-			}),
-			Annotations: cr.Spec.Annotations,
-		},
+		Kind:       "ConfigMap",
+		APIVersion: "v1",
+		Name:       cr.QuorumConfigMapName(),
+		Namespace:  cr.Namespace,
+		Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+			controllerutil.LabelAppKey:          cr.SpecificName(),
+			controllerutil.LabelKeeperReplicaID: controllerutil.LabelKeeperAllReplicas,
+		}),
+		Annotations: cr.Spec.Annotations,
 		Data: map[string]string{
 			QuorumConfigFileName: string(rawConfig),
 		},
@@ -256,17 +244,13 @@ func templateConfigMap(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (*corev1.Con
 	}
 
 	return &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ConfigMap",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        cr.ConfigMapNameByReplicaID(id),
-			Namespace:   cr.Namespace,
-			Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, id)),
-			Annotations: cr.Spec.Annotations,
-		},
-		Data: cfg,
+		Kind:        "ConfigMap",
+		APIVersion:  "v1",
+		Name:        cr.ConfigMapNameByReplicaID(id),
+		Namespace:   cr.Namespace,
+		Labels:      controllerutil.MergeMaps(cr.Spec.Labels, replicaLabels(cr, id)),
+		Annotations: cr.Spec.Annotations,
+		Data:        cfg,
 	}, nil
 }
 
@@ -309,28 +293,22 @@ func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID, cfgRestart
 
 	if cr.Spec.DataVolumeClaimSpec != nil {
 		spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        internal.PersistentVolumeName,
-				Labels:      resourceLabels,
-				Annotations: cr.Spec.Annotations,
-			},
-			Spec: *cr.Spec.DataVolumeClaimSpec.DeepCopy(),
+			Name:        internal.PersistentVolumeName,
+			Labels:      resourceLabels,
+			Annotations: cr.Spec.Annotations,
+			Spec:        *cr.Spec.DataVolumeClaimSpec.DeepCopy(),
 		}}
 	}
 
 	return &appsv1.StatefulSet{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "StatefulSet",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.StatefulSetNameByReplicaID(id),
-			Namespace: cr.Namespace,
-			Labels:    resourceLabels,
-			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
-				controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
-			}),
-		},
+		Kind:       "StatefulSet",
+		APIVersion: "apps/v1",
+		Name:       cr.StatefulSetNameByReplicaID(id),
+		Namespace:  cr.Namespace,
+		Labels:     resourceLabels,
+		Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
+			controllerutil.AnnotationStatefulSetVersion: breakingStatefulSetVersion.String(),
+		}),
 		Spec: spec,
 	}, nil
 }
@@ -578,30 +556,22 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: internal.QuorumConfigVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					DefaultMode: &defaultConfigMapMode,
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.QuorumConfigMapName(),
-					},
-					Items: []corev1.KeyToPath{
-						{
-							Key:  QuorumConfigFileName,
-							Path: QuorumConfigFileName,
-						},
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				DefaultMode: &defaultConfigMapMode,
+				Name:        cr.QuorumConfigMapName(),
+				Items: []corev1.KeyToPath{
+					{
+						Key:  QuorumConfigFileName,
+						Path: QuorumConfigFileName,
 					},
 				},
 			},
 		},
 		{
 			Name: internal.ConfigVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					DefaultMode: &defaultConfigMapMode,
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cr.ConfigMapNameByReplicaID(id),
-					},
-				},
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				DefaultMode: &defaultConfigMapMode,
+				Name:        cr.ConfigMapNameByReplicaID(id),
 			},
 		},
 	}
@@ -609,14 +579,12 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 	if cr.Spec.Settings.TLS.Enabled {
 		volumes = append(volumes, corev1.Volume{
 			Name: internal.TLSVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
-					DefaultMode: new(controller.TLSFileMode),
-					Items: []corev1.KeyToPath{
-						{Key: "tls.crt", Path: CertificateFilename},
-						{Key: "tls.key", Path: KeyFilename},
-					},
+			Secret: &corev1.SecretVolumeSource{
+				SecretName:  cr.Spec.Settings.TLS.ServerCertSecret.Name,
+				DefaultMode: new(controller.TLSFileMode),
+				Items: []corev1.KeyToPath{
+					{Key: "tls.crt", Path: CertificateFilename},
+					{Key: "tls.key", Path: KeyFilename},
 				},
 			},
 		})
@@ -624,8 +592,8 @@ func buildVolumes(cr *v1.KeeperCluster, id v1.KeeperReplicaID) []corev1.Volume {
 
 	if cr.Spec.DataVolumeClaimSpec == nil && !controller.UserMountsAt(cr.Spec.ContainerTemplate.VolumeMounts, internal.KeeperDataPath) {
 		volumes = append(volumes, corev1.Volume{
-			Name:         internal.PersistentVolumeName,
-			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+			Name:     internal.PersistentVolumeName,
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		})
 	}
 
@@ -718,18 +686,14 @@ func templateNetworkPolicy(cr *v1.KeeperCluster, clickhouseClusters []v1.ClickHo
 	}
 
 	return &networkingv1.NetworkPolicy{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "NetworkPolicy",
-			APIVersion: "networking.k8s.io/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      app,
-			Namespace: cr.Namespace,
-			Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
-				controllerutil.LabelAppKey: app,
-			}),
-			Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
-		},
+		Kind:       "NetworkPolicy",
+		APIVersion: "networking.k8s.io/v1",
+		Name:       app,
+		Namespace:  cr.Namespace,
+		Labels: controllerutil.MergeMaps(cr.Spec.Labels, map[string]string{
+			controllerutil.LabelAppKey: app,
+		}),
+		Annotations: controllerutil.MergeMaps(cr.Spec.Annotations),
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: podLabels},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},

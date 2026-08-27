@@ -19,11 +19,9 @@ var _ = Describe("KeeperCluster Webhook", func() {
 			By("Setting the default value")
 
 			keeperCluster := &chv1.KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test-keeper-default",
-				},
-				Spec: chv1.KeeperClusterSpec{},
+				Namespace: "default",
+				Name:      "test-keeper-default",
+				Spec:      chv1.KeeperClusterSpec{},
 			}
 			Expect(k8sClient.Create(ctx, keeperCluster)).Should(Succeed())
 			deferCleanup(keeperCluster)
@@ -38,10 +36,8 @@ var _ = Describe("KeeperCluster Webhook", func() {
 
 		It("Should set default access modes if data volume enabled", func(ctx context.Context) {
 			keeperCluster := &chv1.KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test-default",
-				},
+				Namespace: "default",
+				Name:      "test-default",
 				Spec: chv1.KeeperClusterSpec{
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -144,10 +140,8 @@ var _ = Describe("KeeperCluster Webhook", func() {
 					},
 					PodTemplate: chv1.PodTemplateSpec{
 						Volumes: []corev1.Volume{{
-							Name: "custom-data",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
+							Name:     "custom-data",
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						}},
 					},
 					ContainerTemplate: chv1.ContainerTemplateSpec{

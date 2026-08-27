@@ -27,15 +27,13 @@ import (
 // baseJob builds a minimal operator-generated Job for testing overrides.
 func baseJob() batchv1.Job {
 	return batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-version-probe",
-			Namespace: "default",
-			Labels: map[string]string{
-				"cluster-label": "cluster-value",
-			},
-			Annotations: map[string]string{
-				"cluster-annotation": "cluster-value",
-			},
+		Name:      "test-version-probe",
+		Namespace: "default",
+		Labels: map[string]string{
+			"cluster-label": "cluster-value",
+		},
+		Annotations: map[string]string{
+			"cluster-annotation": "cluster-value",
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit: new(int32(1)),
@@ -291,11 +289,9 @@ func setupProbeTest() (ResourceManager, controllerutil.Logger) {
 	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	owner := &v1.ClickHouseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test",
-			UID:       "test-uid",
-		},
+		Namespace: "default",
+		Name:      "test",
+		UID:       "test-uid",
 	}
 
 	cc := &fakeController{client: fakeClient, scheme: scheme, recorder: recorder}
@@ -535,13 +531,11 @@ var _ = Describe("VersionProbe caching", func() {
 
 		createProbePod := func(name string, phase corev1.PodPhase, exitCode int32, message string) {
 			pod := corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: job.Namespace,
-					Name:      name,
-					Labels: map[string]string{
-						batchv1.ControllerUidLabel: string(job.UID),
-						batchv1.JobNameLabel:       job.Name,
-					},
+				Namespace: job.Namespace,
+				Name:      name,
+				Labels: map[string]string{
+					batchv1.ControllerUidLabel: string(job.UID),
+					batchv1.JobNameLabel:       job.Name,
 				},
 				Status: corev1.PodStatus{
 					Phase: phase,

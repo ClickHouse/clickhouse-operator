@@ -82,12 +82,8 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 			Status: serverStatus{
 				ServerState: ModeStandalone,
 			},
-			ReplicaState: controller.ReplicaState{
-				ReplicaResources: controller.ReplicaResources{
-					STS: sts,
-					CFG: mustGet[*corev1.ConfigMap](ctx, rec.GetClient(), cfgKey),
-				},
-			},
+			STS: sts,
+			CFG: mustGet[*corev1.ConfigMap](ctx, rec.GetClient(), cfgKey),
 		}
 		result, err := rec.reconcileReplicaResources(ctx, log)
 		Expect(err).ToNot(HaveOccurred())
@@ -116,9 +112,7 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 			Status: serverStatus{
 				ServerState: ModeStandalone,
 			},
-			ReplicaState: controller.ReplicaState{
-				ReplicaResources: controller.ReplicaResources{STS: sts},
-			},
+			STS: sts,
 		}
 		rec.Cluster.Spec.Settings.Logger.Level = "info"
 		rec.revs.ConfigurationRevision = "cfg-v2"
@@ -146,12 +140,10 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		By("creating a pod that simulates a stuck state")
 
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: podKey.Namespace,
-				Name:      podKey.Name,
-				Labels: map[string]string{
-					appsv1.ControllerRevisionHashLabelKey: "outdated",
-				},
+			Namespace: podKey.Namespace,
+			Name:      podKey.Name,
+			Labels: map[string]string{
+				appsv1.ControllerRevisionHashLabelKey: "outdated",
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{
@@ -165,11 +157,9 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		By("setting replica state with error and a spec diff")
 
 		rec.ReplicaState[replicaID] = replicaState{
-			ReplicaState: controller.ReplicaState{
-				ReplicaResources: controller.ReplicaResources{STS: sts},
-				Pod:              pod,
-				StartupError:     new("CreateContainerConfigError"),
-			},
+			STS:          sts,
+			Pod:          pod,
+			StartupError: new("CreateContainerConfigError"),
 		}
 
 		result, err := rec.reconcileReplicaResources(ctx, log)
@@ -301,10 +291,8 @@ func setupReconciler() (util.Logger, *keeperReconciler, context.CancelFunc) {
 	logger := util.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	cluster := &v1.KeeperCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test",
-		},
+		Namespace: "default",
+		Name:      "test",
 		Spec: v1.KeeperClusterSpec{
 			Replicas: new(int32(1)),
 		},
