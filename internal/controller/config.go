@@ -136,10 +136,8 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 		}
 
 		volume := corev1.Volume{
-			Name: controllerutil.PathToName(mountPath),
-			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{},
-			},
+			Name:      controllerutil.PathToName(mountPath),
+			Projected: &corev1.ProjectedVolumeSource{},
 		}
 		volumeMount := corev1.VolumeMount{
 			Name:      volume.Name,
@@ -161,9 +159,7 @@ func ProjectVolumes(volumes []corev1.Volume, volumeMounts []corev1.VolumeMount) 
 			case sourceVolume.Secret != nil:
 				volume.Projected.Sources = append(volume.Projected.Sources, corev1.VolumeProjection{
 					Secret: &corev1.SecretProjection{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: sourceVolume.Secret.SecretName,
-						},
+						Name:     sourceVolume.Secret.SecretName,
 						Items:    sourceVolume.Secret.Items,
 						Optional: sourceVolume.Secret.Optional,
 					},

@@ -5,7 +5,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -23,11 +22,9 @@ var _ = Describe("KeeperCluster", func() {
 
 		BeforeEach(func() {
 			keeper = &KeeperCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test-ns",
-				},
-				Spec: KeeperClusterSpec{},
+				Name:      "test",
+				Namespace: "test-ns",
+				Spec:      KeeperClusterSpec{},
 			}
 		})
 
@@ -70,10 +67,8 @@ var _ = Describe("ClickHouseCluster", func() {
 	Describe("KeeperClusterNamespacedName", func() {
 		It("should default the keeper namespace to the ClickHouseCluster namespace", func() {
 			cluster := &ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "clickhouse-ns",
-				},
+				Name:      "test",
+				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
 					KeeperClusterRef: KeeperClusterReference{
 						Name: "keeper",
@@ -89,10 +84,8 @@ var _ = Describe("ClickHouseCluster", func() {
 
 		It("should use the explicit keeper namespace when provided", func() {
 			cluster := &ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "clickhouse-ns",
-				},
+				Name:      "test",
+				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
 					KeeperClusterRef: KeeperClusterReference{
 						Name:      "keeper",
@@ -113,11 +106,9 @@ var _ = Describe("ClickHouseCluster", func() {
 
 		BeforeEach(func() {
 			cluster = &ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test-ns",
-				},
-				Spec: ClickHouseClusterSpec{},
+				Name:      "test",
+				Namespace: "test-ns",
+				Spec:      ClickHouseClusterSpec{},
 			}
 		})
 
@@ -151,11 +142,9 @@ var _ = Describe("ClickHouseCluster", func() {
 
 		BeforeEach(func() {
 			cluster = &ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "test-ns",
-				},
-				Spec: ClickHouseClusterSpec{},
+				Name:      "test",
+				Namespace: "test-ns",
+				Spec:      ClickHouseClusterSpec{},
 			}
 		})
 
@@ -175,19 +164,19 @@ var _ = Describe("ClickHouseCluster", func() {
 
 	Describe("SpecificResourceName", func() {
 		It("should add suffix", func() {
-			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+			cluster := ClickHouseCluster{Name: "test"}
 			Expect(cluster.SpecificResourceName("suffix")).To(HaveSuffix("-suffix"))
 		})
 
 		It("should replace forbidden chars", func() {
-			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: "test.name"}}
+			cluster := ClickHouseCluster{Name: "test.name"}
 			Expect(cluster.SpecificResourceName("suffix")).To(Not(ContainSubstring(".")))
 		})
 
 		It("should truncate length", func() {
 			name := "very-very.long.resource-name.that-longer-than-limit"
 			suffix := "long-suffix-in-result"
-			cluster := ClickHouseCluster{ObjectMeta: metav1.ObjectMeta{Name: name}}
+			cluster := ClickHouseCluster{Name: name}
 			res := cluster.SpecificResourceName(suffix)
 			Expect(res).To(HaveLen(maxResourceNameLen), res)
 			Expect(res).To(HaveSuffix(suffix), res)

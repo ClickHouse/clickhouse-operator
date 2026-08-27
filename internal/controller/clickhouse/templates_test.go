@@ -27,9 +27,7 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should generate default volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 			},
@@ -44,9 +42,7 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should generate mounts for TLS", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				Settings: v1.ClickHouseSettings{
 					TLS: v1.ClusterTLSSpec{
@@ -80,9 +76,7 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should generate a custom CA volume when caBundle is set", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				Settings: v1.ClickHouseSettings{
 					TLS: v1.ClusterTLSSpec{
@@ -114,14 +108,12 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should mount additionalVolumeClaimTemplates at their default JBOD path", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 				AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
-					{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk1"}, Spec: corev1.PersistentVolumeClaimSpec{}},
-					{NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk2"}, Spec: corev1.PersistentVolumeClaimSpec{}},
+					{Name: "disk1", Spec: corev1.PersistentVolumeClaimSpec{}},
+					{Name: "disk2", Spec: corev1.PersistentVolumeClaimSpec{}},
 				},
 			},
 		}
@@ -142,19 +134,13 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should add volumes provided by user", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				PodTemplate: v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{{
 						Name: "my-extra-volume",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "my-extra-config",
-								},
-							},
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							Name: "my-extra-config",
 						}},
 					},
 				},
@@ -176,19 +162,13 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should project volumes with colliding path", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				PodTemplate: v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{{
 						Name: "my-extra-volume",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "my-extra-config",
-								},
-							},
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							Name: "my-extra-config",
 						}},
 					},
 				},
@@ -224,9 +204,7 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should project colliding TLS volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				Settings: v1.ClickHouseSettings{
 					TLS: v1.ClusterTLSSpec{
@@ -239,12 +217,8 @@ var _ = Describe("BuildVolumes", func() {
 				PodTemplate: v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{{
 						Name: "my-extra-volume",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "my-extra-config",
-								},
-							},
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							Name: "my-extra-config",
 						}},
 					},
 				},
@@ -280,16 +254,12 @@ var _ = Describe("BuildVolumes", func() {
 
 	It("should work with custom volume", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test",
-			},
+			Name: "test",
 			Spec: v1.ClickHouseClusterSpec{
 				PodTemplate: v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{{
-						Name: "custom-data",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
+						Name:     "custom-data",
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
 					}},
 				},
 				ContainerTemplate: v1.ContainerTemplateSpec{
@@ -310,7 +280,7 @@ var _ = Describe("SecurityContext defaults", func() {
 	newCtx := func() clickhouseReconciler {
 		return clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "test"},
+				Name: "test",
 				Spec: v1.ClickHouseClusterSpec{
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
 				},
@@ -350,10 +320,8 @@ var _ = Describe("SecurityContext defaults", func() {
 
 var _ = Describe("Service templates", func() {
 	cr := &v1.ClickHouseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-		},
+		Name:      "test",
+		Namespace: "default",
 		Spec: v1.ClickHouseClusterSpec{
 			AdditionalPorts: []v1.AdditionalPort{{
 				Name: "extra",
@@ -473,10 +441,8 @@ var _ = Describe("PDB", func() {
 
 	BeforeEach(func() {
 		cr = &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test",
-				Namespace: "default",
-			},
+			Name:      "test",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: new(int32(3)),
 				Shards:   new(int32(2)),
@@ -572,9 +538,7 @@ var _ = Describe("getStatefulSetRevision", func() {
 	It("should not depend on data disk spec", func() {
 		r := clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test",
-				},
+				Name: "test",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(1)),
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
@@ -605,9 +569,7 @@ var _ = Describe("getConfigurationRevisions", func() {
 	It("should generate idempotent non-empty revisions", func() {
 		r := &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test",
-				},
+				Name: "test",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(1)),
 				},
@@ -628,9 +590,7 @@ var _ = Describe("getConfigurationRevisions", func() {
 	It("reload revision should not depend on restartable configs", func() {
 		r := &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test",
-				},
+				Name: "test",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(1)),
 				},
@@ -656,9 +616,7 @@ var _ = Describe("getConfigurationRevisions", func() {
 	It("restart revision should not depend on reloadable configs", func() {
 		r := &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test",
-				},
+				Name: "test",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(1)),
 				},
@@ -686,7 +644,7 @@ var _ = Describe("TemplateStatefulSet", func() {
 	It("should mount additional JBOD disks from explicit PVC volumes", func() {
 		r := &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "jbod", Namespace: "default"},
+				Name: "jbod", Namespace: "default",
 				Spec: v1.ClickHouseClusterSpec{
 					Shards:           new(int32(2)),
 					Replicas:         new(int32(2)),
@@ -699,7 +657,7 @@ var _ = Describe("TemplateStatefulSet", func() {
 					},
 					AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
 						{
-							NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk1"},
+							Name: "disk1",
 							Spec: corev1.PersistentVolumeClaimSpec{
 								AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 								Resources: corev1.VolumeResourceRequirements{
@@ -708,7 +666,7 @@ var _ = Describe("TemplateStatefulSet", func() {
 							},
 						},
 						{
-							NamedTemplateMeta: v1.NamedTemplateMeta{Name: "disk2"},
+							Name: "disk2",
 							Spec: corev1.PersistentVolumeClaimSpec{
 								AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 								Resources: corev1.VolumeResourceRequirements{
@@ -804,15 +762,13 @@ func FuzzClusterSpec(f *testing.F) {
 
 func newClickHouseCluster(f *randfill.Filler) *v1.ClickHouseCluster {
 	cr := &v1.ClickHouseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-			Labels: map[string]string{
-				"app": "clickhouse-operator",
-			},
-			Annotations: map[string]string{
-				"annotation1": "value1",
-			},
+		Name:      "test",
+		Namespace: "default",
+		Labels: map[string]string{
+			"app": "clickhouse-operator",
+		},
+		Annotations: map[string]string{
+			"annotation1": "value1",
 		},
 	}
 	f.Fill(&cr.Spec)
@@ -824,7 +780,7 @@ func newClickHouseCluster(f *randfill.Filler) *v1.ClickHouseCluster {
 var _ = Describe("TemplateNetworkPolicy", func() {
 	newCluster := func() *v1.ClickHouseCluster {
 		return &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+			Name: "test", Namespace: "test-ns",
 			Spec: v1.ClickHouseClusterSpec{
 				NetworkPolicy: &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
 			},

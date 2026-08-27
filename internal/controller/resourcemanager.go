@@ -414,7 +414,7 @@ func ListReplicaResources[
 	Res client.Object,
 	RList client.ObjectList,
 ](ctx context.Context, rm *ResourceManager, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
-	list, ok := reflect.New(reflect.TypeOf((*RList)(nil)).Elem().Elem()).Interface().(RList)
+	list, ok := reflect.New(reflect.TypeFor[RList]().Elem()).Interface().(RList)
 	if !ok {
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
 	}

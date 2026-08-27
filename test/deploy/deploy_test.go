@@ -18,7 +18,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -494,12 +493,12 @@ func testHelmCluster(namespace string) {
 
 		By("Waiting for KeeperCluster to be ready")
 		env.WaitClusterReady(ctx, &v1.KeeperCluster{
-			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: keeperName},
+			Namespace: namespace, Name: keeperName,
 		}, 5*time.Minute)
 
 		By("Waiting for ClickHouse to be ready")
 		env.WaitClusterReady(ctx, &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: chName},
+			Namespace: namespace, Name: chName,
 		}, 5*time.Minute)
 	}
 

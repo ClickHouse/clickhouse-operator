@@ -157,10 +157,8 @@ func ReconcileStatefulSets[T interface {
 
 				pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
 					Name: pvcTemplate.Name,
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvcName,
-						},
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: pvcName,
 					},
 				})
 			}
@@ -196,13 +194,11 @@ func CompleteVersionProbeJob(ctx context.Context, suite TestSuit, namespace, spe
 		ExpectWithOffset(1, suite.Client.Status().Update(ctx, &job)).To(Succeed())
 
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%s-%s-pod", job.Name, job.UID[:8]),
-				Namespace: namespace,
-				Labels: map[string]string{
-					batchv1.ControllerUidLabel: string(job.UID),
-					batchv1.JobNameLabel:       job.Name,
-				},
+			Name:      fmt.Sprintf("%s-%s-pod", job.Name, job.UID[:8]),
+			Namespace: namespace,
+			Labels: map[string]string{
+				batchv1.ControllerUidLabel: string(job.UID),
+				batchv1.JobNameLabel:       job.Name,
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{

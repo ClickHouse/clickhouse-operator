@@ -130,10 +130,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 				Cluster()
 
 			issuer := &certv1.Issuer{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      fmt.Sprintf("keeper-test-issuer-%d", suffix),
-				},
+				Namespace: ns,
+				Name:      fmt.Sprintf("keeper-test-issuer-%d", suffix),
 				Spec: certv1.IssuerSpec{
 					IssuerConfig: certv1.IssuerConfig{
 						SelfSigned: &certv1.SelfSignedIssuer{},
@@ -142,10 +140,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			}
 
 			cert := &certv1.Certificate{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: ns,
-					Name:      fmt.Sprintf("keeper-cert-%d", suffix),
-				},
+				Namespace: ns,
+				Name:      fmt.Sprintf("keeper-cert-%d", suffix),
 				Spec: certv1.CertificateSpec{
 					IssuerRef: mcertv1.IssuerReference{
 						Kind: "Issuer",
@@ -191,10 +187,8 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			}).
 			WithPodTemplate(v1.PodTemplateSpec{
 				Volumes: []corev1.Volume{{
-					Name: "custom-data",
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{},
-					},
+					Name:     "custom-data",
+					EmptyDir: &corev1.EmptyDirVolumeSource{},
 				}},
 			}).
 			Cluster()

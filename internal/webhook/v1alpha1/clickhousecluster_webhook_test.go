@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -21,10 +20,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			By("Setting the default value")
 
 			chCluster := &chv1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test-default",
-				},
+				Namespace: "default",
+				Name:      "test-default",
 				Spec: chv1.ClickHouseClusterSpec{
 					KeeperClusterRef: chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
@@ -50,10 +47,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			By("Respecting user-provided requests with no limits")
 
 			chCluster := &chv1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test-partial-resources",
-				},
+				Namespace: "default",
+				Name:      "test-partial-resources",
 				Spec: chv1.ClickHouseClusterSpec{
 					KeeperClusterRef: chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
@@ -76,10 +71,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 		It("Should set default access modes if data volume enabled", func(ctx context.Context) {
 			chCluster := &chv1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "default",
-					Name:      "test-default",
-				},
+				Namespace: "default",
+				Name:      "test-default",
 				Spec: chv1.ClickHouseClusterSpec{
 					KeeperClusterRef: chv1.KeeperClusterReference{
 						Name: "some-keeper-cluster",
@@ -102,10 +95,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 	Context("When creating ClickHouseCluster under Validating Webhook", func() {
 		chCluster := &chv1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "default",
-				Name:      "test-validate",
-			},
+			Namespace: "default",
+			Name:      "test-validate",
 			Spec: chv1.ClickHouseClusterSpec{
 				KeeperClusterRef: chv1.KeeperClusterReference{
 					Name: "some-keeper-cluster",
@@ -222,10 +213,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 				},
 			}
 			cluster.Spec.PodTemplate.Volumes = []corev1.Volume{{
-				Name: "custom-data",
-				VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{},
-				},
+				Name:     "custom-data",
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			}}
 			cluster.Spec.ContainerTemplate.VolumeMounts = []corev1.VolumeMount{{
 				Name:      "custom-data",
@@ -366,7 +355,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 		disk := func(name, storage string) chv1.PersistentVolumeClaimTemplate {
 			return chv1.PersistentVolumeClaimTemplate{
-				NamedTemplateMeta: chv1.NamedTemplateMeta{Name: name},
+				Name: name,
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
 						Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(storage)},
@@ -377,7 +366,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 		base := func(name string) *chv1.ClickHouseCluster {
 			return &chv1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: name},
+				Namespace: "default", Name: name,
 				Spec: chv1.ClickHouseClusterSpec{
 					KeeperClusterRef:    chv1.KeeperClusterReference{Name: "some-keeper-cluster"},
 					DataVolumeClaimSpec: dataVolume(),

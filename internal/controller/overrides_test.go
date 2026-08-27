@@ -236,9 +236,7 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 				&corev1.Container{
 					Name: "server",
 					LivenessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							Exec: &corev1.ExecAction{},
-						},
+						Exec: &corev1.ExecAction{},
 					},
 				},
 				&v1.ContainerTemplateSpec{},
@@ -254,16 +252,12 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 				&corev1.Container{
 					Name: "server",
 					LivenessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							Exec: &corev1.ExecAction{},
-						},
+						Exec: &corev1.ExecAction{},
 					},
 				},
 				&v1.ContainerTemplateSpec{
 					LivenessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							HTTPGet: &corev1.HTTPGetAction{},
-						},
+						HTTPGet: &corev1.HTTPGetAction{},
 					},
 				},
 			)
@@ -279,16 +273,12 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 				&corev1.Container{
 					Name: "server",
 					ReadinessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							Exec: &corev1.ExecAction{},
-						},
+						Exec: &corev1.ExecAction{},
 					},
 				},
 				&v1.ContainerTemplateSpec{
 					ReadinessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							HTTPGet: &corev1.HTTPGetAction{},
-						},
+						HTTPGet: &corev1.HTTPGetAction{},
 					},
 				},
 			)
@@ -309,13 +299,9 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 					Volumes: []corev1.Volume{
 						{
 							Name: "operator-config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									DefaultMode: new(corev1.ConfigMapVolumeSourceDefaultMode),
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "my-configmap",
-									},
-								},
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								DefaultMode: new(corev1.ConfigMapVolumeSourceDefaultMode),
+								Name:        "my-configmap",
 							},
 						},
 					},
@@ -323,10 +309,8 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 				&v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{
 						{
-							Name: "custom-data",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
+							Name:     "custom-data",
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
 					},
 				},
@@ -354,11 +338,9 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 					Volumes: []corev1.Volume{
 						{
 							Name: "data",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									DefaultMode:          &defaultMode,
-									LocalObjectReference: corev1.LocalObjectReference{Name: "original"},
-								},
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								DefaultMode: &defaultMode,
+								Name:        "original",
 							},
 						},
 					},
@@ -366,10 +348,8 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 				&v1.PodTemplateSpec{
 					Volumes: []corev1.Volume{
 						{
-							Name: "data",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
+							Name:     "data",
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
 					},
 				},
@@ -425,7 +405,7 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 			base := &corev1.PodSpec{
 				SecurityContext: &corev1.PodSecurityContext{FSGroup: new(int64(1000))},
 				Volumes: []corev1.Volume{
-					{Name: "operator-vol", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+					{Name: "operator-vol", EmptyDir: &corev1.EmptyDirVolumeSource{}},
 				},
 				Affinity: &corev1.Affinity{
 					NodeAffinity: &corev1.NodeAffinity{
@@ -440,7 +420,7 @@ var _ = Describe("ApplyPodTemplateOverrides", func() {
 					RunAsUser: new(int64(500)),
 				},
 				Volumes: []corev1.Volume{
-					{Name: "operator-vol", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{}}},
+					{Name: "operator-vol", ConfigMap: &corev1.ConfigMapVolumeSource{}},
 				},
 				Affinity: &corev1.Affinity{
 					NodeAffinity: &corev1.NodeAffinity{

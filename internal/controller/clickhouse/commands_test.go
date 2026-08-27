@@ -17,7 +17,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -118,26 +117,24 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		By("starting ClickHouse Keeper")
 
 		ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-			ContainerRequest: testcontainers.ContainerRequest{
-				Image: keeperImage,
-				ConfigModifier: func(c *container.Config) {
-					c.Hostname = keeperHostname
-				},
-				Env: map[string]string{
-					"KEEPER_CONFIG": "/etc/clickhouse-keeper/keeper_config.yaml",
-				},
-				Networks: []string{testNetwork.Name},
-				Files: []testcontainers.ContainerFile{
-					{
-						Reader:            generateKeeperConfig(),
-						ContainerFilePath: "/etc/clickhouse-keeper/keeper_config.yaml",
-						FileMode:          0o644,
-					},
-				},
-				ExposedPorts: []string{strconv.FormatInt(keeper.PortNative, 10) + "/tcp"},
-				WaitingFor:   wait.ForListeningPort(strconv.FormatInt(keeper.PortNative, 10) + "/tcp"),
+			Image: keeperImage,
+			ConfigModifier: func(c *container.Config) {
+				c.Hostname = keeperHostname
 			},
-			Started: true,
+			Env: map[string]string{
+				"KEEPER_CONFIG": "/etc/clickhouse-keeper/keeper_config.yaml",
+			},
+			Networks: []string{testNetwork.Name},
+			Files: []testcontainers.ContainerFile{
+				{
+					Reader:            generateKeeperConfig(),
+					ContainerFilePath: "/etc/clickhouse-keeper/keeper_config.yaml",
+					FileMode:          0o644,
+				},
+			},
+			ExposedPorts: []string{strconv.FormatInt(keeper.PortNative, 10) + "/tcp"},
+			WaitingFor:   wait.ForListeningPort(strconv.FormatInt(keeper.PortNative, 10) + "/tcp"),
+			Started:      true,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func(ctx context.Context) {
@@ -150,10 +147,8 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		chHTTPPort := strconv.FormatInt(PortHTTP, 10) + "/tcp"
 		hostTargets := map[string]string{}
 		cluster := v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test",
-				Namespace: "default",
-			},
+			Name:      "test",
+			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
 				Shards:   new(int32(1)),
 				Replicas: new(testReplicas),
@@ -164,28 +159,26 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			By(fmt.Sprintf("starting ClickHouse node %d", i))
 			hostname := fmt.Sprintf(clickhouseHostnameFormat, i)
 			ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-				ContainerRequest: testcontainers.ContainerRequest{
-					Image: clickhouseImage,
-					ConfigModifier: func(c *container.Config) {
-						c.Hostname = hostname
-					},
-					Networks: []string{testNetwork.Name},
-					Files: []testcontainers.ContainerFile{
-						{
-							Reader:            generateCHConfig(i),
-							ContainerFilePath: "/etc/clickhouse-server/config.d/test.yaml",
-							FileMode:          0o644,
-						},
-						{
-							Reader:            generateUsersConfig(),
-							ContainerFilePath: "/etc/clickhouse-server/users.d/test.yaml",
-							FileMode:          0o644,
-						},
-					},
-					ExposedPorts: []string{chPort, chHTTPPort},
-					WaitingFor:   wait.ForHTTP("/").WithPort(chHTTPPort).WithStartupTimeout(2 * time.Minute),
+				Image: clickhouseImage,
+				ConfigModifier: func(c *container.Config) {
+					c.Hostname = hostname
 				},
-				Started: true,
+				Networks: []string{testNetwork.Name},
+				Files: []testcontainers.ContainerFile{
+					{
+						Reader:            generateCHConfig(i),
+						ContainerFilePath: "/etc/clickhouse-server/config.d/test.yaml",
+						FileMode:          0o644,
+					},
+					{
+						Reader:            generateUsersConfig(),
+						ContainerFilePath: "/etc/clickhouse-server/users.d/test.yaml",
+						FileMode:          0o644,
+					},
+				},
+				ExposedPorts: []string{chPort, chHTTPPort},
+				WaitingFor:   wait.ForHTTP("/").WithPort(chHTTPPort).WithStartupTimeout(2 * time.Minute),
+				Started:      true,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
