@@ -22,6 +22,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
+	ctrltestutil "github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
@@ -32,6 +33,8 @@ const (
 
 	BaseVersion   = testutil.BaseVersion
 	UpdateVersion = testutil.UpdateVersion
+
+	managerStopTimeout = 30 * time.Second
 )
 
 var releases = map[string][]upgrade.ClickHouseVersion{
@@ -143,15 +146,25 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	// +kubebuilder:scaffold:builder
 
 	mgrCtx, cancel := context.WithCancel(context.Background())
+	mgrDone := make(chan struct{})
 
 	go func() {
 		defer GinkgoRecover()
+		defer close(mgrDone)
 
 		Expect(mgr.Start(mgrCtx)).To(Succeed())
 	}()
 
 	DeferCleanup(func() {
 		cancel()
+
+		select {
+		case <-mgrDone:
+		case <-time.After(managerStopTimeout):
+			Fail("manager did not stop within " + managerStopTimeout.String())
+		}
+
+		ctrltestutil.AssertNoLeakedGoroutines()
 	})
 
 	if err = imagePuller.Wait(); err != nil {
