@@ -44,6 +44,8 @@ func TestControllers(t *testing.T) {
 	RunSpecs(t, "ClickHouse Controller Suite")
 }
 
+var _ = AfterSuite(testutil.AssertNoLeakedGoroutines)
+
 var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 	var (
 		suite        testutil.TestSuit

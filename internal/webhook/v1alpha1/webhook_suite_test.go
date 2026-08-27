@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	clickhousecomv1alpha1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -138,6 +139,8 @@ var _ = AfterSuite(func() {
 		err := testEnv.Stop()
 		Expect(err).NotTo(HaveOccurred())
 	}
+
+	testutil.AssertNoLeakedGoroutines()
 })
 
 var _ = BeforeEach(func() {

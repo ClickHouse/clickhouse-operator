@@ -920,6 +920,9 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			db, err := sql.Open("mysql", dsn)
 
 			Expect(err).NotTo(HaveOccurred())
+
+			defer func() { _ = db.Close() }()
+
 			Expect(db.PingContext(ctx)).To(Succeed())
 		})
 

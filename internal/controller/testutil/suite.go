@@ -1,12 +1,14 @@
 package testutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -253,6 +255,21 @@ func getFirstFoundEnvTestBinaryDir() string {
 	}
 
 	return ""
+}
+
+// AssertNoLeakedGoroutines fails the suite if the runtime detects goroutines that can never be unblocked.
+func AssertNoLeakedGoroutines() {
+	GinkgoHelper()
+
+	profile := pprof.Lookup("goroutineleak")
+
+	// WriteTo runs the leak-detection GC pass, Count is only valid after it.
+	var leaks bytes.Buffer
+	Expect(profile.WriteTo(&leaks, 1)).To(Succeed())
+
+	if profile.Count() > 0 {
+		Fail(fmt.Sprintf("detected %d leaked goroutines:\n%s", profile.Count(), leaks.String()))
+	}
 }
 
 // EnsureNoEvents ensures that all events are consumed from the events channel.

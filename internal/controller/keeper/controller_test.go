@@ -37,6 +37,8 @@ func TestControllers(t *testing.T) {
 	RunSpecs(t, "Keeper Controller Suite")
 }
 
+var _ = AfterSuite(testutil.AssertNoLeakedGoroutines)
+
 var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	var (
 		suite        testutil.TestSuit
