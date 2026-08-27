@@ -65,7 +65,7 @@ func SetupEnvironment(addToScheme func(*k8sruntime.Scheme) error) TestSuit {
 		// The BinaryAssetsDirectory is only required if you want to run the tests directly
 		// without call the makefile target test.
 		BinaryAssetsDirectory: filepath.Join("..", "..", "..", "bin", "k8s",
-			fmt.Sprintf("1.31.0-%s-%s", runtime.GOOS, runtime.GOARCH)),
+			fmt.Sprintf("1.36.2-%s-%s", runtime.GOOS, runtime.GOARCH)),
 	}
 
 	// Retrieve the first found binary directory to allow running tests from IDEs

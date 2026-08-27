@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	certmanagerVersion = "v1.19.2"
+	certmanagerVersion = "v1.19.6"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 
 	networkPolicyControllerVersion = "v1.1.1"
@@ -32,7 +32,7 @@ const (
 		"/kubernetes-sigs/kube-network-policies/%s/install.yaml"
 
 	logTailLines  = 10
-	BaseVersion   = "26.3.21.7"
+	BaseVersion   = "26.3.22.7"
 	UpdateVersion = "26.7.5.10"
 )
 

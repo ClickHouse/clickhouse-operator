@@ -7,7 +7,7 @@ secure_clusters = True
 image_repo = "ghcr.io/clickhouse/clickhouse-operator"
 
 if not local("kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager", quiet=True, echo_off=True):
-    deploy_cert_manager(version='v1.19.2')
+    deploy_cert_manager(version='v1.19.6')
 else:
     print("cert-manager is already deployed")
 
