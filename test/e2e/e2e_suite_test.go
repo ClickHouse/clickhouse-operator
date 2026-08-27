@@ -40,7 +40,7 @@ var releases = map[string][]upgrade.ClickHouseVersion{
 		{Major: 26, Minor: 6, Patch: 3, Build: 62},
 	},
 	upgrade.ChannelLTS: {
-		{Major: 26, Minor: 3, Patch: 21, Build: 7},
+		{Major: 26, Minor: 3, Patch: 22, Build: 7},
 		{Major: 25, Minor: 8, Patch: 32, Build: 4},
 	},
 }

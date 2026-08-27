@@ -67,12 +67,12 @@ endif
 
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
-OPERATOR_SDK_VERSION ?= v1.42.2
-OPERATOR_MANAGER_VERSION ?= v1.72.0
+OPERATOR_SDK_VERSION ?= v1.42.3
+OPERATOR_MANAGER_VERSION ?= v1.73.0
 # Image URL to use all building/pushing image targets
 IMG ?= ${IMAGE_TAG_BASE}:${FULL_VERSION}
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION ?= 1.36.0
+ENVTEST_K8S_VERSION ?= 1.36.2
 
 # HELM_IMG defines the image used for the helm chart oci-based repo.
 HELM_IMG ?= $(IMAGE_REPO)/clickhouse-operator-helm
@@ -395,10 +395,10 @@ ACTIONLINT ?= $(LOCALBIN)/actionlint
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
 ENVTEST_VERSION ?= release-0.24
-GOLANGCI_LINT_VERSION ?= v2.12.2
-GINKGO_VERSION ?= v2.31.0
+GOLANGCI_LINT_VERSION ?= v2.13.1
+GINKGO_VERSION ?= v2.32.1
 KUBEBUILDER_VERSION ?= v4.15.0
-CODESPELL_VERSION ?= 2.4.2
+CODESPELL_VERSION ?= 2.4.3
 CRD_SCHEMA_CHECKER_VERSION ?= latest
 CRD_REF_DOCS_VERSION ?= v0.3.0
 ACTIONLINT_VERSION ?= v1.7.12
