@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	chv1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -179,6 +180,29 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(err).To(Succeed())
 			deferCleanup(cluster)
 			Expect(warnings).To(ContainElement(ContainSubstring("defaultUserPassword is empty")))
+		})
+
+		It("Should warn when extraUsersConfig carries a server-tree section", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.Settings.ExtraUsersConfig = runtime.RawExtension{
+				Raw: []byte(`{"named_collections":{"ctx":{"url":"http://example.internal"}},"profiles":{"default":{}}}`),
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+			Expect(warnings).To(ContainElement(ContainSubstring("named_collections")))
+			Expect(warnings).To(ContainElement(ContainSubstring("users config parser ignores")))
+		})
+
+		It("Should not warn when extraUsersConfig only carries users-tree sections", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.Settings.ExtraUsersConfig = runtime.RawExtension{
+				Raw: []byte(`{"profiles":{"default":{"max_threads":4}},"quotas":{"default":{}}}`),
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+			Expect(warnings).NotTo(ContainElement(ContainSubstring("users config parser ignores")))
 		})
 
 		It("Should check that all volumes from volume mounts are exists", func(ctx context.Context) {
