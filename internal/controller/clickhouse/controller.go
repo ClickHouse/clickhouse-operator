@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -40,6 +41,7 @@ type ClusterController struct {
 	Dialer              controllerutil.DialContextFunc
 	EnablePDB           bool
 	EnableNetworkPolicy bool
+	ResyncPeriod        time.Duration
 	connCache           *connCache
 }
 
@@ -130,6 +132,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Checker:             cc.Checker,
 		EnablePDB:           cc.EnablePDB,
 		EnableNetworkPolicy: cc.EnableNetworkPolicy,
+		ResyncPeriod:        cc.ResyncPeriod,
 		connCache:           cc.connCache,
 
 		Cluster:      cluster,
@@ -167,7 +170,7 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool, resyncPeriod time.Duration) error {
 	namedLogger := log.Named("clickhouse")
 
 	clickhouseController := &ClusterController{
@@ -180,6 +183,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Dialer:              dialer,
 		EnablePDB:           enablePDB,
 		EnableNetworkPolicy: enableNetworkPolicy,
+		ResyncPeriod:        resyncPeriod,
 		connCache:           newConnCache(),
 	}
 

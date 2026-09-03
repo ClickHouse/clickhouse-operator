@@ -99,8 +99,8 @@ func (rm *ResourceManager) ReconcileResource(
 
 	log.Debug("resource changed, diff: " + gcmp.Diff(foundResource, resource, diffFilter(specFields)))
 
-	foundResource.SetAnnotations(resource.GetAnnotations())
-	foundResource.SetLabels(resource.GetLabels())
+	foundResource.SetAnnotations(util.MergeMaps(foundResource.GetAnnotations(), resource.GetAnnotations()))
+	foundResource.SetLabels(util.MergeMaps(foundResource.GetLabels(), resource.GetLabels()))
 
 	for _, fieldName := range specFields {
 		field := reflect.ValueOf(foundResource).Elem().FieldByName(fieldName)

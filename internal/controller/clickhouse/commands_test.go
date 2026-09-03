@@ -98,6 +98,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		chContainers []testcontainers.Container
 		testNetwork  *testcontainers.DockerNetwork
 		cmd          *commander
+		cache        *connCache
 	)
 
 	BeforeAll(func(ctx context.Context) {
@@ -217,7 +218,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}
 
 		secret := &corev1.Secret{Data: map[string][]byte{SecretKeyManagementPassword: []byte(testPassword)}}
-		cache := newConnCache()
+		cache = newConnCache()
 		cmd = newCommander(logger, &cluster, secret, dialer, cache)
 
 		DeferCleanup(func() {
@@ -348,6 +349,17 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			Expect(row.Scan(&count)).To(Succeed())
 			Expect(count).To(Equal(uint64(10)))
 		}
+	})
+
+	It("should evict a single replica connection from the cache", func(_ context.Context) {
+		id := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+
+		_, err := cmd.getConn(id)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cmd.entry.conns).To(HaveKey(id))
+
+		cache.EvictReplica(cmd.cluster.NamespacedName(), id, cmd.log)
+		Expect(cmd.entry.conns).NotTo(HaveKey(id))
 	})
 
 	Describe("CleanupDatabaseReplicas", Ordered, func() {

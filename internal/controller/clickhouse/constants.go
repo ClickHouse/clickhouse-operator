@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/blang/semver/v4"
 
@@ -78,6 +79,11 @@ const (
 	// NamedCollectionsKeyByteLen and DiskEncryptionKeyByteLen are AES-128 key sizes in bytes (16 bytes = 32 hex chars).
 	NamedCollectionsKeyByteLen = 16
 	DiskEncryptionKeyByteLen   = 16
+
+	dialTimeout         = 10 * time.Second
+	databaseOpsTimeout  = time.Minute
+	databaseSyncTimeout = 10 * time.Minute
+	shardSyncTimeout    = 10 * time.Minute
 )
 
 type secretSpec struct {

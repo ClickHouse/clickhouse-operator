@@ -501,6 +501,7 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 			Addr:        []string{net.JoinHostPort(cmd.cluster.InternalHostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
 			Auth:        cmd.auth,
 			DialContext: cmd.dialer,
+			DialTimeout: dialTimeout,
 		})
 		if err != nil {
 			cmd.log.Error(err, "failed to open ClickHouse connection", "replica_id", id)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -77,7 +78,8 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 			Dialer: func(context.Context, string) (net.Conn, error) {
 				return nil, errors.New("disabled")
 			},
-			EnablePDB: true,
+			EnablePDB:    true,
+			ResyncPeriod: 30 * time.Second,
 		}
 	})
 
@@ -176,8 +178,9 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		By("reconciling the unchanged cluster repeatedly")
 
 		for range 5 {
-			_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+			result, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "with a resync period set, every reconcile must schedule a wake-up")
 		}
 
 		Expect(collect()).To(Equal(before), "repeated reconciles must not update any resource")

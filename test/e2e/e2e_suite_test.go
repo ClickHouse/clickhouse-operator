@@ -141,8 +141,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	Expect(mgr.Add(updater)).To(Succeed())
 
 	upgradeChecker := upgrade.NewChecker(updater)
-	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true)).To(Succeed())
-	Expect(clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true)).To(Succeed())
+	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true, 30*time.Second)).To(Succeed())
+	Expect(clickhouse.SetupWithManager(
+		mgr, zapLogger, upgradeChecker, podDialer, true, true, 30*time.Second)).To(Succeed())
 	// +kubebuilder:scaffold:builder
 
 	mgrCtx, cancel := context.WithCancel(context.Background())
