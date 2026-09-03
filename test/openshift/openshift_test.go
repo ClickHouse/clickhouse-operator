@@ -183,13 +183,13 @@ var _ = Describe("OLM deployment on OpenShift", func() {
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &keeper) })
 
 		By("Waiting for KeeperCluster to be ready")
-		env.WaitClusterReady(ctx, &keeper, 15*time.Minute)
+		env.WaitKeeperUpdatedAndReady(ctx, &keeper, 15*time.Minute)
 
 		ch := testutil.NewClickHouseCluster(namespace, "ch").WithKeeper(keeper.Name).Cluster()
 		Expect(k8sClient.Create(ctx, &ch)).To(Succeed())
 		DeferCleanup(func(ctx context.Context) { _ = k8sClient.Delete(ctx, &ch) })
 
 		By("Waiting for ClickHouse to be ready")
-		env.WaitClusterReady(ctx, &ch, 15*time.Minute)
+		env.WaitClickHouseUpdatedAndReady(ctx, &ch, 15*time.Minute)
 	})
 })

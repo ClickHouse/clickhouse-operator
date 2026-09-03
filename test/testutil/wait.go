@@ -3,7 +3,6 @@ package testutil
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,121 +11,108 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
-	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
-// ClickHouseValidator checks invariants on every polling tick of WaitClickHouseUpdatedAndReady:
-// violations fail hard (Expect). Non-informative errors are skipped.
-type ClickHouseValidator func(ctx context.Context, cr *v1.ClickHouseCluster)
+// clusterStatus is a snapshot of the status fields shared by both cluster kinds.
+type clusterStatus struct {
+	observedGeneration int64
+	currentRevision    string
+	updateRevision     string
+	readyReplicas      int32
+	conditions         []metav1.Condition
+}
+
+func statusOf(cluster client.Object) clusterStatus {
+	switch cr := cluster.(type) {
+	case *v1.ClickHouseCluster:
+		return clusterStatus{
+			observedGeneration: cr.Status.ObservedGeneration,
+			currentRevision:    cr.Status.CurrentRevision,
+			updateRevision:     cr.Status.UpdateRevision,
+			readyReplicas:      cr.Status.ReadyReplicas,
+			conditions:         cr.Status.Conditions,
+		}
+
+	case *v1.KeeperCluster:
+		return clusterStatus{
+			observedGeneration: cr.Status.ObservedGeneration,
+			currentRevision:    cr.Status.CurrentRevision,
+			updateRevision:     cr.Status.UpdateRevision,
+			readyReplicas:      cr.Status.ReadyReplicas,
+			conditions:         cr.Status.Conditions,
+		}
+
+	default:
+		Fail(fmt.Sprintf("unsupported cluster type %T", cluster))
+		return clusterStatus{}
+	}
+}
+
+// expectedReplicas derives the expected replica count from the cluster's current spec.
+func expectedReplicas(cluster client.Object) int {
+	switch cr := cluster.(type) {
+	case *v1.ClickHouseCluster:
+		return int(cr.Replicas() * cr.Shards())
+	case *v1.KeeperCluster:
+		return int(cr.Replicas())
+	default:
+		Fail(fmt.Sprintf("unsupported cluster type %T", cluster))
+		return 0
+	}
+}
 
 // WaitClickHouseUpdatedAndReady waits until the cluster rollout completes and all replicas are ready.
-func (e *Env) WaitClickHouseUpdatedAndReady(
-	ctx context.Context,
-	cr *v1.ClickHouseCluster,
-	timeout time.Duration,
-	validators ...ClickHouseValidator,
-) {
+func (e *Env) WaitClickHouseUpdatedAndReady(ctx context.Context, cr *v1.ClickHouseCluster, timeout time.Duration) {
 	GinkgoHelper()
 
-	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
-	Eventually(func(g Gomega) {
-		var cluster v1.ClickHouseCluster
-		g.Expect(e.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
-
-		for _, val := range validators {
-			val(ctx, &cluster)
-		}
-
-		count := int(cr.Replicas() * cr.Shards())
-
-		g.Expect(cluster.Status.CurrentRevision).
-			To(Equal(cluster.Status.UpdateRevision), "rollout should eventually complete")
-		g.Expect(cluster.Status.ReadyReplicas).
-			To(BeEquivalentTo(count), "all replicas should be ready")
-
-		var pods corev1.PodList
-		g.Expect(e.Client.List(ctx, &pods, client.InNamespace(cr.Namespace), client.MatchingLabels{
-			controllerutil.LabelAppKey: cr.SpecificName(),
-		})).To(Succeed())
-		g.Expect(pods.Items).To(HaveLen(count))
-
-		expectConditionsTrue(g, cluster.Status.Conditions,
-			v1.ConditionTypeReady,
-			v1.ConditionTypeHealthy,
-			v1.ConditionTypeClusterSizeAligned,
-			v1.ConditionTypeConfigurationInSync,
-			v1.ClickHouseConditionTypeSchemaInSync,
-		)
-
-		for _, pod := range pods.Items {
-			g.Expect(CheckPodReady(&pod)).To(BeTrue(), fmt.Sprintf("pod %s is not ready", pod.Name))
-		}
-	}, timeout).WithPolling(PollInterval).Should(Succeed())
+	e.waitUpdatedAndReady(ctx, cr, timeout,
+		v1.ConditionTypeReady,
+		v1.ConditionTypeHealthy,
+		v1.ConditionTypeClusterSizeAligned,
+		v1.ConditionTypeConfigurationInSync,
+		v1.ClickHouseConditionTypeSchemaInSync,
+	)
 }
 
 // WaitKeeperUpdatedAndReady waits until the keeper rollout completes and all replicas are ready.
-func (e *Env) WaitKeeperUpdatedAndReady(
-	ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration, isUpdate bool,
+func (e *Env) WaitKeeperUpdatedAndReady(ctx context.Context, cr *v1.KeeperCluster, timeout time.Duration) {
+	GinkgoHelper()
+
+	e.waitUpdatedAndReady(ctx, cr, timeout,
+		v1.ConditionTypeReady,
+		v1.ConditionTypeHealthy,
+		v1.ConditionTypeClusterSizeAligned,
+		v1.ConditionTypeConfigurationInSync,
+	)
+}
+
+func (e *Env) waitUpdatedAndReady(
+	ctx context.Context, cr client.Object, timeout time.Duration, conditions ...v1.ConditionType,
 ) {
 	GinkgoHelper()
 
-	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.Name))
+	By(fmt.Sprintf("waiting for cluster %s to be ready", cr.GetName()))
 	Eventually(func(g Gomega) {
-		var cluster v1.KeeperCluster
-		g.Expect(e.Client.Get(ctx, cr.NamespacedName(), &cluster)).To(Succeed())
-		g.Expect(cluster.Generation).To(Equal(cluster.Status.ObservedGeneration))
+		cluster, ok := cr.DeepCopyObject().(client.Object)
+		g.Expect(ok).To(BeTrue())
+		g.Expect(e.Client.Get(ctx, client.ObjectKeyFromObject(cr), cluster)).To(Succeed())
 
-		if isUpdate {
-			// Intentional global assertion to fail suite if update order is wrong.
-			Expect(e.CheckUpdateOrder(ctx, &client.ListOptions{
-				Namespace: cluster.Namespace,
-				LabelSelector: labels.SelectorFromSet(map[string]string{
-					controllerutil.LabelAppKey: cluster.SpecificName(),
-				}),
-			}, controllerutil.LabelKeeperReplicaID, cluster.Status.StatefulSetRevision)).To(Succeed())
-		}
+		status := statusOf(cluster)
+		replicas := expectedReplicas(cluster)
 
-		g.Expect(cluster.Status.CurrentRevision).To(Equal(cluster.Status.UpdateRevision))
-		g.Expect(cluster.Status.ReadyReplicas).To(Equal(cluster.Replicas()))
+		g.Expect(cluster.GetGeneration()).To(Equal(status.observedGeneration))
+		g.Expect(status.currentRevision).
+			To(Equal(status.updateRevision), "rollout should eventually complete")
+		g.Expect(status.readyReplicas).
+			To(BeEquivalentTo(replicas), "all replicas should be ready")
 
-		expectConditionsTrue(g, cluster.Status.Conditions,
-			v1.ConditionTypeReady,
-			v1.ConditionTypeHealthy,
-			v1.ConditionTypeClusterSizeAligned,
-			v1.ConditionTypeConfigurationInSync,
-		)
+		// Conditions and status are the operator's contract with the user: trust
+		// them here so the RW checks that follow validate they are not lying.
+		expectConditionsTrue(g, status.conditions, conditions...)
 	}, timeout).WithPolling(PollInterval).Should(Succeed())
-	// Needed for replica deletion to not forward deleting pods.
-	By(fmt.Sprintf("waiting for cluster %s replicas count match", cr.Name))
-	e.WaitReplicaCount(ctx, cr.Namespace, cr.SpecificName(), int(cr.Replicas()))
-}
-
-// WaitClusterReady waits for the Ready and Healthy conditions, reporting all conditions on failure.
-func (e *Env) WaitClusterReady(ctx context.Context, cluster client.Object, timeout time.Duration) {
-	GinkgoHelper()
-
-	Eventually(func(g Gomega) {
-		g.Expect(e.Client.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
-
-		var conditions []metav1.Condition
-
-		switch cr := cluster.(type) {
-		case *v1.ClickHouseCluster:
-			conditions = cr.Status.Conditions
-		case *v1.KeeperCluster:
-			conditions = cr.Status.Conditions
-		}
-
-		for _, conditionType := range []v1.ConditionType{v1.ConditionTypeReady, v1.ConditionTypeHealthy} {
-			g.Expect(meta.IsStatusConditionTrue(conditions, conditionType)).
-				To(BeTrue(), "%T %s %s not true: %s", cluster, cluster.GetName(), conditionType, formatConditions(conditions))
-		}
-	}, timeout, "5s").Should(Succeed())
 }
 
 // WaitDeploymentAvailable waits until the deployment rollout completes and it reports Available.
@@ -149,20 +135,6 @@ func (e *Env) WaitDeploymentAvailable(ctx context.Context, namespace, name strin
 	}, timeout, PollInterval).Should(Succeed())
 }
 
-// WaitReplicaCount waits until the pod count for the app label matches replicas.
-func (e *Env) WaitReplicaCount(ctx context.Context, namespace, app string, replicas int) {
-	GinkgoHelper()
-
-	Eventually(func(g Gomega) int {
-		var pods corev1.PodList
-		g.Expect(e.Client.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
-			controllerutil.LabelAppKey: app,
-		})).To(Succeed())
-
-		return len(pods.Items)
-	}).WithTimeout(time.Minute).WithPolling(PollInterval).Should(Equal(replicas))
-}
-
 // CheckPodReady returns true when the pod's Ready condition is true.
 func CheckPodReady(pod *corev1.Pod) bool {
 	for _, cond := range pod.Status.Conditions {
@@ -172,63 +144,6 @@ func CheckPodReady(pod *corev1.Pod) bool {
 	}
 
 	return false
-}
-
-// CheckUpdateOrder lists StatefulSets for the given app and validates rolling update invariants:
-// 1. Updated StatefulSets form a contiguous group from the highest replica ID
-// 2. At most one StatefulSet has zero ready replicas (the one currently being updated).
-func (e *Env) CheckUpdateOrder(ctx context.Context, selector *client.ListOptions, replicaLabel, stsRev string) error {
-	GinkgoHelper()
-
-	var stsList appsv1.StatefulSetList
-	Expect(e.Client.List(ctx, &stsList, selector)).To(Succeed())
-
-	if len(stsList.Items) < 2 {
-		return nil
-	}
-
-	notReadyCount := 0
-	updated := make([]bool, len(stsList.Items))
-
-	for _, sts := range stsList.Items {
-		index, err := strconv.Atoi(sts.Labels[replicaLabel])
-		Expect(err).NotTo(HaveOccurred())
-
-		if sts.Status.ReadyReplicas != 1 {
-			notReadyCount++
-		}
-
-		updated[index] = controllerutil.GetSpecHashFromObject(&sts) == stsRev
-	}
-
-	if notReadyCount > 1 {
-		return fmt.Errorf("%d replicas not ready, expected at most 1", notReadyCount)
-	}
-
-	// The controller updates the highest-index replica first.
-	// If it doesn't match the target revisions, either the rollout hasn't started
-	// or the revisions are stale (cluster status read before the STS list) — skip.
-	if !updated[len(updated)-1] {
-		return nil
-	}
-
-	// find the first updated replica (lowest index that matches target)
-	updatedID := 0
-	for i, isUpdated := range updated {
-		if isUpdated {
-			updatedID = i
-			break
-		}
-	}
-
-	// all replicas above the first updated one must also be updated
-	for i := updatedID + 1; i < len(updated); i++ {
-		if !updated[i] {
-			return fmt.Errorf("replica %d updated before %d", updatedID, i)
-		}
-	}
-
-	return nil
 }
 
 func expectConditionsTrue(g Gomega, conditions []metav1.Condition, types ...v1.ConditionType) {
