@@ -479,6 +479,60 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(secret.Data[SecretKeyManagementPassword]).NotTo(BeEmpty())
 	})
 
+	It("should restore a removed cluster secret controller reference", func(ctx context.Context) {
+		secret := secrets.Items[0]
+		secretKey := types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}
+		Expect(suite.Client.Get(ctx, secretKey, &secret)).To(Succeed())
+
+		By("stripping the owner references")
+
+		secret.OwnerReferences = nil
+		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, secretKey, &secret)).To(Succeed())
+		owner := metav1.GetControllerOf(&secret)
+		Expect(owner).NotTo(BeNil())
+		Expect(owner.UID).To(Equal(cr.UID))
+	})
+
+	It("should tolerate a foreign controller owner on the cluster secret", func(ctx context.Context) {
+		secret := secrets.Items[0]
+		secretKey := types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}
+		Expect(suite.Client.Get(ctx, secretKey, &secret)).To(Succeed())
+
+		By("replacing the controller reference with a foreign owner")
+
+		secret.OwnerReferences = []metav1.OwnerReference{{
+			APIVersion:         "v1",
+			Kind:               "ConfigMap",
+			Name:               "foreign-owner",
+			UID:                "11111111-1111-1111-1111-111111111111",
+			Controller:         new(true),
+			BlockOwnerDeletion: new(true),
+		}}
+		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
+
+		By("reconciling without error and without adoption")
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, secretKey, &secret)).To(Succeed())
+		owner := metav1.GetControllerOf(&secret)
+		Expect(owner).NotTo(BeNil())
+		Expect(owner.Name).To(Equal("foreign-owner"))
+
+		By("restoring operator ownership for subsequent specs")
+
+		secret.OwnerReferences = nil
+		Expect(suite.Client.Update(ctx, &secret)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
 	It("should reflect configuration changes in revisions", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())

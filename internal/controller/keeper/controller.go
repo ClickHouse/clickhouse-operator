@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +39,7 @@ type ClusterController struct {
 	Dialer              controllerutil.DialContextFunc
 	EnablePDB           bool
 	EnableNetworkPolicy bool
+	ResyncPeriod        time.Duration
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -114,6 +116,7 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Checker:             cc.Checker,
 		EnablePDB:           cc.EnablePDB,
 		EnableNetworkPolicy: cc.EnableNetworkPolicy,
+		ResyncPeriod:        cc.ResyncPeriod,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
@@ -162,7 +165,7 @@ func keeperClustersForClickHouse(_ context.Context, obj client.Object) []reconci
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool) error {
+func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool, resyncPeriod time.Duration) error {
 	namedLogger := log.Named("keeper")
 
 	keeperController := &ClusterController{
@@ -175,14 +178,14 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Dialer:              dialer,
 		EnablePDB:           enablePDB,
 		EnableNetworkPolicy: enableNetworkPolicy,
+		ResyncPeriod:        resyncPeriod,
 	}
 
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).
-		Owns(&corev1.Service{}).
-		Owns(&corev1.Pod{})
+		Owns(&corev1.Service{})
 
 	if enableNetworkPolicy {
 		controllerBuilder = controllerBuilder.

@@ -37,6 +37,8 @@ import (
 
 const (
 	defaultVersionUpdateInterval = 24 * time.Hour
+	// Below the deployment's terminationGracePeriodSeconds so the post-drain lease release still happens before SIGKILL.
+	defaultShutdownTimeout = 8 * time.Second
 )
 
 var (
@@ -158,13 +160,16 @@ func run() error {
 
 	config.UserAgent = version.BuildUserAgent()
 
+	shutdownTimeout := defaultShutdownTimeout
 	mgrOptions := ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "d4ceba06.clickhouse.com",
+		Scheme:                        scheme,
+		Metrics:                       metricsServerOptions,
+		WebhookServer:                 webhookServer,
+		HealthProbeBindAddress:        probeAddr,
+		LeaderElection:                enableLeaderElection,
+		LeaderElectionID:              "d4ceba06.clickhouse.com",
+		LeaderElectionReleaseOnCancel: true,
+		GracefulShutdownTimeout:       &shutdownTimeout,
 	}
 
 	env, err := environment.GetEnvironment(context.Background())
@@ -206,12 +211,14 @@ func run() error {
 		upgradeChecker = upgrade.NewChecker(updater)
 	}
 
-	err = keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy)
+	err = keeper.SetupWithManager(
+		mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy, env.ResyncPeriod)
 	if err != nil {
 		return fmt.Errorf("unable to setup KeeperCluster controller: %w", err)
 	}
 
-	err = clickhouse.SetupWithManager(mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy)
+	err = clickhouse.SetupWithManager(
+		mgr, zapLogger, upgradeChecker, nil, env.EnablePDB, env.EnableNetworkPolicy, env.ResyncPeriod)
 	if err != nil {
 		return fmt.Errorf("unable to setup ClickHouseCluster controller: %w", err)
 	}

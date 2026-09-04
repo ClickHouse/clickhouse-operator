@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	runtimeutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
@@ -106,6 +107,7 @@ type clickhouseReconciler struct {
 	Checker             *upgrade.Checker
 	EnablePDB           bool
 	EnableNetworkPolicy bool
+	ResyncPeriod        time.Duration
 	connCache           *connCache
 
 	Cluster      *v1.ClickHouseCluster
@@ -167,16 +169,6 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
-		if k8serrors.IsConflict(err) {
-			log.Error(err, "update conflict for resource, reschedule to retry")
-			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-		}
-
-		if k8serrors.IsAlreadyExists(err) {
-			log.Error(err, "create already existed resource, reschedule to retry")
-			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-		}
-
 		log.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
 
 		r.SetCondition(metav1.Condition{
@@ -193,6 +185,8 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		return ctrl.Result{}, fmt.Errorf("reconcile steps: %w", err)
 	}
 
+	r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
+
 	r.SetCondition(metav1.Condition{
 		Type:    v1.ConditionTypeReconcileSucceeded,
 		Status:  metav1.ConditionTrue,
@@ -203,6 +197,10 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	if err := r.UpsertStatus(ctx, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
+	}
+
+	if result.IsZero() {
+		result.RequeueAfter = r.ResyncPeriod
 	}
 
 	return result, nil
@@ -288,16 +286,26 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 		return chctrl.StepBlocked(chctrl.RequeueProbePoll), nil
 	}
 
-	var isSecretUpdated bool
+	var hasUpdates bool
 
-	r.secret, isSecretUpdated = templateClusterSecrets(r.Cluster, r.secret)
-	if !isSecretUpdated {
+	r.secret, hasUpdates = templateClusterSecrets(r.Cluster, r.secret)
+	if !hasUpdates && metav1.IsControlledBy(&r.secret, r.Cluster) {
 		log.Debug("cluster secret is up to date")
 		return chctrl.StepContinue(), nil
 	}
 
 	if err := ctrl.SetControllerReference(r.Cluster, &r.secret, r.GetScheme()); err != nil {
-		return chctrl.StepResult{}, fmt.Errorf("set controller reference for cluster secret %q: %w", r.Cluster.SecretName(), err)
+		var alreadyOwned *runtimeutil.AlreadyOwnedError
+		if !errors.As(err, &alreadyOwned) {
+			return chctrl.StepResult{}, fmt.Errorf("set controller reference for cluster secret %q: %w", r.Cluster.SecretName(), err)
+		}
+
+		if !hasUpdates {
+			return chctrl.StepContinue(), nil
+		}
+
+		log.Warn("cluster secret has a foreign controller owner, updating content without adoption",
+			"owner", alreadyOwned.Owner.Kind+"/"+alreadyOwned.Owner.Name)
 	}
 
 	// Create or recreate commander with new credentials
@@ -604,11 +612,6 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 }
 
 func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	if r.Cluster.Status.ObservedGeneration != r.Cluster.Generation {
-		r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
-		log.Debug(fmt.Sprintf("observed new CR generation %d", r.Cluster.Generation))
-	}
-
 	updateRevision, err := ctrlutil.DeepHashObject(r.Cluster.Spec)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("get current spec revision: %w", err)
@@ -843,7 +846,10 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 			return id, true, nil
 		}
 
-		replicated, err := r.commander.EnsureReplicaDefaultDatabaseEngine(ctx, log, id)
+		opCtx, cancel := context.WithTimeout(ctx, databaseOpsTimeout)
+		defer cancel()
+
+		replicated, err := r.commander.EnsureReplicaDefaultDatabaseEngine(opCtx, log, id)
 
 		return id, replicated, err
 	})
@@ -866,10 +872,13 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	schemaSynced := true
 
 	if len(r.reachableReplicas) >= 2 {
-		if !r.commander.SyncDatabases(ctx, log, r.reachableReplicas) {
+		syncCtx, cancel := context.WithTimeout(ctx, databaseSyncTimeout)
+		if !r.commander.SyncDatabases(syncCtx, log, r.reachableReplicas) {
 			schemaSynced = false
 			allDatabasesSynced = false
 		}
+
+		cancel()
 	} else {
 		log.Info("no replicas to replicate schema, skipping")
 	}
@@ -882,11 +891,14 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	runningReplicas := r.syncShardsPendingRemoval(ctx, log, drainingShards)
 
 	if len(r.reachableReplicas) > 0 {
-		if err := r.commander.CleanupDatabaseReplicas(ctx, log, runningReplicas); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(ctx, databaseOpsTimeout)
+		if err := r.commander.CleanupDatabaseReplicas(cleanupCtx, log, runningReplicas); err != nil {
 			log.Warn("failed to cleanup database replicas", "error", err)
 
 			staleReplicasCleanedUp = false
 		}
+
+		cancel()
 	}
 
 	switch {
@@ -1061,7 +1073,11 @@ func (r *clickhouseReconciler) syncShardsPendingRemoval(ctx context.Context, log
 
 	syncRes := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(shardsToSyncSet)), func(shardID int32) (int32, struct{}, error) {
 		log.Info("pre scale-down shard sync", "shard_id", shardID)
-		return shardID, struct{}{}, r.commander.SyncShard(ctx, log, shardID)
+
+		syncCtx, cancel := context.WithTimeout(ctx, shardSyncTimeout)
+		defer cancel()
+
+		return shardID, struct{}{}, r.commander.SyncShard(syncCtx, log, shardID)
 	})
 
 	for id, res := range syncRes {
@@ -1165,6 +1181,8 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 				log.Error(err, "failed to delete replica service", "replica_id", id, "service", res.Service.Name)
 			}
 		}
+
+		r.connCache.EvictReplica(r.Cluster.NamespacedName(), id, log)
 	}
 
 	return chctrl.StepContinue(), nil

@@ -69,6 +69,10 @@ func RunSteps(ctx context.Context, log controllerutil.Logger, steps []ReconcileS
 
 		if sr.Blocked {
 			blocked = true
+
+			if sr.RequeueAfter == 0 {
+				sr.RequeueAfter = RequeueProbePoll
+			}
 		}
 
 		if sr.RequeueAfter > 0 {

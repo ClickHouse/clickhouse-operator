@@ -3,16 +3,18 @@ package environment
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/sethvargo/go-envconfig"
 )
 
 // Environment holds all environment variables for the application.
 type Environment struct {
-	EnableWebhooks      bool     `env:"ENABLE_WEBHOOKS, default=true"`
-	EnablePDB           bool     `env:"ENABLE_PDB, default=true"`
-	EnableNetworkPolicy bool     `env:"ENABLE_NETWORK_POLICY, default=true"`
-	WatchNamespace      []string `env:"WATCH_NAMESPACE"`
+	EnableWebhooks      bool          `env:"ENABLE_WEBHOOKS, default=true"`
+	EnablePDB           bool          `env:"ENABLE_PDB, default=true"`
+	EnableNetworkPolicy bool          `env:"ENABLE_NETWORK_POLICY, default=true"`
+	WatchNamespace      []string      `env:"WATCH_NAMESPACE"`
+	ResyncPeriod        time.Duration `env:"RESYNC_PERIOD, default=30s"`
 }
 
 // GetEnvironment processes environment variables and returns an Environment struct.

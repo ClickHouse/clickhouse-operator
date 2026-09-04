@@ -86,6 +86,7 @@ type keeperReconciler struct {
 	Checker             *upgrade.Checker
 	EnablePDB           bool
 	EnableNetworkPolicy bool
+	ResyncPeriod        time.Duration
 
 	Cluster      *v1.KeeperCluster
 	ReplicaState map[v1.KeeperReplicaID]replicaState
@@ -131,16 +132,6 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
-		if k8serrors.IsConflict(err) {
-			log.Error(err, "update conflict for resource, reschedule to retry")
-			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-		}
-
-		if k8serrors.IsAlreadyExists(err) {
-			log.Error(err, "create already existed resource, reschedule to retry")
-			return ctrl.Result{RequeueAfter: chctrl.RequeueOnRefreshTimeout}, nil
-		}
-
 		log.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
 
 		r.SetCondition(metav1.Condition{Type: v1.ConditionTypeReconcileSucceeded, Status: metav1.ConditionFalse, Reason: v1.ConditionReasonStepFailed, Message: "Reconcile returned error"})
@@ -152,6 +143,8 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 		return ctrl.Result{}, fmt.Errorf("reconcile steps: %w", err)
 	}
 
+	r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
+
 	r.SetCondition(metav1.Condition{Type: v1.ConditionTypeReconcileSucceeded, Status: metav1.ConditionTrue, Reason: v1.ConditionReasonReconcileFinished, Message: "Reconcile succeeded"})
 	log.Info("reconciliation loop end", "result", result)
 
@@ -159,15 +152,14 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
 	}
 
+	if result.IsZero() {
+		result.RequeueAfter = r.ResyncPeriod
+	}
+
 	return result, nil
 }
 
 func (r *keeperReconciler) reconcileClusterRevisions(_ context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	if r.Cluster.Status.ObservedGeneration != r.Cluster.Generation {
-		r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
-		log.Debug(fmt.Sprintf("observed new CR generation %d", r.Cluster.Generation))
-	}
-
 	updateRevision, err := ctrlutil.DeepHashObject(r.Cluster.Spec)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("get current spec revision: %w", err)

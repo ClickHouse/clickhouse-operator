@@ -69,6 +69,31 @@ func (c *connCache) Evict(key types.NamespacedName, log controllerutil.Logger) {
 	}
 }
 
+func (c *connCache) EvictReplica(key types.NamespacedName, id v1.ClickHouseReplicaID, log controllerutil.Logger) {
+	if c == nil {
+		return
+	}
+
+	c.mu.Lock()
+	e, ok := c.entries[key]
+	c.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if conn, ok := e.conns[id]; ok {
+		if err := conn.Close(); err != nil {
+			log.Warn("error closing pooled connection", "error", err, "replica_id", id)
+		}
+
+		delete(e.conns, id)
+	}
+}
+
 func (c *connCache) Close(log controllerutil.Logger) {
 	if c == nil {
 		return
