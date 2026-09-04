@@ -648,7 +648,7 @@ var _ = Describe("TemplateStatefulSet", func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Shards:           new(int32(2)),
 					Replicas:         new(int32(2)),
-					KeeperClusterRef: v1.KeeperClusterReference{Name: "keeper"},
+					KeeperClusterRef: &v1.KeeperClusterReference{Name: "keeper"},
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 						Resources: corev1.VolumeResourceRequirements{

@@ -378,7 +378,11 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 					},
 				}},
 			},
-			PodAffinity: &corev1.PodAffinity{
+		}
+
+		// Co-locating with Keeper pods only makes sense when the operator runs them itself.
+		if cr.Spec.ExternalKeeper == nil {
+			podSpec.Affinity.PodAffinity = &corev1.PodAffinity{
 				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
 					PodAffinityTerm: corev1.PodAffinityTerm{
 						TopologyKey: zoneKey,
@@ -391,7 +395,7 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 					},
 					Weight: 1,
 				}},
-			},
+			}
 		}
 
 		podSpec.TopologySpreadConstraints = []corev1.TopologySpreadConstraint{{

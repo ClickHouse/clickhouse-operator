@@ -76,7 +76,8 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 |-------|------|-------------|----------|---------|
 | `replicas` | integer | Number of replicas in the single shard. | false | 3 |
 | `shards` | integer | Number of shards in the cluster. | false | 1 |
-| `keeperClusterRef` | [KeeperClusterReference](#keeperclusterreference) | Reference to the KeeperCluster that is used for ClickHouse coordination.<br />When namespace is omitted, the ClickHouseCluster namespace is used. | true |  |
+| `keeperClusterRef` | [KeeperClusterReference](#keeperclusterreference) | Reference to the KeeperCluster that is used for ClickHouse coordination.<br />When namespace is omitted, the ClickHouseCluster namespace is used.<br />Mutually exclusive with `externalKeeper`, exactly one of them must be set. | false |  |
+| `externalKeeper` | [ExternalKeeperSpec](#externalkeeperspec) | Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.<br />The operator does not own the lifecycle of these servers and only points ClickHouse at them.<br />Mutually exclusive with `keeperClusterRef`, exactly one of them must be set. | false |  |
 | `podTemplate` | [PodTemplateSpec](#podtemplatespec) | Parameters passed to the ClickHouse pod spec. | false |  |
 | `containerTemplate` | [ContainerTemplateSpec](#containertemplatespec) | Parameters passed to the ClickHouse container spec. | false |  |
 | `dataVolumeClaimSpec` | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | Specification of persistent storage for ClickHouse data. | false |  |
@@ -230,6 +231,42 @@ Encryption cannot be disabled once enabled.
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
+
+## ExternalKeeperNode {#externalkeepernode}
+
+ExternalKeeperNode addresses a single server of an external Keeper ensemble.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `host` | string | Host name or IP address of the Keeper server. | true |  |
+| `port` | integer | Port the Keeper server accepts client connections on. | false | 9181 |
+
+Appears in:
+- [ExternalKeeperSpec](#externalkeeperspec)
+
+## ExternalKeeperSpec {#externalkeeperspec}
+
+ExternalKeeperSpec describes a Keeper ensemble managed outside of this operator.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `nodes` | [ExternalKeeperNode](#externalkeepernode) array | Servers of the Keeper ensemble ClickHouse connects to for coordination. | true |  |
+| `tls` | [ExternalKeeperTLSPolicy](#externalkeepertlspolicy) | TLS controls whether ClickHouse connects to the ensemble over TLS.<br />The ports in nodes must match the chosen policy. | false | Disabled |
+
+Appears in:
+- [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+## ExternalKeeperTLSPolicy {#externalkeepertlspolicy}
+
+ExternalKeeperTLSPolicy controls how ClickHouse connects to an external Keeper ensemble.
+
+| Field | Description |
+|-------|-------------|
+| `Enabled` | ExternalKeeperTLSEnabled makes ClickHouse connect to the ensemble over TLS.<br /> |
+| `Disabled` | ExternalKeeperTLSDisabled is the default policy: connections are made in plain text.<br /> |
+
+Appears in:
+- [ExternalKeeperSpec](#externalkeeperspec)
 
 ## ExternalSecret {#externalsecret}
 

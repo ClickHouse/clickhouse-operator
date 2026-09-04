@@ -1395,6 +1395,51 @@ spec:
                       backing this claim.
                     type: string
                 type: object
+              externalKeeper:
+                description: |-
+                  Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+                  The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+                  Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+                properties:
+                  nodes:
+                    description: Servers of the Keeper ensemble ClickHouse connects
+                      to for coordination.
+                    items:
+                      description: ExternalKeeperNode addresses a single server of
+                        an external Keeper ensemble.
+                      properties:
+                        host:
+                          description: Host name or IP address of the Keeper server.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                        port:
+                          default: 9181
+                          description: Port the Keeper server accepts client connections
+                            on.
+                          format: int32
+                          maximum: 65535
+                          minimum: 1
+                          type: integer
+                      required:
+                      - host
+                      type: object
+                    maxItems: 15
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  tls:
+                    default: Disabled
+                    description: |-
+                      TLS controls whether ClickHouse connects to the ensemble over TLS.
+                      The ports in nodes must match the chosen policy.
+                    enum:
+                    - Enabled
+                    - Disabled
+                    type: string
+                required:
+                - nodes
+                type: object
               externalSecret:
                 description: |-
                   ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
@@ -1420,6 +1465,7 @@ spec:
                 description: |-
                   Reference to the KeeperCluster that is used for ClickHouse coordination.
                   When namespace is omitted, the ClickHouseCluster namespace is used.
+                  Mutually exclusive with `externalKeeper`, exactly one of them must be set.
                 properties:
                   name:
                     description: Name of the KeeperCluster resource.
@@ -7375,8 +7421,6 @@ spec:
                         type: integer
                     type: object
                 type: object
-            required:
-            - keeperClusterRef
             type: object
           status:
             description: ClickHouseClusterStatus defines the observed state of ClickHouseCluster.

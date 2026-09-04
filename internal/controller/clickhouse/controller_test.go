@@ -64,7 +64,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(2)),
 				Shards:           new(int32(2)),
-				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: keeperName},
 				NetworkPolicy:    &v1.ClickHouseNetworkPolicySpec{Policy: v1.NetworkPolicyEnabled},
 				Labels: map[string]string{
 					"test-label": "test-val",
@@ -255,7 +255,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: new(int32(1)),
 				Shards:   new(int32(1)),
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name:      keeper.Name,
 					Namespace: keeper.Namespace,
 				},
@@ -565,7 +565,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(2)),
 				Shards:           new(int32(1)),
-				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: keeperName},
 				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 					Resources: corev1.VolumeResourceRequirements{
@@ -665,7 +665,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Name:      "ext-secret",
 			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
-				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: keeperName},
 				ExternalSecret: &v1.ExternalSecret{
 					Name: secret.Name,
 				},
@@ -739,7 +739,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:         new(int32(1)),
 				Shards:           new(int32(1)),
-				KeeperClusterRef: v1.KeeperClusterReference{Name: keeperName},
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: keeperName},
 			},
 		}
 		Expect(suite.Client.Create(ctx, deletingCR)).To(Succeed())
@@ -793,7 +793,7 @@ var _ = Describe("keeper watch mapping", func() {
 			Name:      "cross-namespace-cluster",
 			Namespace: "clickhouse-ns",
 			Spec: v1.ClickHouseClusterSpec{
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name:      "keeper",
 					Namespace: "keeper-ns",
 				},
@@ -803,7 +803,7 @@ var _ = Describe("keeper watch mapping", func() {
 			Name:      "same-name-different-namespace",
 			Namespace: "other-ns",
 			Spec: v1.ClickHouseClusterSpec{
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name: "keeper",
 				},
 			},

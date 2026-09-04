@@ -51,8 +51,17 @@ type ClickHouseClusterSpec struct {
 
 	// Reference to the KeeperCluster that is used for ClickHouse coordination.
 	// When namespace is omitted, the ClickHouseCluster namespace is used.
+	// Mutually exclusive with `externalKeeper`, exactly one of them must be set.
+	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
-	KeeperClusterRef KeeperClusterReference `json:"keeperClusterRef"`
+	KeeperClusterRef *KeeperClusterReference `json:"keeperClusterRef,omitempty"`
+
+	// Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+	// The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+	// Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="External Keeper"
+	ExternalKeeper *ExternalKeeperSpec `json:"externalKeeper,omitempty"`
 
 	// Parameters passed to the ClickHouse pod spec.
 	// +optional
@@ -322,6 +331,46 @@ func (r *KeeperClusterReference) NamespacedName(defaultNamespace string) types.N
 		Namespace: namespace,
 		Name:      r.Name,
 	}
+}
+
+// ExternalKeeperTLSPolicy controls how ClickHouse connects to an external Keeper ensemble.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type ExternalKeeperTLSPolicy string
+
+const (
+	// ExternalKeeperTLSEnabled makes ClickHouse connect to the ensemble over TLS.
+	ExternalKeeperTLSEnabled ExternalKeeperTLSPolicy = "Enabled"
+	// ExternalKeeperTLSDisabled is the default policy: connections are made in plain text.
+	ExternalKeeperTLSDisabled ExternalKeeperTLSPolicy = "Disabled"
+)
+
+// ExternalKeeperSpec describes a Keeper ensemble managed outside of this operator.
+type ExternalKeeperSpec struct {
+	// Servers of the Keeper ensemble ClickHouse connects to for coordination.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=15
+	// +listType=atomic
+	Nodes []ExternalKeeperNode `json:"nodes"`
+
+	// TLS controls whether ClickHouse connects to the ensemble over TLS.
+	// The ports in nodes must match the chosen policy.
+	// +optional
+	// +kubebuilder:default:=Disabled
+	TLS ExternalKeeperTLSPolicy `json:"tls,omitempty"`
+}
+
+// ExternalKeeperNode addresses a single server of an external Keeper ensemble.
+type ExternalKeeperNode struct {
+	// Host name or IP address of the Keeper server.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Host string `json:"host"`
+	// Port the Keeper server accepts client connections on.
+	// +kubebuilder:default:=9181
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port int32 `json:"port,omitempty"`
 }
 
 // ClickHouseCluster is the Schema for the `clickhouseclusters` API.
