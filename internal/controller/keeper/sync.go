@@ -623,7 +623,18 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 	}
 
 	r.SetCondition(chctrl.ReplicaStartupCondition(startupErrors))
-	r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
+
+	if len(r.ReplicaState) < int(r.Cluster.Replicas()) {
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeHealthy,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ConditionReasonReplicasNotReady,
+			Message: fmt.Sprintf("Cluster has %d of %d replicas", len(r.ReplicaState), r.Cluster.Replicas()),
+		})
+	} else {
+		r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
+	}
+
 	r.SetCondition(chctrl.ConfigSyncCondition(nil, notUpdatedIDs, nil))
 	r.evaluateVersionConditions(len(notUpdatedIDs) > 0)
 

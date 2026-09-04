@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -102,6 +103,12 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	serverVersion, err := dc.ServerVersion()
 	Expect(err).NotTo(HaveOccurred())
 	By("running on Kubernetes " + serverVersion.GitVersion)
+
+	DeferCleanup(env.StopCache)
+})
+
+var _ = BeforeEach(func() {
+	testutil.StartInvariants(env, metav1.NamespaceAll)
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {
@@ -384,9 +391,9 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		DeferCleanup(func(ctx context.Context) {
 			Expect(k8sClient.Delete(ctx, &keeperCR)).To(Succeed())
 		})
-		env.WaitClusterReady(ctx, &keeperCR, 5*time.Minute)
+		env.WaitKeeperUpdatedAndReady(ctx, &keeperCR, 5*time.Minute)
 		Expect(k8sClient.Create(ctx, &chCR)).To(Succeed())
-		env.WaitClusterReady(ctx, &chCR, 5*time.Minute)
+		env.WaitClickHouseUpdatedAndReady(ctx, &chCR, 5*time.Minute)
 
 		By("writing test data", func() {
 			// A freshly formed keeper ensemble re-elects for a while, so retry through transient leader loss.
@@ -492,12 +499,12 @@ func testHelmCluster(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		env.WaitClusterReady(ctx, &v1.KeeperCluster{
+		env.WaitKeeperUpdatedAndReady(ctx, &v1.KeeperCluster{
 			Namespace: namespace, Name: keeperName,
 		}, 5*time.Minute)
 
 		By("Waiting for ClickHouse to be ready")
-		env.WaitClusterReady(ctx, &v1.ClickHouseCluster{
+		env.WaitClickHouseUpdatedAndReady(ctx, &v1.ClickHouseCluster{
 			Namespace: namespace, Name: chName,
 		}, 5*time.Minute)
 	}
@@ -519,7 +526,7 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for KeeperCluster to be ready")
-		env.WaitClusterReady(ctx, &keeper, 5*time.Minute)
+		env.WaitKeeperUpdatedAndReady(ctx, &keeper, 5*time.Minute)
 
 		ch := testutil.NewClickHouseCluster(namespace, "ch-"+version).
 			WithKeeper(keeper.Name).
@@ -532,7 +539,7 @@ func testDeployment(namespace string) {
 		})
 
 		By("Waiting for ClickHouse to be ready")
-		env.WaitClusterReady(ctx, &ch, 5*time.Minute)
+		env.WaitClickHouseUpdatedAndReady(ctx, &ch, 5*time.Minute)
 	}
 
 	tableArgs := make([]any, 1, len(versionEntries)+1)

@@ -149,8 +149,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	mgrDone := make(chan struct{})
 
 	go func() {
-		defer GinkgoRecover()
 		defer close(mgrDone)
+		defer GinkgoRecover()
 
 		Expect(mgr.Start(mgrCtx)).To(Succeed())
 	}()
@@ -167,6 +167,9 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		ctrltestutil.AssertNoLeakedGoroutines()
 	})
 
+	// Registered after the leak assertion so the cache stops before it runs.
+	DeferCleanup(env.StopCache)
+
 	if err = imagePuller.Wait(); err != nil {
 		GinkgoWriter.Printf("failed to pre pull images: %s", err)
 	}
@@ -181,6 +184,10 @@ var _ = BeforeEach(func() {
 	if !enabled {
 		Skip(fmt.Sprintf("not in shard %d/%d", sharding.Index, sharding.Total))
 	}
+})
+
+var _ = BeforeEach(func() {
+	testutil.StartInvariants(env, testutil.TestNamespace())
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {

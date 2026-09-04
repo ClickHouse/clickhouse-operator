@@ -7,7 +7,6 @@ import (
 	"math/rand/v2"
 	"net"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -57,7 +55,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
 			})
 
-			env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
+			env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute)
 		})
 
 		DescribeTable("standalone ClickHouse updates", func(ctx context.Context, specUpdate v1.ClickHouseClusterSpec) {
@@ -96,7 +94,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			cr.Spec = specUpdate
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute, validateUpdateOrder)
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute)
 			Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 			Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 			env.ClickHouseRWChecks(ctx, &cr, &checks)
@@ -153,7 +151,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			cr.Spec = specUpdate
 			Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 5*time.Minute, validateUpdateOrder)
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 5*time.Minute)
 			env.ClickHouseRWChecks(ctx, &cr, &checks)
 		},
 			Entry("update log level", 3, v1.ClickHouseClusterSpec{Settings: v1.ClickHouseSettings{
@@ -266,7 +264,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				By("deleting cluster CR")
 				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 			})
-			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, validateReadyIsInitialized)
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
 
 			survivor, removed := v1.ClickHouseReplicaID{Index: 0}, v1.ClickHouseReplicaID{Index: 1}
 
@@ -318,7 +316,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				defer chClient.Close()
 
 				Expect(chClient.ExecReplica(ctx, survivor, "SYSTEM START FETCHES default.test")).To(Succeed())
-				env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute, validateUpdateOrder, validateReadyIsInitialized)
+				env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
 
 				var survivorRows uint64
 				Expect(chClient.QueryRowReplica(ctx, survivor, "SELECT count() FROM default.test", &survivorRows)).To(Succeed())
@@ -1366,7 +1364,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func(ctx context.Context) {
 				Expect(k8sClient.Delete(ctx, keeperCR)).To(Succeed())
 			})
-			env.WaitKeeperUpdatedAndReady(ctx, keeperCR, 2*time.Minute, false)
+			env.WaitKeeperUpdatedAndReady(ctx, keeperCR, 2*time.Minute)
 		})
 
 		cr := baseCr.DeepCopy()
@@ -1392,7 +1390,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}
 			Expect(k8sClient.Update(ctx, cr)).To(Succeed())
 
-			env.WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute, validateUpdateOrder)
+			env.WaitClickHouseUpdatedAndReady(ctx, cr, 2*time.Minute)
 			env.ClickHouseRWChecks(ctx, cr, &checks)
 		})
 	})
@@ -1446,7 +1444,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 		DeferCleanup(func(ctx context.Context) {
 			Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
 		})
-		env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
+		env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute)
 
 		By("checking keeper pod affinity")
 
@@ -1563,7 +1561,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			DeferCleanup(func(ctx context.Context) {
 				Expect(k8sClient.Delete(ctx, &keeper)).To(Succeed())
 			})
-			env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute, false)
+			env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute)
 		})
 
 		By("creating ClickHouse cluster with NetworkPolicies", func() {
@@ -1692,68 +1690,4 @@ func podUIDsByName(ctx context.Context, cr *v1.ClickHouseCluster) map[string]typ
 	}
 
 	return out
-}
-
-func validateUpdateOrder(ctx context.Context, cr *v1.ClickHouseCluster) {
-	GinkgoHelper()
-
-	// CheckUpdateOrder returns an error only for update-order invariant violations: fail hard.
-	for shard := range cr.Shards() {
-		Expect(env.CheckUpdateOrder(ctx, &client.ListOptions{
-			Namespace: cr.Namespace,
-			LabelSelector: labels.SelectorFromSet(map[string]string{
-				controllerutil.LabelAppKey:            cr.SpecificName(),
-				controllerutil.LabelClickHouseShardID: strconv.FormatInt(int64(shard), 10),
-			}),
-		}, controllerutil.LabelClickHouseReplicaID, cr.Status.StatefulSetRevision)).To(Succeed())
-	}
-}
-
-func validateReadyIsInitialized(ctx context.Context, cr *v1.ClickHouseCluster) {
-	GinkgoHelper()
-
-	pods := corev1.PodList{}
-	if err := k8sClient.List(ctx, &pods, client.InNamespace(cr.Namespace), client.MatchingLabels{
-		controllerutil.LabelAppKey: cr.SpecificName(),
-	}); err != nil {
-		GinkgoWriter.Printf("validateReadyIsInitialized: skipping tick, list Pods: %s\n", err)
-		return
-	}
-
-	initialized := make([]v1.ClickHouseReplicaID, 0, len(pods.Items))
-
-	for _, pod := range pods.Items {
-		if !ctrl.PodConditionTrue(&pod, v1.ReplicaInitializedCondition) {
-			continue
-		}
-
-		id, err := v1.ClickHouseIDFromLabels(pod.Labels)
-		Expect(err).NotTo(HaveOccurred())
-
-		initialized = append(initialized, id)
-	}
-
-	if len(initialized) == 0 {
-		return
-	}
-
-	// The client pings every replica, which fails while Pods are still being provisioned: skip the tick.
-	chClient, err := testutil.NewClickHouseClient(ctx, podDialer, cr)
-	if err != nil {
-		GinkgoWriter.Printf("validateReadyIsInitialized: skipping tick, connect: %s\n", err)
-		return
-	}
-
-	defer chClient.Close()
-
-	for _, id := range initialized {
-		var isReplicated bool
-		if err := chClient.QueryRowReplica(ctx, id,
-			"SELECT engine='Replicated' FROM system.databases WHERE name='default'", &isReplicated); err != nil {
-			GinkgoWriter.Printf("validateReadyIsInitialized: skipping replica %s: %s\n", id, err)
-			continue
-		}
-
-		Expect(isReplicated).To(BeTrue(), "replica should not be ready until it initialized")
-	}
 }

@@ -36,7 +36,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, time.Minute, false)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, time.Minute)
 		env.KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
@@ -45,7 +45,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute)
 		Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
 		Expect(cr.Status.Version).To(HavePrefix(cr.Spec.ContainerTemplate.Image.Tag))
 		env.KeeperRWChecks(ctx, &cr, &checks)
@@ -80,7 +80,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("deleting cluster CR")
 			Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
 		})
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute)
 		env.KeeperRWChecks(ctx, &cr, &checks)
 
 		By("updating cluster CR")
@@ -89,7 +89,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		cr.Spec = specUpdate
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
 
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute, true)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 5*time.Minute)
 		env.KeeperRWChecks(ctx, &cr, &checks)
 	},
 		Entry("update log level", 3, v1.KeeperClusterSpec{Settings: v1.KeeperSettings{
@@ -168,7 +168,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			By("creating secure keeper cluster CR")
 			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
 			By("ensuring secure port is working")
-			env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+			env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute)
 			env.KeeperRWChecks(ctx, &cr, new(0))
 		})
 	})
@@ -201,7 +201,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 		})
 
 		By("waiting for diskless keeper to be ready")
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, false)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute)
 
 		By("verifying keeper is functional with basic read/write")
 		env.KeeperRWChecks(ctx, &cr, new(0))
@@ -238,7 +238,7 @@ var _ = Describe("Keeper controller", Label("keeper"), func() {
 			Tag: BaseVersion,
 		}
 		Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
-		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute, true)
+		env.WaitKeeperUpdatedAndReady(ctx, &cr, 2*time.Minute)
 		env.KeeperRWChecks(ctx, &cr, new(0))
 	})
 })
