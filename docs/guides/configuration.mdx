@@ -833,7 +833,7 @@ Before a replica is removed on scale-down, the operator first unloads client tra
 
 ### Server logging {#server-logging}
 
-Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `trace` to both the container console and a rotated file on disk.
+Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `information` to both the container console and a rotated file on disk.
 
 ```yaml
 spec:
@@ -841,35 +841,53 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
 | Field       | Default | Description                                                                                                       |
 |-------------|---------|-------------------------------------------------------------------------------------------------------------------|
 | `logToFile` | `true`  | When `false`, the operator drops the file targets and the server logs only to the container console.              |
 | `jsonLogs`  | `false` | When `true`, the operator adds `formatting.type: json` so each line is a JSON object.                             |
-| `level`     | `trace` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
-| `size`      | `1000M` | Maximum size of a single log file before rotation.                                                                |
-| `count`     | `50`    | Number of rotated log files the server retains.                                                                   |
+| `level`     | `information` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `100M`  | Maximum size of a single log file before rotation.                                                                |
+| `count`     | `10`    | Number of rotated log files the server retains.                                                                   |
 
 The operator always keeps console logging on so that `kubectl logs` works, and layers file logging on top when `logToFile` is `true`. A cluster with the defaults renders this `logger` block:
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
 The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead.
 
 <Note>
 Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps working even when you disable file logging. Set `jsonLogs: true` when you ship logs to a structured log store that parses JSON.
+</Note>
+
+### System log tables {#system-log-tables}
+
+The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables with a 7 day TTL, because they live on the same volume as your data. Override the TTL, or any other system log setting, through `extraConfig`:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 30 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+```
+
+<Note>
+ClickHouse recreates a system table whose TTL changed and keeps the old data in a renamed table such as `system.text_log_0`. Drop those tables once you no longer need the history.
 </Note>
 
 ## Custom configuration {#custom-configuration}

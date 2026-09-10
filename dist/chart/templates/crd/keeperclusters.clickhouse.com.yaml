@@ -6311,7 +6311,7 @@ spec:
                     description: Configuration of ClickHouse Keeper server logging.
                     properties:
                       count:
-                        default: 50
+                        default: 10
                         description: Maximum number of log files to keep.
                         format: int64
                         type: integer
@@ -6320,7 +6320,7 @@ spec:
                         description: If true, then log in JSON format.
                         type: boolean
                       level:
-                        default: trace
+                        default: information
                         description: Server logger verbosity level.
                         enum:
                         - test
@@ -6338,7 +6338,7 @@ spec:
                         description: If false then disable all logging to file.
                         type: boolean
                       size:
-                        default: 1000M
+                        default: 100M
                         description: Maximum log file size.
                         type: string
                     type: object

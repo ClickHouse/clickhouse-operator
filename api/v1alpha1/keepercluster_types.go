@@ -109,8 +109,8 @@ func (s *KeeperClusterSpec) WithDefaults() {
 		Settings: KeeperSettings{
 			Logger: LoggerConfig{
 				LogToFile: new(true),
-				Level:     "trace",
-				Size:      "1000M",
+				Level:     DefaultLogLevel,
+				Size:      DefaultMaxLogFileSize,
 				Count:     DefaultMaxLogFiles,
 			},
 		},
