@@ -772,6 +772,11 @@ func (in *PodTemplateSpec) DeepCopyInto(out *PodTemplateSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.TopologyMinDomains != nil {
+		in, out := &in.TopologyMinDomains, &out.TopologyMinDomains
+		*out = new(int32)
+		**out = **in
+	}
 	if in.NodeHostnameKey != nil {
 		in, out := &in.NodeHostnameKey, &out.NodeHostnameKey
 		*out = new(string)

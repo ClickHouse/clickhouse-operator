@@ -398,6 +398,7 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 			MaxSkew:           1,
 			TopologyKey:       zoneKey,
 			WhenUnsatisfiable: corev1.DoNotSchedule,
+			MinDomains:        cr.Spec.PodTemplate.TopologyMinDomains,
 			LabelSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					controllerutil.LabelAppKey:            cr.SpecificName(),
