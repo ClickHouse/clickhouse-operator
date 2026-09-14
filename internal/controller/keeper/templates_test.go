@@ -352,7 +352,9 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		if zoneKey != "" {
 			spec.TopologyZoneKey = &zoneKey
 		}
+
 		spec.TopologyMinDomains = minDomains
+
 		return &v1.KeeperCluster{
 			Name: "test",
 			Spec: v1.KeeperClusterSpec{PodTemplate: spec},

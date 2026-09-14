@@ -324,7 +324,9 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		if zoneKey != "" {
 			spec.TopologyZoneKey = &zoneKey
 		}
+
 		spec.TopologyMinDomains = minDomains
+
 		return &v1.ClickHouseCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			Spec:       v1.ClickHouseClusterSpec{PodTemplate: spec},
@@ -366,6 +368,7 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		r := &clickhouseReconciler{Cluster: newCluster("topology.kubernetes.io/zone", int32p(3))}
 		podSpec0, _ := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 0})
 		podSpec2, _ := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 2})
+
 		Expect(podSpec0.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "0"))
 		Expect(podSpec2.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "2"))
 	})
