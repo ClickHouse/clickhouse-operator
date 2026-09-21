@@ -23,7 +23,9 @@ gofmt
 Gomega
 matchers
 configs
-autoscaler
+Karpenter
+[Aa]utoscalers?
+AZs
 GitOps
 Gatekeeper
 Kyverno
