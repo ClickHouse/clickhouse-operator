@@ -4371,9 +4371,10 @@ spec:
                       Setting TopologyMinDomains to the expected number of zones (typically 3) tells the scheduler to
                       treat that many zones as domains regardless of whether nodes exist in all of them, forcing the
                       autoscaler to provision into the missing zone.
-                      Only takes effect when TopologyZoneKey is set. Omit (nil) to preserve the default behaviour
+                      Requires TopologyZoneKey to be set. Omit (nil) to preserve the default behaviour
                       of the scheduler counting only zones with existing eligible nodes.
                     format: int32
+                    minimum: 1
                     type: integer
                   topologySpreadConstraints:
                     description: |-
@@ -6586,6 +6587,9 @@ spec:
                     - name
                     x-kubernetes-list-type: map
                 type: object
+                x-kubernetes-validations:
+                - message: topologyMinDomains requires topologyZoneKey
+                  rule: '!has(self.topologyMinDomains) || has(self.topologyZoneKey)'
               replicas:
                 default: 3
                 description: Number of replicas in the single shard.

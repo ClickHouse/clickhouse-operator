@@ -164,6 +164,7 @@ func (s *PodDisruptionBudgetSpec) ApplyOverrides(pdb *policyv1.PodDisruptionBudg
 }
 
 // PodTemplateSpec describes the pod configuration overrides for the cluster's pods.
+// +kubebuilder:validation:XValidation:rule="!has(self.topologyMinDomains) || has(self.topologyZoneKey)",message="topologyMinDomains requires topologyZoneKey"
 type PodTemplateSpec struct {
 	// Optional duration in seconds the pod needs to terminate gracefully. May be decreased in delete request.
 	// Value must be non-negative integer. The value zero indicates stop immediately via
@@ -270,8 +271,9 @@ type PodTemplateSpec struct {
 	// Setting TopologyMinDomains to the expected number of zones (typically 3) tells the scheduler to
 	// treat that many zones as domains regardless of whether nodes exist in all of them, forcing the
 	// autoscaler to provision into the missing zone.
-	// Only takes effect when TopologyZoneKey is set. Omit (nil) to preserve the default behaviour
+	// Requires TopologyZoneKey to be set. Omit (nil) to preserve the default behaviour
 	// of the scheduler counting only zones with existing eligible nodes.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	TopologyMinDomains *int32 `json:"topologyMinDomains,omitempty"`
 

@@ -5,6 +5,7 @@ CRDs
 uncomment
 PVCs
 PDBs
+PRs
 PDBPolicy
 Tolerations
 plaintext
@@ -41,4 +42,5 @@ Cilium
 Calico
 CNI
 maxSkew
+minDomains
 [Rr]esyncs?
