@@ -345,3 +345,51 @@ var _ = Describe("TemplateNetworkPolicy", func() {
 		Expect(templateNetworkPolicy(cluster, nil)).To(Equal(templateNetworkPolicy(cluster, nil)))
 	})
 })
+
+var _ = Describe("TopologySpreadConstraints", func() {
+	newKeeperCluster := func(zoneKey string, minDomains *int32) *v1.KeeperCluster {
+		spec := v1.PodTemplateSpec{}
+		if zoneKey != "" {
+			spec.TopologyZoneKey = &zoneKey
+		}
+
+		spec.TopologyMinDomains = minDomains
+
+		return &v1.KeeperCluster{
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{PodTemplate: spec},
+		}
+	}
+	int32p := func(v int32) *int32 { return &v }
+
+	It("should not set topology constraints when topologyZoneKey is unset", func() {
+		cr := newKeeperCluster("", nil)
+		podSpec, err := templatePodSpec(cr, v1.KeeperReplicaID(0))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(BeEmpty())
+	})
+
+	It("should set zone TopologySpreadConstraint without MinDomains when topologyMinDomains is unset", func() {
+		cr := newKeeperCluster("topology.kubernetes.io/zone", nil)
+		podSpec, err := templatePodSpec(cr, v1.KeeperReplicaID(0))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(HaveLen(1))
+		tsc := podSpec.TopologySpreadConstraints[0]
+		Expect(tsc.TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+		Expect(tsc.MaxSkew).To(BeEquivalentTo(1))
+		Expect(tsc.WhenUnsatisfiable).To(Equal(corev1.DoNotSchedule))
+		Expect(tsc.MinDomains).To(BeNil())
+		Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelRoleKey, controllerutil.LabelKeeperValue))
+	})
+
+	It("should set MinDomains on the zone constraint when topologyMinDomains is specified", func() {
+		cr := newKeeperCluster("topology.kubernetes.io/zone", int32p(3))
+		podSpec, err := templatePodSpec(cr, v1.KeeperReplicaID(0))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(HaveLen(1))
+		tsc := podSpec.TopologySpreadConstraints[0]
+		Expect(tsc.MinDomains).NotTo(BeNil())
+		Expect(*tsc.MinDomains).To(BeEquivalentTo(3))
+		Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cr.SpecificName()))
+	})
+})

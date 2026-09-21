@@ -5,6 +5,7 @@ CRDs
 uncomment
 PVCs
 PDBs
+PRs
 PDBPolicy
 Tolerations
 plaintext
@@ -23,7 +24,9 @@ gofmt
 Gomega
 matchers
 configs
-autoscaler
+Karpenter
+[Aa]utoscalers?
+AZs
 GitOps
 Gatekeeper
 Kyverno
@@ -39,4 +42,5 @@ Cilium
 Calico
 CNI
 maxSkew
+minDomains
 [Rr]esyncs?

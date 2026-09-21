@@ -318,6 +318,62 @@ var _ = Describe("SecurityContext defaults", func() {
 	})
 })
 
+var _ = Describe("TopologySpreadConstraints", func() {
+	newCluster := func(zoneKey string, minDomains *int32) *v1.ClickHouseCluster {
+		spec := v1.PodTemplateSpec{}
+		if zoneKey != "" {
+			spec.TopologyZoneKey = &zoneKey
+		}
+
+		spec.TopologyMinDomains = minDomains
+
+		return &v1.ClickHouseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "test"},
+			Spec:       v1.ClickHouseClusterSpec{PodTemplate: spec},
+		}
+	}
+	int32p := func(v int32) *int32 { return &v }
+
+	It("should not set MinDomains when topologyZoneKey is unset", func() {
+		r := &clickhouseReconciler{Cluster: newCluster("", nil)}
+		podSpec, err := templatePodSpec(r, v1.ClickHouseReplicaID{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(BeEmpty())
+	})
+
+	It("should set the zone TopologySpreadConstraint without MinDomains when topologyMinDomains is unset", func() {
+		r := &clickhouseReconciler{Cluster: newCluster("topology.kubernetes.io/zone", nil)}
+		podSpec, err := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 1})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(HaveLen(1))
+		tsc := podSpec.TopologySpreadConstraints[0]
+		Expect(tsc.TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+		Expect(tsc.MaxSkew).To(BeEquivalentTo(1))
+		Expect(tsc.WhenUnsatisfiable).To(Equal(corev1.DoNotSchedule))
+		Expect(tsc.MinDomains).To(BeNil())
+		Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "1"))
+	})
+
+	It("should set MinDomains on the zone constraint when topologyMinDomains is specified", func() {
+		r := &clickhouseReconciler{Cluster: newCluster("topology.kubernetes.io/zone", int32p(3))}
+		podSpec, err := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 0})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.TopologySpreadConstraints).To(HaveLen(1))
+		tsc := podSpec.TopologySpreadConstraints[0]
+		Expect(tsc.MinDomains).NotTo(BeNil())
+		Expect(*tsc.MinDomains).To(BeEquivalentTo(3))
+	})
+
+	It("should scope the zone constraint to the specific shard so cross-shard spread is independent", func() {
+		r := &clickhouseReconciler{Cluster: newCluster("topology.kubernetes.io/zone", int32p(3))}
+		podSpec0, _ := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 0})
+		podSpec2, _ := templatePodSpec(r, v1.ClickHouseReplicaID{ShardID: 2})
+
+		Expect(podSpec0.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "0"))
+		Expect(podSpec2.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "2"))
+	})
+})
+
 var _ = Describe("Service templates", func() {
 	cr := &v1.ClickHouseCluster{
 		Name:      "test",

@@ -425,6 +425,7 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 				MaxSkew:           1,
 				TopologyKey:       *podTemplate.TopologyZoneKey,
 				WhenUnsatisfiable: corev1.DoNotSchedule,
+				MinDomains:        podTemplate.TopologyMinDomains,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						controllerutil.LabelAppKey:  cr.SpecificName(),
