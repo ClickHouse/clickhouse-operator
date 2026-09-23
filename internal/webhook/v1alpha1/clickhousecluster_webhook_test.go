@@ -44,6 +44,41 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			}))
 		})
 
+		It("Should default systemLogsTTLDays on create only", func(ctx context.Context) {
+			By("Defaulting an unset field on create")
+
+			chCluster := &chv1.ClickHouseCluster{
+				Namespace: "default",
+				Name:      "test-logs-ttl-default",
+				Spec: chv1.ClickHouseClusterSpec{
+					KeeperClusterRef: chv1.KeeperClusterReference{
+						Name: "some-keeper-cluster",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, chCluster)).Should(Succeed())
+			deferCleanup(chCluster)
+			Expect(k8sClient.Get(ctx, chCluster.NamespacedName(), chCluster)).Should(Succeed())
+			Expect(chCluster.Spec.Settings.SystemLogsTTLDays).To(HaveValue(Equal(int32(chv1.DefaultSystemLogsTTLDays))))
+
+			By("Keeping an explicit 0 on create")
+
+			disabled := &chv1.ClickHouseCluster{
+				Namespace: "default",
+				Name:      "test-logs-ttl-disabled",
+				Spec: chv1.ClickHouseClusterSpec{
+					KeeperClusterRef: chv1.KeeperClusterReference{
+						Name: "some-keeper-cluster",
+					},
+					Settings: chv1.ClickHouseSettings{SystemLogsTTLDays: new(int32(0))},
+				},
+			}
+			Expect(k8sClient.Create(ctx, disabled)).Should(Succeed())
+			deferCleanup(disabled)
+			Expect(k8sClient.Get(ctx, disabled.NamespacedName(), disabled)).Should(Succeed())
+			Expect(disabled.Spec.Settings.SystemLogsTTLDays).To(HaveValue(Equal(int32(0))))
+		})
+
 		It("Should not inject default resources when the user provided a partial spec", func(ctx context.Context) {
 			By("Respecting user-provided requests with no limits")
 

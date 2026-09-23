@@ -105,6 +105,23 @@ var _ = Describe("ExtraConfig", func() {
 	})
 })
 
+var _ = Describe("RaftLogsLevel", func() {
+	It("should follow the logger level and default to information", func() {
+		cr := &v1.KeeperCluster{
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{Replicas: new(int32(1))},
+		}
+		data, err := generateConfigForSingleReplica(cr, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(data[ConfigFileName]).To(ContainSubstring("raft_logs_level: information"))
+
+		cr.Spec.Settings.Logger.Level = "warning"
+		data, err = generateConfigForSingleReplica(cr, 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(data[ConfigFileName]).To(ContainSubstring("raft_logs_level: warning"))
+	})
+})
+
 var _ = Describe("templatePodDisruptionBudget", func() {
 	var cr *v1.KeeperCluster
 

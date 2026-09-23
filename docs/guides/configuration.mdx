@@ -874,17 +874,31 @@ Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps work
 
 ### System log tables {#system-log-tables}
 
-The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables with a 7 day TTL, because they live on the same volume as your data. Override the TTL, or any other system log setting, through `extraConfig`:
+The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables. Because they live on the same volume as your data, `spec.settings.systemLogsTTLDays` bounds them with a table TTL, 30 days by default. Set `0` to disable the TTL explicitly.
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+The TTL takes effect on the next server restart. Override it per table, tune any other system log setting, or disable a table entirely with the `@remove` attribute — all through `extraConfig`:
 
 ```yaml
 spec:
   settings:
     extraConfig:
       text_log:
-        ttl: event_date + INTERVAL 30 DAY DELETE
+        ttl: event_date + INTERVAL 90 DAY DELETE
       metric_log:
         collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
 ```
+
+<Note>
+A disabled table is not dropped: the existing data stays on disk until you drop the table yourself.
+</Note>
 
 <Note>
 ClickHouse recreates a system table whose TTL changed and keeps the old data in a renamed table such as `system.text_log_0`. Drop those tables once you no longer need the history.

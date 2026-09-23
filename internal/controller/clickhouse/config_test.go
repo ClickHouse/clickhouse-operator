@@ -160,3 +160,42 @@ func findExposedEnvVars(value any) []string {
 
 	return nil
 }
+
+var _ = Describe("logTablesConfigGenerator", func() {
+	tmpl := template.Must(template.New("").Parse(logTablesConfigTemplateStr))
+
+	generate := func(ttlDays *int32) string {
+		r := &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				Name: "test",
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+					Settings: v1.ClickHouseSettings{SystemLogsTTLDays: ttlDays},
+				},
+			},
+		}
+
+		data, err := logTablesConfigGenerator(tmpl, r, v1.ClickHouseReplicaID{})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(yaml.Unmarshal([]byte(data), &map[any]any{})).To(Succeed())
+
+		return data
+	}
+
+	It("should render a TTL for every table when set", func() {
+		data := generate(new(int32(30)))
+		for _, table := range systemLogTables {
+			Expect(data).To(ContainSubstring(table + ":"))
+		}
+
+		Expect(strings.Count(data, "ttl: event_date + INTERVAL 30 DAY DELETE")).To(Equal(len(systemLogTables)))
+	})
+
+	It("should render no TTL when unset", func() {
+		Expect(generate(nil)).ToNot(ContainSubstring("ttl:"))
+	})
+
+	It("should render no TTL when explicitly disabled", func() {
+		Expect(generate(new(int32(0)))).ToNot(ContainSubstring("ttl:"))
+	})
+})

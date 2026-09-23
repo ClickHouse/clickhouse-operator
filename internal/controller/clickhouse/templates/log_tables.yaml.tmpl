@@ -1,12 +1,8 @@
 # System log tables grow without bound unless they carry a TTL, and they share
 # the data volume with user data. Override via spec.settings.extraConfig.
-query_log:
-  ttl: event_date + INTERVAL 7 DAY DELETE
-part_log:
-  ttl: event_date + INTERVAL 7 DAY DELETE
-text_log:
-  ttl: event_date + INTERVAL 7 DAY DELETE
-asynchronous_metric_log:
-  ttl: event_date + INTERVAL 7 DAY DELETE
-metric_log:
-  ttl: event_date + INTERVAL 7 DAY DELETE
+{{- range .Tables }}
+{{ . }}:
+{{- if $.TTLDays }}
+  ttl: event_date + INTERVAL {{ $.TTLDays }} DAY DELETE
+{{- end }}
+{{- end }}

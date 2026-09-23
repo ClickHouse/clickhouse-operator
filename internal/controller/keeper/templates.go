@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"cmp"
 	"fmt"
 	"path"
 	"slices"
@@ -334,7 +335,8 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, id v1.KeeperReplicaID)
 			LogStoragePath:      StorageLogPath,
 			SnapshotStoragePath: StorageSnapshotPath,
 			CoordinationSettings: map[string]any{
-				"raft_logs_level": "trace",
+				// The Raft logger is pinned by raft_logs_level independently of logger.level; keep them in sync.
+				"raft_logs_level": cmp.Or(cr.Spec.Settings.Logger.Level, v1.DefaultLogLevel),
 				"compress_logs":   false,
 			},
 			HTTPControl: httpControl{

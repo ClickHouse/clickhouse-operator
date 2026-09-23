@@ -205,6 +205,13 @@ type ClickHouseSettings struct {
 	// +optional
 	Logger LoggerConfig `json:"logger,omitempty"`
 
+	// Retention in days for the system log tables (`query_log`, `part_log`, `text_log`, `metric_log`,
+	// `asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days,
+	// 0 disables the TTL.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	SystemLogsTTLDays *int32 `json:"systemLogsTTLDays,omitempty"`
+
 	// TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server.
 	// +optional
 	TLS ClusterTLSSpec `json:"tls,omitempty"`

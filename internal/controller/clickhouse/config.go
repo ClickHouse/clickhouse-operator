@@ -399,9 +399,23 @@ func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id
 	return builder.String(), nil
 }
 
-func logTablesConfigGenerator(tmpl *template.Template, _ *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+// systemLogTables are the system log tables the operator enables and bounds with SystemLogsTTLDays.
+var systemLogTables = []string{"query_log", "part_log", "text_log", "asynchronous_metric_log", "metric_log"}
+
+type logTablesParams struct {
+	Tables []string
+	// TTLDays of 0 renders the tables without a TTL.
+	TTLDays int32
+}
+
+func logTablesConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.ClickHouseReplicaID) (string, error) {
+	params := logTablesParams{Tables: systemLogTables}
+	if ttl := r.Cluster.Spec.Settings.SystemLogsTTLDays; ttl != nil {
+		params.TTLDays = *ttl
+	}
+
 	builder := strings.Builder{}
-	if err := tmpl.Execute(&builder, nil); err != nil {
+	if err := tmpl.Execute(&builder, params); err != nil {
 		return "", fmt.Errorf("template log tables: %w", err)
 	}
 
