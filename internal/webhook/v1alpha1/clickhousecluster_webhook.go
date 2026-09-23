@@ -119,6 +119,8 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		errs = append(errs, err)
 	}
 
+	warns = append(warns, warnServerSectionsInUsersConfig(obj.Spec.Settings.ExtraUsersConfig.Raw)...)
+
 	additionalVolumeErrs := validateAdditionalVolumeClaimTemplates(obj.Spec.DataVolumeClaimSpec, obj.Spec.AdditionalVolumeClaimTemplates)
 	errs = append(errs, additionalVolumeErrs...)
 

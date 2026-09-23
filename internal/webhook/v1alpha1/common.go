@@ -1,9 +1,11 @@
 package v1alpha1
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -139,4 +141,47 @@ func validateAdditionalVolumeClaimTemplatesChanges(oldTemplates, newTemplates []
 	}
 
 	return nil
+}
+
+// usersConfigSections are the only top-level sections the users config parser reads (ClickHouse src/Access/UsersConfigParser.cpp)
+// plus include_from, which the config preprocessor resolves in any file.
+var usersConfigSections = map[string]struct{}{
+	"users":        {},
+	"profiles":     {},
+	"quotas":       {},
+	"roles":        {},
+	"include_from": {},
+}
+
+// warnServerSectionsInUsersConfig reports sections of extraUsersConfig that the users config parser
+// ignores, so they land as a silent no-op rather than an error.
+func warnServerSectionsInUsersConfig(raw []byte) admission.Warnings {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var sections map[string]any
+	if err := json.Unmarshal(raw, &sections); err != nil {
+		// Malformed content is not this check's business; the server surfaces it on start.
+		return nil
+	}
+
+	var found []string
+
+	for name := range sections {
+		if _, ok := usersConfigSections[name]; !ok {
+			found = append(found, name)
+		}
+	}
+
+	if len(found) == 0 {
+		return nil
+	}
+
+	slices.Sort(found)
+
+	return admission.Warnings{fmt.Sprintf(
+		"spec.settings.extraUsersConfig sets %s, which the users config parser ignores. Move these to spec.settings.extraConfig.",
+		strings.Join(found, ", "),
+	)}
 }
