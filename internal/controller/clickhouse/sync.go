@@ -26,7 +26,6 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	ctrlutil "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
-	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
 func compareReplicaID(a, b v1.ClickHouseReplicaID) int {
@@ -102,13 +101,10 @@ type clickhouseReconciler struct {
 	chctrl.Controller
 	statusManager
 	chctrl.ResourceManager
+	chctrl.Dependencies
+	chctrl.Settings
 
-	Dialer              ctrlutil.DialContextFunc
-	Checker             *upgrade.Checker
-	EnablePDB           bool
-	EnableNetworkPolicy bool
-	ResyncPeriod        time.Duration
-	connCache           *connCache
+	connCache *connCache
 
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState

@@ -81,12 +81,8 @@ type keeperReconciler struct {
 	chctrl.Controller
 	statusManager
 	chctrl.ResourceManager
-
-	Dialer              ctrlutil.DialContextFunc
-	Checker             *upgrade.Checker
-	EnablePDB           bool
-	EnableNetworkPolicy bool
-	ResyncPeriod        time.Duration
+	chctrl.Dependencies
+	chctrl.Settings
 
 	Cluster      *v1.KeeperCluster
 	ReplicaState map[v1.KeeperReplicaID]replicaState
