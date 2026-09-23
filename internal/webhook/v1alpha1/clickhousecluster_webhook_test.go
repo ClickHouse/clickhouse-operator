@@ -205,6 +205,34 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(warnings).NotTo(ContainElement(ContainSubstring("users config parser ignores")))
 		})
 
+		It("Should warn when extraConfig and extraReloadableConfig set the same section", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.Settings.ExtraConfig = runtime.RawExtension{
+				Raw: []byte(`{"named_collections":{"a":{"url":"http://one"}},"macros":{"layer":"1"}}`),
+			}
+			cluster.Spec.Settings.ExtraReloadableConfig = runtime.RawExtension{
+				Raw: []byte(`{"named_collections":{"a":{"url":"http://two"}},"logger":{"level":"warning"}}`),
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+			Expect(warnings).To(ContainElement(ContainSubstring("both set named_collections")))
+		})
+
+		It("Should not warn when extraConfig and extraReloadableConfig are disjoint", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.Settings.ExtraConfig = runtime.RawExtension{
+				Raw: []byte(`{"macros":{"layer":"1"}}`),
+			}
+			cluster.Spec.Settings.ExtraReloadableConfig = runtime.RawExtension{
+				Raw: []byte(`{"named_collections":{"a":{"url":"http://two"}}}`),
+			}
+
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			deferCleanup(cluster)
+			Expect(warnings).NotTo(ContainElement(ContainSubstring("extraReloadableConfig both set")))
+		})
+
 		It("Should check that all volumes from volume mounts are exists", func(ctx context.Context) {
 			cluster := chCluster.DeepCopy()
 

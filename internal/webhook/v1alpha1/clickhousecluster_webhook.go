@@ -120,6 +120,7 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	}
 
 	warns = append(warns, warnServerSectionsInUsersConfig(obj.Spec.Settings.ExtraUsersConfig.Raw)...)
+	warns = append(warns, warnExtraConfigOverlap(obj.Spec.Settings.ExtraConfig.Raw, obj.Spec.Settings.ExtraReloadableConfig.Raw)...)
 
 	additionalVolumeErrs := validateAdditionalVolumeClaimTemplates(obj.Spec.DataVolumeClaimSpec, obj.Spec.AdditionalVolumeClaimTemplates)
 	errs = append(errs, additionalVolumeErrs...)

@@ -185,3 +185,39 @@ func warnServerSectionsInUsersConfig(raw []byte) admission.Warnings {
 		strings.Join(found, ", "),
 	)}
 }
+
+// warnExtraConfigOverlap reports top-level sections present in both extraConfig and
+// extraReloadableConfig, where the merge outcome depends on config.d file ordering.
+func warnExtraConfigOverlap(extraRaw, reloadableRaw []byte) admission.Warnings {
+	if len(extraRaw) == 0 || len(reloadableRaw) == 0 {
+		return nil
+	}
+
+	var extra, reloadable map[string]any
+	if err := json.Unmarshal(extraRaw, &extra); err != nil {
+		return nil
+	}
+
+	if err := json.Unmarshal(reloadableRaw, &reloadable); err != nil {
+		return nil
+	}
+
+	var overlap []string
+
+	for name := range reloadable {
+		if _, ok := extra[name]; ok {
+			overlap = append(overlap, name)
+		}
+	}
+
+	if len(overlap) == 0 {
+		return nil
+	}
+
+	slices.Sort(overlap)
+
+	return admission.Warnings{fmt.Sprintf(
+		"spec.settings.extraConfig and spec.settings.extraReloadableConfig both set %s. Keep each section in exactly one field.",
+		strings.Join(overlap, ", "),
+	)}
+}

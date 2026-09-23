@@ -145,6 +145,11 @@ func init() {
 			Getter:          func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraConfig.Raw },
 		},
 		&extraConfigGenerator{
+			Name:          ExtraReloadableConfigFileName,
+			ConfigSubPath: ConfigDPath,
+			Getter:        func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraReloadableConfig.Raw },
+		},
+		&extraConfigGenerator{
 			Name:          ExtraUsersConfigFileName,
 			ConfigSubPath: UsersDPath,
 			Getter:        func(r *clickhouseReconciler) []byte { return r.Cluster.Spec.Settings.ExtraUsersConfig.Raw },
