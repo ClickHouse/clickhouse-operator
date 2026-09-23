@@ -133,11 +133,20 @@ var clickhouseConditionTypes = []v1.ConditionType{
 	v1.ClickHouseConditionTypeSchemaInSync,
 }
 
+// stateConditionTypes returns the state conditions owned by this cluster, including the conditional ones.
+func (r *clickhouseReconciler) stateConditionTypes() []v1.ConditionType {
+	if r.Cluster.Spec.ExternalSecret == nil {
+		return clickhouseConditionTypes
+	}
+
+	return append(slices.Clone(clickhouseConditionTypes), v1.ClickHouseConditionTypeExternalSecretValid)
+}
+
 func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter ClickHouse Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
 	if ctrlutil.PauseRequested(r.Cluster, log) {
-		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", clickhouseConditionTypes)
+		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", r.stateConditionTypes())
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ConditionTypeReconcileSucceeded,
 			Status:  metav1.ConditionFalse,
@@ -152,7 +161,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		return ctrl.Result{}, nil
 	}
 
-	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation", clickhouseConditionTypes)
+	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation", r.stateConditionTypes())
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},

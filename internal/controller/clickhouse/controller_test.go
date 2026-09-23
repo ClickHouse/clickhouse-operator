@@ -782,6 +782,35 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(&secret), &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKey(SecretKeyManagementPassword))
 		Expect(secret.Data).To(HaveKey(SecretKeyClusterSecret))
+
+		By("pausing the cluster with the external secret")
+
+		esoCR.Annotations = map[string]string{controllerutil.AnnotationPauseReconciliation: "true"}
+		Expect(suite.Client.Update(ctx, esoCR)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionUnknown), "external secret state must be reported as unknown while paused")
+		Expect(cond.Reason).To(BeEquivalentTo(v1.ConditionReasonReconciliationPaused))
+
+		By("resuming the cluster with the external secret")
+
+		delete(esoCR.Annotations, controllerutil.AnnotationPauseReconciliation)
+		Expect(suite.Client.Update(ctx, esoCR)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
 	})
 
 	It("should pause and resume reconciliation via annotation", func(ctx context.Context) {
