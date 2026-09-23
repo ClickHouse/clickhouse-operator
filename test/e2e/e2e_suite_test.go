@@ -12,16 +12,12 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
-	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
+	"github.com/ClickHouse/clickhouse-operator/internal/app"
 	ctrltestutil "github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
@@ -127,24 +123,22 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	By("setting up the manager")
 
-	mgr, err := ctrl.NewManager(config, ctrl.Options{
-		Logger: zapr.NewLogger(logger),
-		Scheme: scheme.Scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: "0",
-		},
-		Cache: cache.Options{},
-	})
+	settings := app.Settings{
+		MetricsAddr:           "0",
+		ProbeAddr:             "0",
+		EnablePDB:             true,
+		EnableNetworkPolicy:   true,
+		ResyncPeriod:          time.Minute,
+		VersionUpdateInterval: time.Hour,
+	}
+
+	mgr, err := app.New(app.Components{
+		RestConfig: config,
+		Logger:     zapLogger,
+		Dialer:     podDialer,
+		Fetcher:    &upgrade.StaticFetcher{Releases: releases},
+	}, settings)
 	Expect(err).NotTo(HaveOccurred())
-
-	updater := upgrade.NewReleaseUpdater(&upgrade.StaticFetcher{Releases: releases}, time.Minute, zapLogger)
-	Expect(mgr.Add(updater)).To(Succeed())
-
-	upgradeChecker := upgrade.NewChecker(updater)
-	Expect(keeper.SetupWithManager(mgr, zapLogger, upgradeChecker, podDialer, true, true, 30*time.Second)).To(Succeed())
-	Expect(clickhouse.SetupWithManager(
-		mgr, zapLogger, upgradeChecker, podDialer, true, true, 30*time.Second)).To(Succeed())
-	// +kubebuilder:scaffold:builder
 
 	mgrCtx, cancel := context.WithCancel(context.Background())
 	mgrDone := make(chan struct{})

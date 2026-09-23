@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"context"
 	"fmt"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -32,17 +31,13 @@ import (
 // ClusterController reconciles a ClickHouseCluster object.
 type ClusterController struct {
 	client.Client
+	chctrl.Dependencies
+	chctrl.Settings
 
-	Scheme              *runtime.Scheme
-	Recorder            events.EventRecorder
-	Logger              controllerutil.Logger
-	Webhook             webhookv1.ClickHouseClusterWebhook
-	Checker             *upgrade.Checker
-	Dialer              controllerutil.DialContextFunc
-	EnablePDB           bool
-	EnableNetworkPolicy bool
-	ResyncPeriod        time.Duration
-	connCache           *connCache
+	Scheme    *runtime.Scheme
+	Recorder  events.EventRecorder
+	Webhook   webhookv1.ClickHouseClusterWebhook
+	connCache *connCache
 }
 
 func keeperReferenceFieldValue(cluster *v1.ClickHouseCluster) []string {
@@ -127,13 +122,9 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Controller:      cc,
 		statusManager:   chctrl.NewStatusManager(cc, cluster),
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
-
-		Dialer:              cc.Dialer,
-		Checker:             cc.Checker,
-		EnablePDB:           cc.EnablePDB,
-		EnableNetworkPolicy: cc.EnableNetworkPolicy,
-		ResyncPeriod:        cc.ResyncPeriod,
-		connCache:           cc.connCache,
+		Dependencies:    cc.Dependencies,
+		Settings:        cc.Settings,
+		connCache:       cc.connCache,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.ClickHouseReplicaID]replicaState{},
@@ -170,21 +161,18 @@ func (cc *ClusterController) GetDialer() controllerutil.DialContextFunc {
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool, resyncPeriod time.Duration) error {
-	namedLogger := log.Named("clickhouse")
+func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctrl.Settings) error {
+	namedLogger := deps.Logger.Named("clickhouse")
+	deps.Logger = namedLogger
 
 	clickhouseController := &ClusterController{
-		Client:              mgr.GetClient(),
-		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorder("clickhouse-controller"),
-		Logger:              namedLogger,
-		Webhook:             webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
-		Checker:             checker,
-		Dialer:              dialer,
-		EnablePDB:           enablePDB,
-		EnableNetworkPolicy: enableNetworkPolicy,
-		ResyncPeriod:        resyncPeriod,
-		connCache:           newConnCache(),
+		Client:       mgr.GetClient(),
+		Dependencies: deps,
+		Settings:     settings,
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorder("clickhouse-controller"),
+		Webhook:      webhookv1.ClickHouseClusterWebhook{Log: namedLogger},
+		connCache:    newConnCache(),
 	}
 
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &v1.ClickHouseCluster{}, chctrl.KeeperClusterReferenceField, func(obj client.Object) []string {
@@ -214,11 +202,11 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.Service{}).
 		Owns(&batchv1.Job{})
 
-	if enableNetworkPolicy {
+	if settings.EnableNetworkPolicy {
 		controllerBuilder = controllerBuilder.Owns(&networkingv1.NetworkPolicy{})
 	}
 
-	if enablePDB {
+	if settings.EnablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
 	}
 

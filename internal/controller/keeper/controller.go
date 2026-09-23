@@ -3,7 +3,6 @@ package keeper
 import (
 	"context"
 	"fmt"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,16 +29,12 @@ import (
 // ClusterController reconciles a KeeperCluster object.
 type ClusterController struct {
 	client.Client
+	chctrl.Dependencies
+	chctrl.Settings
 
-	Scheme              *runtime.Scheme
-	Recorder            events.EventRecorder
-	Logger              controllerutil.Logger
-	Webhook             webhookv1.KeeperClusterWebhook
-	Checker             *upgrade.Checker
-	Dialer              controllerutil.DialContextFunc
-	EnablePDB           bool
-	EnableNetworkPolicy bool
-	ResyncPeriod        time.Duration
+	Scheme   *runtime.Scheme
+	Recorder events.EventRecorder
+	Webhook  webhookv1.KeeperClusterWebhook
 }
 
 // +kubebuilder:rbac:groups=clickhouse.com,resources=keeperclusters,verbs=get;list;watch;create;update;patch;delete
@@ -111,12 +106,8 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 		Controller:      cc,
 		statusManager:   chctrl.NewStatusManager(cc, cluster),
 		ResourceManager: chctrl.NewResourceManager(cc, cluster),
-
-		Dialer:              cc.Dialer,
-		Checker:             cc.Checker,
-		EnablePDB:           cc.EnablePDB,
-		EnableNetworkPolicy: cc.EnableNetworkPolicy,
-		ResyncPeriod:        cc.ResyncPeriod,
+		Dependencies:    cc.Dependencies,
+		Settings:        cc.Settings,
 
 		Cluster:      cluster,
 		ReplicaState: map[v1.KeeperReplicaID]replicaState{},
@@ -165,20 +156,17 @@ func keeperClustersForClickHouse(_ context.Context, obj client.Object) []reconci
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgrade.Checker, dialer controllerutil.DialContextFunc, enablePDB, enableNetworkPolicy bool, resyncPeriod time.Duration) error {
-	namedLogger := log.Named("keeper")
+func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctrl.Settings) error {
+	namedLogger := deps.Logger.Named("keeper")
+	deps.Logger = namedLogger
 
 	keeperController := &ClusterController{
-		Client:              mgr.GetClient(),
-		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorder("keeper-controller"),
-		Logger:              namedLogger,
-		Webhook:             webhookv1.KeeperClusterWebhook{Log: namedLogger},
-		Checker:             checker,
-		Dialer:              dialer,
-		EnablePDB:           enablePDB,
-		EnableNetworkPolicy: enableNetworkPolicy,
-		ResyncPeriod:        resyncPeriod,
+		Client:       mgr.GetClient(),
+		Dependencies: deps,
+		Settings:     settings,
+		Scheme:       mgr.GetScheme(),
+		Recorder:     mgr.GetEventRecorder("keeper-controller"),
+		Webhook:      webhookv1.KeeperClusterWebhook{Log: namedLogger},
 	}
 
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
@@ -187,7 +175,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{})
 
-	if enableNetworkPolicy {
+	if settings.EnableNetworkPolicy {
 		controllerBuilder = controllerBuilder.
 			Owns(&networkingv1.NetworkPolicy{}).
 			Watches(
@@ -197,7 +185,7 @@ func SetupWithManager(mgr ctrl.Manager, log controllerutil.Logger, checker *upgr
 			)
 	}
 
-	if enablePDB {
+	if settings.EnablePDB {
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
 	}
 
