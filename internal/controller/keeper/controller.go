@@ -15,6 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -85,6 +86,13 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 			Status:             metav1.ConditionFalse,
 			Reason:             v1.ConditionReasonSpecInvalid,
 			Message:            err.Error(),
+			ObservedGeneration: cluster.GetGeneration(),
+		})
+		chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionTypeReconcileSucceeded,
+			Status:             metav1.ConditionFalse,
+			Reason:             v1.ConditionReasonSpecInvalid,
+			Message:            "Reconcile skipped: spec validation failed",
 			ObservedGeneration: cluster.GetGeneration(),
 		})
 
@@ -170,6 +178,7 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 	}
 
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
+		WithOptions(controller.Options{MaxConcurrentReconciles: settings.MaxConcurrentReconciles}).
 		For(&v1.KeeperCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.ConfigMap{}).

@@ -124,12 +124,13 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	By("setting up the manager")
 
 	settings := app.Settings{
-		MetricsAddr:           "0",
-		ProbeAddr:             "0",
-		EnablePDB:             true,
-		EnableNetworkPolicy:   true,
-		ResyncPeriod:          time.Minute,
-		VersionUpdateInterval: time.Hour,
+		MetricsAddr:             "0",
+		ProbeAddr:               "0",
+		EnablePDB:               true,
+		EnableNetworkPolicy:     true,
+		ResyncPeriod:            time.Minute,
+		MaxConcurrentReconciles: 4,
+		VersionUpdateInterval:   time.Hour,
 	}
 
 	mgr, err := app.New(app.Components{

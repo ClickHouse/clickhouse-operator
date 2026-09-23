@@ -16,9 +16,10 @@ const (
 	ConditionReasonSpecValid   ConditionReason = "SpecValid"
 
 	// ConditionTypeReconcileSucceeded indicates that latest reconciliation was successful.
-	ConditionTypeReconcileSucceeded  ConditionType   = "ReconcileSucceeded"
-	ConditionReasonStepFailed        ConditionReason = "ReconcileStepFailed"
-	ConditionReasonReconcileFinished ConditionReason = "ReconcileFinished"
+	ConditionTypeReconcileSucceeded     ConditionType   = "ReconcileSucceeded"
+	ConditionReasonStepFailed           ConditionReason = "ReconcileStepFailed"
+	ConditionReasonReconcileFinished    ConditionReason = "ReconcileFinished"
+	ConditionReasonReconciliationPaused ConditionReason = "ReconciliationPaused"
 
 	// ConditionTypeReplicaStartupSucceeded indicates that all replicas of the cluster are able to start.
 	ConditionTypeReplicaStartupSucceeded ConditionType   = "ReplicaStartupSucceeded"

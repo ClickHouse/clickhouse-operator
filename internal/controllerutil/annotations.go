@@ -10,7 +10,24 @@ const (
 	AnnotationReloadableConfigHash = "checksum/reloadable-configuration"
 
 	AnnotationStatefulSetVersion = "clickhouse.com/statefulset-version"
+
+	AnnotationPauseReconciliation = "clickhouse.com/pause-reconciliation"
 )
+
+// PauseRequested reports whether reconciliation is paused by the pause annotation.
+func PauseRequested(obj client.Object, log Logger) bool {
+	value, ok := obj.GetAnnotations()[AnnotationPauseReconciliation]
+	if !ok {
+		return false
+	}
+
+	if value != "true" {
+		log.Warn("ignoring pause annotation, only \"true\" pauses reconciliation", "value", value)
+		return false
+	}
+
+	return true
+}
 
 // AddHashWithKeyToAnnotations adds given spec hash to object's annotations with given key.
 func AddHashWithKeyToAnnotations(obj client.Object, key string, specHash string) {
