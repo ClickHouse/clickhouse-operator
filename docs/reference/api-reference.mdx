@@ -201,6 +201,7 @@ ContainerTemplateSpec describes the container configuration overrides for the cl
 | `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core) | SecurityContext defines the security options the container should be run with.<br />A non-nil SecurityContext fully replaces operator defaults; the user owns the<br />entire struct. When nil, operator defaults are preserved.<br />More info: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false |  |
 | `livenessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | LivenessProbe overrides the operator's default liveness probe. | false |  |
 | `readinessProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | ReadinessProbe overrides the operator's default readiness probe. | false |  |
+| `startupProbe` | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core) | StartupProbe holds back the liveness and readiness probes until it succeeds, giving slow-starting<br />containers time to come up. The operator sets no startup probe by default. | false |  |
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)

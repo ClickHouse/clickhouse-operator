@@ -347,6 +347,11 @@ type ContainerTemplateSpec struct {
 	// ReadinessProbe overrides the operator's default readiness probe.
 	// +optional
 	ReadinessProbe *corev1.Probe `json:"readinessProbe,omitempty"`
+
+	// StartupProbe holds back the liveness and readiness probes until it succeeds, giving slow-starting
+	// containers time to come up. The operator sets no startup probe by default.
+	// +optional
+	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
 }
 
 // ClusterTLSSpec defines cluster TLS configuration.
