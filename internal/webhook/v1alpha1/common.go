@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -142,25 +143,14 @@ func validateAdditionalVolumeClaimTemplatesChanges(oldTemplates, newTemplates []
 	return nil
 }
 
-// serverOnlyConfigSections are top-level sections that belong to the server config tree. ClickHouse
-// parses the users config with a different parser, which ignores them: the server starts clean, logs
-// nothing, and the setting silently does not apply. Warn instead of rejecting, so a cluster that
-// already carries one of these keys stays updatable.
-var serverOnlyConfigSections = []string{
-	"dictionaries",
-	"distributed_ddl",
-	"keeper_server",
-	"listen_host",
-	"logger",
-	"macros",
-	"merge_tree",
-	"named_collections",
-	"openSSL",
-	"protocols",
-	"remote_servers",
-	"storage_configuration",
-	"user_directories",
-	"zookeeper",
+// usersConfigSections are the only top-level sections the users config parser reads (ClickHouse src/Access/UsersConfigParser.cpp)
+// plus include_from, which the config preprocessor resolves in any file.
+var usersConfigSections = map[string]struct{}{
+	"users":        {},
+	"profiles":     {},
+	"quotas":       {},
+	"roles":        {},
+	"include_from": {},
 }
 
 // warnServerSectionsInUsersConfig reports sections of extraUsersConfig that the users config parser
@@ -178,8 +168,8 @@ func warnServerSectionsInUsersConfig(raw []byte) admission.Warnings {
 
 	var found []string
 
-	for _, name := range serverOnlyConfigSections {
-		if _, ok := sections[name]; ok {
+	for name := range sections {
+		if _, ok := usersConfigSections[name]; !ok {
 			found = append(found, name)
 		}
 	}
@@ -188,9 +178,10 @@ func warnServerSectionsInUsersConfig(raw []byte) admission.Warnings {
 		return nil
 	}
 
+	slices.Sort(found)
+
 	return admission.Warnings{fmt.Sprintf(
-		"spec.settings.extraUsersConfig sets %s, which the users config parser ignores. "+
-			"Move these to spec.settings.extraConfig, otherwise they apply nowhere and the server reports no error.",
+		"spec.settings.extraUsersConfig sets %s, which the users config parser ignores. Move these to spec.settings.extraConfig.",
 		strings.Join(found, ", "),
 	)}
 }
