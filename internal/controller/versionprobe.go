@@ -35,6 +35,9 @@ const (
 	versionProbeDeadline        = int64(300)
 	versionProbeRetryAnnotation = "clickhouse.com/version-probe-retry"
 	versionProbeRetryMaxDelay   = 32 * time.Minute
+	versionProbeTmpVolumeName   = "clickhouse-version-probe-tmp-volume"
+	versionProbeTmpPath         = "/tmp"
+	versionProbeWorkPath        = "/tmp/clickhouse-local"
 )
 
 // versionProbeRetryBackoff is a backoff config for failed version probe jobs recreation.
@@ -294,6 +297,9 @@ func imageRevision(cfg VersionProbeConfig) (string, error) {
 }
 
 func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision string) (batchv1.Job, error) {
+	securityContext := DefaultContainerSecurityContext()
+	securityContext.ReadOnlyRootFilesystem = new(true)
+
 	job := batchv1.Job{
 		Namespace:   rm.owner.GetNamespace(),
 		Labels:      maps.Clone(cfg.Labels),
@@ -314,12 +320,16 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 					Tolerations:           cfg.PodTemplate.Tolerations,
 					ServiceAccountName:    cfg.PodTemplate.ServiceAccountName,
 					SchedulerName:         cfg.PodTemplate.SchedulerName,
+					Volumes: []corev1.Volume{{
+						Name:         versionProbeTmpVolumeName,
+						VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+					}},
 					Containers: []corev1.Container{
 						{
 							Name:                     v1.VersionProbeContainerName,
 							Image:                    cfg.ContainerTemplate.Image.String(),
 							ImagePullPolicy:          cfg.ContainerTemplate.ImagePullPolicy,
-							SecurityContext:          DefaultContainerSecurityContext(),
+							SecurityContext:          securityContext,
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 							Command:                  []string{versionProbeBinary},
@@ -327,8 +337,13 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 								"local",
 								"--logger.console=1",
 								"--logger.level=debug",
+								"--path", versionProbeWorkPath,
 								"--query", versionProbeQuery,
 							},
+							VolumeMounts: []corev1.VolumeMount{{
+								Name:      versionProbeTmpVolumeName,
+								MountPath: versionProbeTmpPath,
+							}},
 							Env: []corev1.EnvVar{{Name: "MALLOC_CONF", Value: "narenas:2,dirty_decay_ms:0,muzzy_decay_ms:0,thp:never"}},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
