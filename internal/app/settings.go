@@ -20,6 +20,7 @@ type Settings struct {
 	EnableNetworkPolicy        bool          `env:"ENABLE_NETWORK_POLICY, default=true"`
 	WatchNamespace             []string      `env:"WATCH_NAMESPACE"`
 	ResyncPeriod               time.Duration `env:"RESYNC_PERIOD, default=30s"`
+	MaxConcurrentReconciles    int           `env:"MAX_CONCURRENT_RECONCILES, default=4"`
 	VersionUpdateInterval      time.Duration `env:"VERSION_UPDATE_INTERVAL, default=24h"`
 	DisableVersionUpdateChecks bool          `env:"DISABLE_VERSION_UPDATE_CHECKS, default=false"`
 
@@ -88,6 +89,10 @@ func LoadEnv(ctx context.Context, s *Settings) error {
 
 // Validate checks the configuration invariants across all sources.
 func (s *Settings) Validate() error {
+	if s.MaxConcurrentReconciles <= 0 {
+		return errors.New("MAX_CONCURRENT_RECONCILES must be greater than 0")
+	}
+
 	if !s.DisableVersionUpdateChecks && s.VersionUpdateInterval <= 0 {
 		return errors.New("--version-update-interval must be greater than 0 when version update checks are enabled")
 	}

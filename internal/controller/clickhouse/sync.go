@@ -122,20 +122,46 @@ type clickhouseReconciler struct {
 	unsyncedShards    map[int32]bool // Populated by reconcileDatabaseSync, consumed by reconcileCleanUp.
 }
 
+var clickhouseConditionTypes = []v1.ConditionType{
+	v1.ConditionTypeReplicaStartupSucceeded,
+	v1.ConditionTypeHealthy,
+	v1.ConditionTypeClusterSizeAligned,
+	v1.ConditionTypeConfigurationInSync,
+	v1.ConditionTypeVersionInSync,
+	v1.ConditionTypeVersionUpgraded,
+	v1.ConditionTypeReady,
+	v1.ClickHouseConditionTypeSchemaInSync,
+}
+
+// stateConditionTypes returns the state conditions owned by this cluster, including the conditional ones.
+func (r *clickhouseReconciler) stateConditionTypes() []v1.ConditionType {
+	if r.Cluster.Spec.ExternalSecret == nil {
+		return clickhouseConditionTypes
+	}
+
+	return append(slices.Clone(clickhouseConditionTypes), v1.ClickHouseConditionTypeExternalSecretValid)
+}
+
 func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter ClickHouse Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
-	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation",
-		[]v1.ConditionType{
-			v1.ConditionTypeReplicaStartupSucceeded,
-			v1.ConditionTypeHealthy,
-			v1.ConditionTypeClusterSizeAligned,
-			v1.ConditionTypeConfigurationInSync,
-			v1.ConditionTypeVersionInSync,
-			v1.ConditionTypeVersionUpgraded,
-			v1.ConditionTypeReady,
-			v1.ClickHouseConditionTypeSchemaInSync,
+	if ctrlutil.PauseRequested(r.Cluster, log) {
+		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", r.stateConditionTypes())
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeReconcileSucceeded,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ConditionReasonReconciliationPaused,
+			Message: "Reconciliation is paused by the " + ctrlutil.AnnotationPauseReconciliation + " annotation",
 		})
+
+		if err := r.UpsertStatus(ctx, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update status of the paused cluster: %w", err)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation", r.stateConditionTypes())
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},

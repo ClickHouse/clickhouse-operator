@@ -92,20 +92,37 @@ type keeperReconciler struct {
 	HorizontalScaleAllowed bool
 }
 
+var keeperConditionTypes = []v1.ConditionType{
+	v1.ConditionTypeReplicaStartupSucceeded,
+	v1.ConditionTypeHealthy,
+	v1.ConditionTypeClusterSizeAligned,
+	v1.ConditionTypeConfigurationInSync,
+	v1.ConditionTypeVersionInSync,
+	v1.ConditionTypeVersionUpgraded,
+	v1.ConditionTypeReady,
+	v1.KeeperConditionTypeScaleAllowed,
+}
+
 func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
 	log.Info("Enter Keeper Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
-	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation",
-		[]v1.ConditionType{
-			v1.ConditionTypeReplicaStartupSucceeded,
-			v1.ConditionTypeHealthy,
-			v1.ConditionTypeClusterSizeAligned,
-			v1.ConditionTypeConfigurationInSync,
-			v1.ConditionTypeVersionInSync,
-			v1.ConditionTypeVersionUpgraded,
-			v1.ConditionTypeReady,
-			v1.KeeperConditionTypeScaleAllowed,
+	if ctrlutil.PauseRequested(r.Cluster, log) {
+		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", keeperConditionTypes)
+		r.SetCondition(metav1.Condition{
+			Type:    v1.ConditionTypeReconcileSucceeded,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ConditionReasonReconciliationPaused,
+			Message: "Reconciliation is paused by the " + ctrlutil.AnnotationPauseReconciliation + " annotation",
 		})
+
+		if err := r.UpsertStatus(ctx, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update status of the paused cluster: %w", err)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	r.SetUnknownConditions(v1.ConditionReasonStepFailed, "Reconcile stopped before condition evaluation", keeperConditionTypes)
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "ClusterRevisions", Fn: r.reconcileClusterRevisions, Always: true},

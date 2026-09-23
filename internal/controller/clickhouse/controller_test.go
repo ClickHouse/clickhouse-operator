@@ -782,6 +782,81 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(&secret), &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKey(SecretKeyManagementPassword))
 		Expect(secret.Data).To(HaveKey(SecretKeyClusterSecret))
+
+		By("pausing the cluster with the external secret")
+
+		esoCR.Annotations = map[string]string{controllerutil.AnnotationPauseReconciliation: "true"}
+		Expect(suite.Client.Update(ctx, esoCR)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionUnknown), "external secret state must be reported as unknown while paused")
+		Expect(cond.Reason).To(BeEquivalentTo(v1.ConditionReasonReconciliationPaused))
+
+		By("resuming the cluster with the external secret")
+
+		delete(esoCR.Annotations, controllerutil.AnnotationPauseReconciliation)
+		Expect(suite.Client.Update(ctx, esoCR)).To(Succeed())
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: esoCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, esoCR.NamespacedName(), esoCR)).To(Succeed())
+		cond = meta.FindStatusCondition(esoCR.Status.Conditions, v1.ClickHouseConditionTypeExternalSecretValid)
+		Expect(cond).ToNot(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+	})
+
+	It("should pause and resume reconciliation via annotation", func(ctx context.Context) {
+		updatedCR := cr.DeepCopy()
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		beforeRevision := updatedCR.Status.UpdateRevision
+
+		By("pausing reconciliation and changing the spec")
+
+		updatedCR.Annotations = map[string]string{controllerutil.AnnotationPauseReconciliation: "true"}
+		updatedCR.Spec.Settings.Logger.Level = "trace"
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+
+		result, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeZero())
+
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		pausedCond := meta.FindStatusCondition(updatedCR.Status.Conditions, v1.ConditionTypeReconcileSucceeded)
+		Expect(pausedCond).NotTo(BeNil())
+		Expect(pausedCond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(pausedCond.Reason).To(BeEquivalentTo(v1.ConditionReasonReconciliationPaused))
+
+		readyCond := meta.FindStatusCondition(updatedCR.Status.Conditions, v1.ConditionTypeReady)
+		Expect(readyCond).NotTo(BeNil())
+		Expect(readyCond.Status).To(Equal(metav1.ConditionUnknown), "paused cluster state must be reported as unknown")
+		Expect(readyCond.Reason).To(BeEquivalentTo(v1.ConditionReasonReconciliationPaused))
+		Expect(updatedCR.Status.UpdateRevision).To(Equal(beforeRevision), "paused reconcile must not observe the spec change")
+
+		By("resuming reconciliation")
+		delete(updatedCR.Annotations, controllerutil.AnnotationPauseReconciliation)
+		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
+		resumedCond := meta.FindStatusCondition(updatedCR.Status.Conditions, v1.ConditionTypeReconcileSucceeded)
+		Expect(resumedCond).NotTo(BeNil())
+		Expect(resumedCond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(resumedCond.Reason).To(BeEquivalentTo(v1.ConditionReasonReconcileFinished))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(beforeRevision))
 	})
 
 	It("should not recreate resources while the cluster is being deleted", func(ctx context.Context) {

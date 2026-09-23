@@ -16,7 +16,8 @@ type Dependencies struct {
 
 // Settings holds the reconciliation behavior knobs shared by the controllers.
 type Settings struct {
-	EnablePDB           bool
-	EnableNetworkPolicy bool
-	ResyncPeriod        time.Duration
+	EnablePDB               bool
+	EnableNetworkPolicy     bool
+	ResyncPeriod            time.Duration
+	MaxConcurrentReconciles int
 }

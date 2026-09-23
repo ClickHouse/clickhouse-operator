@@ -144,9 +144,10 @@ func New(components Components, settings Settings) (ctrl.Manager, error) {
 
 	deps := chctrl.Dependencies{Logger: components.Logger, Checker: upgradeChecker, Dialer: components.Dialer}
 	controllerSettings := chctrl.Settings{
-		EnablePDB:           settings.EnablePDB,
-		EnableNetworkPolicy: settings.EnableNetworkPolicy,
-		ResyncPeriod:        settings.ResyncPeriod,
+		EnablePDB:               settings.EnablePDB,
+		EnableNetworkPolicy:     settings.EnableNetworkPolicy,
+		ResyncPeriod:            settings.ResyncPeriod,
+		MaxConcurrentReconciles: settings.MaxConcurrentReconciles,
 	}
 
 	if err := keeper.SetupWithManager(mgr, deps, controllerSettings); err != nil {

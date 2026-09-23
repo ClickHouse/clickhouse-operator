@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -103,6 +104,13 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 			Message:            err.Error(),
 			ObservedGeneration: cluster.GetGeneration(),
 		})
+		chctrl.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionTypeReconcileSucceeded,
+			Status:             metav1.ConditionFalse,
+			Reason:             v1.ConditionReasonSpecInvalid,
+			Message:            "Reconcile skipped: spec validation failed",
+			ObservedGeneration: cluster.GetGeneration(),
+		})
 
 		if err := cc.Status().Update(ctx, cluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update clickhouse cluster status: %w", err)
@@ -187,6 +195,7 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 	}
 
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
+		WithOptions(controller.Options{MaxConcurrentReconciles: settings.MaxConcurrentReconciles}).
 		For(&v1.ClickHouseCluster{}, builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.LabelChangedPredicate{}, predicate.AnnotationChangedPredicate{}))).
 		Watches(
 			&v1.KeeperCluster{},
