@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 )
@@ -287,6 +288,40 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			Expect(container.ReadinessProbe).NotTo(BeNil())
 			Expect(container.ReadinessProbe.HTTPGet).NotTo(BeNil(), "user httpGet probe should replace operator exec probe")
 			Expect(container.ReadinessProbe.Exec).To(BeNil(), "operator exec probe must be removed")
+		})
+
+		It("should set the user startup probe and keep operator probes intact", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					LivenessProbe: &corev1.Probe{
+						Exec: &corev1.ExecAction{},
+					},
+				},
+				&v1.ContainerTemplateSpec{
+					StartupProbe: &corev1.Probe{
+						TCPSocket:        &corev1.TCPSocketAction{Port: intstr.FromInt32(9000)},
+						FailureThreshold: 60,
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.StartupProbe).NotTo(BeNil())
+			Expect(container.StartupProbe.TCPSocket).NotTo(BeNil())
+			Expect(container.StartupProbe.FailureThreshold).To(Equal(int32(60)))
+			Expect(container.LivenessProbe).NotTo(BeNil(), "operator liveness probe must survive a startup-probe-only override")
+			Expect(container.LivenessProbe.Exec).NotTo(BeNil())
+		})
+
+		It("should leave startup probe unset when the user does not provide one", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{Name: "server"},
+				&v1.ContainerTemplateSpec{},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.StartupProbe).To(BeNil())
 		})
 	})
 })
