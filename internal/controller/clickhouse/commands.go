@@ -250,11 +250,10 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 
 		log.Debug("creating database", "replica_id", id, "database", name)
 
-		if err = conn.Exec(ctx, fmt.Sprintf(
+		if err = cmd.createDatabase(ctx, log, conn, id, name, fmt.Sprintf(
 			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
 			desc.UUID, desc.EngineFull,
-		),
-		); err != nil {
+		)); err != nil {
 			return fmt.Errorf("failed to create database %s on replica %s: %w", name, id, err)
 		}
 
@@ -314,7 +313,7 @@ func (cmd *commander) EnsureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 	log.Debug("creating replicated default database")
 
 	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
-	if err = conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
+	if err = cmd.createDatabase(ctx, log, conn, id, "default", createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
 		return false, fmt.Errorf("create default replicated database %s: %w", id, err)
 	}
 
@@ -488,6 +487,91 @@ func (cmd *commander) CleanupDatabaseReplicas(
 
 	if total != succeed {
 		return fmt.Errorf("some stale replicas are not cleaned up: %d/%d", succeed, total)
+	}
+
+	return nil
+}
+
+// codeReplicaAlreadyExists is ClickHouse error REPLICA_ALREADY_EXISTS, raised by CREATE DATABASE ... ENGINE = Replicated
+// when Keeper already holds a registration under the replica's name.
+const codeReplicaAlreadyExists = 253
+
+func isReplicaAlreadyExists(err error) bool {
+	var exc *clickhouse.Exception
+
+	return errors.As(err, &exc) && exc.Code == codeReplicaAlreadyExists
+}
+
+// createDatabase runs a CREATE DATABASE statement on replica id. When ClickHouse reports that a Replicated
+// database registration under this replica's name already exists, the replica has no local copy of the database
+// while Keeper still remembers a previous incarnation that lost its volume; the leftovers are dropped from a peer
+// and the statement is run once more.
+func (cmd *commander) createDatabase(
+	ctx context.Context,
+	log controllerutil.Logger,
+	conn clickhouse.Conn,
+	id v1.ClickHouseReplicaID,
+	database, query string,
+	args ...any,
+) error {
+	err := conn.Exec(ctx, query, args...)
+	if err == nil {
+		return nil
+	}
+
+	if !isReplicaAlreadyExists(err) {
+		return fmt.Errorf("create database %s: %w", database, err)
+	}
+
+	log.Info("dropping stale Keeper registration left by a previous incarnation of the replica",
+		"replica_id", id, "database", database)
+
+	if dropErr := cmd.dropStaleReplicaRegistration(ctx, id, database); dropErr != nil {
+		return fmt.Errorf("drop stale registration of database %s: %w", database, dropErr)
+	}
+
+	if err = conn.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("create database %s after dropping stale registration: %w", database, err)
+	}
+
+	return nil
+}
+
+// peerConn returns a live connection to any replica other than exclude.
+func (cmd *commander) peerConn(ctx context.Context, exclude v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
+	for id := range cmd.cluster.ReplicaIDs() {
+		if id == exclude {
+			continue
+		}
+
+		conn, err := cmd.getConn(id)
+		if err != nil || conn.Ping(ctx) != nil {
+			continue
+		}
+
+		return id, conn, nil
+	}
+
+	return v1.ClickHouseReplicaID{}, nil, fmt.Errorf("no reachable peer for replica %s", exclude)
+}
+
+// dropStaleReplicaRegistration removes, from a peer, what a lost incarnation of replica id left in Keeper for the
+// database: its Replicated database registration and its replica entries under every table. Both statements refuse
+// to touch a replica that is still active, so a live replica cannot be dropped by mistake.
+func (cmd *commander) dropStaleReplicaRegistration(ctx context.Context, id v1.ClickHouseReplicaID, database string) error {
+	peer, conn, err := cmd.peerConn(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Neither statement accepts query parameters for these positions.
+	for _, query := range []string{
+		fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", id.ShardID, id.Index, database),
+		fmt.Sprintf("SYSTEM DROP REPLICA '%d' FROM DATABASE `%s`", id.Index, database),
+	} {
+		if err := conn.Exec(ctx, query); err != nil {
+			return fmt.Errorf("on peer %s: %w", peer, err)
+		}
 	}
 
 	return nil
