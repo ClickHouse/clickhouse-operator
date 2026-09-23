@@ -390,6 +390,7 @@ var _ = Describe("VersionProbe caching", func() {
 			"local",
 			"--logger.console=1",
 			"--logger.level=debug",
+			"--path", "/tmp/clickhouse-local",
 			"--query", "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()",
 		}))
 		Expect(container.TerminationMessagePolicy).To(Equal(corev1.TerminationMessageFallbackToLogsOnError))
