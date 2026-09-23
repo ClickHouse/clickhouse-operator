@@ -227,6 +227,14 @@ type ClickHouseSettings struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	ExtraConfig runtime.RawExtension `json:"extraConfig,omitempty"`
 
+	// Additional ClickHouse configuration that will be merged with the default one and applied through a
+	// configuration reload, without restarting pods. Placing a section here asserts it is reload-safe:
+	// a restart-only setting placed here takes effect only at the next restart, without any error.
+	// +nullable
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	ExtraReloadableConfig runtime.RawExtension `json:"extraReloadableConfig,omitempty"`
+
 	// Additional ClickHouse users configuration that will be merged with the default one.
 	// +nullable
 	// +optional

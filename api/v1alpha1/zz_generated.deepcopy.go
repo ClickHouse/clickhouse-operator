@@ -255,6 +255,7 @@ func (in *ClickHouseSettings) DeepCopyInto(out *ClickHouseSettings) {
 		**out = **in
 	}
 	in.ExtraConfig.DeepCopyInto(&out.ExtraConfig)
+	in.ExtraReloadableConfig.DeepCopyInto(&out.ExtraReloadableConfig)
 	in.ExtraUsersConfig.DeepCopyInto(&out.ExtraUsersConfig)
 }
 

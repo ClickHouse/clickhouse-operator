@@ -669,6 +669,31 @@ var _ = Describe("getConfigurationRevisions", func() {
 		Expect(revsAfter.Restart).To(Not(Equal(revsBefore.Restart)))
 	})
 
+	It("extraReloadableConfig should change only the reload revision", func() {
+		r := &clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				Name: "test",
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(1)),
+				},
+			},
+		}
+
+		revsBefore, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsBefore.Config).To(Not(BeEmpty()))
+		Expect(revsBefore.Restart).To(Not(BeEmpty()))
+		Expect(revsBefore.Reload).To(Not(BeEmpty()))
+
+		r.Cluster.Spec.Settings.ExtraReloadableConfig = runtime.RawExtension{Raw: []byte("{}")}
+
+		revsAfter, err := getConfigurationRevisions(r)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(revsAfter.Config).To(Not(Equal(revsBefore.Config)))
+		Expect(revsAfter.Reload).To(Not(Equal(revsBefore.Reload)))
+		Expect(revsAfter.Restart).To(Equal(revsBefore.Restart))
+	})
+
 	It("restart revision should not depend on reloadable configs", func() {
 		r := &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{

@@ -44,3 +44,4 @@ CNI
 maxSkew
 minDomains
 [Rr]esyncs?
+[Rr]eloadable

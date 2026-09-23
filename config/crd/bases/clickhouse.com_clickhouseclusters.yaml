@@ -6672,6 +6672,14 @@ spec:
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
+                  extraReloadableConfig:
+                    description: |-
+                      Additional ClickHouse configuration that will be merged with the default one and applied through a
+                      configuration reload, without restarting pods. Placing a section here asserts it is reload-safe:
+                      a restart-only setting placed here takes effect only at the next restart, without any error.
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
                   extraUsersConfig:
                     description: Additional ClickHouse users configuration that will
                       be merged with the default one.

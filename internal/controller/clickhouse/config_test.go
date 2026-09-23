@@ -34,6 +34,9 @@ var _ = Describe("ConfigGenerator", func() {
 					ExtraConfig: runtime.RawExtension{
 						Raw: []byte(`{"test": "value"}`),
 					},
+					ExtraReloadableConfig: runtime.RawExtension{
+						Raw: []byte(`{"reloadable": "value"}`),
+					},
 					ExtraUsersConfig: runtime.RawExtension{
 						Raw: []byte(`{}`),
 					},
