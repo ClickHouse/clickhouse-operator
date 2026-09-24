@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		testNetwork  *testcontainers.DockerNetwork
 		cmd          *commander
 		cache        *connCache
+		startCHNode  func(ctx context.Context, i int32) testcontainers.Container
 	)
 
 	BeforeAll(func(ctx context.Context) {
@@ -156,7 +158,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			},
 		}
 
-		for i := range testReplicas {
+		startCHNode = func(ctx context.Context, i int32) testcontainers.Container {
 			By(fmt.Sprintf("starting ClickHouse node %d", i))
 			hostname := fmt.Sprintf(clickhouseHostnameFormat, i)
 			ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -183,21 +185,28 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			DeferCleanup(func(ctx context.Context) {
-				By("terminating ClickHouse node: " + hostname)
-
-				_ = ctr.Terminate(ctx, testcontainers.StopTimeout(time.Second))
-			})
-
-			chContainers = append(chContainers, ctr)
-
 			host, err := ctr.Host(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			port, err := ctr.MappedPort(ctx, chPort)
 			Expect(err).NotTo(HaveOccurred())
 
 			hostTargets[cluster.InternalHostnameByID(v1.ClickHouseReplicaID{Index: i})] = net.JoinHostPort(host, port.Port())
+
+			return ctr
 		}
+
+		for i := range testReplicas {
+			chContainers = append(chContainers, startCHNode(ctx, i))
+		}
+
+		// Specs may replace chContainers entries; terminate whatever is present at teardown.
+		DeferCleanup(func(ctx context.Context) {
+			for i, ctr := range chContainers {
+				By(fmt.Sprintf("terminating ClickHouse node %d", i))
+
+				_ = ctr.Terminate(ctx, testcontainers.StopTimeout(time.Second))
+			}
+		})
 
 		zapLogger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 		logf.SetLogger(zapr.NewLogger(zapLogger))
@@ -317,6 +326,61 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(newDBs).To(Equal(dbs))
 		}
+	})
+
+	It("recovers a replica whose Keeper metadata outlived its volume", func(ctx context.Context) {
+		id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+		victim := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
+
+		By("putting a replicated table with rows into testdb so table-level replica znodes exist")
+
+		conn0, err := cmd.getConn(id0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(conn0.Exec(ctx, "CREATE TABLE testdb.probe (id UInt64) ENGINE = ReplicatedMergeTree ORDER BY id")).To(Succeed())
+		Expect(conn0.Exec(ctx, "INSERT INTO testdb.probe SELECT number FROM numbers(100)")).To(Succeed())
+
+		By("discarding the replica's container and disk while its metadata stays in Keeper")
+
+		Expect(chContainers[victim.Index].Terminate(ctx)).To(Succeed())
+		cache.EvictReplica(cmd.cluster.NamespacedName(), victim, cmd.log)
+
+		By("bringing the replica back empty under the same name")
+
+		chContainers[victim.Index] = startCHNode(ctx, victim.Index)
+
+		Eventually(func() (map[string]databaseDescriptor, error) {
+			return cmd.Databases(ctx, victim)
+		}, "2m", "2s").ShouldNot(HaveKey("testdb"))
+
+		By("converting the fresh replica's default database first, as the reconcile does")
+
+		Eventually(func() (bool, error) {
+			return cmd.EnsureReplicaDefaultDatabaseEngine(ctx, cmd.log, victim)
+		}, "2m", "5s").Should(BeTrue())
+
+		By("letting database sync rebuild it, which has to drop the stale metadata first")
+
+		all := slices.Collect(cmd.cluster.ReplicaIDs())
+		Eventually(func() bool {
+			return cmd.SyncDatabases(ctx, cmd.log, all)
+		}, "3m", "5s").Should(BeTrue())
+
+		dbs, err := cmd.Databases(ctx, victim)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(dbs).To(HaveKey("testdb"))
+
+		By("checking the table and its rows came back through the replicated DDL log")
+
+		connV, err := cmd.getConn(victim)
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() (uint64, error) {
+			var n uint64
+			if err := connV.QueryRow(ctx, "SELECT count() FROM testdb.probe").Scan(&n); err != nil {
+				return 0, fmt.Errorf("count probe rows: %w", err)
+			}
+
+			return n, nil
+		}, "2m", "2s").Should(Equal(uint64(100)))
 	})
 
 	It("should sync all replicas in shard", func(ctx context.Context) {

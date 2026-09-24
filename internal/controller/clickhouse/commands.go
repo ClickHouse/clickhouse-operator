@@ -41,6 +41,9 @@ GROUP BY database, shard_id, replica_id
 SETTINGS skip_unavailable_shards=1`
 	createDefaultDatabaseQuery = `CREATE DATABASE IF NOT EXISTS default UUID ?
 		ENGINE=Replicated('/clickhouse/databases/default', '{shard}', '{replica}')`
+
+	// codeReplicaAlreadyExists is the ClickHouse REPLICA_ALREADY_EXISTS error code.
+	codeReplicaAlreadyExists = 253
 )
 
 type databaseDescriptor struct {
@@ -250,11 +253,10 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 
 		log.Debug("creating database", "replica_id", id, "database", name)
 
-		if err = conn.Exec(ctx, fmt.Sprintf(
+		if err = cmd.createDatabase(ctx, log, conn, id, name, fmt.Sprintf(
 			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
 			desc.UUID, desc.EngineFull,
-		),
-		); err != nil {
+		)); err != nil {
 			return fmt.Errorf("failed to create database %s on replica %s: %w", name, id, err)
 		}
 
@@ -314,7 +316,7 @@ func (cmd *commander) EnsureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 	log.Debug("creating replicated default database")
 
 	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
-	if err = conn.Exec(ctx, createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
+	if err = cmd.createDatabase(ctx, log, conn, id, "default", createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
 		return false, fmt.Errorf("create default replicated database %s: %w", id, err)
 	}
 
@@ -491,6 +493,85 @@ func (cmd *commander) CleanupDatabaseReplicas(
 	}
 
 	return nil
+}
+
+func isReplicaAlreadyExists(err error) bool {
+	var exc *clickhouse.Exception
+
+	return errors.As(err, &exc) && exc.Code == codeReplicaAlreadyExists
+}
+
+// createDatabase runs a CREATE DATABASE statement on replica id. REPLICA_ALREADY_EXISTS on a replica
+// with no local copy of the database means its metadata in Keeper outlived the volume; the stale
+// metadata is dropped from a shard peer and the statement is retried.
+func (cmd *commander) createDatabase(
+	ctx context.Context,
+	log controllerutil.Logger,
+	conn clickhouse.Conn,
+	id v1.ClickHouseReplicaID,
+	database, query string,
+	args ...any,
+) error {
+	err := conn.Exec(ctx, query, args...)
+	if err == nil {
+		return nil
+	}
+
+	if !isReplicaAlreadyExists(err) {
+		return fmt.Errorf("create database %s: %w", database, err)
+	}
+
+	log.Warn("dropping stale replica metadata from Keeper", "replica_id", id, "database", database)
+
+	if dropErr := cmd.dropStaleReplicaMetadata(ctx, id, database); dropErr != nil {
+		return fmt.Errorf("drop stale metadata of database %s: %w", database, dropErr)
+	}
+
+	if err = conn.Exec(ctx, query, args...); err != nil {
+		return fmt.Errorf("create database %s after dropping stale metadata: %w", database, err)
+	}
+
+	return nil
+}
+
+// dropStaleReplicaMetadata removes the replica's metadata for the database from Keeper: the database
+// replica entry and the per-table replica entries. It runs on a peer of the same shard because
+// SYSTEM DROP REPLICA resolves table paths from the tables local to the executing host; both
+// statements refuse to drop an active replica.
+func (cmd *commander) dropStaleReplicaMetadata(ctx context.Context, id v1.ClickHouseReplicaID, database string) error {
+	peer, conn, err := cmd.shardPeerConn(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	// Neither statement accepts query parameters for these positions.
+	for _, query := range []string{
+		fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", id.ShardID, id.Index, database),
+		fmt.Sprintf("SYSTEM DROP REPLICA '%d' FROM DATABASE `%s`", id.Index, database),
+	} {
+		if err := conn.Exec(ctx, query); err != nil {
+			return fmt.Errorf("on peer %s: %w", peer, err)
+		}
+	}
+
+	return nil
+}
+
+func (cmd *commander) shardPeerConn(ctx context.Context, exclude v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
+	for id := range cmd.cluster.ReplicaIDs() {
+		if id.ShardID != exclude.ShardID || id.Index == exclude.Index {
+			continue
+		}
+
+		conn, err := cmd.getConn(id)
+		if err != nil || conn.Ping(ctx) != nil {
+			continue
+		}
+
+		return id, conn, nil
+	}
+
+	return v1.ClickHouseReplicaID{}, nil, fmt.Errorf("no reachable peer in shard %d for replica %s", exclude.ShardID, exclude)
 }
 
 func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
