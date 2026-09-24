@@ -32,6 +32,9 @@ const (
 	ContainerName          = "clickhouse-keeper"
 	DefaultRevisionHistory = 10
 	MaximalAffinityWeight  = 100
+
+	// FLWYieldLeadership is the four letter word that asks a leader to hand leadership to another replica.
+	FLWYieldLeadership = "ydld"
 )
 
 var breakingStatefulSetVersion, _ = semver.Parse("0.0.1")
