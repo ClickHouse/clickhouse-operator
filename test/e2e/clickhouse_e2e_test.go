@@ -997,6 +997,67 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			}, "10s").WithPolling(pollingInterval).Should(BeEmpty())
 		})
 
+		It("should recreate replicated databases on a replica rebuilt from an empty volume", func(ctx context.Context) {
+			cr := v1.ClickHouseCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      fmt.Sprintf("rebuild-%d", rand.Uint32()), //nolint:gosec
+				},
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas: new(int32(2)),
+					Shards:   new(int32(2)),
+					ContainerTemplate: v1.ContainerTemplateSpec{
+						Image: v1.ContainerImage{Tag: BaseVersion},
+					},
+					DataVolumeClaimSpec: &defaultStorage,
+					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+				},
+			}
+			checks := 0
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute)
+			env.ClickHouseRWChecks(ctx, &cr, &checks)
+
+			By("discarding the replica's volume and pod")
+
+			victim := v1.ClickHouseReplicaID{ShardID: 1, Index: 0}
+			podName := cr.StatefulSetNameByReplicaID(victim) + "-0"
+			pvcName := internal.PersistentVolumeName + "-" + podName
+
+			var pvc corev1.PersistentVolumeClaim
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvcName}, &pvc)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &pvc)).To(Succeed())
+
+			pv := corev1.PersistentVolume{Name: pvc.Spec.VolumeName}
+			Expect(k8sClient.Delete(ctx, &pv)).To(Succeed())
+
+			var pod corev1.Pod
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: podName}, &pod)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, &pod)).To(Succeed())
+
+			By("waiting for the pod and volume recreation")
+			Eventually(func(g Gomega) {
+				var current corev1.Pod
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: podName}, &current)).To(Succeed())
+				g.Expect(current.UID).NotTo(Equal(pod.UID))
+
+				var currentPVC corev1.PersistentVolumeClaim
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: pvcName}, &currentPVC)).To(Succeed())
+				g.Expect(currentPVC.UID).NotTo(Equal(pvc.UID))
+
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: pv.Name}, &corev1.PersistentVolume{})
+				g.Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "old PV should be gone")
+			}, 2*time.Minute).WithPolling(pollingInterval).Should(Succeed())
+
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute)
+			env.ClickHouseRWChecks(ctx, &cr, &checks)
+		})
+
 		It("should support named collections in Keeper with encryption", func(ctx context.Context) {
 			cr := v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{

@@ -534,7 +534,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			reloadErr error
 		)
 
-		if startupErr == nil && chctrl.PodConditionTrue(pod, corev1.ContainersReady) && r.commander != nil {
+		if startupErr == nil && chctrl.ContainerRunning(pod, ContainerName) && r.commander != nil {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 

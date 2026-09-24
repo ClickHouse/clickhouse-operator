@@ -457,3 +457,18 @@ func PodConditionTrue(pod *corev1.Pod, conditionType corev1.PodConditionType) bo
 
 	return false
 }
+
+// ContainerRunning reports whether the named container is currently running, regardless of readiness.
+func ContainerRunning(pod *corev1.Pod, name string) bool {
+	if pod == nil {
+		return false
+	}
+
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == name {
+			return status.State.Running != nil
+		}
+	}
+
+	return false
+}

@@ -41,6 +41,9 @@ GROUP BY database, shard_id, replica_id
 SETTINGS skip_unavailable_shards=1`
 	createDefaultDatabaseQuery = `CREATE DATABASE IF NOT EXISTS default UUID ?
 		ENGINE=Replicated('/clickhouse/databases/default', '{shard}', '{replica}')`
+
+	// codeReplicaAlreadyExists is the ClickHouse REPLICA_ALREADY_EXISTS error code.
+	codeReplicaAlreadyExists = 253
 )
 
 type databaseDescriptor struct {
@@ -492,20 +495,15 @@ func (cmd *commander) CleanupDatabaseReplicas(
 	return nil
 }
 
-// codeReplicaAlreadyExists is ClickHouse error REPLICA_ALREADY_EXISTS, raised by CREATE DATABASE ... ENGINE = Replicated
-// when Keeper already holds a registration under the replica's name.
-const codeReplicaAlreadyExists = 253
-
 func isReplicaAlreadyExists(err error) bool {
 	var exc *clickhouse.Exception
 
 	return errors.As(err, &exc) && exc.Code == codeReplicaAlreadyExists
 }
 
-// createDatabase runs a CREATE DATABASE statement on replica id. When ClickHouse reports that a Replicated
-// database registration under this replica's name already exists, the replica has no local copy of the database
-// while Keeper still remembers a previous incarnation that lost its volume; the leftovers are dropped from a peer
-// and the statement is run once more.
+// createDatabase runs a CREATE DATABASE statement on replica id. REPLICA_ALREADY_EXISTS on a replica
+// with no local copy of the database means its metadata in Keeper outlived the volume; the stale
+// metadata is dropped from a shard peer and the statement is retried.
 func (cmd *commander) createDatabase(
 	ctx context.Context,
 	log controllerutil.Logger,
@@ -523,43 +521,25 @@ func (cmd *commander) createDatabase(
 		return fmt.Errorf("create database %s: %w", database, err)
 	}
 
-	log.Info("dropping stale Keeper registration left by a previous incarnation of the replica",
-		"replica_id", id, "database", database)
+	log.Warn("dropping stale replica metadata from Keeper", "replica_id", id, "database", database)
 
-	if dropErr := cmd.dropStaleReplicaRegistration(ctx, id, database); dropErr != nil {
-		return fmt.Errorf("drop stale registration of database %s: %w", database, dropErr)
+	if dropErr := cmd.dropStaleReplicaMetadata(ctx, id, database); dropErr != nil {
+		return fmt.Errorf("drop stale metadata of database %s: %w", database, dropErr)
 	}
 
 	if err = conn.Exec(ctx, query, args...); err != nil {
-		return fmt.Errorf("create database %s after dropping stale registration: %w", database, err)
+		return fmt.Errorf("create database %s after dropping stale metadata: %w", database, err)
 	}
 
 	return nil
 }
 
-// peerConn returns a live connection to any replica other than exclude.
-func (cmd *commander) peerConn(ctx context.Context, exclude v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
-	for id := range cmd.cluster.ReplicaIDs() {
-		if id == exclude {
-			continue
-		}
-
-		conn, err := cmd.getConn(id)
-		if err != nil || conn.Ping(ctx) != nil {
-			continue
-		}
-
-		return id, conn, nil
-	}
-
-	return v1.ClickHouseReplicaID{}, nil, fmt.Errorf("no reachable peer for replica %s", exclude)
-}
-
-// dropStaleReplicaRegistration removes, from a peer, what a lost incarnation of replica id left in Keeper for the
-// database: its Replicated database registration and its replica entries under every table. Both statements refuse
-// to touch a replica that is still active, so a live replica cannot be dropped by mistake.
-func (cmd *commander) dropStaleReplicaRegistration(ctx context.Context, id v1.ClickHouseReplicaID, database string) error {
-	peer, conn, err := cmd.peerConn(ctx, id)
+// dropStaleReplicaMetadata removes the replica's metadata for the database from Keeper: the database
+// replica entry and the per-table replica entries. It runs on a peer of the same shard because
+// SYSTEM DROP REPLICA resolves table paths from the tables local to the executing host; both
+// statements refuse to drop an active replica.
+func (cmd *commander) dropStaleReplicaMetadata(ctx context.Context, id v1.ClickHouseReplicaID, database string) error {
+	peer, conn, err := cmd.shardPeerConn(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -575,6 +555,23 @@ func (cmd *commander) dropStaleReplicaRegistration(ctx context.Context, id v1.Cl
 	}
 
 	return nil
+}
+
+func (cmd *commander) shardPeerConn(ctx context.Context, exclude v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, clickhouse.Conn, error) {
+	for id := range cmd.cluster.ReplicaIDs() {
+		if id.ShardID != exclude.ShardID || id.Index == exclude.Index {
+			continue
+		}
+
+		conn, err := cmd.getConn(id)
+		if err != nil || conn.Ping(ctx) != nil {
+			continue
+		}
+
+		return id, conn, nil
+	}
+
+	return v1.ClickHouseReplicaID{}, nil, fmt.Errorf("no reachable peer in shard %d for replica %s", exclude.ShardID, exclude)
 }
 
 func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {

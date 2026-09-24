@@ -199,8 +199,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			chContainers = append(chContainers, startCHNode(ctx, i))
 		}
 
-		// Registered once at container scope: a spec may replace an entry in chContainers with a fresh
-		// node, and that node must outlive the spec, so cleanup terminates whatever is there at teardown.
+		// Specs may replace chContainers entries; terminate whatever is present at teardown.
 		DeferCleanup(func(ctx context.Context) {
 			for i, ctr := range chContainers {
 				By(fmt.Sprintf("terminating ClickHouse node %d", i))
@@ -329,7 +328,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}
 	})
 
-	It("recovers a replica whose Keeper registration outlived its volume", func(ctx context.Context) {
+	It("recovers a replica whose Keeper metadata outlived its volume", func(ctx context.Context) {
 		id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
 		victim := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
 
@@ -340,7 +339,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		Expect(conn0.Exec(ctx, "CREATE TABLE testdb.probe (id UInt64) ENGINE = ReplicatedMergeTree ORDER BY id")).To(Succeed())
 		Expect(conn0.Exec(ctx, "INSERT INTO testdb.probe SELECT number FROM numbers(100)")).To(Succeed())
 
-		By("discarding the replica's container and disk while Keeper keeps its registration")
+		By("discarding the replica's container and disk while its metadata stays in Keeper")
 
 		Expect(chContainers[victim.Index].Terminate(ctx)).To(Succeed())
 		cache.EvictReplica(cmd.cluster.NamespacedName(), victim, cmd.log)
@@ -359,7 +358,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			return cmd.EnsureReplicaDefaultDatabaseEngine(ctx, cmd.log, victim)
 		}, "2m", "5s").Should(BeTrue())
 
-		By("letting database sync rebuild it, which has to clear the stale registration first")
+		By("letting database sync rebuild it, which has to drop the stale metadata first")
 
 		all := slices.Collect(cmd.cluster.ReplicaIDs())
 		Eventually(func() bool {
