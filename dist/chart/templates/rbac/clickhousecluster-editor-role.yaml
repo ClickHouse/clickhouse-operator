@@ -14,6 +14,9 @@ metadata:
     app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- if .Values.rbac.helpers.aggregateRoles.editor and not (.Values.rbac.namespaced) }}
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    {{- end }}
   name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "clickhousecluster-editor-role" "context" $) }}
 rules:
 - apiGroups:

@@ -184,6 +184,10 @@ rbac:
     ## Install convenience admin/editor/viewer roles for CRDs
     ##
     enabled: false
+    aggregateRoles:
+      admin: true
+      editor: true
+      viewer: true
 
 ## ServiceAccount configuration
 ##
