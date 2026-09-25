@@ -70,6 +70,19 @@ spec:
         storage: 5Gi
 ```
 
+### Leadership handover on restart {#keeper-leadership-handover}
+
+When a Keeper pod stops, whether the operator is rolling it out or Kubernetes is evicting it,
+its container runs a `preStop` hook that asks the server to hand Raft leadership to another
+replica through the HTTP commands API (`GET /api/v1/commands?command=ydld` on the
+`http_control` port). Restarting the leader then costs a leadership transfer of a few dozen
+milliseconds instead of an election, so ClickHouse does not see a leaderless ensemble.
+
+Keeper serves the commands API from version 26.3. On older servers the request returns 404,
+Kubernetes records a `FailedPreStopHook` event on the pod, and the container stops as before.
+A server that does not answer on the `http_control` port at all holds the hook open for up to
+`terminationGracePeriodSeconds` before the container is stopped.
+
 ## Storage configuration {#storage-configuration}
 
 Configure persistent storage with `dataVolumeClaimSpec`, a standard Kubernetes

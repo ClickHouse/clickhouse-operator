@@ -410,3 +410,34 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cr.SpecificName()))
 	})
 })
+
+var _ = Describe("PreStopLeadershipHandover", func() {
+	lifecycleFor := func(version string) *corev1.Lifecycle {
+		cr := &v1.KeeperCluster{
+			Name:   "test",
+			Spec:   v1.KeeperClusterSpec{Replicas: new(int32(3))},
+			Status: v1.KeeperClusterStatus{Version: version},
+		}
+
+		container, err := templateContainer(cr)
+		Expect(err).NotTo(HaveOccurred())
+
+		return container.Lifecycle
+	}
+
+	It("asks the server to yield leadership through the HTTP commands API before it stops", func() {
+		lifecycle := lifecycleFor("26.7.5.10")
+		Expect(lifecycle).NotTo(BeNil())
+		Expect(lifecycle.PreStop).NotTo(BeNil())
+		Expect(lifecycle.PreStop.HTTPGet).NotTo(BeNil())
+		Expect(lifecycle.PreStop.HTTPGet.Path).To(Equal("/api/v1/commands?command=ydld"))
+		Expect(lifecycle.PreStop.HTTPGet.Port.IntValue()).To(Equal(int(PortHTTPControl)))
+		Expect(lifecycle.PreStop.HTTPGet.Scheme).To(Equal(corev1.URISchemeHTTP))
+	})
+
+	It("does not depend on the observed version, which only arrives once replicas are running", func() {
+		// A template that changed with Status.Version would roll every freshly created cluster.
+		Expect(lifecycleFor("")).To(Equal(lifecycleFor("25.8.32.4")))
+		Expect(lifecycleFor("")).To(Equal(lifecycleFor("26.7.5.10")))
+	})
+})

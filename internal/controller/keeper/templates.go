@@ -527,6 +527,23 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 		SecurityContext:          controller.DefaultContainerSecurityContext(),
 	}
 
+	// Whoever stops the pod, the operator during a rollout or Kubernetes during an eviction, the
+	// container first asks the server to hand Raft leadership to a peer, so a leader restart costs a
+	// transfer instead of an election. Sent over http_control so it works without a shell in the
+	// image; a follower or a lone replica treats the command as a no-op. Keeper serves the commands
+	// API from 26.3; on older servers the request 404s, the kubelet records FailedPreStopHook and
+	// stops the container as before. The hook is deliberately not gated on Status.Version: that
+	// value comes from running replicas, so a gate would roll every new cluster once it reports in.
+	container.Lifecycle = &corev1.Lifecycle{
+		PreStop: &corev1.LifecycleHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path:   "/api/v1/commands?command=" + FLWYieldLeadership,
+				Port:   intstr.FromInt32(PortHTTPControl),
+				Scheme: corev1.URISchemeHTTP,
+			},
+		},
+	}
+
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
