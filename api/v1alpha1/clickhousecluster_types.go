@@ -206,7 +206,8 @@ type ClickHouseSettings struct {
 	Logger LoggerConfig `json:"logger,omitempty"`
 
 	// Retention in days for the system log tables (`query_log`, `part_log`, `text_log`, `metric_log`,
-	// `asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days,
+	// `asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days
+	// on new clusters only; clusters created before this field existed keep unbounded tables until it is set.
 	// 0 disables the TTL.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
