@@ -28,7 +28,10 @@ const (
 	DefaultClickHouseShardCount   = 1
 	DefaultClickHouseReplicaCount = 3
 
-	DefaultMaxLogFiles = 50
+	DefaultMaxLogFileSize    = "100M"
+	DefaultMaxLogFiles       = 10
+	DefaultLogLevel          = "information"
+	DefaultSystemLogsTTLDays = 30
 
 	// DefaultClusterDomain is the default Kubernetes cluster domain suffix for DNS resolution.
 	DefaultClusterDomain = "cluster.local"

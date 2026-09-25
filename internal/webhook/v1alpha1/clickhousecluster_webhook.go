@@ -61,6 +61,11 @@ func (w *ClickHouseClusterWebhook) Default(_ context.Context, cluster *chv1.Clic
 	w.Log.Info("Fill defaults", "name", cluster.Name, "namespace", cluster.Namespace)
 	cluster.Spec.WithDefaults()
 
+	// Only on create: existing clusters keep their system log tables unbounded.
+	if cluster.CreationTimestamp.IsZero() && cluster.Spec.Settings.SystemLogsTTLDays == nil {
+		cluster.Spec.Settings.SystemLogsTTLDays = new(int32(chv1.DefaultSystemLogsTTLDays))
+	}
+
 	return nil
 }
 

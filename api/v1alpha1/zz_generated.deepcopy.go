@@ -243,6 +243,11 @@ func (in *ClickHouseSettings) DeepCopyInto(out *ClickHouseSettings) {
 		(*in).DeepCopyInto(*out)
 	}
 	in.Logger.DeepCopyInto(&out.Logger)
+	if in.SystemLogsTTLDays != nil {
+		in, out := &in.SystemLogsTTLDays, &out.SystemLogsTTLDays
+		*out = new(int32)
+		**out = **in
+	}
 	in.TLS.DeepCopyInto(&out.TLS)
 	if in.Encryption != nil {
 		in, out := &in.Encryption, &out.Encryption
