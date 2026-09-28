@@ -45,3 +45,7 @@ maxSkew
 minDomains
 [Rr]esyncs?
 [Rr]eloadable
+kubelet
+distroless
+descheduler
+rollouts
