@@ -352,6 +352,11 @@ type ContainerTemplateSpec struct {
 	// containers time to come up. The operator sets no startup probe by default.
 	// +optional
 	StartupProbe *corev1.Probe `json:"startupProbe,omitempty"`
+
+	// Lifecycle defines actions the kubelet triggers on container lifecycle events (PostStart/PreStop).
+	// A non-nil Lifecycle fully replaces operator defaults; the user owns the entire struct.
+	// +optional
+	Lifecycle *corev1.Lifecycle `json:"lifecycle,omitempty"`
 }
 
 // ClusterTLSSpec defines cluster TLS configuration.

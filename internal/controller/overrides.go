@@ -163,6 +163,10 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		base.StartupProbe = nil
 	}
 
+	if t.Lifecycle != nil {
+		base.Lifecycle = nil
+	}
+
 	patchContainer := corev1.Container{
 		Name:            base.Name,
 		Image:           t.Image.String(),
@@ -174,6 +178,7 @@ func ApplyContainerTemplateOverrides(container *corev1.Container, t *v1.Containe
 		LivenessProbe:   t.LivenessProbe,
 		ReadinessProbe:  t.ReadinessProbe,
 		StartupProbe:    t.StartupProbe,
+		Lifecycle:       t.Lifecycle,
 	}
 
 	mergedContainer, err := patchResource(base, patchContainer, containerSchema)

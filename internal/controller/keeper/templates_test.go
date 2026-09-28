@@ -410,3 +410,77 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		Expect(tsc.LabelSelector.MatchLabels).To(HaveKeyWithValue(controllerutil.LabelAppKey, cr.SpecificName()))
 	})
 })
+
+var _ = Describe("PreStopLeadershipHandover", func() {
+	It("asks the server to yield leadership then waits for it to lose the role before stopping", func() {
+		cr := &v1.KeeperCluster{
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{Replicas: new(int32(3))},
+		}
+
+		container, err := templateContainer(cr)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(container.Lifecycle).NotTo(BeNil())
+		Expect(container.Lifecycle.PreStop).NotTo(BeNil())
+		Expect(container.Lifecycle.PreStop.Exec).NotTo(BeNil())
+		Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"/bin/bash", "-c", buildPreStopScript()}))
+
+		script := buildPreStopScript()
+		Expect(script).To(ContainSubstring("/dev/tcp/127.0.0.1/9123"))
+		Expect(script).To(ContainSubstring("command=ydld"))
+		Expect(script).To(ContainSubstring(`"role":"leader"`))
+
+		// Existing probes must be unaffected by the new default.
+		Expect(container.LivenessProbe).NotTo(BeNil())
+		Expect(container.ReadinessProbe).NotTo(BeNil())
+	})
+
+	It("stays plain HTTP on the http_control port even when TLS is required for client connections", func() {
+		cr := &v1.KeeperCluster{
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{
+				Replicas: new(int32(3)),
+				Settings: v1.KeeperSettings{
+					TLS: v1.ClusterTLSSpec{Enabled: true, Required: true},
+				},
+			},
+		}
+
+		container, err := templateContainer(cr)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"/bin/bash", "-c", buildPreStopScript()}))
+	})
+
+	It("does not vary with the observed version, which arrives asynchronously after pod startup", func() {
+		lifecycleFor := func(version string) *corev1.Lifecycle {
+			cr := &v1.KeeperCluster{
+				Name:   "test",
+				Spec:   v1.KeeperClusterSpec{Replicas: new(int32(3))},
+				Status: v1.KeeperClusterStatus{Version: version},
+			}
+
+			container, err := templateContainer(cr)
+			Expect(err).NotTo(HaveOccurred())
+
+			return container.Lifecycle
+		}
+
+		// A template that changed with Status.Version would roll every freshly created cluster
+		// once it started reporting in.
+		empty := lifecycleFor("")
+		Expect(lifecycleFor("25.8.32.4")).To(Equal(empty))
+		Expect(lifecycleFor("26.7.5.10")).To(Equal(empty))
+	})
+
+	It("is harmless on a single-replica cluster since the script takes no CR-derived input", func() {
+		cr := &v1.KeeperCluster{
+			Name: "test",
+			Spec: v1.KeeperClusterSpec{Replicas: new(int32(1))},
+		}
+
+		container, err := templateContainer(cr)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"/bin/bash", "-c", buildPreStopScript()}))
+	})
+})

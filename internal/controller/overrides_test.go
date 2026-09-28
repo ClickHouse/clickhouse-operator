@@ -324,6 +324,48 @@ var _ = Describe("ApplyContainerTemplateOverrides", func() {
 			Expect(container.StartupProbe).To(BeNil())
 		})
 	})
+
+	Describe("Lifecycle", func() {
+		It("should preserve operator Lifecycle when user Lifecycle is nil", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					Lifecycle: &corev1.Lifecycle{
+						PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"sleep", "1"}}},
+					},
+				},
+				&v1.ContainerTemplateSpec{},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.Lifecycle).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "1"}))
+		})
+
+		It("should fully replace operator Lifecycle when user provides one", func() {
+			container, err := ApplyContainerTemplateOverrides(
+				&corev1.Container{
+					Name: "server",
+					Lifecycle: &corev1.Lifecycle{
+						PreStop: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"sleep", "1"}}},
+					},
+				},
+				&v1.ContainerTemplateSpec{
+					Lifecycle: &corev1.Lifecycle{
+						PostStart: &corev1.LifecycleHandler{Exec: &corev1.ExecAction{Command: []string{"echo", "hi"}}},
+					},
+				},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(container.Lifecycle).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop).To(BeNil(),
+				"operator PreStop must NOT survive: a user-provided Lifecycle fully replaces operator defaults")
+			Expect(container.Lifecycle.PostStart).NotTo(BeNil())
+			Expect(container.Lifecycle.PostStart.Exec.Command).To(Equal([]string{"echo", "hi"}))
+		})
+	})
 })
 
 var _ = Describe("ApplyPodTemplateOverrides", func() {

@@ -525,6 +525,13 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 		TerminationMessagePath:   corev1.TerminationMessagePathDefault,
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		SecurityContext:          controller.DefaultContainerSecurityContext(),
+		Lifecycle: &corev1.Lifecycle{
+			PreStop: &corev1.LifecycleHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/bash", "-c", buildPreStopScript()},
+				},
+			},
+		},
 	}
 
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
