@@ -427,9 +427,14 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		env.WaitDeploymentAvailable(ctx, namespace, deploymentName, 3*time.Minute)
 
 		By("updating keeper and verifying it stays writable", func() {
-			Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &keeperCR)).To(Succeed())
-			keeperCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
-			Expect(k8sClient.Update(ctx, &keeperCR)).To(Succeed())
+			// The freshly upgraded operator may be writing status onto this object in the same
+			// instant, bumping its resourceVersion between our Get and Update, so retry through
+			// the resulting conflict rather than fetching only once.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &keeperCR)).To(Succeed())
+				keeperCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
+				g.Expect(k8sClient.Update(ctx, &keeperCR)).To(Succeed())
+			}, "30s", "2s").Should(Succeed())
 			Eventually(func(g Gomega) {
 				var cluster v1.KeeperCluster
 				g.Expect(k8sClient.Get(ctx, keeperCR.NamespacedName(), &cluster)).To(Succeed())
@@ -453,9 +458,13 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		})
 
 		By("updating clickhouse and verifying its health", func() {
-			Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &chCR)).To(Succeed())
-			chCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
-			Expect(k8sClient.Update(ctx, &chCR)).To(Succeed())
+			// Same resourceVersion race as the keeper update above: retry through a concurrent
+			// status write from the operator instead of fetching only once.
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &chCR)).To(Succeed())
+				chCR.Spec.Annotations = map[string]string{"e2e.clickhouse.com/upgrade": "reconciled"}
+				g.Expect(k8sClient.Update(ctx, &chCR)).To(Succeed())
+			}, "30s", "2s").Should(Succeed())
 			Eventually(func(g Gomega) {
 				var cluster v1.ClickHouseCluster
 				g.Expect(k8sClient.Get(ctx, chCR.NamespacedName(), &cluster)).To(Succeed())
