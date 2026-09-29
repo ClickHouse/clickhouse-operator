@@ -23,6 +23,10 @@ WHERE
 	engine NOT IN ('Atomic', 'Lazy', 'SQLite', 'Ordinary', 'Memory')
 SETTINGS
 	format_display_secrets_in_show_and_select=1`
+	// system.clusters also lists static clusters from remote_servers and Replicated databases with
+	// names the operator did not choose; their shard and replica names are empty or non-numeric.
+	// toInt32OrNull keeps the cast from throwing on those rows, and the NULL filter drops them, so
+	// only replicas that the operator itself numbered are considered for cleanup.
 	listStaleDatabaseReplicasQuery = `SELECT
 	database,
 	shard_id,
@@ -31,11 +35,11 @@ SETTINGS
 FROM (
 	SELECT
 		cluster as database,
-		toInt32(database_shard_name) AS shard_id,
-		toInt32(database_replica_name) AS replica_id,
+		toInt32OrNull(database_shard_name) AS shard_id,
+		toInt32OrNull(database_replica_name) AS replica_id,
 		is_active
 	FROM clusterAllReplicas(default, system.clusters)
-	WHERE database_replica_name != '' AND (shard_id >= ? OR replica_id >= ?)
+	WHERE shard_id IS NOT NULL AND replica_id IS NOT NULL AND (shard_id >= ? OR replica_id >= ?)
 )
 GROUP BY database, shard_id, replica_id
 SETTINGS skip_unavailable_shards=1`

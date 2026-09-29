@@ -431,6 +431,22 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			Expect(cmd.CleanupDatabaseReplicas(ctx, cmd.log, map[v1.ClickHouseReplicaID]struct{}{})).To(Succeed())
 		})
 
+		It("should ignore replicated databases whose shard and replica names the operator did not choose", func(ctx context.Context) {
+			// system.clusters lists every Replicated database on the server, including ones created by
+			// users with their own shard and replica names, next to the static clusters from
+			// remote_servers whose names are empty. None of those parse as replica numbers.
+			id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+			conn, err := cmd.getConn(id0)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(conn.Exec(ctx, "CREATE DATABASE named ENGINE = Replicated('/clickhouse/databases/named', 'shard-a', 'replica-b')")).To(Succeed())
+
+			DeferCleanup(func(ctx context.Context) {
+				Expect(conn.Exec(ctx, "DROP DATABASE named SYNC")).To(Succeed())
+			})
+
+			Expect(cmd.CleanupDatabaseReplicas(ctx, cmd.log, map[v1.ClickHouseReplicaID]struct{}{})).To(Succeed())
+		})
+
 		It("should do nothing if still active", func(ctx context.Context) {
 			*cmd.cluster.Spec.Replicas = testReplicas - 1
 			err := cmd.CleanupDatabaseReplicas(ctx, cmd.log, map[v1.ClickHouseReplicaID]struct{}{})
