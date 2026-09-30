@@ -32,10 +32,6 @@ const (
 	ContainerName          = "clickhouse-keeper"
 	DefaultRevisionHistory = 10
 	MaximalAffinityWeight  = 100
-
-	// FLWYieldLeadership is the Keeper four-letter-word command that asks a leader to hand
-	// Raft leadership to a peer, issued via the HTTP commands API on PortHTTPControl.
-	FLWYieldLeadership = "ydld"
 )
 
 var breakingStatefulSetVersion, _ = semver.Parse("0.0.1")

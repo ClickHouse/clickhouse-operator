@@ -430,6 +430,7 @@ var _ = Describe("PreStopLeadershipHandover", func() {
 		Expect(script).To(ContainSubstring("/dev/tcp/127.0.0.1/9123"))
 		Expect(script).To(ContainSubstring("command=ydld"))
 		Expect(script).To(ContainSubstring(`"role":"leader"`))
+		Expect(script).To(ContainSubstring(`"hasLeader":false`))
 
 		// Existing probes must be unaffected by the new default.
 		Expect(container.LivenessProbe).NotTo(BeNil())
