@@ -20,7 +20,7 @@ func NewClickHouseCluster(namespace, name string) *ClickHouseBuilder {
 		Spec: v1.ClickHouseClusterSpec{
 			Replicas: new(int32(1)),
 			ContainerTemplate: v1.ContainerTemplateSpec{
-				Image: v1.ContainerImage{Tag: BaseVersion},
+				Image: v1.ContainerImage{Tag: BaseVersion.Version()},
 			},
 		},
 	}}
@@ -97,7 +97,7 @@ func NewKeeperCluster(namespace, name string) *KeeperBuilder {
 		Spec: v1.KeeperClusterSpec{
 			Replicas: new(int32(1)),
 			ContainerTemplate: v1.ContainerTemplateSpec{
-				Image: v1.ContainerImage{Tag: BaseVersion},
+				Image: v1.ContainerImage{Tag: BaseVersion.Version()},
 			},
 		},
 	}}

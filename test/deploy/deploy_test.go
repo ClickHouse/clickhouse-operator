@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/test/supported"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
@@ -34,8 +35,7 @@ const (
 	testTag   = "test"
 	testImage = testRepo + ":" + testTag
 
-	defaultVersion = "latest"
-	reportDir      = "report"
+	reportDir = "report"
 )
 
 var (
@@ -52,7 +52,7 @@ var (
 func TestDeploy(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	versions := []string{defaultVersion}
+	versions := []string{supported.Latest.Version()}
 	if vers := os.Getenv("CLICKHOUSE_VERSION"); vers != "" {
 		versions = strings.Split(vers, ",")
 	}
@@ -333,8 +333,9 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		deploymentName = namespace + "-controller-manager"
 		keeperName     = "keeper"
 		chName         = "ch"
-		version        = testutil.UpdateVersion
 	)
+
+	version := testutil.UpdateVersion
 
 	helmArgs := []string{"-n", namespace,
 		"--set", "controller.watchNamespaces={" + namespace + "}",
@@ -376,13 +377,13 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		keeperCR := testutil.NewKeeperCluster(namespace, keeperName).
 			WithReplicas(3).
 			WithStorage(*storage).
-			WithTag(version).
+			WithTag(version.Version()).
 			Cluster()
 		chCR := testutil.NewClickHouseCluster(namespace, chName).
 			WithReplicas(2).
 			WithStorage(*storage).
 			WithKeeper(keeperName).
-			WithTag(version).
+			WithTag(version.Version()).
 			Cluster()
 
 		By("deploying keeper and clickhouse on the released operator")
