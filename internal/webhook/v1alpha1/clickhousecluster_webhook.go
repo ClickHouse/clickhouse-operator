@@ -127,6 +127,10 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	warns = append(warns, warnServerSectionsInUsersConfig(obj.Spec.Settings.ExtraUsersConfig.Raw)...)
 	warns = append(warns, warnExtraConfigOverlap(obj.Spec.Settings.ExtraConfig.Raw, obj.Spec.Settings.ExtraReloadableConfig.Raw)...)
 
+	if err := validateKeeperSource(obj.Spec.KeeperClusterRef, obj.Spec.ExternalKeeper); err != nil {
+		errs = append(errs, err)
+	}
+
 	additionalVolumeErrs := validateAdditionalVolumeClaimTemplates(obj.Spec.DataVolumeClaimSpec, obj.Spec.AdditionalVolumeClaimTemplates)
 	errs = append(errs, additionalVolumeErrs...)
 
@@ -204,4 +208,16 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	}
 
 	return warns, errs
+}
+
+// validateKeeperSource ensures the cluster gets its coordination service from exactly one source.
+func validateKeeperSource(ref *chv1.KeeperClusterReference, external *chv1.ExternalKeeperSpec) error {
+	switch {
+	case ref != nil && external != nil:
+		return errors.New("spec.keeperClusterRef and spec.externalKeeper are mutually exclusive")
+	case ref == nil && external == nil:
+		return errors.New("one of spec.keeperClusterRef or spec.externalKeeper must be set")
+	default:
+		return nil
+	}
 }

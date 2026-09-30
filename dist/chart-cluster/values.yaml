@@ -71,12 +71,18 @@ clickhouse:
     # Specification of persistent storage for ClickHouse data.
     # dataVolumeClaimSpec: {}
 
+    # Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+    # The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+    # Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+    # externalKeeper: {}
+
     # ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
     # The secret must reside in the same namespace as the cluster.
     # externalSecret: {}
 
     # Reference to the KeeperCluster that is used for ClickHouse coordination.
     # When namespace is omitted, the ClickHouseCluster namespace is used.
+    # Mutually exclusive with `externalKeeper`, exactly one of them must be set.
     # keeperClusterRef: {}
 
     # Additional labels that are added to resources.

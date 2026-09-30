@@ -44,7 +44,10 @@ A cluster with `replicas: 3` and `shards: 2` will create 6 ClickHouse pods total
 
 ### Keeper integration {#keeper-integration}
 
-Every ClickHouse cluster must reference a KeeperCluster for coordination:
+Every ClickHouse cluster needs a Keeper ensemble for coordination. Set exactly one of
+`keeperClusterRef` or `externalKeeper`; a cluster that sets both or neither is rejected.
+
+Point `keeperClusterRef` at a KeeperCluster this operator manages:
 
 ```yaml
 spec:
@@ -54,6 +57,43 @@ spec:
 ```
 
 When `keeperClusterRef.namespace` is set, the operator must watch both namespaces. If `WATCH_NAMESPACE` is configured, include the ClickHouse and Keeper namespaces in that list.
+
+### Externally managed Keeper {#external-keeper}
+
+Use `externalKeeper` to run ClickHouse against a Keeper ensemble the operator does not manage —
+one owned by another operator, running in a different Kubernetes cluster, on virtual machines or
+bare metal, or shared between several systems:
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port` defaults to `9181`. Set `tls: Enabled` to connect over TLS, and give `port` the value the
+ensemble listens on for secure connections:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+The operator does not create, scale, upgrade or health-check these servers, and it does not wait
+for them before it reconciles ClickHouse. Keeping the ensemble available is up to you.
+
+Authentication works the same way as for an operator-managed Keeper: the operator reads the
+`keeper-identity` key from the cluster Secret and passes it to ClickHouse. See
+[External Secret](#external-secret) for the Secret layout.
 
 ## KeeperCluster configuration {#keepercluster-configuration}
 
