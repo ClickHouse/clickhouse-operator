@@ -24,6 +24,7 @@ import (
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
+	"github.com/ClickHouse/clickhouse-operator/test/supported"
 )
 
 const (
@@ -31,9 +32,12 @@ const (
 	keeperHostname                 = "test-keeper"
 	clickhouseHostnameFormat       = "test-clickhouse-0-%d-0"
 	testPassword                   = "test-password"
-	keeperImage                    = "clickhouse/clickhouse-keeper:26.7.5.10"
-	clickhouseImage                = "clickhouse/clickhouse-server:26.7.5.10"
 	testConfigRevision             = "test-revision-v1"
+)
+
+var (
+	keeperImage     = "clickhouse/clickhouse-keeper:" + supported.Latest.Version()
+	clickhouseImage = "clickhouse/clickhouse-server:" + supported.Latest.Version()
 )
 
 func generateKeeperConfig() *strings.Reader {

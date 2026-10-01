@@ -20,6 +20,8 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/ClickHouse/clickhouse-operator/test/supported"
 )
 
 const (
@@ -30,9 +32,14 @@ const (
 	networkPolicyControllerURLTmpl = "https://raw.githubusercontent.com" +
 		"/kubernetes-sigs/kube-network-policies/%s/install.yaml"
 
-	logTailLines  = 10
-	BaseVersion   = "26.3.22.7"
-	UpdateVersion = "26.7.5.10"
+	logTailLines = 10
+)
+
+var (
+	// BaseVersion is the ClickHouse version test clusters start from.
+	BaseVersion = supported.Base
+	// UpdateVersion is the ClickHouse version test clusters upgrade to.
+	UpdateVersion = supported.Latest
 )
 
 // CurrentSpecHash returns a stable hash for the currently running Ginkgo spec.
