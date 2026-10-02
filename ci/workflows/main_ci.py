@@ -4,7 +4,7 @@ from ci.workflows.job_configs import JobConfigs
 
 WORKFLOWS = [
     Workflow.Config(
-        name="Main CI",
+        name="Main",
         event=Workflow.Event.PUSH,
         branches=["main"],
         jobs=[

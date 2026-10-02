@@ -52,7 +52,9 @@ def _doc_lint_tools_component():
         # Pre-warm crd-ref-docs into the Go module + build cache so the job-time
         # `make docs-generate-api-ref` (GOBIN=./bin go install ...) resolves it
         # from cache instead of hitting the network.
-        f"GOBIN=/usr/local/bin go install github.com/elastic/crd-ref-docs@{_CRD_REF_DOCS_VERSION}",
+        # Image Builder runs components as root with no $HOME, so Go can't
+        # derive a default GOPATH/module cache; set it explicitly.
+        f"HOME=/root GOPATH=/root/go GOBIN=/usr/local/bin go install github.com/elastic/crd-ref-docs@{_CRD_REF_DOCS_VERSION}",
         "crd-ref-docs version || true",
         # --- Vale (latest release, matching vale-action's default) ---
         # amd64 release assets use the `64-bit` arch token; arm64 uses `arm64`.
@@ -143,6 +145,22 @@ _IMAGE_BUILDERS = _image_builders()
 _IMAGE_BUILDERS_BY_NAME = {builder.name: builder for builder in _IMAGE_BUILDERS}
 
 
+# The Code Review job (`praktika review`) calls an OpenAI model on Bedrock via
+# the Converse API, which requires bedrock:InvokeModel. Only the dedicated
+# code-review runner pool below carries this grant (scoped to Bedrock
+# foundation-model / inference-profile resources) — general job runners stay
+# Bedrock-less, so an arbitrary job cannot reach the model API.
+_CODE_REVIEW_BEDROCK_IAM_STATEMENT = {
+    "Sid": "BedrockRuntimeInference",
+    "Effect": "Allow",
+    "Action": ["bedrock:InvokeModel"],
+    "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:*:*:inference-profile/*",
+    ],
+}
+
+
 PROJECTS = [
     CloudInfrastructure.Config(
         name=Settings.PROJECT_NAME,
@@ -172,7 +190,7 @@ PROJECTS = [
             volume_size_gb=100,
             capacity_reserve=1,
             image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
-            ext={"allowed_push_branches": ['main'], "allowed_pr_base_branches": ['main'], "allowed_users": ['maxknv']},
+            ext={"allowed_push_branches": ['NA'], "allowed_pr_base_branches": ['main'], "allowed_users": ['maxknv']},
         ),
         runner_pools=[
             Components.RunnerPool(
@@ -238,6 +256,26 @@ PROJECTS = [
                 allow_all_secrets=False,
                 allow_all_s3_prefixes=False,
                 allow_ssm_debug=False,
+            ),
+            # Dedicated pool for the AI Code Review job. Identical to arm-small,
+            # plus a scoped bedrock:InvokeModel grant via ext["iam_statements"]
+            # so only this pool's role can call the Bedrock model API.
+            Components.RunnerPool(
+                name="arm-small-bedrock",
+                instance_type="t4g.medium",
+                scaling=Components.RunnerPool.Scaling.Auto,
+                size=0,
+                max_size=50,
+                volume_size_gb=100,
+                image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
+                allowed_ssm_parameters=[],
+                allowed_secrets=[],
+                allowed_s3_prefixes=_PROJECT_S3_PREFIXES,
+                allow_all_ssm_parameters=False,
+                allow_all_secrets=False,
+                allow_all_s3_prefixes=False,
+                allow_ssm_debug=False,
+                ext={"iam_statements": [_CODE_REVIEW_BEDROCK_IAM_STATEMENT]},
             ),
         ],
     )
