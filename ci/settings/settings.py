@@ -3,6 +3,8 @@ class RunnerLabels:
     SMALL_AMD = "amd-small"
     MEDIUM_ARM = "arm-medium"
     MEDIUM_AMD = "amd-medium"
+    # arm-small plus a scoped bedrock:InvokeModel grant for the AI Code Review job.
+    SMALL_ARM_BEDROCK = "arm-small-bedrock"
 
 
 PROJECT_NAME = "clickhouse-operator"

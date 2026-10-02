@@ -4,7 +4,7 @@ from ci.workflows.job_configs import JobConfigs
 
 WORKFLOWS = [
     Workflow.Config(
-        name="Pull Request CI",
+        name="PR",
         event=Workflow.Event.PULL_REQUEST,
         base_branches=["main"],
         enable_job_filtering_by_changes=True,
@@ -12,6 +12,7 @@ WORKFLOWS = [
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
             JobConfigs.api_reference_generated,
+            JobConfigs.code_review,
         ],
         enable_cache=True,
         enable_report=True,
