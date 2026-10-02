@@ -63,3 +63,21 @@ class JobConfigs:
             ],
         ),
     )
+
+    # --- AI code review ---
+    # `praktika review` consults an OpenAI model on Bedrock and posts a summary
+    # plus inline findings, managing its own review threads. It runs on the
+    # dedicated arm-small-bedrock pool (the only one granted bedrock:InvokeModel).
+    # allow_failure so a review hiccup never blocks merge; enable_gh_auth so the
+    # job can post comments and resolve threads.
+    code_review = Job.Config(
+        name="Code Review",
+        runs_on=[RunnerLabels.SMALL_ARM_BEDROCK],
+        command=(
+            "python3 -I -m praktika review --provider bedrock-openai "
+            "--model global.openai.gpt-5.6-sol --reasoning-effort high "
+            "--prompt ./ci/prompts/code_review.md"
+        ),
+        allow_failure=True,
+        enable_gh_auth=True,
+    )
