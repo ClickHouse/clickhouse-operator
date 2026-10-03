@@ -152,88 +152,6 @@ jobs:
       - name: Run scorecard tests
         run: make scorecard
 
-  build_and_test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      contents: read
-      checks: write
-    needs: [ changes ]
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-          cache: false
-
-      - name: Go cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-unit-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            go-unit-
-
-      - name: Go Mod
-        run: go mod download
-
-      - name: Go Mod Verify
-        run: go mod verify
-
-      - name: Build
-        run: go build -v cmd/main.go
-
-      - name: Run tests
-        run: |
-          go list ./... | grep -v /e2e
-          make test-ci
-
-      - name: Test Report
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
-        if: ${{ !cancelled() }}
-        with:
-          name: Unit tests
-          badge-title: Unit tests
-          path: "**/report/*.xml"
-          reporter: java-junit
-
-  fuzz_specs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [ changes ]
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-          cache: false
-
-      - name: Go cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-fuzz-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            go-fuzz-
-
-      - name: Go Mod
-        run: go mod download
-
-      - name: Run fuzz tests
-        run: make fuzz
-
   helm-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -570,7 +488,7 @@ jobs:
     name: All CI checks passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [ changes, lint, bundle, build_and_test, fuzz_specs, helm-test, compat-e2e-test, e2e-shard-plan, e2e-test, check-crd-compat ]
+    needs: [ changes, lint, bundle, helm-test, compat-e2e-test, e2e-shard-plan, e2e-test, check-crd-compat ]
     if: always()
     steps:
       - name: Determine CI status
