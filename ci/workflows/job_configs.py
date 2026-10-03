@@ -64,6 +64,44 @@ class JobConfigs:
         ),
     )
 
+    # --- Operator CI (migrated job-by-job from .github/workflows/ci.yaml) ---
+    # Go source paths that gate the Go jobs below — the praktika equivalent of
+    # ci.yaml's `changes` non-docs paths-filter. Shared (read-only) across jobs.
+    _GO_CODE_DIGEST = Job.CacheDigestConfig(
+        include_paths=[
+            "./api",
+            "./cmd",
+            "./internal",
+            "./hack",
+            "./go.mod",
+            "./go.sum",
+            "./Makefile",
+        ],
+    )
+
+    # ci.yaml :: build_and_test. Go is baked into the runner image; controller-gen
+    # and setup-envtest self-install via `go-install-tool`, and envtest downloads
+    # the kubebuilder assets (K8s 1.36.2) — all in-process, no Docker/cluster.
+    # Runs on a medium runner because `go test -race` across the suite is heavier
+    # than the small pool's 4 GB. The dorny/test-reporter step is dropped; the
+    # job's exit code drives pass/fail (enable_exit_code_result).
+    build_and_test = Job.Config(
+        name="Build and Unit Tests",
+        runs_on=[RunnerLabels.MEDIUM_ARM],
+        command="go build -v cmd/main.go && make test-ci",
+        timeout=25 * 60,
+        digest_config=_GO_CODE_DIGEST,
+    )
+
+    # ci.yaml :: fuzz_specs. Go-only (two 60s fuzz runs); no new tooling.
+    fuzz_specs = Job.Config(
+        name="Fuzz Specs",
+        runs_on=[RunnerLabels.SMALL_ARM],
+        command="make fuzz",
+        timeout=20 * 60,
+        digest_config=_GO_CODE_DIGEST,
+    )
+
     # --- AI code review ---
     # `praktika review` consults an OpenAI model on Bedrock and posts a summary
     # plus inline findings, managing its own review threads. It runs on the
