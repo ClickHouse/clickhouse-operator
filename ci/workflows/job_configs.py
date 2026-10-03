@@ -88,7 +88,15 @@ class JobConfigs:
     build_and_test = Job.Config(
         name="Build and Unit Tests",
         runs_on=[RunnerLabels.MEDIUM_ARM],
-        command="go build -v cmd/main.go && make test-ci",
+        command=(
+            # envtest K8s assets are baked into the AMI at /opt/kubebuilder-envtest
+            # (see projects.py _go_ci_tools_component). Seed ./bin/k8s from there
+            # when present so `make test-ci`'s `setup-envtest use` is an offline
+            # hit; on a non-baked runner (e.g. local) the dir is absent and
+            # setup-envtest downloads as usual. Works both ways.
+            "if [ -d /opt/kubebuilder-envtest/k8s ]; then mkdir -p bin && cp -rn /opt/kubebuilder-envtest/k8s bin/; fi && "
+            "go build -v cmd/main.go && make test-ci"
+        ),
         timeout=25 * 60,
         digest_config=_GO_CODE_DIGEST,
     )
@@ -100,6 +108,75 @@ class JobConfigs:
         command="make fuzz",
         timeout=20 * 60,
         digest_config=_GO_CODE_DIGEST,
+    )
+
+    # ci.yaml :: lint. golangci-lint/codespell/actionlint are installed by the
+    # Makefile into ./bin; their builds + pip cache are pre-warmed in the image
+    # (ci/infrastructure/projects.py _go_ci_tools_component). Runs on a medium
+    # runner because golangci-lint over the whole module is memory-hungry.
+    lint = Job.Config(
+        name="Lint",
+        runs_on=[RunnerLabels.MEDIUM_ARM],
+        command=(
+            "go mod tidy && git diff --exit-code && "
+            "make generate && git diff --exit-code && "
+            "make manifests && git diff --exit-code && "
+            "make lint"
+        ),
+        timeout=15 * 60,
+        digest_config=_GO_CODE_DIGEST,
+    )
+
+    # ci.yaml :: helm-test. helm + kubebuilder are baked into the image; kustomize
+    # self-installs via go-install-tool (cache pre-warmed). KUBEBUILDER points the
+    # Makefile at the baked binary instead of re-downloading it.
+    helm_test = Job.Config(
+        name="Helm Test",
+        runs_on=[RunnerLabels.SMALL_ARM],
+        command=(
+            "make generate-helmchart-ci KUBEBUILDER=/usr/local/bin/kubebuilder && "
+            "git diff --exit-code dist/chart/ dist/chart-cluster/ && "
+            "make build-helmchart-dependencies && "
+            "helm lint ./dist/chart && "
+            "make lint-cluster-chart"
+        ),
+        timeout=15 * 60,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./api",
+                "./config",
+                "./dist/chart",
+                "./dist/chart-cluster",
+                "./tools/gen-cluster-chart",
+                "./go.mod",
+                "./go.sum",
+                "./Makefile",
+            ],
+        ),
+    )
+
+    # ci.yaml :: check-crd-compat. PR-only, advisory (allow_failure). The
+    # crd-breaking-change label gate is a workflow filter hook
+    # (ci/jobs/filter_job_hook.py); the helper fetches the base branch (praktika
+    # checks out an ephemeral merge commit with no base history) and runs the
+    # check. crd-schema-checker self-installs via go-install-tool (cache
+    # pre-warmed).
+    check_crd_compat = Job.Config(
+        name="Check CRD Compatibility",
+        runs_on=[RunnerLabels.SMALL_ARM],
+        command="python3 ci/jobs/check_crd_compat.py",
+        timeout=15 * 60,
+        allow_failure=True,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./api",
+                "./config/crd",
+                "./ci/jobs/check_crd_compat.py",
+                "./go.mod",
+                "./go.sum",
+                "./Makefile",
+            ],
+        ),
     )
 
     # --- AI code review ---

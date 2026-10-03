@@ -1,5 +1,6 @@
 from praktika import Workflow
 from ci.workflows.job_configs import JobConfigs
+from ci.jobs.filter_job_hook import should_skip_job
 
 
 WORKFLOWS = [
@@ -8,12 +9,16 @@ WORKFLOWS = [
         event=Workflow.Event.PULL_REQUEST,
         base_branches=["main"],
         enable_job_filtering_by_changes=True,
+        workflow_filter_hooks=[should_skip_job],
         jobs=[
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
             JobConfigs.api_reference_generated,
             JobConfigs.build_and_test,
             JobConfigs.fuzz_specs,
+            JobConfigs.lint,
+            JobConfigs.helm_test,
+            JobConfigs.check_crd_compat,
             JobConfigs.code_review,
         ],
         enable_cache=True,
