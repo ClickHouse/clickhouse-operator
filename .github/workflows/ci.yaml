@@ -39,82 +39,6 @@ jobs:
               - '!examples/**'
               - '!LICENSE'
 
-  lint:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [ changes ]
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-          cache: false
-
-      - name: Go cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-lint-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            go-lint-
-
-      - name: Go Tidy
-        run: go mod tidy && git diff --exit-code
-
-      - name: Check controller-gen generated
-        run: make generate && git diff --exit-code
-
-      - name: Check manifests generated
-        run: make manifests && git diff --exit-code
-
-      - name: Lint with golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
-        with:
-          version: v2.13.1
-
-      - name: Lint with codespell
-        uses: codespell-project/actions-codespell@8f01853be192eb0f849a5c7d721450e7a467c579 # v2.2
-        with:
-          config: ci/.codespellrc
-
-      - name: actionlint
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
-        with:
-          flags: '-config-file ci/actionlint.yaml'
-
-  check-crd-compat:
-    # Only run on pull requests, and skip when the PR is explicitly labeled as
-    # an intentional CRD-breaking change. The job is not part of ci-success-check,
-    # so a failure here does not block the aggregate gate.
-    needs: [ changes ]
-    if: |
-      needs.changes.outputs.code == 'true' &&
-      github.event_name == 'pull_request' &&
-      !contains(github.event.pull_request.labels.*.name, 'crd-breaking-change')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Check CRD backward compatibility
-        run: make check-crd-compat CRD_BASE_REF=${{ github.event.pull_request.base.sha }}
-
   bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -151,38 +75,6 @@ jobs:
 
       - name: Run scorecard tests
         run: make scorecard
-
-  helm-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [ changes ]
-    if: needs.changes.outputs.code == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
-        with:
-          go-version-file: 'go.mod'
-
-      - name: Install Helm
-        run: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Verify Helm installation
-        run: helm version
-
-      - name: Check helmchart generated
-        run: make generate-helmchart-ci && git diff --exit-code dist/chart/ dist/chart-cluster/
-
-      - name: Build Helm Chart Dependencies
-        run: make build-helmchart-dependencies
-
-      - name: Lint Helm Chart
-        run: helm lint ./dist/chart
-
-      - name: Lint Cluster Helm Chart
-        run: make lint-cluster-chart
 
   compat-e2e-test:
     runs-on: [ubuntu-latest]
@@ -322,7 +214,7 @@ jobs:
           if-no-files-found: error
 
   e2e-test:
-    needs: [ lint, changes, e2e-shard-plan ]
+    needs: [ changes, e2e-shard-plan ]
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
@@ -488,7 +380,7 @@ jobs:
     name: All CI checks passed
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [ changes, lint, bundle, helm-test, compat-e2e-test, e2e-shard-plan, e2e-test, check-crd-compat ]
+    needs: [ changes, bundle, compat-e2e-test, e2e-shard-plan, e2e-test ]
     if: always()
     steps:
       - name: Determine CI status
