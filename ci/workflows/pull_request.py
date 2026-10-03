@@ -12,6 +12,8 @@ WORKFLOWS = [
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
             JobConfigs.api_reference_generated,
+            JobConfigs.build_and_test,
+            JobConfigs.fuzz_specs,
             JobConfigs.code_review,
         ],
         enable_cache=True,
