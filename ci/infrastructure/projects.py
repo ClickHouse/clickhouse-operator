@@ -78,8 +78,75 @@ def _doc_lint_tools_component():
     }
 
 
+# Tooling for the Operator CI Go jobs (lint / helm-test / check-crd-compat).
+# helm and kubebuilder are baked as real binaries; the rest are installed by the
+# Makefile into ./bin via `go install`, so here we only pre-warm the Go build +
+# module cache (same technique as crd-ref-docs) — the Makefile keeps picking the
+# versions, this just makes its job-time installs fast and offline. Versions
+# must match the Makefile so the pre-warm actually hits at job time.
+_HELM_VERSION = "v3.19.0"
+_KUBEBUILDER_VERSION = "v4.15.0"  # keep in sync with Makefile KUBEBUILDER_VERSION
+_ENVTEST_K8S_VERSION = "1.36.2"  # keep in sync with Makefile ENVTEST_K8S_VERSION
+# Stable, checkout-independent location the envtest K8s assets are baked into.
+# The build_and_test job seeds ./bin/k8s from here when present (offline),
+# otherwise setup-envtest downloads them as usual.
+_ENVTEST_ASSETS_DIR = "/opt/kubebuilder-envtest"
+_GO_CI_TOOLS = [
+    ("sigs.k8s.io/controller-tools/cmd/controller-gen", "v0.21.0"),      # CONTROLLER_TOOLS_VERSION
+    ("sigs.k8s.io/kustomize/kustomize/v5", "v5.8.1"),                    # KUSTOMIZE_VERSION
+    ("sigs.k8s.io/controller-runtime/tools/setup-envtest", "release-0.24"),  # ENVTEST_VERSION
+    ("github.com/golangci/golangci-lint/v2/cmd/golangci-lint", "v2.13.1"),   # GOLANGCI_LINT_VERSION
+    ("github.com/rhysd/actionlint/cmd/actionlint", "v1.7.12"),           # ACTIONLINT_VERSION
+    ("github.com/openshift/crd-schema-checker/cmd/crd-schema-checker", "latest"),  # CRD_SCHEMA_CHECKER_VERSION
+]
+
+
+def _go_ci_tools_component():
+    """Build-phase component for the Operator CI Go jobs: bake helm + kubebuilder
+    + envtest K8s assets, and pre-warm the Go build/module + pip caches."""
+    go_installs = [
+        f"HOME=/root GOPATH=/root/go GOBIN=/usr/local/bin go install {pkg}@{ver}"
+        for pkg, ver in _GO_CI_TOOLS
+    ]
+    commands = [
+        "arch=$(dpkg --print-architecture)",
+        # Helm — used directly from PATH by the Makefile helm targets.
+        f'curl -fsSL "https://get.helm.sh/helm-{_HELM_VERSION}-linux-${{arch}}.tar.gz" -o /tmp/helm.tgz',
+        "tar -xzf /tmp/helm.tgz -C /tmp",
+        "install -m 0755 /tmp/linux-${arch}/helm /usr/local/bin/helm",
+        "rm -rf /tmp/helm.tgz /tmp/linux-${arch}",
+        "helm version",
+        # kubebuilder — generate-helmchart runs `kubebuilder edit`. Baked here;
+        # the helm-test job points the Makefile at it via KUBEBUILDER=.
+        f'curl -fsSL "https://github.com/kubernetes-sigs/kubebuilder/releases/download/{_KUBEBUILDER_VERSION}/kubebuilder_linux_${{arch}}" -o /usr/local/bin/kubebuilder',
+        "chmod +x /usr/local/bin/kubebuilder",
+        "kubebuilder version || true",
+        # Pre-warm the Go build + module cache so the Makefile's `go install` of
+        # these tools into ./bin is a fast, offline cache hit at job time.
+        *go_installs,
+        # Bake the envtest K8s assets (version-pinned data) so the build_and_test
+        # job skips the multi-hundred-MB download. setup-envtest was just installed
+        # to /usr/local/bin above; store the assets under a stable path the job
+        # seeds ./bin/k8s from. The component runs on both arm64 and amd64
+        # builders, so each AMI gets its own arch-matched assets.
+        f"mkdir -p {_ENVTEST_ASSETS_DIR}",
+        f"HOME=/root /usr/local/bin/setup-envtest use {_ENVTEST_K8S_VERSION} --bin-dir {_ENVTEST_ASSETS_DIR} -p path",
+        # Pre-warm the pip cache so the Makefile's codespell install is offline.
+        "HOME=/root python3 -m pip install --break-system-packages codespell==2.4.3",
+    ]
+    return {
+        "name": "go-ci-tools",
+        "platform": "Linux",
+        "phase": "build",
+        "description": "Bake helm + kubebuilder + envtest assets, pre-warm Go/pip caches for lint/helm-test/crd-compat",
+        "commands": commands,
+    }
+
+
 def _image_builders():
-    image_recipe_version = "1.0.1"
+    # Bump whenever the recipe/components change so Image Builder creates a new
+    # recipe + component versions and rebuilds the AMI.
+    image_recipe_version = "1.0.4"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
         # (boto3/PyJWT/cryptography/requests) automatically; pytest is
@@ -97,6 +164,8 @@ def _image_builders():
     custom_components = [
         # Build-phase: install the docs-lint toolchain into the AMI.
         _doc_lint_tools_component(),
+        # Build-phase: bake helm/kubebuilder + pre-warm Go/pip caches.
+        _go_ci_tools_component(),
         # Test-phase: validate the image after build.
         Components.create_image_test_component(
             name="project-image-test",
@@ -106,10 +175,24 @@ def _image_builders():
                 "go version",
                 "vale --version",
                 "linkspector --version",
+                "helm version",
+                "kubebuilder version",
             ],
         ),
     ]
-    return [
+    # The Ubuntu 24.04 parent AMI ships an 8 GB gp3 root volume on /dev/sda1;
+    # double it to 16 GB so the baked Go/pip caches + Docker layers have room.
+    block_device_mappings = [
+        {
+            "deviceName": "/dev/sda1",
+            "ebs": {
+                "volumeSize": 16,
+                "volumeType": "gp3",
+                "deleteOnTermination": True,
+            },
+        }
+    ]
+    builders = [
         Components.create_ubuntu_image_builder_config(
             name="ci-arm64-image",
             version=image_recipe_version,
@@ -127,6 +210,9 @@ def _image_builders():
             instance_types=["t3.small"],
         ),
     ]
+    for builder in builders:
+        builder.block_device_mappings = block_device_mappings
+    return builders
 
 
 _GH_TOKEN_MINTER = Components.GitHubTokenMinter(

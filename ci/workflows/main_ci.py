@@ -13,6 +13,8 @@ WORKFLOWS = [
             JobConfigs.api_reference_generated,
             JobConfigs.build_and_test,
             JobConfigs.fuzz_specs,
+            JobConfigs.lint,
+            JobConfigs.helm_test,
         ],
         enable_cache=True,
         enable_report=True,
