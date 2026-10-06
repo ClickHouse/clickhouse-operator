@@ -191,6 +191,44 @@ class JobConfigs:
         ),
     )
 
+    # ci.yaml :: compat-e2e-test (SPIKE — one matrix variant of five).
+    # Proof-of-concept for the Docker+Kind path on praktika: the single
+    # `maximal-k8s-all-deploy-methods` variant (newest Kind node image, one
+    # ClickHouse version, no OLM). Runs on amd-medium (c7a.4xlarge) to match the
+    # existing self-hosted e2e placement and to pull amd64 ClickHouse images, as
+    # the GitHub job does. Needs a working Docker daemon on the runner; ci/jobs/
+    # compat_e2e.py installs Kind + kubectl and creates the cluster in-script.
+    # Go/helm come from the go-env pre-hook. Once this is green on a real runner,
+    # fan the full matrix out with Job.parametrize (see ci/CI_YAML_MIGRATION.md
+    # §3.4); the `operator-upgrade` variant additionally needs `git fetch --tags`.
+    compat_e2e_test = Job.Config(
+        name="Compat E2E (maximal-k8s-all-deploy-methods)",
+        runs_on=[RunnerLabels.MEDIUM_AMD],
+        command=(
+            "K8S_IMAGE=v1.36.1 "
+            "CLICKHOUSE_VERSION=26.7.5.10 "
+            "DEPLOY_TARGET=test-compat-e2e "
+            "python3 ci/jobs/compat_e2e.py"
+        ),
+        timeout=60 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./api",
+                "./cmd",
+                "./internal",
+                "./config",
+                "./test",
+                "./tools",
+                "./ci/kind-cluster.config",
+                "./ci/jobs/compat_e2e.py",
+                "./go.mod",
+                "./go.sum",
+                "./Makefile",
+            ],
+        ),
+    )
+
     # --- AI code review ---
     # `praktika review` consults an OpenAI model on Bedrock and posts a summary
     # plus inline findings, managing its own review threads. It runs on the

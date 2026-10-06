@@ -1,3 +1,5 @@
+import base64
+
 from praktika.infrastructure import (
     CloudInfrastructure,
     Components,
@@ -64,10 +66,49 @@ def _doc_lint_tools_component():
     }
 
 
+def _docker_kind_component():
+    """Build-phase component that disables Docker's containerd image store so
+    `kind load docker-image` works on the Docker+Kind jobs (compat-e2e, e2e).
+
+    praktika's base setup installs docker-ce and writes /etc/docker/daemon.json;
+    this component runs afterwards (custom components are appended last) and merges
+    `features.containerd-snapshotter = false` into it, preserving praktika's keys.
+
+    Why: `kind load docker-image` exports each image with `docker save` and
+    re-imports it via `ctr ... --all-platforms --digests`. With the containerd
+    image store enabled, even a single-arch `docker pull` keeps a multi-platform
+    image index, so the import fails on the other platforms' / attestation blobs
+    ("content digest ... not found"). The classic image store emits a flat
+    single-platform archive, matching GitHub-hosted runners where `kind load`
+    works.
+
+    The image-builder component YAML escaper only escapes double quotes, so the
+    JSON-heavy script is base64-wrapped (same technique as praktika's docker
+    registry-mirror component).
+    """
+    script = """#!/usr/bin/env bash
+set -euo pipefail
+f=/etc/docker/daemon.json
+[ -f "$f" ] || echo '{}' > "$f"
+tmp=$(mktemp)
+jq '.features."containerd-snapshotter" = false' "$f" > "$tmp"
+mv "$tmp" "$f"
+jq -e '.features."containerd-snapshotter" == false' "$f"
+"""
+    b64 = base64.b64encode(script.encode()).decode()
+    return {
+        "name": "docker-kind-image-store",
+        "platform": "Linux",
+        "phase": "build",
+        "description": "Disable Docker containerd image store so kind load works",
+        "commands": [f"printf '%s' '{b64}' | base64 -d | bash"],
+    }
+
+
 def _image_builders():
     # Bump whenever the recipe/components change so Image Builder creates a new
     # recipe + component versions and rebuilds the AMI.
-    image_recipe_version = "1.0.5"
+    image_recipe_version = "1.0.6"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
         # (boto3/PyJWT/cryptography/requests) automatically; pytest is
@@ -86,6 +127,8 @@ def _image_builders():
         # Build-phase: install the docs-lint toolchain (Vale + Node/linkspector).
         # Go tooling is provisioned per job via the go-env pre-hook, not baked.
         _doc_lint_tools_component(),
+        # Build-phase: disable Docker's containerd image store (kind load fix).
+        _docker_kind_component(),
         # Test-phase: validate the image after build.
         Components.create_image_test_component(
             name="project-image-test",
