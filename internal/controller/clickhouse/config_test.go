@@ -146,10 +146,8 @@ var _ = Describe("networkConfigGenerator listen_host", func() {
 	newReconciler := func(listenHost []string) *clickhouseReconciler {
 		return &clickhouseReconciler{
 			Cluster: &v1.ClickHouseCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: "test-namespace",
-				},
+				Name:      "test-cluster",
+				Namespace: "test-namespace",
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas:            new(int32(1)),
 					Shards:              new(int32(1)),
