@@ -109,7 +109,7 @@ type clickhouseReconciler struct {
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
 
-	// Populated by reconcileClusterRevisions.
+	// Populated by reconcileClusterRevisions when keeperClusterRef is set.
 	keeper v1.KeeperCluster
 	// Loaded and templated by reconcileClusterSecret. Requires version probe to complete.
 	secret    corev1.Secret
@@ -644,8 +644,6 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		log.Debug(fmt.Sprintf("observed new CR revision %q", updateRevision))
 	}
 
-	// An externally managed Keeper has no KeeperCluster resource to read or wait for:
-	// the operator only points ClickHouse at it and does not own its lifecycle.
 	if r.Cluster.Spec.ExternalKeeper == nil {
 		keeperNamespacedName := r.Cluster.KeeperClusterNamespacedName()
 		if err := r.GetClient().Get(ctx, keeperNamespacedName, &r.keeper); err != nil {

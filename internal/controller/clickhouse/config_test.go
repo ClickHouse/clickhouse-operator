@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
+	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 )
 
 var _ = Describe("ConfigGenerator", func() {
@@ -124,23 +125,27 @@ var _ = Describe("ConfigGenerator", func() {
 		}
 	})
 
-	DescribeTable("should render zookeeper nodes from an externally managed keeper",
-		func(tls v1.ExternalKeeperTLSPolicy, port int32, expectedSecure int) {
-			original := ctx.Cluster
-			DeferCleanup(func() { ctx.Cluster = original })
-
-			cluster := original.DeepCopy()
-			cluster.Spec.KeeperClusterRef = nil
-			cluster.Spec.ExternalKeeper = &v1.ExternalKeeperSpec{
-				TLS: tls,
-				Nodes: []v1.ExternalKeeperNode{
-					{Host: "keeper-1.example.internal", Port: port},
-					{Host: "keeper-2.example.internal", Port: port},
+	DescribeTable("should render zookeeper nodes",
+		func(external *v1.ExternalKeeperSpec, keeperTLS bool, port int32, expectedSecure int) {
+			r := clickhouseReconciler{
+				Cluster: ctx.Cluster.DeepCopy(),
+				keeper: v1.KeeperCluster{
+					Name:      "keeper",
+					Namespace: "test-namespace",
+					Spec: v1.KeeperClusterSpec{
+						Replicas: new(int32(3)),
+						Settings: v1.KeeperSettings{TLS: v1.ClusterTLSSpec{Enabled: keeperTLS}},
+					},
 				},
 			}
-			ctx.Cluster = cluster
+			r.Cluster.Spec.ExternalKeeper = external
 
-			data, err := clusterConfigGenerator(template.Must(template.New("").Parse(clusterConfigTemplateStr)), &ctx, v1.ClickHouseReplicaID{})
+			hosts := r.keeper.Hostnames()
+			if external != nil {
+				hosts = []string{external.Nodes[0].Host, external.Nodes[1].Host}
+			}
+
+			data, err := clusterConfigGenerator(template.Must(template.New("").Parse(clusterConfigTemplateStr)), &r, v1.ClickHouseReplicaID{})
 			Expect(err).ToNot(HaveOccurred())
 
 			cfg := struct {
@@ -154,16 +159,24 @@ var _ = Describe("ConfigGenerator", func() {
 			}{}
 			Expect(yaml.Unmarshal([]byte(data), &cfg)).To(Succeed())
 
-			Expect(cfg.Zookeeper.Nodes).To(HaveLen(2))
+			Expect(cfg.Zookeeper.Nodes).To(HaveLen(len(hosts)))
 
 			for i, node := range cfg.Zookeeper.Nodes {
-				Expect(node.Host).To(Equal(fmt.Sprintf("keeper-%d.example.internal", i+1)))
+				Expect(node.Host).To(Equal(hosts[i]))
 				Expect(node.Port).To(Equal(port))
 				Expect(node.Secure).To(Equal(expectedSecure))
 			}
 		},
-		Entry("plain text", v1.ExternalKeeperTLSDisabled, int32(9181), 0),
-		Entry("over TLS", v1.ExternalKeeperTLSEnabled, int32(9281), 1),
+		Entry("from the KeeperCluster in plain text", nil, false, int32(keeper.PortNative), 0),
+		Entry("from the KeeperCluster over TLS", nil, true, int32(keeper.PortNativeSecure), 1),
+		Entry("from an external Keeper in plain text", &v1.ExternalKeeperSpec{
+			TLS:   v1.ExternalKeeperTLSDisabled,
+			Nodes: []v1.ExternalKeeperNode{{Host: "keeper-1.example.internal", Port: 9181}, {Host: "[fd00::2]", Port: 9181}},
+		}, false, int32(9181), 0),
+		Entry("from an external Keeper over TLS", &v1.ExternalKeeperSpec{
+			TLS:   v1.ExternalKeeperTLSEnabled,
+			Nodes: []v1.ExternalKeeperNode{{Host: "keeper-1.example.internal", Port: 9281}, {Host: "[fd00::2]", Port: 9281}},
+		}, false, int32(9281), 1),
 	)
 
 	It("should set the internal hostname as the interserver HTTP host", func() {

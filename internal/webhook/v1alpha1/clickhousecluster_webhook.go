@@ -86,6 +86,11 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster,
 		warns = append(warns, "Decreasing the number of shards is a destructive operation. It removes shards with all their data.")
 	}
 
+	if oldCluster.KeeperClusterNamespacedName() != newCluster.KeeperClusterNamespacedName() {
+		warns = append(warns, "Changing the Keeper source (keeperClusterRef or externalKeeper) of a running cluster points ClickHouse at a different Keeper. "+
+			"Replicated tables become read-only if it lacks their metadata.")
+	}
+
 	if err := validateDataVolumeSpecChanges(
 		oldCluster.Spec.DataVolumeClaimSpec,
 		newCluster.Spec.DataVolumeClaimSpec,
@@ -126,10 +131,6 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 
 	warns = append(warns, warnServerSectionsInUsersConfig(obj.Spec.Settings.ExtraUsersConfig.Raw)...)
 	warns = append(warns, warnExtraConfigOverlap(obj.Spec.Settings.ExtraConfig.Raw, obj.Spec.Settings.ExtraReloadableConfig.Raw)...)
-
-	if err := validateKeeperSource(obj.Spec.KeeperClusterRef, obj.Spec.ExternalKeeper); err != nil {
-		errs = append(errs, err)
-	}
 
 	additionalVolumeErrs := validateAdditionalVolumeClaimTemplates(obj.Spec.DataVolumeClaimSpec, obj.Spec.AdditionalVolumeClaimTemplates)
 	errs = append(errs, additionalVolumeErrs...)
@@ -208,16 +209,4 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	}
 
 	return warns, errs
-}
-
-// validateKeeperSource ensures the cluster gets its coordination service from exactly one source.
-func validateKeeperSource(ref *chv1.KeeperClusterReference, external *chv1.ExternalKeeperSpec) error {
-	switch {
-	case ref != nil && external != nil:
-		return errors.New("spec.keeperClusterRef and spec.externalKeeper are mutually exclusive")
-	case ref == nil && external == nil:
-		return errors.New("one of spec.keeperClusterRef or spec.externalKeeper must be set")
-	default:
-		return nil
-	}
 }

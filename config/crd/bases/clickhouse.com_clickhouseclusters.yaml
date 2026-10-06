@@ -1816,6 +1816,7 @@ spec:
                       properties:
                         host:
                           description: Host name or IP address of the Keeper server.
+                            IPv6 addresses must be enclosed in square brackets.
                           maxLength: 253
                           minLength: 1
                           type: string
@@ -1834,11 +1835,16 @@ spec:
                     minItems: 1
                     type: array
                     x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: nodes must not repeat the same host and port
+                      rule: self.all(n, self.exists_one(m, m.host.lowerAscii() ==
+                        n.host.lowerAscii() && m.port == n.port))
                   tls:
                     default: Disabled
                     description: |-
                       TLS controls whether ClickHouse connects to the ensemble over TLS.
                       The ports in nodes must match the chosen policy.
+                      Server certificates are verified against the system trust store and `spec.settings.tls.caBundle`.
                     enum:
                     - Enabled
                     - Disabled
@@ -5019,7 +5025,7 @@ spec:
                       across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
                       Pods of different shards may share a domain, so multiple pods per domain are allowed.
                       With fewer domains than replicas, several replicas share a domain, still evenly balanced.
-                      ClickHouse pods additionally prefer domains hosting the Keeper pods they use.
+                      With keeperClusterRef, ClickHouse pods additionally prefer domains hosting the Keeper pods they use.
                       Recommended to be set to "topology.kubernetes.io/zone".
                     type: string
                   volumes:
@@ -7863,6 +7869,9 @@ spec:
                     type: object
                 type: object
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of keeperClusterRef or externalKeeper must be set
+              rule: has(self.keeperClusterRef) != has(self.externalKeeper)
           status:
             description: ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
             properties:
@@ -7962,6 +7971,9 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: spec is required
+          rule: has(self.spec)
     served: true
     storage: true
     subresources:

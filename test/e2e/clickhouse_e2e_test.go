@@ -33,6 +33,7 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal"
 	ctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
+	keeperctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
@@ -1199,6 +1200,33 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(k8sClient.List(ctx, &secretList, client.InNamespace(ns),
 				controllerutil.AppRequirements(ns, cr.SpecificName()))).To(Succeed())
 			Expect(secretList.Items).To(BeEmpty())
+		})
+
+		It("should replicate through a Keeper ensemble set as externalKeeper", func(ctx context.Context) {
+			nodes := make([]v1.ExternalKeeperNode, 0, keeper.Replicas())
+			for _, host := range keeper.Hostnames() {
+				nodes = append(nodes, v1.ExternalKeeperNode{Host: host, Port: keeperctrl.PortNative})
+			}
+
+			cr := v1.ClickHouseCluster{
+				Namespace: ns,
+				Name:      keeper.Name + "-external",
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(2)),
+					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+					DataVolumeClaimSpec: &defaultStorage,
+					ExternalKeeper:      &v1.ExternalKeeperSpec{Nodes: nodes},
+				},
+			}
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
+			env.ClickHouseRWChecks(ctx, &cr, new(0))
 		})
 
 		It("should reload config without pod restart when possible", func(ctx context.Context) {

@@ -4666,7 +4666,7 @@ spec:
                       across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
                       Pods of different shards may share a domain, so multiple pods per domain are allowed.
                       With fewer domains than replicas, several replicas share a domain, still evenly balanced.
-                      ClickHouse pods additionally prefer domains hosting the Keeper pods they use.
+                      With keeperClusterRef, ClickHouse pods additionally prefer domains hosting the Keeper pods they use.
                       Recommended to be set to "topology.kubernetes.io/zone".
                     type: string
                   volumes:

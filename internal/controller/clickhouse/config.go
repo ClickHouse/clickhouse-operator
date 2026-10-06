@@ -300,8 +300,7 @@ type namedCollectionValue struct {
 	Value string
 }
 
-// keeperNodes returns the coordination servers ClickHouse should connect to, either the
-// externally managed ensemble from the spec or the KeeperCluster owned by the operator.
+// keeperNodes returns the Keeper servers ClickHouse connects to.
 func (r *clickhouseReconciler) keeperNodes() []keeperNode {
 	if external := r.Cluster.Spec.ExternalKeeper; external != nil {
 		secure := external.TLS == v1.ExternalKeeperTLSEnabled

@@ -178,6 +178,8 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 				Nodes: []chv1.ExternalKeeperNode{
 					{Host: "keeper-1.example.internal", Port: 9181},
 					{Host: "keeper-2.example.internal", Port: 9181},
+					{Host: "[fd00::3]", Port: 9181},
+					{Host: "keeper-4.example.internal.", Port: 9181},
 				},
 			}
 
@@ -200,6 +202,21 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(cluster.Spec.ExternalKeeper.Nodes[0].Port).To(BeEquivalentTo(9181))
 		})
 
+		It("Should reject duplicate externally managed keeper nodes", func(ctx context.Context) {
+			cluster := chCluster.DeepCopy()
+			cluster.Spec.KeeperClusterRef = nil
+			cluster.Spec.ExternalKeeper = &chv1.ExternalKeeperSpec{
+				Nodes: []chv1.ExternalKeeperNode{
+					{Host: "keeper-1.example.internal", Port: 9181},
+					{Host: "KEEPER-1.example.internal"},
+				},
+			}
+
+			err := k8sClient.Create(ctx, cluster)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("nodes must not repeat the same host and port"))
+		})
+
 		It("Should reject both keeperClusterRef and externalKeeper", func(ctx context.Context) {
 			cluster := chCluster.DeepCopy()
 			cluster.Spec.ExternalKeeper = &chv1.ExternalKeeperSpec{
@@ -208,7 +225,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
+			Expect(err.Error()).To(ContainSubstring("exactly one of keeperClusterRef or externalKeeper must be set"))
 		})
 
 		It("Should reject neither keeperClusterRef nor externalKeeper", func(ctx context.Context) {
@@ -217,7 +234,7 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 			err := k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("must be set"))
+			Expect(err.Error()).To(ContainSubstring("exactly one of keeperClusterRef or externalKeeper must be set"))
 		})
 
 		It("Should check certificate passed if TLS enabled", func(ctx context.Context) {

@@ -380,7 +380,6 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 			},
 		}
 
-		// Co-locating with Keeper pods only makes sense when the operator runs them itself.
 		if cr.Spec.ExternalKeeper == nil {
 			podSpec.Affinity.PodAffinity = &corev1.PodAffinity{
 				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{

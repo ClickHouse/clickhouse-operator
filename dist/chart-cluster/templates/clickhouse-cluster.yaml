@@ -22,8 +22,8 @@ spec:
   {{- if $registry }}{{- $repository = printf "%s/%s" (trimSuffix "/" $registry) $repository }}{{- end }}
   {{- $defaults := dict "containerTemplate" (dict "image" (dict "tag" $tag "repository" $repository)) }}
   {{- $spec := mergeOverwrite $defaults (deepCopy (.Values.clickhouse.spec | default dict)) }}
-  {{- /* Auto-wire keeperClusterRef when keeper is enabled in-chart and user did not pin one. */}}
-  {{- if and .Values.keeper.enabled (not (hasKey $spec "keeperClusterRef")) }}
+  {{- /* Auto-wire keeperClusterRef when keeper is enabled in-chart and user did not pin one or set externalKeeper. */}}
+  {{- if and .Values.keeper.enabled (not (hasKey $spec "keeperClusterRef")) (not $spec.externalKeeper) }}
   {{- $_ := set $spec "keeperClusterRef" (dict "name" (include "clickhouse-cluster.keeper.name" .)) }}
   {{- end }}
   {{- toYaml $spec | nindent 2 }}

@@ -116,7 +116,7 @@ clickhouse:
     # versionProbeTemplate: {}
 
 keeper:
-  # Whether to create the KeeperCluster CR.
+  # Whether to create the KeeperCluster CR. It isn't wired into ClickHouse when clickhouse.spec.externalKeeper is set.
   enabled: true
 
   # Container image for ClickHouse Keeper. The effective value is injected into

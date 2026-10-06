@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -286,6 +287,62 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		renderedConfig := strings.Join(slices.Collect(maps.Values(config.Data)), "\n")
 		Expect(renderedConfig).To(ContainSubstring(".keeper-remote.svc."))
+	})
+
+	It("should reconcile a cluster that uses an external Keeper without a KeeperCluster", func(ctx context.Context) {
+		externalCluster := &v1.ClickHouseCluster{
+			Name:      "external-keeper",
+			Namespace: "default",
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas: new(int32(1)),
+				Shards:   new(int32(1)),
+				ExternalKeeper: &v1.ExternalKeeperSpec{
+					Nodes: []v1.ExternalKeeperNode{{Host: "keeper-1.example.internal", Port: 9181}},
+				},
+			},
+			Status: v1.ClickHouseClusterStatus{
+				Version: "26.1.1.1",
+			},
+		}
+		Expect(suite.Client.Create(ctx, externalCluster)).To(Succeed())
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: externalCluster.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.CompleteVersionProbeJob(ctx, suite, externalCluster.Namespace, externalCluster.SpecificName(), "26.1.1.1")
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: externalCluster.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+
+		replicaID := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+
+		var sts appsv1.StatefulSet
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
+			Namespace: externalCluster.Namespace,
+			Name:      externalCluster.StatefulSetNameByReplicaID(replicaID),
+		}, &sts)).To(Succeed())
+
+		var config corev1.ConfigMap
+		Expect(suite.Client.Get(ctx, types.NamespacedName{
+			Namespace: externalCluster.Namespace,
+			Name:      externalCluster.ConfigMapNameByReplicaID(replicaID),
+		}, &config)).To(Succeed())
+
+		renderedConfig := strings.Join(slices.Collect(maps.Values(config.Data)), "\n")
+		Expect(renderedConfig).To(ContainSubstring("keeper-1.example.internal"))
+	})
+
+	It("should reject a cluster without spec", func(ctx context.Context) {
+		cluster := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": v1.GroupVersion.String(),
+			"kind":       "ClickHouseCluster",
+			"metadata":   map[string]any{"name": "no-spec", "namespace": "default"},
+		}}
+		Expect(suite.Client.Create(ctx, cluster)).To(MatchError(ContainSubstring("spec is required")))
 	})
 
 	It("should propagate version probe overrides to the job", func(ctx context.Context) {
@@ -960,6 +1017,46 @@ var _ = Describe("keeper watch mapping", func() {
 			Name:      referencedCluster.Name,
 			Namespace: referencedCluster.Namespace,
 		}))
+	})
+
+	It("should stop enqueueing a ClickHouse cluster that switched to an external Keeper", func(ctx context.Context) {
+		testScheme := k8sruntime.NewScheme()
+		Expect(clientgoscheme.AddToScheme(testScheme)).To(Succeed())
+		Expect(v1.AddToScheme(testScheme)).To(Succeed())
+
+		cluster := &v1.ClickHouseCluster{
+			Name:      "switching-cluster",
+			Namespace: "default",
+			Spec: v1.ClickHouseClusterSpec{
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: "keeper"},
+			},
+		}
+
+		controller := &ClusterController{
+			Client: fake.NewClientBuilder().
+				WithScheme(testScheme).
+				WithObjects(cluster).
+				WithIndex(&v1.ClickHouseCluster{}, chctrl.KeeperClusterReferenceField, func(obj client.Object) []string {
+					cluster, ok := obj.(*v1.ClickHouseCluster)
+					if !ok {
+						return nil
+					}
+
+					return keeperReferenceFieldValue(cluster)
+				}).
+				Build(),
+		}
+
+		keeper := &v1.KeeperCluster{Name: "keeper", Namespace: "default"}
+		Expect(controller.clickHouseClustersForKeeper(ctx, keeper)).To(HaveLen(1))
+
+		cluster.Spec.KeeperClusterRef = nil
+		cluster.Spec.ExternalKeeper = &v1.ExternalKeeperSpec{
+			Nodes: []v1.ExternalKeeperNode{{Host: "keeper-1.example.internal", Port: 9181}},
+		}
+		Expect(controller.Update(ctx, cluster)).To(Succeed())
+
+		Expect(controller.clickHouseClustersForKeeper(ctx, keeper)).To(BeEmpty())
 	})
 })
 
