@@ -18,6 +18,12 @@ skips it.
 from praktika import Job
 from ci.settings.settings import RunnerLabels
 
+# Pre-hook that provisions the Go toolchain + CI tools (helm, kubebuilder,
+# controller-gen, kustomize, golangci-lint, actionlint, crd-schema-checker,
+# crd-ref-docs, envtest assets) from an S3 cache. Used by every Go job so the
+# tools are not baked into the AMI — see ci/jobs/go_env.py.
+_GO_ENV_PREHOOK = "python3 ci/jobs/go_env.py"
+
 
 class JobConfigs:
     # --- Documentation lint (migrated from .github/workflows/docs-lint.yaml) ---
@@ -48,11 +54,13 @@ class JobConfigs:
     )
 
     # docs-lint.yaml :: api-reference-generated (API Reference Generated)
+    # Needs Go + crd-ref-docs, provisioned by the go-env pre-hook.
     api_reference_generated = Job.Config(
         name="API Reference Generated",
         runs_on=[RunnerLabels.SMALL_ARM],
         command="make docs-generate-api-ref && git diff --exit-code docs/",
         timeout=15 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api/v1alpha1",
@@ -89,31 +97,32 @@ class JobConfigs:
         name="Build and Unit Tests",
         runs_on=[RunnerLabels.MEDIUM_ARM],
         command=(
-            # envtest K8s assets are baked into the AMI at /opt/kubebuilder-envtest
-            # (see projects.py _go_ci_tools_component). Seed ./bin/k8s from there
-            # when present so `make test-ci`'s `setup-envtest use` is an offline
-            # hit; on a non-baked runner (e.g. local) the dir is absent and
-            # setup-envtest downloads as usual. Works both ways.
-            "if [ -d /opt/kubebuilder-envtest/k8s ]; then mkdir -p bin && cp -rn /opt/kubebuilder-envtest/k8s bin/; fi && "
+            # The go-env pre-hook caches the envtest K8s assets at
+            # /opt/ci-go/envtest. Seed ./bin/k8s from there so `make test-ci`'s
+            # `setup-envtest use` is an offline hit; absent (e.g. local) it just
+            # downloads as usual. Works both ways.
+            "if [ -d /opt/ci-go/envtest/k8s ]; then mkdir -p bin && cp -rn /opt/ci-go/envtest/k8s bin/; fi && "
             "go build -v cmd/main.go && make test-ci"
         ),
         timeout=25 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # ci.yaml :: fuzz_specs. Go-only (two 60s fuzz runs); no new tooling.
+    # ci.yaml :: fuzz_specs. Go-only (two 60s fuzz runs).
     fuzz_specs = Job.Config(
         name="Fuzz Specs",
         runs_on=[RunnerLabels.SMALL_ARM],
         command="make fuzz",
         timeout=20 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=_GO_CODE_DIGEST,
     )
 
     # ci.yaml :: lint. golangci-lint/codespell/actionlint are installed by the
-    # Makefile into ./bin; their builds + pip cache are pre-warmed in the image
-    # (ci/infrastructure/projects.py _go_ci_tools_component). Runs on a medium
-    # runner because golangci-lint over the whole module is memory-hungry.
+    # Makefile into ./bin using the warm Go/pip caches from the go-env pre-hook.
+    # Runs on a medium runner because golangci-lint over the whole module is
+    # memory-hungry.
     lint = Job.Config(
         name="Lint",
         runs_on=[RunnerLabels.MEDIUM_ARM],
@@ -124,12 +133,13 @@ class JobConfigs:
             "make lint"
         ),
         timeout=15 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # ci.yaml :: helm-test. helm + kubebuilder are baked into the image; kustomize
-    # self-installs via go-install-tool (cache pre-warmed). KUBEBUILDER points the
-    # Makefile at the baked binary instead of re-downloading it.
+    # ci.yaml :: helm-test. helm + kubebuilder come from the go-env pre-hook (on
+    # PATH); KUBEBUILDER points the Makefile at the provisioned binary instead of
+    # re-downloading it.
     helm_test = Job.Config(
         name="Helm Test",
         runs_on=[RunnerLabels.SMALL_ARM],
@@ -141,6 +151,7 @@ class JobConfigs:
             "make lint-cluster-chart"
         ),
         timeout=15 * 60,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api",
@@ -167,6 +178,7 @@ class JobConfigs:
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
         allow_failure=True,
+        pre_hooks=[_GO_ENV_PREHOOK],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api",
@@ -191,7 +203,7 @@ class JobConfigs:
         command=(
             "python3 -I -m praktika review --provider bedrock-openai "
             "--model global.openai.gpt-5.6-sol --reasoning-effort high "
-            "--prompt ./ci/prompts/code_review.md"
+            "--prompt ./ci/prompts/code_review.md --fail-for-draft-pr"
         ),
         allow_failure=True,
         enable_gh_auth=True,
