@@ -10,6 +10,11 @@ WORKFLOWS = [
         base_branches=["main"],
         enable_job_filtering_by_changes=True,
         workflow_filter_hooks=[should_skip_job],
+        pre_hooks=[
+            # Populate the Go toolchain S3 cache once per run (if missing) so the
+            # Go jobs' pre-hooks only download instead of each rebuilding on a miss.
+            "python3 ci/jobs/go_env.py ensure",
+        ],
         jobs=[
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
@@ -25,5 +30,6 @@ WORKFLOWS = [
         enable_report=True,
         enable_gh_summary_comment=True,
         enable_exit_code_result=True,
+        enable_merge_ready_status=True,
     )
 ]

@@ -16,6 +16,9 @@ WORKFLOWS = [
             JobConfigs.lint,
             JobConfigs.helm_test,
         ],
+        # Populate the Go toolchain S3 cache once per run (if missing) so the Go
+        # jobs' pre-hooks only download instead of each rebuilding on a miss.
+        pre_hooks=["python3 ci/jobs/go_env.py ensure"],
         enable_cache=True,
         enable_report=True,
         enable_exit_code_result=True,
