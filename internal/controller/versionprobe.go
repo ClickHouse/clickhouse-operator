@@ -47,6 +47,8 @@ var versionProbeRetryBackoff = wait.Backoff{
 	Cap:      versionProbeRetryMaxDelay,
 }
 
+var errNoVersionProbePods = errors.New("no pods found for version probe job")
+
 func versionProbeRetryDelay(attempt int) time.Duration {
 	backoff := versionProbeRetryBackoff
 	backoff.Steps = attempt + 1
@@ -201,7 +203,23 @@ func (rm *ResourceManager) VersionProbe(
 
 	version, err := readVersionFromJob(ctx, log, cli, &existingJob)
 	if err != nil {
+		if errors.Is(err, errNoVersionProbePods) {
+			log.Warn("completed version probe Job has no Pods, deleting it for recreation")
+
+			if delErr := rm.Delete(
+				ctx,
+				&existingJob,
+				v1.EventActionVersionCheck,
+				client.PropagationPolicy(metav1.DeletePropagationBackground),
+			); delErr != nil {
+				return VersionProbeResult{}, fmt.Errorf("delete completed version probe job without Pods: %w", delErr)
+			}
+
+			return VersionProbeResult{Pending: true}, nil
+		}
+
 		log.Warn("failed to read version from completed job, retrying", "error", err)
+
 		return VersionProbeResult{Err: err}, nil
 	}
 
@@ -417,7 +435,7 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 	}
 
 	if len(podList.Items) == 0 {
-		return "", fmt.Errorf("no pods found for version probe job %s", job.Name)
+		return "", fmt.Errorf("%w %s", errNoVersionProbePods, job.Name)
 	}
 
 	if len(podList.Items) > 1 {

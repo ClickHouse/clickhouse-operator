@@ -560,4 +560,32 @@ var _ = Describe("VersionProbe caching", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Version).To(Equal("26.5.5.8"))
 	})
+
+	It("should recreate a completed probe Job when its Pod was garbage collected", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).NotTo(HaveOccurred())
+		Expect(result.Pending).To(BeTrue())
+
+		By("deleting the completed Job so the next reconcile creates a fresh probe")
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty())
+	})
 })
