@@ -195,10 +195,13 @@ class JobConfigs:
             "./api",
             "./cmd",
             "./internal",
+            "./test",
+            "./config",
             "./hack",
             "./go.mod",
             "./go.sum",
             "./Makefile",
+            "./.golangci.yml",
         ],
     )
 
@@ -238,17 +241,14 @@ class JobConfigs:
 
     # ci.yaml :: lint. golangci-lint/codespell/actionlint are installed by the
     # Makefile into ./bin using the warm Go/pip caches from the go-env pre-hook.
+    # The driver (ci/jobs/lint.py) runs the regeneration gates + the three linters
+    # as separate sub-results (golangci-lint issues become a per-issue table).
     # Runs on a medium runner because golangci-lint over the whole module is
     # memory-hungry.
     lint = Job.Config(
         name="Lint",
         runs_on=[RunnerLabels.MEDIUM_ARM],
-        command=(
-            "go mod tidy && git diff --exit-code && "
-            "make generate && git diff --exit-code && "
-            "make manifests && git diff --exit-code && "
-            "make lint"
-        ),
+        command="python3 ci/jobs/lint.py",
         timeout=15 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_ARM_ARTIFACT.name],
