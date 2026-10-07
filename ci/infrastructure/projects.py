@@ -108,19 +108,23 @@ jq -e '.features."containerd-snapshotter" == false' "$f"
 def _image_builders():
     # Bump whenever the recipe/components change so Image Builder creates a new
     # recipe + component versions and rebuilds the AMI.
-    image_recipe_version = "1.0.6"
+    image_recipe_version = "1.0.7"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
-        # (boto3/PyJWT/cryptography/requests) automatically; pytest is
-        # an optional extra the runner needs, so list it explicitly.
+        # (boto3/PyJWT/cryptography/requests) automatically; pytest and the
+        # Bedrock AI SDK are optional extras, so list them explicitly. The
+        # orchestrator's AI advisor (AI_PROVIDER="bedrock-anthropic") imports
+        # `anthropic[bedrock]` lazily at decide() time; baking it into this shared
+        # venv keeps it present on every AMI (harmless on job runners).
         ImageBuilder.PrebuiltVenv(
             name=Settings.PRAKTIKA_BASE_VENV,
             packages=[
                 "pytest>=7.0.0",
                 "pytest-reportlog>=0.4.0",
+                "anthropic[bedrock]",
                 f"praktika[infrastructure] @ {_PRAKTIKA_WHL}",
             ],
-            description="CI runtime venv",
+            description="CI runtime venv (+ Bedrock AI SDK for the orchestrator)",
         ),
     ]
     custom_components = [
