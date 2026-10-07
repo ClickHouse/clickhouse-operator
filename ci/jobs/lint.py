@@ -88,29 +88,29 @@ def _diff_gate(name, cmd):
 def _golangci_result():
     """Run golangci-lint with JSON output; one sub-result per reported issue."""
     sw = Utils.Stopwatch()
-    # text -> stderr (human-readable in the job log), json -> stdout (parsed here).
-    cmd = f"{GOLANGCI} run --output.text.path=stderr --output.json.path=stdout"
-    print(f"+ {cmd}", flush=True)
-    proc = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-    if proc.stderr:
-        print(proc.stderr, end="", flush=True)
+    # json -> file (parsed here), text -> stdout (human-readable in the job log).
+    # They must not share a stream: a single stdout would interleave the JSON
+    # object with the text summary and break json.load.
+    report = "golangci-report.json"
+    rc, out = _run(f"{GOLANGCI} run --output.text.path=stdout --output.json.path={report}")
 
     try:
-        issues = (json.loads(proc.stdout) or {}).get("Issues") or []
-    except json.JSONDecodeError as e:
-        # Not valid JSON -> golangci-lint itself failed (bad config, panic, OOM).
+        with open(report) as f:
+            issues = (json.load(f) or {}).get("Issues") or []
+    except (OSError, json.JSONDecodeError) as e:
+        # No/invalid report -> golangci-lint itself failed (bad config, panic, OOM).
         return Result.create_from(
             name="golangci-lint", status=Result.Status.ERROR, stopwatch=sw,
-            info=f"could not parse golangci-lint output (exit {proc.returncode}): {e}\n{proc.stdout[:2000]}",
+            info=f"could not read golangci-lint report (exit {rc}): {e}\n{out.strip()[:2000]}",
         )
 
     if not issues:
-        if proc.returncode == 0:
+        if rc == 0:
             return Result.create_from(name="golangci-lint", status=Result.Status.OK, stopwatch=sw)
         # Non-zero exit with no issues parsed -> a run error, not a lint finding.
         return Result.create_from(
             name="golangci-lint", status=Result.Status.ERROR, stopwatch=sw,
-            info=f"golangci-lint exited {proc.returncode} with no issues reported",
+            info=f"golangci-lint exited {rc} with no issues reported",
         )
 
     sub = []
@@ -127,7 +127,7 @@ def _golangci_result():
         )
     return Result.create_from(
         name="golangci-lint", results=sub, stopwatch=sw,
-        info=f"{len(sub)} issue(s)",
+        info=f"{len(sub)} issue(s)", files=[report],
     )
 
 
