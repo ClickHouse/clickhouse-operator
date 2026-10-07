@@ -86,7 +86,9 @@ def _diff_gate(name, cmd):
 
 
 def _golangci_result():
-    """Run golangci-lint with JSON output; one sub-result per reported issue."""
+    """Run golangci-lint with JSON output; one leaf result whose info lists every
+    reported issue (lint findings aren't independent test cases, so a flat list
+    reads better than a nested table)."""
     sw = Utils.Stopwatch()
     # json -> file (parsed here), text -> stdout (human-readable in the job log).
     # They must not share a stream: a single stdout would interleave the JSON
@@ -113,21 +115,15 @@ def _golangci_result():
             info=f"golangci-lint exited {rc} with no issues reported",
         )
 
-    sub = []
+    lines = [f"{len(issues)} issue(s):", ""]
     for it in issues:
         pos = it.get("Pos") or {}
         loc = f"{pos.get('Filename', '?')}:{pos.get('Line', 0)}:{pos.get('Column', 0)}"
         linter = it.get("FromLinter", "")
-        sub.append(
-            Result(
-                name=f"{loc} [{linter}]",
-                status=Result.Status.FAIL,
-                info=(it.get("Text") or "").strip(),
-            )
-        )
+        lines.append(f"{loc}: {(it.get('Text') or '').strip()} ({linter})")
     return Result.create_from(
-        name="golangci-lint", results=sub, stopwatch=sw,
-        info=f"{len(sub)} issue(s)", files=[report],
+        name="golangci-lint", status=Result.Status.FAIL, stopwatch=sw,
+        info="\n".join(lines), files=[report],
     )
 
 
