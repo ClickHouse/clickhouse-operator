@@ -464,6 +464,12 @@ $(ACTIONLINT): $(LOCALBIN)
 	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
 
 CRD_BASE_REF ?= origin/main
+# Optional pre-staged baseline directory. When set, each baseline is read from
+# $(CRD_BASELINE_DIR)/<crd-basename> instead of `git show $(CRD_BASE_REF):...`.
+# CI uses this because the S3 repo snapshot has no git history/remote to read the
+# base manifests from (see ci/jobs/check_crd_compat.py). Empty for local runs,
+# which fall back to git.
+CRD_BASELINE_DIR ?=
 # Violations from embedded Kubernetes core types (securityContext bools, resource maps, etc.)
 # that are structural to the k8s API, not operator design choices. These are automatically
 # suppressed by ratcheting for existing fields, but appear when adding new fields that embed core types.
@@ -482,12 +488,20 @@ check-crd-size: ## Fail if any CRD manifest exceeds $(CRD_MAX_BYTES) bytes.
 	done; \
 	exit $$FAILED
 .PHONY: check-crd-compat
-check-crd-compat: crd-schema-checker check-crd-size ## Check CRD backward compatibility against $(CRD_BASE_REF).
+check-crd-compat: crd-schema-checker check-crd-size ## Check CRD backward compatibility against $(CRD_BASE_REF) (or $(CRD_BASELINE_DIR) if set).
 	@FAILED=0; \
 	for crd in config/crd/bases/*.yaml; do \
-		echo "Checking $$crd against $(CRD_BASE_REF)..."; \
+		echo "Checking $$crd against baseline..."; \
 		BASELINE=$$(mktemp); \
-		if ! git show $(CRD_BASE_REF):$$crd > "$$BASELINE" 2>/dev/null; then \
+		if [ -n "$(CRD_BASELINE_DIR)" ]; then \
+			SRC="$(CRD_BASELINE_DIR)/$$(basename $$crd)"; \
+			if [ ! -s "$$SRC" ]; then \
+				echo "  No baseline at $$SRC — skipping (new CRD)"; \
+				rm -f "$$BASELINE"; \
+				continue; \
+			fi; \
+			cp "$$SRC" "$$BASELINE"; \
+		elif ! git show $(CRD_BASE_REF):$$crd > "$$BASELINE" 2>/dev/null; then \
 			echo "  No baseline found at $(CRD_BASE_REF):$$crd — skipping (new CRD)"; \
 			rm -f "$$BASELINE"; \
 			continue; \
