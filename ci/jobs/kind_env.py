@@ -120,11 +120,16 @@ def install_kubectl(a=None):
     sh("kubectl version --client")
 
 
-def create_cluster(node_image, name=DEFAULT_CLUSTER):
-    sh(
-        f"kind create cluster --name {name} "
-        f"--image kindest/node:{node_image} --config {KIND_CONFIG} --wait 120s"
-    )
+def create_cluster(node_image=None, name=DEFAULT_CLUSTER, config=KIND_CONFIG):
+    """Create a Kind cluster. node_image=None uses Kind's default image for the
+    installed version; config=None creates a plain single-node cluster (no
+    ci/kind-cluster.config topology)."""
+    cmd = f"kind create cluster --name {name} --wait 120s"
+    if node_image:
+        cmd += f" --image kindest/node:{node_image}"
+    if config:
+        cmd += f" --config {config}"
+    sh(cmd)
 
 
 def prepull(versions, cluster=DEFAULT_CLUSTER):

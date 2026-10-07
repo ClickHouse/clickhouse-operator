@@ -37,6 +37,11 @@ WORKFLOWS = [
             *JobConfigs.e2e_test,
             JobConfigs.code_review,
         ],
+        pre_hooks=[
+            # Post this run's report link into the PR description before the jobs
+            # start, so reviewers can jump from the PR straight to the live report.
+            "python3 ./ci/jobs/ci_links.py",
+        ],
         enable_cache=True,
         enable_report=True,
         enable_gh_summary_comment=True,
