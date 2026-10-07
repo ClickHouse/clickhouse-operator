@@ -212,6 +212,22 @@ _CODE_REVIEW_BEDROCK_IAM_STATEMENT = {
 }
 
 
+# The orchestrator's AI advisor (AI_PROVIDER="bedrock-anthropic") reaches Claude
+# through Bedrock Runtime via `anthropic[bedrock]`, so the orchestrator instance
+# role must be allowed to invoke the model. Scoped to Bedrock foundation-model /
+# inference-profile resources (covers the global.anthropic.* inference profiles
+# the advisor targets).
+_ORCHESTRATOR_BEDROCK_IAM_STATEMENT = {
+    "Sid": "BedrockRuntimeInference",
+    "Effect": "Allow",
+    "Action": ["bedrock:InvokeModel"],
+    "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:*:*:inference-profile/*",
+    ],
+}
+
+
 PROJECTS = [
     CloudInfrastructure.Config(
         name=Settings.PROJECT_NAME,
@@ -241,7 +257,14 @@ PROJECTS = [
             volume_size_gb=100,
             capacity_reserve=2,
             image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
-            ext={"allowed_push_branches": ['main'], "allowed_pr_base_branches": ['main'], "allowed_users": []},
+            ext={
+                "allowed_push_branches": ['main'],
+                "allowed_pr_base_branches": ['main'],
+                "allowed_users": ["maxknv"],
+                # The orchestrator's AI advisor calls Bedrock, so its role needs
+                # a scoped bedrock:InvokeModel grant.
+                "iam_statements": [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT],
+            },
         ),
         runner_pools=[
             Components.RunnerPool(
