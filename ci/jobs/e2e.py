@@ -35,6 +35,7 @@ sys.path.insert(0, os.getcwd())  # ensure repo root is importable for ci.*
 from ci.jobs import kind_env  # noqa: E402
 from ci.jobs.junit_result import build_job_result  # noqa: E402
 
+from praktika.result import Result  # noqa: E402
 from praktika.utils import Utils  # noqa: E402
 
 # ci.yaml pins the e2e Kind node image (its comment cited cgroups v1 on the old
@@ -59,23 +60,32 @@ def _collect_diagnostics():
     return DIAG_ARCHIVE if proc.returncode == 0 and os.path.isfile(DIAG_ARCHIVE) else None
 
 
-def main() -> int:
-    node_image = os.environ.get("K8S_IMAGE") or DEFAULT_K8S_IMAGE
-
-    kind_env.require_docker()
-    # Must run before the cluster is created: it may restart the Docker daemon,
-    # which would wipe cluster containers.
-    kind_env.disable_containerd_image_store()
-    kind_env.install_kind()
-    kind_env.install_kubectl()
-    kind_env.create_cluster(node_image)
-
-    # Run the suite without raising on failure: Ginkgo still writes the JUnit
-    # report on test failures, and we want to parse it either way. E2E_SHARD is
-    # already in the environment (set by the job command) and inherited by `make`.
+def main():
     sw = Utils.Stopwatch()
-    print("+ make test-e2e", flush=True)
-    exit_code = subprocess.run("make test-e2e", shell=True).returncode
+    try:
+        node_image = os.environ.get("K8S_IMAGE") or DEFAULT_K8S_IMAGE
+
+        kind_env.require_docker()
+        # Must run before the cluster is created: it may restart the Docker
+        # daemon, which would wipe cluster containers.
+        kind_env.disable_containerd_image_store()
+        kind_env.install_kind()
+        kind_env.install_kubectl()
+        kind_env.create_cluster(node_image)
+
+        # Run the suite without raising on failure: Ginkgo still writes the JUnit
+        # report on test failures, and we want to parse it either way. E2E_SHARD
+        # is already in the environment (set by the job command) and inherited by
+        # `make`.
+        print("+ make test-e2e", flush=True)
+        exit_code = subprocess.run("make test-e2e", shell=True).returncode
+    except Exception as e:  # setup/provisioning failure before the suite runs
+        Result.create_from(
+            status=Result.Status.ERROR,
+            stopwatch=sw,
+            info=f"e2e setup failed: {e}",
+        ).complete_job()
+        return
 
     extra_files = []
     if exit_code != 0:
