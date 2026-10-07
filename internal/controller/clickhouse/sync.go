@@ -109,7 +109,7 @@ type clickhouseReconciler struct {
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
 
-	// Populated by reconcileClusterRevisions.
+	// Populated by reconcileClusterRevisions when keeperClusterRef is set.
 	keeper v1.KeeperCluster
 	// Loaded and templated by reconcileClusterSecret. Requires version probe to complete.
 	secret    corev1.Secret
@@ -644,22 +644,24 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		log.Debug(fmt.Sprintf("observed new CR revision %q", updateRevision))
 	}
 
-	keeperNamespacedName := r.Cluster.KeeperClusterNamespacedName()
-	if err := r.GetClient().Get(ctx, keeperNamespacedName, &r.keeper); err != nil {
-		if k8serrors.IsNotFound(err) {
-			log.Debug("keeper cluster not found, waiting", "keeper", keeperNamespacedName.String())
+	if r.Cluster.Spec.ExternalKeeper == nil {
+		keeperNamespacedName := r.Cluster.KeeperClusterNamespacedName()
+		if err := r.GetClient().Get(ctx, keeperNamespacedName, &r.keeper); err != nil {
+			if k8serrors.IsNotFound(err) {
+				log.Debug("keeper cluster not found, waiting", "keeper", keeperNamespacedName.String())
 
-			return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+				return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
+			}
+
+			return chctrl.StepResult{}, fmt.Errorf("get keeper cluster %q: %w", keeperNamespacedName.String(), err)
 		}
 
-		return chctrl.StepResult{}, fmt.Errorf("get keeper cluster %q: %w", keeperNamespacedName.String(), err)
-	}
-
-	if cond := meta.FindStatusCondition(r.keeper.Status.Conditions, v1.ConditionTypeReady); cond == nil || cond.Status != metav1.ConditionTrue {
-		if cond == nil {
-			log.Info("keeper cluster is not ready")
-		} else {
-			log.Info("keeper cluster is not ready", "reason", cond.Reason, "message", cond.Message)
+		if cond := meta.FindStatusCondition(r.keeper.Status.Conditions, v1.ConditionTypeReady); cond == nil || cond.Status != metav1.ConditionTrue {
+			if cond == nil {
+				log.Info("keeper cluster is not ready")
+			} else {
+				log.Info("keeper cluster is not ready", "reason", cond.Reason, "message", cond.Message)
+			}
 		}
 	}
 

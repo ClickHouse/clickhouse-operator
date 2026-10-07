@@ -49,3 +49,5 @@ kubelet
 distroless
 descheduler
 rollouts
+[Zz]nodes?
+ACLs?

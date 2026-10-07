@@ -47,6 +47,8 @@ var versionProbeRetryBackoff = wait.Backoff{
 	Cap:      versionProbeRetryMaxDelay,
 }
 
+var errNoVersionProbeResult = errors.New("no successful version probe container found")
+
 func versionProbeRetryDelay(attempt int) time.Duration {
 	backoff := versionProbeRetryBackoff
 	backoff.Steps = attempt + 1
@@ -201,7 +203,23 @@ func (rm *ResourceManager) VersionProbe(
 
 	version, err := readVersionFromJob(ctx, log, cli, &existingJob)
 	if err != nil {
-		log.Warn("failed to read version from completed job, retrying", "error", err)
+		if errors.Is(err, errNoVersionProbeResult) {
+			log.Warn("completed version probe job has no successful pod, deleting it for recreation")
+
+			if delErr := rm.Delete(
+				ctx,
+				&existingJob,
+				v1.EventActionVersionCheck,
+				client.PropagationPolicy(metav1.DeletePropagationBackground),
+			); delErr != nil {
+				return VersionProbeResult{}, fmt.Errorf("delete completed version probe job: %w", delErr)
+			}
+
+			return VersionProbeResult{Pending: true}, nil
+		}
+
+		log.Warn("failed to read version from completed job", "error", err)
+
 		return VersionProbeResult{Err: err}, nil
 	}
 
@@ -416,16 +434,15 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 		return "", fmt.Errorf("list pods for version probe job: %w", err)
 	}
 
-	if len(podList.Items) == 0 {
-		return "", fmt.Errorf("no pods found for version probe job %s", job.Name)
-	}
-
 	if len(podList.Items) > 1 {
 		log.Debug("multiple pods found for version probe job")
 	}
 
+	var active bool
+
 	for _, pod := range podList.Items {
 		if pod.Status.Phase != corev1.PodSucceeded {
+			active = active || pod.Status.Phase != corev1.PodFailed
 			continue
 		}
 
@@ -441,5 +458,9 @@ func readVersionFromJob(ctx context.Context, log controllerutil.Logger, cli clie
 		}
 	}
 
-	return "", errors.New("no successful version probe container found")
+	if active {
+		return "", errors.New("version probe pod has not terminated yet")
+	}
+
+	return "", errNoVersionProbeResult
 }

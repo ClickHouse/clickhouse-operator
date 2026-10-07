@@ -35,6 +35,7 @@ func (s *ClickHouseNetworkPolicySpec) Enabled() bool {
 }
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
+// +kubebuilder:validation:XValidation:rule="has(self.keeperClusterRef) != has(self.externalKeeper)",message="exactly one of keeperClusterRef or externalKeeper must be set"
 type ClickHouseClusterSpec struct {
 	// Number of replicas in the single shard.
 	// +optional
@@ -51,8 +52,17 @@ type ClickHouseClusterSpec struct {
 
 	// Reference to the KeeperCluster that is used for ClickHouse coordination.
 	// When namespace is omitted, the ClickHouseCluster namespace is used.
+	// Mutually exclusive with `externalKeeper`, exactly one of them must be set.
+	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
-	KeeperClusterRef KeeperClusterReference `json:"keeperClusterRef"`
+	KeeperClusterRef *KeeperClusterReference `json:"keeperClusterRef,omitempty"`
+
+	// Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+	// The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+	// Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="External Keeper"
+	ExternalKeeper *ExternalKeeperSpec `json:"externalKeeper,omitempty"`
 
 	// Parameters passed to the ClickHouse pod spec.
 	// +optional
@@ -340,6 +350,48 @@ func (r *KeeperClusterReference) NamespacedName(defaultNamespace string) types.N
 	}
 }
 
+// ExternalKeeperTLSPolicy controls how ClickHouse connects to an external Keeper ensemble.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type ExternalKeeperTLSPolicy string
+
+const (
+	// ExternalKeeperTLSEnabled makes ClickHouse connect to the ensemble over TLS.
+	ExternalKeeperTLSEnabled ExternalKeeperTLSPolicy = "Enabled"
+	// ExternalKeeperTLSDisabled is the default policy: connections are made in plain text.
+	ExternalKeeperTLSDisabled ExternalKeeperTLSPolicy = "Disabled"
+)
+
+// ExternalKeeperSpec describes a Keeper ensemble managed outside of this operator.
+type ExternalKeeperSpec struct {
+	// Servers of the Keeper ensemble ClickHouse connects to for coordination.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=15
+	// +kubebuilder:validation:XValidation:rule="self.all(n, self.exists_one(m, m.host.lowerAscii() == n.host.lowerAscii() && m.port == n.port))",message="nodes must not repeat the same host and port"
+	// +listType=atomic
+	Nodes []ExternalKeeperNode `json:"nodes"`
+
+	// TLS controls whether ClickHouse connects to the ensemble over TLS.
+	// The ports in nodes must match the chosen policy.
+	// Server certificates are verified against the system trust store and `spec.settings.tls.caBundle`.
+	// +optional
+	// +kubebuilder:default:=Disabled
+	TLS ExternalKeeperTLSPolicy `json:"tls,omitempty"`
+}
+
+// ExternalKeeperNode addresses a single server of an external Keeper ensemble.
+type ExternalKeeperNode struct {
+	// Host name or IP address of the Keeper server. IPv6 addresses must be enclosed in square brackets.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Host string `json:"host"`
+	// Port the Keeper server accepts client connections on.
+	// +kubebuilder:default:=9181
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port int32 `json:"port,omitempty"`
+}
+
 // ClickHouseCluster is the Schema for the `clickhouseclusters` API.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -359,6 +411,7 @@ func (r *KeeperClusterReference) NamespacedName(defaultNamespace string) types.N
 // +operator-sdk:csv:customresourcedefinitions:resources={{Secret,v1}}
 // +operator-sdk:csv:customresourcedefinitions:resources={{Service,v1}}
 // +operator-sdk:csv:customresourcedefinitions:resources={{PodDisruptionBudget,v1}}
+// +kubebuilder:validation:XValidation:rule="has(self.spec)",message="spec is required"
 type ClickHouseCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

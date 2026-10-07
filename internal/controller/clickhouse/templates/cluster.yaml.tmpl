@@ -7,7 +7,7 @@ macros:
 zookeeper:
   nodes:
     {{- range $index, $node := .KeeperNodes }}
-    - host: {{ $node.Host }}
+    - host: {{ printf "%q" $node.Host }}
       port: {{ $node.Port }}
       {{- if $node.Secure }}
       secure: 1

@@ -21,28 +21,20 @@ import (
 	ctrltestutil "github.com/ClickHouse/clickhouse-operator/internal/controller/testutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
+	"github.com/ClickHouse/clickhouse-operator/test/supported"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
 
 const (
 	pollingInterval = testutil.PollInterval
 
-	BaseVersion   = testutil.BaseVersion
-	UpdateVersion = testutil.UpdateVersion
-
 	managerStopTimeout = 30 * time.Second
 )
 
-var releases = map[string][]upgrade.ClickHouseVersion{
-	upgrade.ChannelStable: {
-		{Major: 26, Minor: 7, Patch: 5, Build: 10},
-		{Major: 26, Minor: 6, Patch: 3, Build: 62},
-	},
-	upgrade.ChannelLTS: {
-		{Major: 26, Minor: 3, Patch: 22, Build: 7},
-		{Major: 25, Minor: 8, Patch: 32, Build: 4},
-	},
-}
+var (
+	BaseVersion   = testutil.BaseVersion.Version()
+	UpdateVersion = testutil.UpdateVersion.Version()
+)
 
 var (
 	sharding       testutil.ShardingConfig
@@ -137,7 +129,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		RestConfig: config,
 		Logger:     zapLogger,
 		Dialer:     podDialer,
-		Fetcher:    &upgrade.StaticFetcher{Releases: releases},
+		Fetcher:    &upgrade.StaticFetcher{Releases: supported.Releases},
 	}, settings)
 	Expect(err).NotTo(HaveOccurred())
 

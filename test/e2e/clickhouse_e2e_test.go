@@ -33,6 +33,7 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal"
 	ctrl "github.com/ClickHouse/clickhouse-operator/internal/controller"
 	chctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/clickhouse"
+	keeperctrl "github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/test/testutil"
 )
@@ -72,7 +73,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 				},
@@ -129,7 +130,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 				},
@@ -179,7 +180,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 					Settings: v1.ClickHouseSettings{
 						ExtraConfig: runtime.RawExtension{Raw: []byte(`{"max_table_num_to_warn": 1}`)},
 					},
@@ -254,7 +255,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 				},
 			}
 
@@ -333,7 +334,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas:            new(int32(1)),
 					DataVolumeClaimSpec: nil, // Diskless configuration
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					PodTemplate: v1.PodTemplateSpec{
@@ -374,7 +375,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas:            new(int32(1)),
 					DataVolumeClaimSpec: nil, // Diskless configuration
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -434,7 +435,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					ContainerTemplate: v1.ContainerTemplateSpec{
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
@@ -522,7 +523,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					ContainerTemplate: v1.ContainerTemplateSpec{
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 					DataVolumeClaimSpec: &diskSpec,
 					AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
 						{Name: "disk1", Spec: diskSpec},
@@ -591,7 +592,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas:            new(int32(1)),
 					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 					DataVolumeClaimSpec: &defaultStorage,
 					Settings:            v1.ClickHouseSettings{Encryption: &v1.EncryptionSettings{}},
 				},
@@ -643,7 +644,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				},
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(2)),
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -748,7 +749,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				},
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(2)),
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					PodTemplate: v1.PodTemplateSpec{
@@ -843,7 +844,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 					AdditionalPorts: []v1.AdditionalPort{
 						{Name: mysqlPortName, Port: mysqlPort},
 					},
@@ -923,7 +924,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Replicas: new(int32(2)),
 					Shards:   new(int32(2)),
-					KeeperClusterRef: v1.KeeperClusterReference{
+					KeeperClusterRef: &v1.KeeperClusterReference{
 						Name: keeper.Name,
 					},
 					ContainerTemplate: v1.ContainerTemplateSpec{
@@ -1010,7 +1011,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 				},
 			}
 			checks := 0
@@ -1070,7 +1071,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 				},
 			}
 
@@ -1135,7 +1136,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					Replicas:            new(int32(1)),
 					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
 					DataVolumeClaimSpec: &defaultStorage,
-					KeeperClusterRef:    v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef:    &v1.KeeperClusterReference{Name: keeper.Name},
 					ExternalSecret: &v1.ExternalSecret{
 						Name:   secretName,
 						Policy: v1.ExternalSecretPolicyObserve,
@@ -1201,6 +1202,33 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Expect(secretList.Items).To(BeEmpty())
 		})
 
+		It("should replicate through a Keeper ensemble set as externalKeeper", func(ctx context.Context) {
+			nodes := make([]v1.ExternalKeeperNode, 0, keeper.Replicas())
+			for _, host := range keeper.Hostnames() {
+				nodes = append(nodes, v1.ExternalKeeperNode{Host: host, Port: keeperctrl.PortNative})
+			}
+
+			cr := v1.ClickHouseCluster{
+				Namespace: ns,
+				Name:      keeper.Name + "-external",
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(2)),
+					ContainerTemplate:   v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
+					DataVolumeClaimSpec: &defaultStorage,
+					ExternalKeeper:      &v1.ExternalKeeperSpec{Nodes: nodes},
+				},
+			}
+
+			By("creating cluster CR")
+			Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+			})
+
+			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
+			env.ClickHouseRWChecks(ctx, &cr, new(0))
+		})
+
 		It("should reload config without pod restart when possible", func(ctx context.Context) {
 			cr := v1.ClickHouseCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1212,7 +1240,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 					ContainerTemplate: v1.ContainerTemplateSpec{
 						Image: v1.ContainerImage{Tag: BaseVersion},
 					},
-					KeeperClusterRef: v1.KeeperClusterReference{Name: keeper.Name},
+					KeeperClusterRef: &v1.KeeperClusterReference{Name: keeper.Name},
 					Settings: v1.ClickHouseSettings{
 						ExtraUsersConfig: runtime.RawExtension{Raw: []byte("{}")},
 					},
@@ -1368,7 +1396,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Name:      fmt.Sprintf("clickhouse-%d", suffix),
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas: new(int32(2)),
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name: keeperCR.Name,
 				},
 				ContainerTemplate: v1.ContainerTemplateSpec{
@@ -1532,7 +1560,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:            new(int32(3)),
 				DataVolumeClaimSpec: &defaultStorage,
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name: keeperName,
 				},
 				ContainerTemplate: v1.ContainerTemplateSpec{
@@ -1606,7 +1634,7 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			Spec: v1.ClickHouseClusterSpec{
 				Replicas:            new(int32(2)),
 				DataVolumeClaimSpec: &defaultStorage,
-				KeeperClusterRef: v1.KeeperClusterReference{
+				KeeperClusterRef: &v1.KeeperClusterReference{
 					Name: name,
 				},
 				ContainerTemplate: v1.ContainerTemplateSpec{Image: v1.ContainerImage{Tag: BaseVersion}},
