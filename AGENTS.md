@@ -44,6 +44,7 @@ go test ./internal/controller/keeper/ -v --ginkgo.v --ginkgo.focus="spec name pa
 - **Functional tests** (`controller_test.go`): Use `testutil.SetupEnvironment()` which starts `envtest` (real API server + `etcd`). Use for full reconciliation flow testing.
 - **Unit tests** (`sync_test.go`, `commands_test.go`): Use `fake.NewClientBuilder()` for faster, focused tests on individual methods.
 - **E2E tests** (`test/e2e/`): Real Kind cluster. Label tests with `Label("clickhouse")` or `Label("keeper")` for filtered runs.
+- **ClickHouse versions**: Tests that run real ClickHouse images take their versions from the `test/supported` package instead of literal image tags. The weekly `update-clickhouse-versions` workflow bumps `test/supported/versions.json`.
 
 ### Code Generation (run after modifying api/v1alpha1/ types)
 ```bash

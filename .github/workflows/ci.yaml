@@ -22,6 +22,8 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      clickhouse-latest: ${{ steps.clickhouse.outputs.latest }}
+      clickhouse-supported: ${{ steps.clickhouse.outputs.supported }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -38,6 +40,11 @@ jobs:
               - '!docs/**'
               - '!examples/**'
               - '!LICENSE'
+      - name: Read supported ClickHouse versions
+        id: clickhouse
+        run: |
+          jq -r '[.[][] | split(".") | map(tonumber)] | group_by(.[:2]) | map(max) | sort | reverse | map(map(tostring) | join("."))
+            | "latest=\(.[0])", "supported=\(join(","))"' test/supported/versions.json >> "$GITHUB_OUTPUT"
 
   lint:
     runs-on: ubuntu-latest
@@ -195,7 +202,7 @@ jobs:
           make test-ci
 
       - name: Test Report
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3
         if: ${{ !cancelled() }}
         with:
           name: Unit tests
@@ -277,23 +284,23 @@ jobs:
         include:
           - name: minimal-k8s-all-deploy-methods
             k8s_image: v1.28.15
-            clickhouse_version: "26.7.5.10"
+            clickhouse_version: "${{ needs.changes.outputs.clickhouse-latest }}"
             deploy_target: test-compat-e2e
           - name: maximal-k8s-all-deploy-methods
             k8s_image: v1.36.1
-            clickhouse_version: "26.7.5.10"
+            clickhouse_version: "${{ needs.changes.outputs.clickhouse-latest }}"
             deploy_target: test-compat-e2e
           - name: olm-deploy-method
             k8s_image: v1.28.15
-            clickhouse_version: "26.7.5.10"
+            clickhouse_version: "${{ needs.changes.outputs.clickhouse-latest }}"
             deploy_target: test-compat-e2e-olm
           - name: supported-clickhouse-compatibility
             k8s_image: v1.30.13
-            clickhouse_version: "26.7.5.10-distroless,26.6.3.62,26.5.7.64,26.3.22.7,25.8.32.4"
+            clickhouse_version: "${{ needs.changes.outputs.clickhouse-supported }},${{ needs.changes.outputs.clickhouse-latest }}-distroless"
             deploy_target: test-compat-e2e-manifest
           - name: operator-upgrade
             k8s_image: v1.30.13
-            clickhouse_version: "26.7.5.10"
+            clickhouse_version: "${{ needs.changes.outputs.clickhouse-latest }}"
             deploy_target: test-compat-e2e-upgrade
     steps:
       - name: Checkout code
@@ -492,7 +499,7 @@ jobs:
         run: python3 ci/merge-junit-reports.py
 
       - name: Test Report
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3
         with:
           name: E2E tests
           badge-title: E2E tests
@@ -555,7 +562,7 @@ jobs:
         run: make test-compat-e2e-olm-openshift
 
       - name: Test Report
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3
         with:
           name: E2E tests
           badge-title: E2E tests

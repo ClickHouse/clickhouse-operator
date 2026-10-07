@@ -86,6 +86,11 @@ func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster,
 		warns = append(warns, "Decreasing the number of shards is a destructive operation. It removes shards with all their data.")
 	}
 
+	if oldCluster.KeeperClusterNamespacedName() != newCluster.KeeperClusterNamespacedName() {
+		warns = append(warns, "Changing the Keeper source (keeperClusterRef or externalKeeper) of a running cluster points ClickHouse at a different Keeper. "+
+			"Replicated tables become read-only if it lacks their metadata.")
+	}
+
 	if err := validateDataVolumeSpecChanges(
 		oldCluster.Spec.DataVolumeClaimSpec,
 		newCluster.Spec.DataVolumeClaimSpec,
