@@ -221,6 +221,7 @@ class JobConfigs:
             "./cmd",
             "./internal",
             "./test",
+            "./tools",
             "./config",
             "./hack",
             "./go.mod",
@@ -322,6 +323,10 @@ class JobConfigs:
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
         allow_failure=True,
+        # On ENABLE_S3_REPO_SNAPSHOT runs there is no `origin`, so the checker
+        # falls back to `gh api` for the base manifests — which needs auth, else
+        # it exits 4 and the job ERRORs instead of actually checking CRDs.
+        enable_gh_auth=True,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
