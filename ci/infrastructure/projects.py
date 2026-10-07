@@ -255,12 +255,12 @@ PROJECTS = [
             size=0,
             max_size=50,
             volume_size_gb=100,
-            capacity_reserve=2,
+            capacity_reserve=4,
             image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
             ext={
                 "allowed_push_branches": ['main'],
                 "allowed_pr_base_branches": ['main'],
-                "allowed_users": ["maxknv"],
+                "allowed_users": [],
                 # The orchestrator's AI advisor calls Bedrock, so its role needs
                 # a scoped bedrock:InvokeModel grant.
                 "iam_statements": [_ORCHESTRATOR_BEDROCK_IAM_STATEMENT],
@@ -272,7 +272,7 @@ PROJECTS = [
                 instance_type="t4g.medium",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
-                capacity_reserve=2,
+                capacity_reserve=4,
                 max_size=50,
                 volume_size_gb=100,
                 image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
