@@ -321,6 +321,39 @@ func probeCfg(image, cachedVersion, cachedRevision string) VersionProbeConfig {
 	}
 }
 
+// createProbePod creates a Pod labeled as belonging to the given version probe Job.
+func createProbePod(
+	ctx context.Context,
+	cli client.Client,
+	job *batchv1.Job,
+	name string,
+	phase corev1.PodPhase,
+	exitCode int32,
+	message string,
+) {
+	GinkgoHelper()
+
+	state := corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	if phase == corev1.PodSucceeded || phase == corev1.PodFailed {
+		state = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: exitCode, Message: message}}
+	}
+
+	pod := corev1.Pod{
+		Namespace: job.Namespace,
+		Name:      name,
+		Labels: map[string]string{
+			batchv1.ControllerUidLabel: string(job.UID),
+			batchv1.JobNameLabel:       job.Name,
+		},
+		Status: corev1.PodStatus{
+			Phase:             phase,
+			ContainerStatuses: []corev1.ContainerStatus{{Name: v1.VersionProbeContainerName, State: state}},
+		},
+	}
+
+	Expect(cli.Create(ctx, &pod)).To(Succeed())
+}
+
 var _ = Describe("VersionProbe caching", func() {
 	It("should return cached version on cache hit without creating a Job", func(ctx context.Context) {
 		rm, log := setupProbeTest()
@@ -530,31 +563,8 @@ var _ = Describe("VersionProbe caching", func() {
 		}}
 		Expect(rm.ctrl.GetClient().Status().Update(ctx, &job)).To(Succeed())
 
-		createProbePod := func(name string, phase corev1.PodPhase, exitCode int32, message string) {
-			pod := corev1.Pod{
-				Namespace: job.Namespace,
-				Name:      name,
-				Labels: map[string]string{
-					batchv1.ControllerUidLabel: string(job.UID),
-					batchv1.JobNameLabel:       job.Name,
-				},
-				Status: corev1.PodStatus{
-					Phase: phase,
-					ContainerStatuses: []corev1.ContainerStatus{{
-						Name: v1.VersionProbeContainerName,
-						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
-							ExitCode: exitCode,
-							Message:  message,
-						}},
-					}},
-				},
-			}
-
-			Expect(rm.ctrl.GetClient().Create(ctx, &pod)).To(Succeed())
-		}
-
-		createProbePod("failed", corev1.PodFailed, 1, "invalid version")
-		createProbePod("succeeded", corev1.PodSucceeded, 0, "ClickHouse server version 26.5.5.8")
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "failed", corev1.PodFailed, 1, "invalid version")
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "succeeded", corev1.PodSucceeded, 0, "ClickHouse server version 26.5.5.8")
 
 		result, err = rm.VersionProbe(ctx, log, cfg)
 		Expect(err).NotTo(HaveOccurred())
@@ -587,5 +597,88 @@ var _ = Describe("VersionProbe caching", func() {
 		var jobs batchv1.JobList
 		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
 		Expect(jobs.Items).To(BeEmpty())
+	})
+
+	It("should recreate a completed probe Job when only failed Pods remain", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "failed", corev1.PodFailed, 137, "")
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).NotTo(HaveOccurred())
+		Expect(result.Pending).To(BeTrue())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(BeEmpty())
+	})
+
+	It("should keep a completed probe Job when its version output is unparsable", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "succeeded", corev1.PodSucceeded, 0, "unknown")
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).To(MatchError(ContainSubstring("parse version")))
+		Expect(result.Pending).To(BeFalse())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
+	})
+
+	It("should keep a completed probe Job while its Pod has not terminated in cache", func(ctx context.Context) {
+		rm, log := setupProbeTest()
+		cfg := probeCfg("clickhouse/clickhouse-server", "", "")
+
+		revision, err := imageRevision(cfg)
+		Expect(err).NotTo(HaveOccurred())
+
+		job, err := rm.buildVersionProbeJob(cfg, revision)
+		Expect(err).NotTo(HaveOccurred())
+
+		job.Status.Conditions = []batchv1.JobCondition{{
+			Type:   batchv1.JobComplete,
+			Status: corev1.ConditionTrue,
+		}}
+		Expect(rm.ctrl.GetClient().Create(ctx, &job)).To(Succeed())
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "failed", corev1.PodFailed, 137, "")
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "running", corev1.PodRunning, 0, "")
+		createProbePod(ctx, rm.ctrl.GetClient(), &job, "timed-out", corev1.PodFailed, 1, "")
+
+		result, err := rm.VersionProbe(ctx, log, cfg)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Err).To(MatchError("version probe pod has not terminated yet"))
+		Expect(result.Pending).To(BeFalse())
+
+		var jobs batchv1.JobList
+		Expect(rm.ctrl.GetClient().List(ctx, &jobs, client.InNamespace("default"))).To(Succeed())
+		Expect(jobs.Items).To(HaveLen(1))
 	})
 })
