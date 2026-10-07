@@ -93,9 +93,9 @@ def _golangci_result():
     # json -> file (parsed here), text -> stdout (human-readable in the job log).
     # They must not share a stream: a single stdout would interleave the JSON
     # object with the text summary and break json.load.
-    # Under ci/tmp so codespell (which runs later over the worktree) skips it —
-    # its skip list already covers ci/tmp, and the report contains linter names
-    # like "decorder" that codespell would otherwise flag.
+    # Written under ci/tmp (git-ignored scratch) and skipped by codespell via the
+    # golangci-report.json entry in ci/.codespellrc, so the later codespell pass
+    # does not scan golangci's linter names and flag them as typos.
     report = "ci/tmp/golangci-report.json"
     os.makedirs("ci/tmp", exist_ok=True)
     rc, out = _run(f"{GOLANGCI} run --output.text.path=stdout --output.json.path={report}")
