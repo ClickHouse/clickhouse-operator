@@ -27,6 +27,7 @@ deliberately does NOT re-trigger workflows on — hence its explicit trailing
 starts on its own; no manual re-dispatch needed. The token minter must grant
 `contents: write`.
 """
+import base64
 import subprocess
 import sys
 
@@ -75,12 +76,26 @@ def main() -> int:
 
     # contents:write to push the regenerated commit back onto the PR branch.
     token = GHAuth.get_installation_token(required_permissions={"contents": "write"})
-    remote = f"https://x-access-token:{token}@github.com/{repo}.git"
+
+    # Authenticate with an HTTP header, NOT a token-in-URL remote: _run echoes
+    # every argument and git prints the remote URL in error messages, so a
+    # token-bearing URL would leak this live contents:write credential into the
+    # public Praktika log. The remote URL stays token-free; the Authorization
+    # header (set below without echoing its value) carries the credential, and
+    # fetch/push reference the remote by name so they never surface the token.
+    remote = f"https://github.com/{repo}.git"
+    auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    auth_header_key = "http.https://github.com/.extraheader"
 
     # The ephemeral merge checkout has no remote; add one and lay the real head
     # branch on top of the working tree before regenerating.
     subprocess.run(["git", "remote", "remove", "origin"], check=False)
     _run(["git", "remote", "add", "origin", remote])
+    print(f"+ git config --local {auth_header_key} 'AUTHORIZATION: basic <redacted>'", flush=True)
+    subprocess.run(
+        ["git", "config", "--local", auth_header_key, f"AUTHORIZATION: basic {auth}"],
+        check=True,
+    )
     _run(["git", "fetch", "--no-tags", "--depth=1", "origin", head])
     _run(["git", "checkout", "-B", head, "FETCH_HEAD"])
 
