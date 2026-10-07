@@ -15,8 +15,31 @@ can be shared by multiple workflows safely.
 This module intentionally exposes no WORKFLOWS, so praktika's workflow scan
 skips it.
 """
+import json
+from pathlib import Path
+
 from praktika import Artifact, Job
 from ci.settings.settings import RunnerLabels
+
+
+def _clickhouse_versions():
+    """Latest + supported ClickHouse versions from the repo's single source of
+    truth (test/supported/versions.json), mirroring ci.yaml's jq: keep the
+    highest patch per major.minor, sorted descending. Returns (latest, supported)
+    where `supported` is a comma-joined list (latest first)."""
+    path = Path(__file__).resolve().parents[2] / "test" / "supported" / "versions.json"
+    data = json.loads(path.read_text())
+    best = {}  # (major, minor) -> (numeric-parts tuple, version string)
+    for version in (v for group in data.values() for v in group):
+        parts = tuple(int(x) for x in version.split("."))
+        mm = parts[:2]
+        if mm not in best or parts > best[mm][0]:
+            best[mm] = (parts, version)
+    ordered = [v for _, v in sorted(best.values(), reverse=True)]
+    return ordered[0], ",".join(ordered)
+
+
+_CH_LATEST, _CH_SUPPORTED = _clickhouse_versions()
 
 # Consumer pre-hook: extract the go-env bundle delivered as a required artifact
 # (falls back to self-provisioning from S3/build). The bundle holds the Go SDK +
@@ -40,19 +63,21 @@ GO_ENV_AMD_ARTIFACT = Artifact.Config(
 # `name`, kept as the praktika job-name suffix via Job.ParamSet(parameter=...).
 # fetch_tags mirrors ci.yaml's checkout `fetch-tags: true` — only the upgrade
 # variant needs release tags (it deploys the latest release, then upgrades).
+# ClickHouse versions come from test/supported/versions.json (single source of
+# truth, auto-updated) — see _clickhouse_versions(), matching ci.yaml #355.
 _COMPAT_E2E_MATRIX = [
     # (name, k8s node image, clickhouse version(s), make target, fetch_tags)
-    ("minimal-k8s-all-deploy-methods", "v1.28.15", "26.7.5.10", "test-compat-e2e", False),
-    ("maximal-k8s-all-deploy-methods", "v1.36.1", "26.7.5.10", "test-compat-e2e", False),
-    ("olm-deploy-method", "v1.28.15", "26.7.5.10", "test-compat-e2e-olm", False),
+    ("minimal-k8s-all-deploy-methods", "v1.28.15", _CH_LATEST, "test-compat-e2e", False),
+    ("maximal-k8s-all-deploy-methods", "v1.36.1", _CH_LATEST, "test-compat-e2e", False),
+    ("olm-deploy-method", "v1.28.15", _CH_LATEST, "test-compat-e2e-olm", False),
     (
         "supported-clickhouse-compatibility",
         "v1.30.13",
-        "26.7.5.10-distroless,26.6.3.62,26.5.7.64,26.3.22.7,25.8.32.4",
+        f"{_CH_SUPPORTED},{_CH_LATEST}-distroless",
         "test-compat-e2e-manifest",
         False,
     ),
-    ("operator-upgrade", "v1.30.13", "26.7.5.10", "test-compat-e2e-upgrade", True),
+    ("operator-upgrade", "v1.30.13", _CH_LATEST, "test-compat-e2e-upgrade", True),
 ]
 
 
