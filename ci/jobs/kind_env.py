@@ -124,10 +124,19 @@ def create_cluster(node_image=None, name=DEFAULT_CLUSTER, config=KIND_CONFIG):
     """Create a Kind cluster. node_image=None uses Kind's default image for the
     installed version; config=None creates a plain single-node cluster (no
     ci/kind-cluster.config topology)."""
-    # Tear down any leftover cluster of the same name first: a reused runner or a
-    # crashed prior job can leave one behind, and `kind create` refuses to
-    # clobber it. `kind delete` is idempotent — it succeeds when none exists.
+    # Tear down any leftover cluster of the same name first: autoscaled runners
+    # are reused, so a prior job's cluster can still be present, and `kind create`
+    # refuses to clobber it ("node(s) already exist"). `kind delete` is idempotent.
     sh(f"kind delete cluster --name {name}", check=False)
+    # `kind delete` can leave the node containers behind when they are only
+    # stopped (e.g. after disable_containerd_image_store() restarted the Docker
+    # daemon), which still trips the "already exist" check. Force-remove any
+    # container carrying this cluster's kind label as a backstop.
+    sh(
+        f"ids=$(docker ps -aq --filter label=io.x-k8s.kind.cluster={name}); "
+        f'[ -n "$ids" ] && docker rm -f $ids || true',
+        check=False,
+    )
     cmd = f"kind create cluster --name {name} --wait 120s"
     if node_image:
         cmd += f" --image kindest/node:{node_image}"
