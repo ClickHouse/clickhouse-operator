@@ -124,6 +124,10 @@ def create_cluster(node_image=None, name=DEFAULT_CLUSTER, config=KIND_CONFIG):
     """Create a Kind cluster. node_image=None uses Kind's default image for the
     installed version; config=None creates a plain single-node cluster (no
     ci/kind-cluster.config topology)."""
+    # Tear down any leftover cluster of the same name first: a reused runner or a
+    # crashed prior job can leave one behind, and `kind create` refuses to
+    # clobber it. `kind delete` is idempotent — it succeeds when none exists.
+    sh(f"kind delete cluster --name {name}", check=False)
     cmd = f"kind create cluster --name {name} --wait 120s"
     if node_image:
         cmd += f" --image kindest/node:{node_image}"
