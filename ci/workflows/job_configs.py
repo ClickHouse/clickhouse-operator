@@ -35,6 +35,38 @@ GO_ENV_AMD_ARTIFACT = Artifact.Config(
 )
 
 
+# ci.yaml :: compat-e2e-test matrix (5 variants). Each entry maps to the three
+# env vars ci/jobs/compat_e2e.py consumes; the first field is the GitHub matrix
+# `name`, kept as the praktika job-name suffix via Job.ParamSet(parameter=...).
+# fetch_tags mirrors ci.yaml's checkout `fetch-tags: true` — only the upgrade
+# variant needs release tags (it deploys the latest release, then upgrades).
+_COMPAT_E2E_MATRIX = [
+    # (name, k8s node image, clickhouse version(s), make target, fetch_tags)
+    ("minimal-k8s-all-deploy-methods", "v1.28.15", "26.7.5.10", "test-compat-e2e", False),
+    ("maximal-k8s-all-deploy-methods", "v1.36.1", "26.7.5.10", "test-compat-e2e", False),
+    ("olm-deploy-method", "v1.28.15", "26.7.5.10", "test-compat-e2e-olm", False),
+    (
+        "supported-clickhouse-compatibility",
+        "v1.30.13",
+        "26.7.5.10-distroless,26.6.3.62,26.5.7.64,26.3.22.7,25.8.32.4",
+        "test-compat-e2e-manifest",
+        False,
+    ),
+    ("operator-upgrade", "v1.30.13", "26.7.5.10", "test-compat-e2e-upgrade", True),
+]
+
+
+def _compat_e2e_command(k8s_image, clickhouse_version, deploy_target, fetch_tags):
+    cmd = (
+        f"K8S_IMAGE={k8s_image} "
+        f"CLICKHOUSE_VERSION={clickhouse_version} "
+        f"DEPLOY_TARGET={deploy_target} "
+    )
+    if fetch_tags:
+        cmd += "FETCH_TAGS=1 "
+    return cmd + "python3 ci/jobs/compat_e2e.py"
+
+
 class JobConfigs:
     # Prep jobs rebuild the bundle only when the tool version sources or the
     # provisioning scripts change (praktika job cache + the go-env S3 cache both
@@ -239,22 +271,21 @@ class JobConfigs:
     # ci.yaml :: compat-e2e-test (SPIKE — one matrix variant of five).
     # Proof-of-concept for the Docker+Kind path on praktika: the single
     # `maximal-k8s-all-deploy-methods` variant (newest Kind node image, one
-    # ClickHouse version, no OLM). Runs on amd-medium (c7a.4xlarge) to match the
-    # existing self-hosted e2e placement and to pull amd64 ClickHouse images, as
-    # the GitHub job does. Needs a working Docker daemon on the runner; ci/jobs/
-    # compat_e2e.py installs Kind + kubectl and creates the cluster in-script.
-    # Go/helm come from the go-env pre-hook. Once this is green on a real runner,
-    # fan the full matrix out with Job.parametrize (see ci/CI_YAML_MIGRATION.md
-    # §3.4); the `operator-upgrade` variant additionally needs `git fetch --tags`.
+    # ci.yaml :: compat-e2e-test — the full 5-variant matrix, fanned out with
+    # Job.parametrize (see _COMPAT_E2E_MATRIX / _compat_e2e_command above). Each
+    # variant is one Job.Config differing only in the K8S_IMAGE/CLICKHOUSE_VERSION/
+    # DEPLOY_TARGET it passes to ci/jobs/compat_e2e.py. Runs on amd-medium
+    # (c7a.4xlarge) to match the existing self-hosted e2e placement and to pull
+    # amd64 ClickHouse images, as the GitHub job does. Needs a working Docker
+    # daemon on the runner; compat_e2e.py installs Kind + kubectl, creates the
+    # cluster, pre-pulls images, runs the suite, and renders per-spec results.
+    # Go/helm come from the go-env artifact (amd). The base `command` is a
+    # placeholder — parametrize overrides it per variant. This attribute is a LIST
+    # of Job.Config; spread it into a workflow's jobs with `*JobConfigs...`.
     compat_e2e_test = Job.Config(
-        name="Compat E2E (maximal-k8s-all-deploy-methods)",
+        name="Compat E2E",
         runs_on=[RunnerLabels.MEDIUM_AMD],
-        command=(
-            "K8S_IMAGE=v1.36.1 "
-            "CLICKHOUSE_VERSION=26.7.5.10 "
-            "DEPLOY_TARGET=test-compat-e2e "
-            "python3 ci/jobs/compat_e2e.py"
-        ),
+        command=_compat_e2e_command(*_COMPAT_E2E_MATRIX[0][1:]),  # overridden per variant
         timeout=60 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_AMD_ARTIFACT.name],
@@ -268,11 +299,20 @@ class JobConfigs:
                 "./tools",
                 "./ci/kind-cluster.config",
                 "./ci/jobs/compat_e2e.py",
+                "./ci/jobs/junit_result.py",
                 "./go.mod",
                 "./go.sum",
                 "./Makefile",
             ],
         ),
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=name,
+                command=_compat_e2e_command(img, ver, tgt, fetch),
+            )
+            for (name, img, ver, tgt, fetch) in _COMPAT_E2E_MATRIX
+        ]
     )
 
     # --- AI code review ---
