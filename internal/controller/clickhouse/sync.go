@@ -510,7 +510,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
@@ -1123,7 +1123,7 @@ type resourcesWithService struct {
 func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	var replicasToRemove = map[v1.ClickHouseReplicaID]resourcesWithService{}
 
-	configMaps, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
@@ -1138,7 +1138,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	services, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Service, *corev1.ServiceList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	services, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Service, *corev1.ServiceList](ctx, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list internal Services: %w", err)
 	}
@@ -1158,7 +1158,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	statefulSets, err := chctrl.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, &r.ResourceManager, v1.ClickHouseIDFromLabels)
+	statefulSets, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}

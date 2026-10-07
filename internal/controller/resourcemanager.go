@@ -409,11 +409,11 @@ func diffFilter(specFields []string) gcmp.Option {
 }
 
 // ListReplicaResources lists the resources for replicas and maps them to replica IDs using the provided labelToID function.
-func ListReplicaResources[
+func (rm *ResourceManager) ListReplicaResources[
 	ID comparable,
 	Res client.Object,
 	RList client.ObjectList,
-](ctx context.Context, rm *ResourceManager, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
+](ctx context.Context, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
 	list, ok := reflect.New(reflect.TypeFor[RList]().Elem()).Interface().(RList)
 	if !ok {
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
