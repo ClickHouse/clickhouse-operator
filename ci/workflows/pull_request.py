@@ -1,5 +1,9 @@
 from praktika import Workflow
-from ci.workflows.job_configs import JobConfigs
+from ci.workflows.job_configs import (
+    JobConfigs,
+    GO_ENV_ARM_ARTIFACT,
+    GO_ENV_AMD_ARTIFACT,
+)
 from ci.jobs.filter_job_hook import should_skip_job
 
 
@@ -10,12 +14,12 @@ WORKFLOWS = [
         base_branches=["main"],
         enable_job_filtering_by_changes=True,
         workflow_filter_hooks=[should_skip_job],
-        pre_hooks=[
-            # Populate the Go toolchain S3 cache once per run (if missing) so the
-            # Go jobs' pre-hooks only download instead of each rebuilding on a miss.
-            "python3 ci/jobs/go_env.py ensure",
-        ],
+        artifacts=[GO_ENV_ARM_ARTIFACT, GO_ENV_AMD_ARTIFACT],
         jobs=[
+            # Build the per-arch Go toolchain bundles once; the Go jobs below
+            # `require` the matching one and extract it in their pre-hook.
+            JobConfigs.prepare_go_env_arm,
+            JobConfigs.prepare_go_env_amd,
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
             JobConfigs.api_reference_generated,

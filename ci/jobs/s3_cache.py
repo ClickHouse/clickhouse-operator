@@ -142,6 +142,33 @@ class S3PathCache:
             _rm(local)
         return True
 
+    def download(self, key: str, namespace: str, dest: str) -> bool:
+        """Download the raw bundle object to ``dest`` (no extraction). Returns True
+        on a hit, False on a miss. Use when another layer (e.g. a praktika
+        artifact) distributes the tarball itself."""
+        s3_key = self._s3_key(key, namespace)
+        if not self.exists(key, namespace):
+            print(f"S3 cache miss: {self._uri(s3_key)}")
+            return False
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        print(f"S3 cache hit, downloading: {self._uri(s3_key)}")
+        self._client.download_file(self.bucket, s3_key, dest, Config=_TRANSFER)
+        return True
+
+    def upload(self, key: str, namespace: str, src: str) -> bool:
+        """Upload an existing bundle file ``src`` write-once (no tarring). No-op if
+        the entry already exists."""
+        s3_key = self._s3_key(key, namespace)
+        if self.exists(key, namespace):
+            print(f"S3 cache already present, skip upload: {self._uri(s3_key)}")
+            return True
+        won = self._upload_write_once(src, s3_key)
+        print(
+            f"S3 cache {'saved' if won else 'already populated by another run'}: "
+            f"{self._uri(s3_key)}"
+        )
+        return True
+
     def _upload_write_once(self, local: str, s3_key: str) -> bool:
         """Upload with a server-side If-None-Match:* conditional on the finalizing
         call. Returns True if this writer created the object, False if it lost the
