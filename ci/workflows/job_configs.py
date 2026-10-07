@@ -15,17 +15,56 @@ can be shared by multiple workflows safely.
 This module intentionally exposes no WORKFLOWS, so praktika's workflow scan
 skips it.
 """
-from praktika import Job
+from praktika import Artifact, Job
 from ci.settings.settings import RunnerLabels
 
-# Pre-hook that provisions the Go toolchain + CI tools (helm, kubebuilder,
-# controller-gen, kustomize, golangci-lint, actionlint, crd-schema-checker,
-# crd-ref-docs, envtest assets) from an S3 cache. Used by every Go job so the
-# tools are not baked into the AMI — see ci/jobs/go_env.py.
-_GO_ENV_PREHOOK = "python3 ci/jobs/go_env.py"
+# Consumer pre-hook: extract the go-env bundle delivered as a required artifact
+# (falls back to self-provisioning from S3/build). The bundle holds the Go SDK +
+# helm/kubebuilder/controller-gen/kustomize/golangci-lint/actionlint/
+# crd-schema-checker/crd-ref-docs + warm Go/pip caches + envtest assets, so no Go
+# tooling is baked into the AMI. See ci/jobs/go_env.py.
+_GO_ENV_INSTALL = "python3 ci/jobs/go_env.py install"
+
+# Per-arch go-env bundle, built once per run by the Prepare Go Env jobs and
+# consumed (via `requires`) by every Go job of that arch.
+GO_ENV_ARM_ARTIFACT = Artifact.Config(
+    name="go-env-arm", type=Artifact.Type.S3, path="ci/tmp/go-env-arm.tar.zst"
+)
+GO_ENV_AMD_ARTIFACT = Artifact.Config(
+    name="go-env-amd", type=Artifact.Type.S3, path="ci/tmp/go-env-amd.tar.zst"
+)
 
 
 class JobConfigs:
+    # Prep jobs rebuild the bundle only when the tool version sources or the
+    # provisioning scripts change (praktika job cache + the go-env S3 cache both
+    # key off this). Each builds natively on its arch and publishes the tarball.
+    _GO_ENV_DIGEST = Job.CacheDigestConfig(
+        include_paths=[
+            "./go.mod",
+            "./go.sum",
+            "./Makefile",
+            "./ci/jobs/go_env.py",
+            "./ci/jobs/s3_cache.py",
+        ],
+    )
+
+    prepare_go_env_arm = Job.Config(
+        name="Prepare Go Env (arm)",
+        runs_on=[RunnerLabels.SMALL_ARM],
+        command=f"python3 ci/jobs/go_env.py prepare {GO_ENV_ARM_ARTIFACT.path}",
+        provides=[GO_ENV_ARM_ARTIFACT.name],
+        timeout=30 * 60,
+        digest_config=_GO_ENV_DIGEST,
+    )
+    prepare_go_env_amd = Job.Config(
+        name="Prepare Go Env (amd)",
+        runs_on=[RunnerLabels.SMALL_AMD],
+        command=f"python3 ci/jobs/go_env.py prepare {GO_ENV_AMD_ARTIFACT.path}",
+        provides=[GO_ENV_AMD_ARTIFACT.name],
+        timeout=30 * 60,
+        digest_config=_GO_ENV_DIGEST,
+    )
     # --- Documentation lint (migrated from .github/workflows/docs-lint.yaml) ---
     # The lint toolchain (Vale, Node + linkspector, Go, pre-warmed crd-ref-docs)
     # is baked into the runner image by ci/infrastructure/projects.py
@@ -60,7 +99,8 @@ class JobConfigs:
         runs_on=[RunnerLabels.SMALL_ARM],
         command="make docs-generate-api-ref && git diff --exit-code docs/",
         timeout=15 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api/v1alpha1",
@@ -105,7 +145,8 @@ class JobConfigs:
             "go build -v cmd/main.go && make test-ci"
         ),
         timeout=25 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=_GO_CODE_DIGEST,
     )
 
@@ -115,7 +156,8 @@ class JobConfigs:
         runs_on=[RunnerLabels.SMALL_ARM],
         command="make fuzz",
         timeout=20 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=_GO_CODE_DIGEST,
     )
 
@@ -133,7 +175,8 @@ class JobConfigs:
             "make lint"
         ),
         timeout=15 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=_GO_CODE_DIGEST,
     )
 
@@ -151,7 +194,8 @@ class JobConfigs:
             "make lint-cluster-chart"
         ),
         timeout=15 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api",
@@ -178,7 +222,8 @@ class JobConfigs:
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
         allow_failure=True,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api",
@@ -211,7 +256,8 @@ class JobConfigs:
             "python3 ci/jobs/compat_e2e.py"
         ),
         timeout=60 * 60,
-        pre_hooks=[_GO_ENV_PREHOOK],
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_AMD_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./api",
