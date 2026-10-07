@@ -355,6 +355,11 @@ class JobConfigs:
         runs_on=[RunnerLabels.MEDIUM_AMD],
         command=_compat_e2e_command(*_COMPAT_E2E_MATRIX[0][1:]),  # overridden per variant
         timeout=60 * 60,
+        # The operator-upgrade variant resolves the latest release tag via `gh api`
+        # (FETCH_TAGS=1) from a snapshot checkout with no `origin` remote; without
+        # pre-authenticated gh that call exits 4. parametrize/ParamSet can't set
+        # enable_gh_auth per variant, so it's set on the base for the whole matrix.
+        enable_gh_auth=True,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_AMD_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
