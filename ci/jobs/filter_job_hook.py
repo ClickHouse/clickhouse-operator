@@ -25,4 +25,18 @@ def should_skip_job(job_name):
     ):
         return True, "PR labeled 'crd-breaking-change'"
 
+    # dependabot-regenerate.yaml's `if:` guard, moved here so the job is listed
+    # in every PR run but only *runs* for a Dependabot dependency bump. It pushes
+    # to the PR head branch, so it is restricted to same-repo PRs (a fork head is
+    # not ours to push to) — exactly the original `head.repo == repository` check.
+    if job_name == "Dependabot Regenerate":
+        actor = _info.user_name or ""
+        if actor != "dependabot[bot]":
+            return True, f"PR actor '{actor}' is not dependabot[bot]"
+        if _info.fork_name and _info.fork_name != _info.repo_name:
+            return True, "PR is from a fork"
+        changed = _info.get_changed_files() or []
+        if not any(f in ("go.mod", "go.sum") for f in changed):
+            return True, "no go.mod/go.sum changes"
+
     return False, ""

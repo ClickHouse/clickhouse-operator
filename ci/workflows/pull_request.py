@@ -20,6 +20,10 @@ WORKFLOWS = [
             # `require` the matching one and extract it in their pre-hook.
             JobConfigs.prepare_go_env_arm,
             JobConfigs.prepare_go_env_amd,
+            # Runs first (gated to Dependabot go.mod/go.sum bumps by the filter
+            # hook): regenerates derived files and pushes them to the PR branch
+            # before the rest of the suite evaluates the bot PR.
+            JobConfigs.dependabot_regenerate,
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
             JobConfigs.api_reference_generated,
@@ -28,6 +32,7 @@ WORKFLOWS = [
             JobConfigs.lint,
             JobConfigs.helm_test,
             JobConfigs.check_crd_compat,
+            JobConfigs.bundle,
             *JobConfigs.compat_e2e_test,
             *JobConfigs.e2e_test,
             JobConfigs.code_review,

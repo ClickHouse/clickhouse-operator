@@ -114,6 +114,32 @@ class JobConfigs:
         timeout=30 * 60,
         digest_config=_GO_ENV_DIGEST,
     )
+    # dependabot-regenerate.yaml, migrated. Re-derives the generated artifacts
+    # after a Dependabot go.mod/go.sum bump and pushes them onto the PR branch.
+    # Applicability (actor is dependabot[bot], same-repo, go.mod/go.sum touched)
+    # is enforced by the workflow filter hook (ci/jobs/filter_job_hook.py), so
+    # this job is listed in every PR run but only executes for a bot bump.
+    # Needs the full Go toolchain (controller-gen/kubebuilder/crd-ref-docs) from
+    # the go-env pre-hook, hence `requires` the arm bundle like the other Go jobs.
+    # enable_gh_auth so it can mint a contents:write token to push; allow_failure
+    # so a regenerate/push hiccup never blocks merge — Lint still independently
+    # fails on any stale generated file, so correctness stays guarded. The digest
+    # keys on go.mod/go.sum so an unrelated PR that somehow reaches here (it
+    # won't, the hook gates it) is change-filtered out too.
+    dependabot_regenerate = Job.Config(
+        name="Dependabot Regenerate",
+        runs_on=[RunnerLabels.SMALL_ARM],
+        command="python3 ci/jobs/dependabot_regenerate.py",
+        timeout=20 * 60,
+        allow_failure=True,
+        enable_gh_auth=True,
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_ARM_ARTIFACT.name],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./go.mod", "./go.sum"],
+        ),
+    )
+
     # --- Documentation lint (migrated from .github/workflows/docs-lint.yaml) ---
     # The lint toolchain (Vale, Node + linkspector, Go, pre-warmed crd-ref-docs)
     # is baked into the runner image by ci/infrastructure/projects.py
@@ -371,6 +397,34 @@ class JobConfigs:
             )
             for shard in range(1, _E2E_SHARD_TOTAL + 1)
         ]
+    )
+
+    # ci.yaml :: bundle. Builds the OLM bundle image and runs operator-sdk
+    # scorecard against a throwaway Kind cluster — ci/jobs/bundle.py. Same
+    # Docker+Kind runner (amd-medium) and go-env (amd) as compat/e2e; the bundle
+    # image is manifest-only (arch-independent). operator-sdk self-installs via the
+    # Makefile targets. Verdict is the scorecard exit code.
+    bundle = Job.Config(
+        name="Bundle",
+        runs_on=[RunnerLabels.MEDIUM_AMD],
+        command="VERSION=0.0.1 python3 ci/jobs/bundle.py",
+        timeout=30 * 60,
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_AMD_ARTIFACT.name],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./api",
+                "./cmd",
+                "./internal",
+                "./config",
+                "./bundle.Dockerfile",
+                "./ci/jobs/bundle.py",
+                "./ci/jobs/kind_env.py",
+                "./go.mod",
+                "./go.sum",
+                "./Makefile",
+            ],
+        ),
     )
 
     # --- AI code review ---
