@@ -67,6 +67,23 @@ def _compat_e2e_command(k8s_image, clickhouse_version, deploy_target, fetch_tags
     return cmd + "python3 ci/jobs/compat_e2e.py"
 
 
+# ci.yaml :: e2e-test — number of shards. Each shard runs the full e2e suite
+# filtered to its slice; sharding is round-robin by spec-name hash in the Go
+# harness, so no e2e-shard-plan job / cross-run timings artifact is needed
+# (ci.yaml's plan-based mode still exists for GitHub Actions — see sharding.go).
+_E2E_SHARD_TOTAL = 4
+# e2e Kind node image, matching ci.yaml's pin.
+_E2E_K8S_IMAGE = "v1.34.3"
+
+
+def _e2e_command(shard_index):
+    return (
+        f"E2E_SHARD={shard_index}/{_E2E_SHARD_TOTAL} "
+        f"K8S_IMAGE={_E2E_K8S_IMAGE} "
+        "python3 ci/jobs/e2e.py"
+    )
+
+
 class JobConfigs:
     # Prep jobs rebuild the bundle only when the tool version sources or the
     # provisioning scripts change (praktika job cache + the go-env S3 cache both
@@ -312,6 +329,47 @@ class JobConfigs:
                 command=_compat_e2e_command(img, ver, tgt, fetch),
             )
             for (name, img, ver, tgt, fetch) in _COMPAT_E2E_MATRIX
+        ]
+    )
+
+    # ci.yaml :: e2e-test — the full e2e suite, split into _E2E_SHARD_TOTAL shards
+    # fanned out with Job.parametrize. Each shard passes E2E_SHARD="n/total" to
+    # ci/jobs/e2e.py; the Go harness assigns specs round-robin by hash, so there
+    # is no e2e-shard-plan job. Same Docker+Kind runner (amd-medium) and go-env
+    # (amd) as compat-e2e; e2e.py creates the cluster, runs `make test-e2e`,
+    # collects kind/kubectl diagnostics on failure, and renders per-spec results.
+    # Base `command` is a placeholder — parametrize overrides it per shard. This
+    # attribute is a LIST of Job.Config; spread it with `*JobConfigs...`.
+    e2e_test = Job.Config(
+        name="E2E Tests",
+        runs_on=[RunnerLabels.MEDIUM_AMD],
+        command=_e2e_command(1),  # overridden per shard
+        timeout=45 * 60,
+        pre_hooks=[_GO_ENV_INSTALL],
+        requires=[GO_ENV_AMD_ARTIFACT.name],
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./api",
+                "./cmd",
+                "./internal",
+                "./config",
+                "./test",
+                "./ci/kind-cluster.config",
+                "./ci/jobs/e2e.py",
+                "./ci/jobs/kind_env.py",
+                "./ci/jobs/junit_result.py",
+                "./go.mod",
+                "./go.sum",
+                "./Makefile",
+            ],
+        ),
+    ).parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"{shard}/{_E2E_SHARD_TOTAL}",
+                command=_e2e_command(shard),
+            )
+            for shard in range(1, _E2E_SHARD_TOTAL + 1)
         ]
     )
 

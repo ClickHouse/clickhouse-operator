@@ -29,6 +29,7 @@ WORKFLOWS = [
             JobConfigs.helm_test,
             JobConfigs.check_crd_compat,
             *JobConfigs.compat_e2e_test,
+            *JobConfigs.e2e_test,
             JobConfigs.code_review,
         ],
         enable_cache=True,
