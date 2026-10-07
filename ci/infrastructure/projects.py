@@ -235,9 +235,9 @@ PROJECTS = [
             size=0,
             max_size=50,
             volume_size_gb=100,
-            capacity_reserve=1,
+            capacity_reserve=2,
             image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
-            ext={"allowed_push_branches": ['NA'], "allowed_pr_base_branches": ['main'], "allowed_users": ['maxknv']},
+            ext={"allowed_push_branches": ['main'], "allowed_pr_base_branches": ['main'], "allowed_users": []},
         ),
         runner_pools=[
             Components.RunnerPool(
@@ -245,6 +245,7 @@ PROJECTS = [
                 instance_type="t4g.medium",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
+                capacity_reserve=2,
                 max_size=50,
                 volume_size_gb=100,
                 image_builder=_IMAGE_BUILDERS_BY_NAME["ci-arm64-image"],
@@ -274,7 +275,7 @@ PROJECTS = [
             ),
             Components.RunnerPool(
                 name="arm-medium",
-                instance_type="c7g.4xlarge",
+                instance_type="c7g.2xlarge",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
                 max_size=50,
@@ -290,7 +291,7 @@ PROJECTS = [
             ),
             Components.RunnerPool(
                 name="amd-medium",
-                instance_type="c7a.4xlarge",
+                instance_type="c7a.2xlarge",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
                 max_size=50,
