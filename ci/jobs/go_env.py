@@ -18,6 +18,7 @@ The whole tree is cached as one bundle (S3PathCache). The key is the version set
 NOT go.sum: dependency bumps are served incrementally from the warm module cache
 rather than forcing a full rebuild on every dependabot PR.
 """
+import glob
 import os
 import re
 import subprocess
@@ -27,10 +28,24 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())  # ensure repo root is importable for ci.*
 from ci.jobs.s3_cache import S3PathCache
 from ci.settings.settings import AWS_REGION, CACHE_S3_PATH
+from praktika.settings import Settings as PraktikaSettings
+
+# Basename pattern for the per-arch go-env bundle distributed as a praktika
+# artifact (see JobConfigs prep jobs). The consumer's `install` mode extracts
+# whichever one its `requires` placed in the input dir.
+ARTIFACT_GLOB = "go-env*.tar.zst"
 
 HELM_VERSION = "v3.19.0"  # helm has no Makefile pin; bump here
 ENVTEST_ASSETS_DIR = "/opt/ci-go/envtest"
 GOBIN = "/usr/local/bin"
+# HOME-independent cache locations. The consumer job runs under a different $HOME
+# than this script's build (which uses /root), so caches under /root/go would be
+# ignored and modules re-downloaded. We put them at fixed /opt paths and point the
+# job's `go` at them with `go env -w` (writes a config file, so it survives the
+# pre-hook -> command boundary regardless of $HOME).
+GO_MODCACHE = "/opt/ci-go/gomodcache"
+GO_BUILDCACHE = "/opt/ci-go/gocache"
+GOPATH_DIR = "/opt/ci-go/gopath"
 
 # go-installed CLIs: (binary, go package, Makefile version variable)
 GO_TOOLS = [
@@ -46,9 +61,8 @@ GO_TOOLS = [
 # Everything the bundle captures (absolute; missing paths are skipped on save).
 BUNDLE_PATHS = [
     "/usr/local/go",
-    "/root/go",
-    "/root/.cache/go-build",
-    "/root/.cache/pip",
+    GO_MODCACHE,
+    GO_BUILDCACHE,
     ENVTEST_ASSETS_DIR,
 ] + [f"{GOBIN}/{b}" for b in ("go", "gofmt", "helm", "kubebuilder")] + [
     f"{GOBIN}/{b}" for (b, _, _) in GO_TOOLS
@@ -57,10 +71,21 @@ BUNDLE_PATHS = [
 _GO_ENV = {
     **os.environ,
     "HOME": "/root",
-    "GOPATH": "/root/go",
+    "GOPATH": GOPATH_DIR,
+    "GOMODCACHE": GO_MODCACHE,
+    "GOCACHE": GO_BUILDCACHE,
     "GOBIN": GOBIN,
     "PATH": f"/usr/local/go/bin:{GOBIN}:" + os.environ.get("PATH", ""),
     "DEBIAN_FRONTEND": "noninteractive",
+}
+
+
+# Ambient env + the bundle's bin dirs on PATH, but WITHOUT forcing HOME or the
+# GO*CACHE vars — so `go env -w` in the consumer writes to the job user's own
+# config (read by the job command) and isn't shadowed by an OS-env override.
+_PATH_ENV = {
+    **os.environ,
+    "PATH": f"/usr/local/go/bin:{GOBIN}:" + os.environ.get("PATH", ""),
 }
 
 
@@ -124,13 +149,20 @@ def _install(arch, versions):
 
 
 NAMESPACE = "go-env"
+# Bump when the bundle's on-disk LAYOUT changes (paths in BUNDLE_PATHS / cache
+# locations) so a layout change invalidates the key and the prep job rebuilds
+# instead of restoring a stale-layout bundle under the same version key.
+BUNDLE_VERSION = "2"
 
 
 def _key_and_cache():
     arch = _arch()
     versions = _versions()
-    key = S3PathCache.key_from([arch] + [f"{k}={v}" for k, v in sorted(versions.items())])
-    print(f"go-env cache key: {key} (arch={arch}, versions={versions})")
+    key = S3PathCache.key_from(
+        [f"bundle={BUNDLE_VERSION}", arch]
+        + [f"{k}={v}" for k, v in sorted(versions.items())]
+    )
+    print(f"go-env cache key: {key} (arch={arch}, bundle=v{BUNDLE_VERSION}, versions={versions})")
     cache = None
     try:
         bucket, _, prefix = CACHE_S3_PATH.partition("/")
@@ -181,9 +213,69 @@ def setup():
     return 0
 
 
+def _make_tarball(outpath):
+    rel = [os.path.relpath(p, "/") for p in BUNDLE_PATHS if Path(p).exists()]
+    Path(outpath).parent.mkdir(parents=True, exist_ok=True)
+    _sh(f"tar -C / -cf - {' '.join(rel)} | zstd -c -T0 > {outpath}")
+
+
+def prepare(outpath):
+    """Prep-job entry point: produce the go-env bundle tarball at ``outpath`` (to
+    be published as a praktika artifact). Restores it from S3 if cached, otherwise
+    builds the toolchain, tars it, and uploads it to S3. One prep job per arch."""
+    arch, versions, key, cache = _key_and_cache()
+    if cache:
+        try:
+            if cache.download(key, NAMESPACE, outpath):
+                print(f"go-env bundle restored from cache -> {outpath}")
+                return 0
+        except Exception as e:
+            print(f"WARNING: cache download failed ({e}); building")
+    _install(arch, versions)
+    _make_tarball(outpath)
+    if cache:
+        try:
+            cache.upload(key, NAMESPACE, outpath)
+        except Exception as e:
+            print(f"WARNING: cache upload failed ({e}); continuing")
+    return 0
+
+
+def install():
+    """Consumer-job pre-hook: extract the go-env bundle that `requires` placed in
+    the input dir. Falls back to self-provisioning (restore-or-build) if the
+    artifact is missing, so the job still works off the happy path."""
+    tarballs = sorted(glob.glob(os.path.join(PraktikaSettings.INPUT_DIR, ARTIFACT_GLOB)))
+    if not tarballs:
+        print("No go-env artifact in input dir; self-provisioning")
+        return setup()
+    tb = tarballs[0]
+    print(f"Installing go-env from artifact {tb}")
+    # Run with the job's ambient env (its real $HOME), so `go env -w` writes to the
+    # config the job command will read, and the bundled GO*CACHE aren't shadowed by
+    # an OS-env override.
+    _sh(f"zstd -d {tb} --stdout | tar -xf - -C /", env=_PATH_ENV)
+    _sh(
+        f"go env -w GOMODCACHE={GO_MODCACHE} GOCACHE={GO_BUILDCACHE} GOPATH={GOPATH_DIR}",
+        env=_PATH_ENV,
+    )
+    _sh(
+        "go version && helm version && kubebuilder version && controller-gen --version",
+        env=_PATH_ENV,
+    )
+    _sh("go env GOMODCACHE GOCACHE", env=_PATH_ENV)
+    return 0
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "setup"
-    return ensure() if mode == "ensure" else setup()
+    if mode == "prepare":
+        return prepare(sys.argv[2])
+    if mode == "install":
+        return install()
+    if mode == "ensure":
+        return ensure()
+    return setup()
 
 
 if __name__ == "__main__":
