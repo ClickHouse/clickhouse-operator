@@ -12,6 +12,11 @@ WORKFLOWS = [
         name="PR",
         event=Workflow.Event.PULL_REQUEST,
         base_branches=["main"],
+        ai_orchestrator=Workflow.OrchestratorAI.Config(
+            enabled=True,
+            provider="bedrock-anthropic",
+            model="global.anthropic.claude-sonnet-5",
+        ),
         enable_job_filtering_by_changes=True,
         workflow_filter_hooks=[should_skip_job],
         artifacts=[GO_ENV_ARM_ARTIFACT, GO_ENV_AMD_ARTIFACT],
