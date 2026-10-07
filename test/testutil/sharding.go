@@ -50,17 +50,20 @@ func (c *ShardingConfig) Load() error {
 	// Round-robin mode takes precedence over the legacy plan env vars.
 	if c.Shard != "" {
 		idx, total, ok := strings.Cut(c.Shard, "/")
-		indexErr := error(nil)
-		totalErr := error(nil)
-		c.Index, indexErr = strconv.Atoi(idx)
-		c.Total, totalErr = strconv.Atoi(total)
+		index, indexErr := strconv.Atoi(idx)
+		totalN, totalErr := strconv.Atoi(total)
+
 		if !ok || indexErr != nil || totalErr != nil {
 			return fmt.Errorf("invalid E2E_SHARD %q, want \"index/total\" e.g. \"2/4\"", c.Shard)
 		}
+
+		c.Index, c.Total = index, totalN
 		if c.Total < 1 || c.Index < 1 || c.Index > c.Total {
 			return fmt.Errorf("invalid shard %d/%d", c.Index, c.Total)
 		}
+
 		c.roundRobin = true
+
 		return nil
 	}
 
@@ -98,7 +101,11 @@ func (c *ShardingConfig) Enabled(spec string) (bool, error) {
 	if c.roundRobin {
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(spec))
-		shard := int(h.Sum32()%uint32(c.Total)) + 1
+		// Mask to 31 bits so the hash fits a signed int on every platform, then
+		// map it onto [1, Total]. c.Total is validated >= 1 in Load.
+		hash := int(h.Sum32() & 0x7fffffff)
+		shard := hash%c.Total + 1
+
 		return shard == c.Index, nil
 	}
 
