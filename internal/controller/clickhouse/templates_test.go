@@ -372,6 +372,19 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		Expect(podSpec0.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "0"))
 		Expect(podSpec2.TopologySpreadConstraints[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("clickhouse.com/shard-id", "2"))
 	})
+
+	It("should co-locate with Keeper pods only when the operator manages Keeper", func() {
+		r := &clickhouseReconciler{Cluster: newCluster("topology.kubernetes.io/zone", nil)}
+		podSpec, err := templatePodSpec(r, v1.ClickHouseReplicaID{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.Affinity.PodAffinity).NotTo(BeNil())
+
+		r.Cluster.Spec.ExternalKeeper = &v1.ExternalKeeperSpec{Nodes: []v1.ExternalKeeperNode{{Host: "keeper", Port: 9181}}}
+		podSpec, err = templatePodSpec(r, v1.ClickHouseReplicaID{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(podSpec.Affinity.PodAntiAffinity).NotTo(BeNil())
+		Expect(podSpec.Affinity.PodAffinity).To(BeNil())
+	})
 })
 
 var _ = Describe("Service templates", func() {
@@ -729,7 +742,7 @@ var _ = Describe("TemplateStatefulSet", func() {
 				Spec: v1.ClickHouseClusterSpec{
 					Shards:           new(int32(2)),
 					Replicas:         new(int32(2)),
-					KeeperClusterRef: v1.KeeperClusterReference{Name: "keeper"},
+					KeeperClusterRef: &v1.KeeperClusterReference{Name: "keeper"},
 					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{
 						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 						Resources: corev1.VolumeResourceRequirements{

@@ -111,6 +111,16 @@ type ReleaseData struct {
 	Supported map[ClickHouseRelease]bool
 }
 
+// NewReleaseData preprocesses fetched releases, keeping the latest version of every release.
+func NewReleaseData(allReleases map[string][]ClickHouseVersion) *ReleaseData {
+	latestReleases := filterLatestVersions(allReleases)
+
+	return &ReleaseData{
+		Releases:  latestReleases,
+		Supported: buildSupportedMap(latestReleases),
+	}
+}
+
 // ReleaseUpdater periodically fetches and updates ClickHouse release data,
 // maintaining a cache of the latest preprocessed information.
 type ReleaseUpdater struct {
@@ -173,12 +183,7 @@ func (u *ReleaseUpdater) updateReleases(ctx context.Context) bool {
 		return false
 	}
 
-	latestReleases := filterLatestVersions(allReleases)
-	supported := buildSupportedMap(latestReleases)
-	u.cached.Store(&ReleaseData{
-		Releases:  latestReleases,
-		Supported: supported,
-	})
+	u.cached.Store(NewReleaseData(allReleases))
 
 	return true
 }
