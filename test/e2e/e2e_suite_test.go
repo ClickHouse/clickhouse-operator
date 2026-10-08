@@ -122,6 +122,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		EnableNetworkPolicy:     true,
 		ResyncPeriod:            time.Minute,
 		MaxConcurrentReconciles: 4,
+		ObserveInterval:         15 * time.Second,
 		VersionUpdateInterval:   time.Hour,
 	}
 

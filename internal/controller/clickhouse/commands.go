@@ -66,6 +66,28 @@ type commander struct {
 	entry *connCacheEntry
 }
 
+// newObservingCommander returns a commander over the current cache entry without mutating the cache;
+// it reports false when the entry is missing or the credentials rotated.
+func newObservingCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, cache *connCache) (*commander, bool) {
+	credHash, _ := controllerutil.DeepHashObject(secret.Data[SecretKeyManagementPassword])
+
+	entry, ok := cache.TryGet(cluster.NamespacedName(), credHash)
+	if !ok {
+		return nil, false
+	}
+
+	return &commander{
+		log:     log.Named("commander"),
+		entry:   entry,
+		cluster: cluster,
+		dialer:  dialer,
+		auth: clickhouse.Auth{
+			Username: OperatorManagementUsername,
+			Password: string(secret.Data[SecretKeyManagementPassword]),
+		},
+	}, true
+}
+
 func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, cache *connCache) *commander {
 	log = log.Named("commander")
 	credHash, _ := controllerutil.DeepHashObject(secret.Data[SecretKeyManagementPassword])

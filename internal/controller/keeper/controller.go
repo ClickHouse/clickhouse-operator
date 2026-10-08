@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -198,6 +199,16 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
 	}
 
+	if settings.ObserveInterval > 0 {
+		observer := chctrl.NewObserver("keeper-observer", deps.Logger, settings.ObserveInterval,
+			listClusters(mgr), keeperController.observeDigest)
+		if err := mgr.Add(observer); err != nil {
+			return fmt.Errorf("add keeper observer to manager: %w", err)
+		}
+
+		controllerBuilder = controllerBuilder.WatchesRawSource(observer.Source())
+	}
+
 	err := controllerBuilder.
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(keeperController)
@@ -206,4 +217,45 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 	}
 
 	return nil
+}
+
+func listClusters(mgr ctrl.Manager) func(ctx context.Context) ([]*v1.KeeperCluster, error) {
+	return func(ctx context.Context) ([]*v1.KeeperCluster, error) {
+		var list v1.KeeperClusterList
+		if err := mgr.GetClient().List(ctx, &list); err != nil {
+			return nil, fmt.Errorf("list KeeperClusters: %w", err)
+		}
+
+		clusters := make([]*v1.KeeperCluster, 0, len(list.Items))
+		for i := range list.Items {
+			clusters = append(clusters, &list.Items[i])
+		}
+
+		return clusters, nil
+	}
+}
+
+// observeDigest summarizes the externally observable quorum state of the cluster.
+func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.KeeperCluster) string {
+	ids := make([]v1.KeeperReplicaID, 0, cluster.Replicas())
+	for i := range cluster.Replicas() {
+		ids = append(ids, v1.KeeperReplicaID(i))
+	}
+
+	states := controllerutil.ExecuteParallel(ids, func(id v1.KeeperReplicaID) (v1.KeeperReplicaID, string, error) {
+		probeCtx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+		defer cancel()
+
+		status := getServerStatus(probeCtx, cc.Logger.With("replica_id", id), cc.Dialer,
+			cluster.HostnameByID(id), cluster.Spec.Settings.TLS.Required)
+
+		return id, status.ServerState, nil
+	})
+
+	var sb strings.Builder
+	for _, id := range ids {
+		_, _ = fmt.Fprintf(&sb, "%d=%s;", id, states[id].Result)
+	}
+
+	return sb.String()
 }
