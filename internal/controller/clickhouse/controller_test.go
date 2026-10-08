@@ -614,7 +614,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(true),
 		}
-		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
+		suite.ReconcileStatefulSets(ctx, updatedCR)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())
@@ -707,7 +707,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		})
 
 		By("marking StatefulSets as ready")
-		testutil.ReconcileStatefulSets(ctx, pvcCR, suite)
+		suite.ReconcileStatefulSets(ctx, pvcCR)
 
 		By("recording STS state before PVC change")
 
