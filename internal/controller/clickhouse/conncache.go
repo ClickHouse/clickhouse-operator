@@ -20,6 +20,7 @@ type connCache struct {
 
 type connCacheEntry struct {
 	mu       sync.Mutex
+	closed   bool
 	credHash string
 	conns    map[v1.ClickHouseReplicaID]clickhouse.Conn
 }
@@ -53,6 +54,23 @@ func (c *connCache) Get(key types.NamespacedName, credHash string, log controlle
 	c.entries[key] = e
 
 	return e
+}
+
+// TryGet returns the entry only when it exists. It never mutates the cache.
+func (c *connCache) TryGet(key types.NamespacedName, credHash string) (*connCacheEntry, bool) {
+	if c == nil {
+		return nil, false
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	e, ok := c.entries[key]
+	if !ok || e.credHash != credHash {
+		return nil, false
+	}
+
+	return e, true
 }
 
 func (c *connCache) Evict(key types.NamespacedName, log controllerutil.Logger) {
@@ -112,6 +130,10 @@ func (e *connCacheEntry) Conn(id v1.ClickHouseReplicaID, dial func() (clickhouse
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	if e.closed {
+		return nil, errors.New("connection cache entry is closed")
+	}
+
 	if conn, ok := e.conns[id]; ok {
 		return conn, nil
 	}
@@ -146,6 +168,8 @@ func (e *connCacheEntry) AnyConn(ctx context.Context) (v1.ClickHouseReplicaID, c
 func (e *connCacheEntry) Close(log controllerutil.Logger) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	e.closed = true
 
 	for id, conn := range e.conns {
 		if err := conn.Close(); err != nil {
