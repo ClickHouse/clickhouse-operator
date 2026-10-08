@@ -19,5 +19,6 @@ type Settings struct {
 	EnablePDB               bool
 	EnableNetworkPolicy     bool
 	ResyncPeriod            time.Duration
+	ObserveInterval         time.Duration
 	MaxConcurrentReconciles int
 }

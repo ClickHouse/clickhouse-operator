@@ -3,6 +3,8 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -12,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -219,6 +222,16 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 		controllerBuilder = controllerBuilder.Owns(&policyv1.PodDisruptionBudget{})
 	}
 
+	if settings.ObserveInterval > 0 {
+		observer := chctrl.NewObserver("observer", namedLogger, settings.ObserveInterval,
+			listClusters(mgr), clickhouseController.observeDigest)
+		if err := mgr.Add(observer); err != nil {
+			return fmt.Errorf("add clickhouse observer to manager: %w", err)
+		}
+
+		controllerBuilder = controllerBuilder.WatchesRawSource(observer.Source())
+	}
+
 	err := controllerBuilder.
 		WithEventFilter(predicate.ResourceVersionChangedPredicate{}).
 		Complete(clickhouseController)
@@ -273,4 +286,68 @@ func (cc *ClusterController) clickHouseClustersForPod(_ context.Context, obj cli
 	return []reconcile.Request{{
 		Namespace: obj.GetNamespace(),
 		Name:      cluster}}
+}
+
+func listClusters(mgr ctrl.Manager) func(ctx context.Context) ([]*v1.ClickHouseCluster, error) {
+	return func(ctx context.Context) ([]*v1.ClickHouseCluster, error) {
+		var list v1.ClickHouseClusterList
+		if err := mgr.GetClient().List(ctx, &list); err != nil {
+			return nil, fmt.Errorf("list ClickHouseClusters: %w", err)
+		}
+
+		clusters := make([]*v1.ClickHouseCluster, 0, len(list.Items))
+		for i := range list.Items {
+			clusters = append(clusters, &list.Items[i])
+		}
+
+		return clusters, nil
+	}
+}
+
+// observeDigest summarizes reachability, applied reload revisions, and system.warnings of all replicas.
+func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.ClickHouseCluster) string {
+	var secret corev1.Secret
+	if err := cc.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.SecretName()}, &secret); err != nil {
+		return "secret-unavailable"
+	}
+
+	cmd, ok := newObservingCommander(cc.Logger, cluster, &secret, cc.Dialer, cc.connCache)
+	if !ok {
+		return "connections-pending"
+	}
+
+	ids := slices.Collect(cluster.ReplicaIDs())
+
+	results := controllerutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, string, error) {
+		probeCtx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+		defer cancel()
+
+		probe, err := cmd.Probe(probeCtx, id)
+		if err != nil {
+			return id, "", fmt.Errorf("probe replica: %w", err)
+		}
+
+		warnings, err := cmd.Warnings(probeCtx, id)
+		if err != nil {
+			return id, "", fmt.Errorf("fetch warnings: %w", err)
+		}
+
+		slices.Sort(warnings)
+
+		return id, fmt.Sprintf("%s/%s:%s", probe.ReloadConfigRevision, probe.UsersReloadConfigRevision, strings.Join(warnings, ",")), nil
+	})
+
+	var sb strings.Builder
+
+	for _, id := range ids {
+		res := results[id]
+		if res.Err != nil {
+			_, _ = fmt.Fprintf(&sb, "%s=unreachable;", id)
+			continue
+		}
+
+		_, _ = fmt.Fprintf(&sb, "%s=%s;", id, res.Result)
+	}
+
+	return sb.String()
 }

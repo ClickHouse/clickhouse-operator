@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -480,5 +482,69 @@ var _ = Describe("KeeperClustersForClickHouse", func() {
 
 	It("should skip clusters without a keeper reference", func(ctx context.Context) {
 		Expect(keeperClustersForClickHouse(ctx, &v1.ClickHouseCluster{})).To(BeNil())
+	})
+})
+
+type fakeConn struct {
+	data []byte
+}
+
+func (f fakeConn) Read(buf []byte) (n int, err error) {
+	if len(buf) < len(f.data) {
+		panic("buffer too small")
+	}
+
+	copy(buf, f.data)
+
+	return len(f.data), io.EOF
+}
+
+func (f fakeConn) Close() error { return nil }
+
+func (f fakeConn) LocalAddr() net.Addr { return &net.TCPAddr{} }
+
+func (f fakeConn) RemoteAddr() net.Addr { return &net.TCPAddr{} }
+
+func (f fakeConn) SetDeadline(time.Time) error { return nil }
+
+func (f fakeConn) SetReadDeadline(time.Time) error { return nil }
+
+func (f fakeConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (f fakeConn) Write(b []byte) (n int, err error) { return len(b), nil }
+
+var _ net.Conn = &fakeConn{}
+
+func fakeDialer(data []byte) controllerutil.DialContextFunc {
+	return func(context.Context, string) (net.Conn, error) {
+		return &fakeConn{data: data}, nil
+	}
+}
+
+var _ = Describe("observeDigest", func() {
+	cluster := func(replicas int32) *v1.KeeperCluster {
+		return &v1.KeeperCluster{
+			Name:      "digest",
+			Namespace: "default",
+			Spec:      v1.KeeperClusterSpec{Replicas: new(replicas)},
+		}
+	}
+
+	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	It("should digest the server states in replica order", func(ctx context.Context) {
+		cc := &ClusterController{
+			Logger: log,
+			Dialer: fakeDialer([]byte("zk_server_state\tfollower\n"))}
+
+		Expect(cc.observeDigest(ctx, cluster(3))).To(Equal("0=follower;1=follower;2=follower;"))
+	})
+
+	It("should classify unreachable replicas distinctly", func(ctx context.Context) {
+		cc := &ClusterController{
+			Logger: log,
+			Dialer: func(context.Context, string) (net.Conn, error) { return nil, errors.New("down") }}
+
+		Expect(cc.observeDigest(ctx, cluster(2))).To(Equal("0=;1=;"))
 	})
 })

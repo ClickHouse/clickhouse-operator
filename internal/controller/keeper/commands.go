@@ -139,7 +139,7 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 func getServerStatus(ctx context.Context, log controllerutil.Logger, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) serverStatus {
 	conn, err := getConnection(ctx, dialer, hostname, tlsRequired)
 	if err != nil {
-		log.Info("failed to get keeper connection", "error", err)
+		log.Debug("failed to get keeper connection", "error", err)
 		return serverStatus{}
 	}
 	defer func(conn net.Conn) {
@@ -150,7 +150,7 @@ func getServerStatus(ctx context.Context, log controllerutil.Logger, dialer cont
 
 	status, err := queryKeeper(ctx, log, conn)
 	if err != nil {
-		log.Info("failed to query keeper pod", "error", err)
+		log.Debug("failed to query keeper pod", "error", err)
 		return serverStatus{}
 	}
 
