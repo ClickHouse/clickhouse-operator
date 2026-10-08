@@ -249,7 +249,9 @@ var _ = Describe("Helm deployment", Ordered, ContinueOnFailure, Label("helm"), f
 		namespace := "clickhouse-operator-" + name
 		BeforeAll(func(ctx context.Context) {
 			currentTestNamespace = namespace
-			values["watchNamespaces"] = []string{namespace}
+			values["controller"] = map[string]any{
+				"watchNamespaces": []string{"{{ .Release.Namespace }}"},
+			}
 			values["crd"] = map[string]any{
 				"enable": true,
 				"keep":   false,

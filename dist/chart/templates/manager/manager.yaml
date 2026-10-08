@@ -109,9 +109,13 @@ spec:
           value: {{ .Values.controller.pdbManagement.enabled | quote }}
         - name: ENABLE_NETWORK_POLICY
           value: {{ .Values.controller.networkPolicyManagement.enabled | quote }}
-        {{- if not (empty .Values.controller.watchNamespaces) }}
+        {{- $watchNamespaces := list }}
+        {{- range .Values.controller.watchNamespaces }}
+        {{- $watchNamespaces = append $watchNamespaces (tpl . $) }}
+        {{- end }}
+        {{- with $watchNamespaces | uniq }}
         - name: WATCH_NAMESPACE
-          value: {{ join "," .Values.controller.watchNamespaces | quote }}
+          value: {{ join "," . | quote }}
         {{- end }}
         {{- range $k, $v := .Values.manager.envOverrides }}
         - name: {{ $k }}

@@ -20,7 +20,10 @@ global:
 ## Configure the controller manager settings
 ##
 controller:
-  ## List of namespaces to watch for resources.
+  ## List of namespaces to watch for resources. Empty watches all namespaces.
+  ## Entries are rendered with `tpl`, so they may reference the release, e.g.
+  ## the operator's own namespace next to static ones:
+  ##   watchNamespaces: ["{{ .Release.Namespace }}", "team-a"]
   ##
   watchNamespaces: [ ]
   ## Controls whether the operator creates and manages PodDisruptionBudgets
