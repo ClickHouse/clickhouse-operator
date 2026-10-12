@@ -273,7 +273,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 	It("should add extra config in configmap", func(ctx context.Context) {
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
+		suite.ReconcileStatefulSets(ctx, updatedCR)
 		updatedCR.Spec.Settings.ExtraConfig = runtime.RawExtension{Raw: []byte(`{"keeper_server": {
 				"coordination_settings":{"quorum_reads": true}}}`)}
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
@@ -306,7 +306,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		updatedCR.Spec.ContainerTemplate.SecurityContext = &corev1.SecurityContext{
 			AllowPrivilegeEscalation: new(true),
 		}
-		testutil.ReconcileStatefulSets(ctx, updatedCR, suite)
+		suite.ReconcileStatefulSets(ctx, updatedCR)
 		Expect(suite.Client.Update(ctx, updatedCR)).To(Succeed())
 		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: cr.NamespacedName()})
 		Expect(err).NotTo(HaveOccurred())

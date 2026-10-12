@@ -111,9 +111,9 @@ func validateUpdate(ctx context.Context, c client.WithWatch, obj client.Object, 
 }
 
 // ReconcileStatefulSets updates the status of all StatefulSets associated with the given Cluster.
-func ReconcileStatefulSets[T interface {
+func (suite TestSuit) ReconcileStatefulSets[T interface {
 	SpecificName() string
-}](ctx context.Context, cr T, suite TestSuit) {
+}](ctx context.Context, cr T) {
 	listOpts := controllerutil.AppRequirements("", cr.SpecificName())
 
 	var stsList appsv1.StatefulSetList

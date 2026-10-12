@@ -227,7 +227,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	configMaps, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
@@ -563,7 +563,7 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 }
 
 func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	configMaps, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
@@ -580,7 +580,7 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 		}
 	}
 
-	statefulSets, err := chctrl.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, &r.ResourceManager, v1.KeeperReplicaIDFromLabels)
+	statefulSets, err := r.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
