@@ -11,6 +11,7 @@ metadata:
   labels:
     app.kubernetes.io/name: clickhouse-operator
     app.kubernetes.io/managed-by: kustomize
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
   name: keepercluster-admin-role
 rules:
 - apiGroups:
