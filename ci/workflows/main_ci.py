@@ -26,7 +26,7 @@ WORKFLOWS = [
             JobConfigs.fuzz_specs,
             JobConfigs.lint,
             JobConfigs.helm_test,
-            # Docker/Kind jobs (amd-medium) — the last pieces moved off ci.yaml.
+            # Docker/Kind jobs (amd-8cpu-16g) — the last pieces moved off ci.yaml.
             JobConfigs.bundle,
             *JobConfigs.compat_e2e_test,
             *JobConfigs.e2e_test,
