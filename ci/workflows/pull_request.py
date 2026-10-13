@@ -16,6 +16,7 @@ WORKFLOWS = [
             enabled=True,
             provider="bedrock-anthropic",
             model="global.anthropic.claude-sonnet-5",
+            exclude_jobs=["Code Review"],
         ),
         enable_job_filtering_by_changes=True,
         workflow_filter_hooks=[should_skip_job],

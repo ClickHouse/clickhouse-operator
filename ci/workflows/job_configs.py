@@ -125,7 +125,7 @@ class JobConfigs:
 
     prepare_go_env_arm = Job.Config(
         name="Prepare Go Env (arm)",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command=f"python3 ci/jobs/go_env.py prepare {GO_ENV_ARM_ARTIFACT.path}",
         provides=[GO_ENV_ARM_ARTIFACT.name],
         timeout=30 * 60,
@@ -133,7 +133,7 @@ class JobConfigs:
     )
     prepare_go_env_amd = Job.Config(
         name="Prepare Go Env (amd)",
-        runs_on=[RunnerLabels.SMALL_AMD],
+        runs_on=[RunnerLabels.AMD_2CPU_4G],
         command=f"python3 ci/jobs/go_env.py prepare {GO_ENV_AMD_ARTIFACT.path}",
         provides=[GO_ENV_AMD_ARTIFACT.name],
         timeout=30 * 60,
@@ -153,7 +153,7 @@ class JobConfigs:
     # won't, the hook gates it) is change-filtered out too.
     dependabot_regenerate = Job.Config(
         name="Dependabot Regenerate",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="python3 ci/jobs/dependabot_regenerate.py",
         timeout=20 * 60,
         allow_failure=True,
@@ -173,7 +173,7 @@ class JobConfigs:
     # docs-lint.yaml :: vale (vale-linter)
     vale_linter = Job.Config(
         name="Vale Linter",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="make docs-lint-vale",
         timeout=10 * 60,
         digest_config=Job.CacheDigestConfig(
@@ -184,7 +184,7 @@ class JobConfigs:
     # docs-lint.yaml :: doc-links (Doc links)
     doc_links = Job.Config(
         name="Doc Links",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="make docs-link-check",
         timeout=10 * 60,
         digest_config=Job.CacheDigestConfig(
@@ -196,7 +196,7 @@ class JobConfigs:
     # Needs Go + crd-ref-docs, provisioned by the go-env pre-hook.
     api_reference_generated = Job.Config(
         name="API Reference Generated",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="make docs-generate-api-ref && git diff --exit-code docs/",
         timeout=15 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -239,7 +239,7 @@ class JobConfigs:
     # job's exit code drives pass/fail (enable_exit_code_result).
     build_and_test = Job.Config(
         name="Build and Unit Tests",
-        runs_on=[RunnerLabels.MEDIUM_ARM],
+        runs_on=[RunnerLabels.ARM_8CPU_16G],
         command=(
             # The go-env pre-hook caches the envtest K8s assets at
             # /opt/ci-go/envtest. Seed ./bin/k8s from there so `make test-ci`'s
@@ -257,7 +257,7 @@ class JobConfigs:
     # ci.yaml :: fuzz_specs. Go-only (two 60s fuzz runs).
     fuzz_specs = Job.Config(
         name="Fuzz Specs",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="make fuzz",
         timeout=20 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -273,7 +273,7 @@ class JobConfigs:
     # memory-hungry.
     lint = Job.Config(
         name="Lint",
-        runs_on=[RunnerLabels.MEDIUM_ARM],
+        runs_on=[RunnerLabels.ARM_8CPU_16G],
         command="python3 ci/jobs/lint.py",
         timeout=15 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -286,7 +286,7 @@ class JobConfigs:
     # re-downloading it.
     helm_test = Job.Config(
         name="Helm Test",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command=(
             "make generate-helmchart-ci KUBEBUILDER=/usr/local/bin/kubebuilder && "
             "git diff --exit-code dist/chart/ dist/chart-cluster/ && "
@@ -319,7 +319,7 @@ class JobConfigs:
     # pre-warmed).
     check_crd_compat = Job.Config(
         name="Check CRD Compatibility",
-        runs_on=[RunnerLabels.SMALL_ARM],
+        runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
         allow_failure=True,
@@ -347,7 +347,7 @@ class JobConfigs:
     # ci.yaml :: compat-e2e-test — the full 5-variant matrix, fanned out with
     # Job.parametrize (see _COMPAT_E2E_MATRIX / _compat_e2e_command above). Each
     # variant is one Job.Config differing only in the K8S_IMAGE/CLICKHOUSE_VERSION/
-    # DEPLOY_TARGET it passes to ci/jobs/compat_e2e.py. Runs on amd-medium
+    # DEPLOY_TARGET it passes to ci/jobs/compat_e2e.py. Runs on amd-8cpu-16g
     # (c7a.4xlarge) to match the existing self-hosted e2e placement and to pull
     # amd64 ClickHouse images, as the GitHub job does. Needs a working Docker
     # daemon on the runner; compat_e2e.py installs Kind + kubectl, creates the
@@ -357,7 +357,7 @@ class JobConfigs:
     # of Job.Config; spread it into a workflow's jobs with `*JobConfigs...`.
     compat_e2e_test = Job.Config(
         name="Compat E2E",
-        runs_on=[RunnerLabels.MEDIUM_AMD],
+        runs_on=[RunnerLabels.AMD_8CPU_16G],
         command=_compat_e2e_command(*_COMPAT_E2E_MATRIX[0][1:]),  # overridden per variant
         timeout=60 * 60,
         # The operator-upgrade variant resolves the latest release tag via `gh api`
@@ -396,14 +396,14 @@ class JobConfigs:
     # ci.yaml :: e2e-test — the full e2e suite, split into _E2E_SHARD_TOTAL shards
     # fanned out with Job.parametrize. Each shard passes E2E_SHARD="n/total" to
     # ci/jobs/e2e.py; the Go harness assigns specs round-robin by hash, so there
-    # is no e2e-shard-plan job. Same Docker+Kind runner (amd-medium) and go-env
+    # is no e2e-shard-plan job. Same Docker+Kind runner (amd-8cpu-16g) and go-env
     # (amd) as compat-e2e; e2e.py creates the cluster, runs `make test-e2e`,
     # collects kind/kubectl diagnostics on failure, and renders per-spec results.
     # Base `command` is a placeholder — parametrize overrides it per shard. This
     # attribute is a LIST of Job.Config; spread it with `*JobConfigs...`.
     e2e_test = Job.Config(
         name="E2E Tests",
-        runs_on=[RunnerLabels.MEDIUM_AMD],
+        runs_on=[RunnerLabels.AMD_8CPU_16G],
         command=_e2e_command(1),  # overridden per shard
         timeout=45 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -436,12 +436,12 @@ class JobConfigs:
 
     # ci.yaml :: bundle. Builds the OLM bundle image and runs operator-sdk
     # scorecard against a throwaway Kind cluster — ci/jobs/bundle.py. Same
-    # Docker+Kind runner (amd-medium) and go-env (amd) as compat/e2e; the bundle
+    # Docker+Kind runner (amd-8cpu-16g) and go-env (amd) as compat/e2e; the bundle
     # image is manifest-only (arch-independent). operator-sdk self-installs via the
     # Makefile targets. Verdict is the scorecard exit code.
     bundle = Job.Config(
         name="Bundle",
-        runs_on=[RunnerLabels.MEDIUM_AMD],
+        runs_on=[RunnerLabels.AMD_8CPU_16G],
         command="VERSION=0.0.1 python3 ci/jobs/bundle.py",
         timeout=30 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -465,12 +465,12 @@ class JobConfigs:
     # --- AI code review ---
     # `praktika review` consults an OpenAI model on Bedrock and posts a summary
     # plus inline findings, managing its own review threads. It runs on the
-    # dedicated arm-small-bedrock pool (the only one granted bedrock:InvokeModel).
+    # dedicated arm-2cpu-4g-bedrock pool (the only one granted bedrock:InvokeModel).
     # allow_failure so a review hiccup never blocks merge; enable_gh_auth so the
     # job can post comments and resolve threads.
     code_review = Job.Config(
         name="Code Review",
-        runs_on=[RunnerLabels.SMALL_ARM_BEDROCK],
+        runs_on=[RunnerLabels.ARM_2CPU_4G_BEDROCK],
         command=(
             "python3 -I -m praktika review --provider bedrock-openai "
             "--model global.openai.gpt-5.6-sol --reasoning-effort high "
