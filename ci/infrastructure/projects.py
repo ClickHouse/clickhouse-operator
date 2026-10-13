@@ -26,7 +26,7 @@ _PROJECT_S3_PREFIXES = list(
 # until published in pip
 _PRAKTIKA_PACKAGE_BASE_URL = "https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages"
 _PRAKTIKA_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika-0.1.15-py3-none-any.whl"
-_PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-0.1.9-py3-none-any.whl"
+_PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-0.1.10-py3-none-any.whl"
 
 
 # Rarely-changing tooling baked into the runner image for the documentation-lint
@@ -108,7 +108,7 @@ jq -e '.features."containerd-snapshotter" == false' "$f"
 def _image_builders():
     # Bump whenever the recipe/components change so Image Builder creates a new
     # recipe + component versions and rebuilds the AMI.
-    image_recipe_version = "1.0.7"
+    image_recipe_version = "1.0.9"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
         # (boto3/PyJWT/cryptography/requests) automatically; pytest and the
@@ -163,7 +163,7 @@ def _image_builders():
             controller_package=_PRAKTIKA_CONTROLLER_WHL,
             prebuilt_venvs=prebuilt_venvs,
             components=custom_components,
-            instance_types=["t4g.small"],
+            instance_types=["c7g.2xlarge"],
         ),
         Components.create_ubuntu_image_builder_config(
             name="ci-x86_64-image",
@@ -171,7 +171,7 @@ def _image_builders():
             controller_package=_PRAKTIKA_CONTROLLER_WHL,
             prebuilt_venvs=prebuilt_venvs,
             components=custom_components,
-            instance_types=["t3.small"],
+            instance_types=["c7i.2xlarge"],
         ),
     ]
     for builder in builders:
@@ -268,8 +268,8 @@ PROJECTS = [
         ),
         runner_pools=[
             Components.RunnerPool(
-                name="arm-small",
-                instance_type="t4g.medium",
+                name="arm-2cpu-4g",
+                instance_type="c7g.large",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
                 capacity_reserve=4,
@@ -285,8 +285,8 @@ PROJECTS = [
                 allow_ssm_debug=False,
             ),
             Components.RunnerPool(
-                name="amd-small",
-                instance_type="t3.medium",
+                name="amd-2cpu-4g",
+                instance_type="c7a.large",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
                 max_size=50,
@@ -301,7 +301,7 @@ PROJECTS = [
                 allow_ssm_debug=False,
             ),
             Components.RunnerPool(
-                name="arm-medium",
+                name="arm-8cpu-16g",
                 instance_type="c7g.2xlarge",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
@@ -317,7 +317,7 @@ PROJECTS = [
                 allow_ssm_debug=False,
             ),
             Components.RunnerPool(
-                name="amd-medium",
+                name="amd-8cpu-16g",
                 instance_type="c7a.2xlarge",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
@@ -332,12 +332,12 @@ PROJECTS = [
                 allow_all_s3_prefixes=False,
                 allow_ssm_debug=False,
             ),
-            # Dedicated pool for the AI Code Review job. Identical to arm-small,
+            # Dedicated pool for the AI Code Review job. Identical to arm-2cpu-4g,
             # plus a scoped bedrock:InvokeModel grant via ext["iam_statements"]
             # so only this pool's role can call the Bedrock model API.
             Components.RunnerPool(
-                name="arm-small-bedrock",
-                instance_type="t4g.medium",
+                name="arm-2cpu-4g-bedrock",
+                instance_type="c7g.large",
                 scaling=Components.RunnerPool.Scaling.Auto,
                 size=0,
                 max_size=50,
