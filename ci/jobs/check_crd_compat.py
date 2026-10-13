@@ -9,23 +9,22 @@ What the job does: it obtains each CRD's baseline (the manifest as it currently
 exists on the base branch) and runs `make check-crd-compat`, which compares each
 baseline against the PR's current CRD with crd-schema-checker and fails on
 backward-incompatible schema changes. The verdict is returned as a praktika
-Result (OK / FAIL / ERROR) carrying the baseline source, base branch, staged
-counts, and — on failure — the checker's violations.
+Result (OK / FAIL / ERROR) carrying the baseline ref/source, staged counts, and
+— on failure — the checker's violations.
 
-Two ways to get the baseline, picked automatically:
+The baseline commit is the PR's merge-base from Info().base_git_history() (entry
+0, newest first) — a real base-branch commit the controller resolves even for
+jobs on a history-free S3 snapshot, which keeps a 404 unambiguous. Falls back to
+the base branch name when unavailable (local runs).
 
-1. git history (preferred, when applicable). A real clone with an `origin`
-   remote — the legacy, non-snapshot checkout — lets us shallow-fetch the base
-   branch and compare against `git show origin/<base>:...` with no network API
-   call. We try this first.
+Two ways to read the manifests at that ref, picked automatically:
 
-2. GitHub contents API (fallback). With ENABLE_S3_REPO_SNAPSHOT every job
-   restores a history-free snapshot of the controller's pinned merge commit:
-   there is no `origin` remote and no base history, so the git fetch above fails.
-   We then pull the base manifests straight from GitHub (`gh` is authenticated in
-   the job) into a temp dir and point the Make target at it via CRD_BASELINE_DIR.
-   A path that does not exist on the base branch (HTTP 404) is left unstaged,
-   which the Make target reads as a brand-new CRD and skips.
+1. git history (preferred): a clone with `origin` shallow-fetches the ref and
+   reads `git show FETCH_HEAD:...`, no per-file network call.
+
+2. GitHub contents API (fallback): on an S3 snapshot there is no `origin`, so the
+   fetch fails; we pull the base manifests via `gh` into a temp dir and pass it as
+   CRD_BASELINE_DIR. A 404 means the path is new on the base and is skipped.
 """
 import glob
 import os
@@ -40,35 +39,44 @@ from praktika.utils import Utils
 CRD_GLOB = "config/crd/bases/*.yaml"
 
 
-def _try_fetch_git_base(base):
-    """Shallow-fetch the base branch so origin/<base> is resolvable locally.
+def _resolve_base_ref(info):
+    """Baseline ref: the PR merge-base SHA from Info().base_git_history() (entry 0,
+    newest first), falling back to the base branch name when unavailable (local
+    runs). Returns (ref, human_label)."""
+    history = info.base_git_history()
+    if history:
+        sha = history[0]
+        return sha, f"merge-base {sha[:12]}"
+    base = info.base_branch or "main"
+    return base, f"base branch {base}"
 
-    Returns True when the fetch succeeds (legacy clone with an `origin` remote),
-    False when it does not (snapshot checkout has no remote). Depth 1 is enough —
-    the check only reads the base tip's CRD blobs via `git show`.
-    """
-    cmd = [
-        "git", "fetch", "--no-tags", "--depth=1", "origin",
-        f"+refs/heads/{base}:refs/remotes/origin/{base}",
-    ]
+
+def _try_fetch_git_base(ref):
+    """Shallow-fetch `ref` so `git show FETCH_HEAD:<path>` resolves base CRDs.
+    Returns True on success (clone with `origin`), False otherwise (snapshot has
+    no remote)."""
+    cmd = ["git", "fetch", "--no-tags", "--depth=1", "origin", ref]
     print(f"+ {' '.join(cmd)}", flush=True)
     return subprocess.run(cmd).returncode == 0
 
 
-def _stage_baselines(repo, base, dest):
-    """Download each current CRD's base-branch version into `dest` via gh api.
+def _stage_baselines(repo, ref, dest):
+    """Download each CRD's version at `ref` into `dest` via gh api.
 
-    Returns (staged, skipped): a file absent on the base branch (404) is not
-    written, so the Makefile treats the corresponding current CRD as new and
-    skips it. Raises on any other gh failure.
-    """
+    `--method GET` is required: `gh api` switches to POST once any `-f` field is
+    present, and the contents endpoint 404s on POST — which we'd misread as "new
+    CRD" for every file and pass vacuously.
+
+    Returns (staged, skipped): a genuine 404 (file absent at `ref`) is left
+    unstaged so the Makefile treats it as new; raises on any other gh failure."""
     staged = skipped = 0
     for crd in sorted(glob.glob(CRD_GLOB)):
         cmd = [
             "gh", "api",
+            "--method", "GET",
             "-H", "Accept: application/vnd.github.raw",
             f"repos/{repo}/contents/{crd}",
-            "-f", f"ref={base}",
+            "-f", f"ref={ref}",
         ]
         print(f"+ {' '.join(cmd)}", flush=True)
         proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -78,7 +86,7 @@ def _stage_baselines(repo, base, dest):
             print(f"  staged baseline for {crd}", flush=True)
             staged += 1
         elif "404" in proc.stderr or "Not Found" in proc.stderr:
-            print(f"  {crd} absent on {base} — new CRD, will skip", flush=True)
+            print(f"  {crd} absent at {ref} — new CRD, will skip", flush=True)
             skipped += 1
         else:
             sys.stderr.write(proc.stderr)
@@ -99,12 +107,12 @@ def _run_make(make_args):
 def _check(info_lines):
     """Run the compatibility check. Returns (rc, output); appends to info_lines."""
     info = Info()
-    base = info.base_branch or "main"
-    info_lines.append(f"base branch: {base}")
+    ref, label = _resolve_base_ref(info)
+    info_lines.append(f"baseline ref: {label}")
 
-    if _try_fetch_git_base(base):
-        info_lines.append(f"baseline source: git history (origin/{base})")
-        return _run_make([f"CRD_BASE_REF=origin/{base}"])
+    if _try_fetch_git_base(ref):
+        info_lines.append("baseline source: git history (FETCH_HEAD)")
+        return _run_make(["CRD_BASE_REF=FETCH_HEAD"])
 
     info_lines.append(
         "baseline source: GitHub API (snapshot checkout, no local git base)"
@@ -113,7 +121,7 @@ def _check(info_lines):
     if not repo:
         raise RuntimeError("Could not resolve repository (Info().repo_name is empty)")
     with tempfile.TemporaryDirectory(prefix="crd-baseline-") as dest:
-        staged, skipped = _stage_baselines(repo, base, dest)
+        staged, skipped = _stage_baselines(repo, ref, dest)
         info_lines.append(f"baselines: {staged} staged, {skipped} new/absent (skipped)")
         return _run_make([f"CRD_BASELINE_DIR={dest}"])
 

@@ -1,17 +1,18 @@
 class RunnerLabels:
-    SMALL_ARM = "arm-small"
-    SMALL_AMD = "amd-small"
-    MEDIUM_ARM = "arm-medium"
-    MEDIUM_AMD = "amd-medium"
-    # arm-small plus a scoped bedrock:InvokeModel grant for the AI Code Review job.
-    SMALL_ARM_BEDROCK = "arm-small-bedrock"
+    # Labels are arch-Ncpu-Mg: N vCPUs, M GiB of memory.
+    ARM_2CPU_4G = "arm-2cpu-4g"
+    AMD_2CPU_4G = "amd-2cpu-4g"
+    ARM_8CPU_16G = "arm-8cpu-16g"
+    AMD_8CPU_16G = "amd-8cpu-16g"
+    # arm-2cpu-4g plus a scoped bedrock:InvokeModel grant for the AI Code Review job.
+    ARM_2CPU_4G_BEDROCK = "arm-2cpu-4g-bedrock"
 
 
 PROJECT_NAME = "clickhouse-operator"
 PROJECT_SLUG = "clickhouseoperator"
 MAIN_BRANCH = "main"
 
-CI_CONFIG_RUNS_ON = [RunnerLabels.SMALL_ARM]
+CI_CONFIG_RUNS_ON = [RunnerLabels.ARM_2CPU_4G]
 
 AWS_REGION = "eu-north-1"
 AWS_PROFILE = "Box"
