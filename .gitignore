@@ -39,3 +39,7 @@ go.work
 *.swp
 *.swo
 *~
+
+# ci runtime
+__pycache__/
+ci/tmp/
