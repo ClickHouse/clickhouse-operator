@@ -10,7 +10,6 @@ const (
 	RequeueOnRefreshTimeout       = time.Second
 	RequeueProbePoll              = 5 * time.Second
 	LoadReplicaStateTimeout       = 10 * time.Second
-	WarningsPollInterval          = 30 * time.Second
 	TLSFileMode             int32 = 0444
 	DefaultUser             int64 = 101
 )

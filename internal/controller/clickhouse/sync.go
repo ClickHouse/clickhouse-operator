@@ -594,7 +594,7 @@ func warningAction(id v1.ClickHouseReplicaID, msg string) string {
 
 func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	if r.commander == nil {
-		return chctrl.StepRequeue(chctrl.WarningsPollInterval), nil
+		return chctrl.StepContinue(), nil
 	}
 
 	ids := slices.Collect(maps.Keys(r.ReplicaState))
@@ -630,7 +630,7 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 		}
 	}
 
-	return chctrl.StepRequeue(chctrl.WarningsPollInterval), nil
+	return chctrl.StepContinue(), nil
 }
 
 func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
