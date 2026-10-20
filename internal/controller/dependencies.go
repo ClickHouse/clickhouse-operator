@@ -20,4 +20,7 @@ type Settings struct {
 	EnableNetworkPolicy     bool
 	ResyncPeriod            time.Duration
 	MaxConcurrentReconciles int
+	// OperatorOwnerID identifies this operator deployment in the clickhouse.com/operator-owner
+	// blue/green handoff protocol. Only the ClickHouse controller uses it.
+	OperatorOwnerID string
 }

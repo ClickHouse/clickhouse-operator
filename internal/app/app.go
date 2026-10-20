@@ -23,6 +23,7 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controller/keeper"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
+	"github.com/ClickHouse/clickhouse-operator/internal/version"
 	whchv1 "github.com/ClickHouse/clickhouse-operator/internal/webhook/v1alpha1"
 )
 
@@ -142,12 +143,18 @@ func New(components Components, settings Settings) (ctrl.Manager, error) {
 		upgradeChecker = upgrade.NewChecker(updater)
 	}
 
+	operatorOwnerID := settings.OperatorOwnerID
+	if operatorOwnerID == "" {
+		operatorOwnerID = version.Version
+	}
+
 	deps := chctrl.Dependencies{Logger: components.Logger, Checker: upgradeChecker, Dialer: components.Dialer}
 	controllerSettings := chctrl.Settings{
 		EnablePDB:               settings.EnablePDB,
 		EnableNetworkPolicy:     settings.EnableNetworkPolicy,
 		ResyncPeriod:            settings.ResyncPeriod,
 		MaxConcurrentReconciles: settings.MaxConcurrentReconciles,
+		OperatorOwnerID:         operatorOwnerID,
 	}
 
 	if err := keeper.SetupWithManager(mgr, deps, controllerSettings); err != nil {

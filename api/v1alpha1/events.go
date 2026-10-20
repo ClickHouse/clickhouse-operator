@@ -43,6 +43,12 @@ const (
 	EventReasonClickHouseWarning EventReason = "ClickHouseWarning"
 )
 
+// Event reasons for the operator blue/green ownership handoff.
+const (
+	EventReasonOperatorOwnerClaimed   EventReason = "OperatorOwnerClaimed"
+	EventReasonOperatorOwnerHandedOff EventReason = "OperatorOwnerHandedOff"
+)
+
 // EventAction represents the action associated with an event.
 type EventAction = string
 

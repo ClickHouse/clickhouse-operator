@@ -109,6 +109,9 @@ type clickhouseReconciler struct {
 	Cluster      *v1.ClickHouseCluster
 	ReplicaState map[v1.ClickHouseReplicaID]replicaState
 
+	// isOperatorOwner is set by reconcileOperatorOwnershipGate and gates reconcileService.
+	isOperatorOwner bool
+
 	// Populated by reconcileClusterRevisions when keeperClusterRef is set.
 	keeper v1.KeeperCluster
 	// Loaded and templated by reconcileClusterSecret. Requires version probe to complete.
@@ -165,6 +168,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	steps := []chctrl.ReconcileStep{
 		{Name: "VersionProbe", Fn: r.reconcileVersionProbe, Always: true},
+		{Name: "OperatorOwnershipGate", Fn: r.reconcileOperatorOwnershipGate, Always: true},
 		{Name: "Services", Fn: r.reconcileService, Always: true},
 		{Name: "ClusterSecret", Fn: r.reconcileClusterSecret, Always: true},
 		{Name: "ExternalSecret", Fn: r.reconcileExternalSecret, Always: true},
@@ -188,6 +192,10 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 			chctrl.ReconcileStep{Name: "PodDisruptionBudget", Fn: r.reconcilePodDisruptionBudget, Always: true},
 		)
 	}
+
+	steps = append(steps,
+		chctrl.ReconcileStep{Name: "OperatorOwnershipHandoff", Fn: r.reconcileOperatorOwnershipHandoff, Always: true},
+	)
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
@@ -229,6 +237,13 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 }
 
 func (r *clickhouseReconciler) reconcileService(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
+	if !r.isOperatorOwner {
+		log.Info("skipping Services: this operator is not the cluster's operator-owner",
+			"operatorOwnerID", r.OperatorOwnerID, "operatorOwner", r.Cluster.Labels[ctrlutil.LabelOperatorOwner])
+
+		return chctrl.StepContinue(), nil
+	}
+
 	services := []*corev1.Service{templateHeadlessService(r.Cluster)}
 	for id := range r.Cluster.ReplicaIDs() {
 		services = append(services, templateInternalService(r.Cluster, id))

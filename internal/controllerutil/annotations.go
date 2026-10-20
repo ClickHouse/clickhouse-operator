@@ -12,6 +12,11 @@ const (
 	AnnotationStatefulSetVersion = "clickhouse.com/statefulset-version"
 
 	AnnotationPauseReconciliation = "clickhouse.com/pause-reconciliation"
+
+	// AnnotationOperatorOwnerClaim records an in-flight operator-owner handoff claim as JSON,
+	// e.g. `{"owner": "1.16436.1", "claimedAt": "2023-07-20T04:45:21Z"}`. It is an annotation,
+	// not a label, so it can carry a JSON payload with a human-readable timestamp.
+	AnnotationOperatorOwnerClaim = "clickhouse.com/operator-owner-claim"
 )
 
 // PauseRequested reports whether reconciliation is paused by the pause annotation.

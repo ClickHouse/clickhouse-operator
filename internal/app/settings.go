@@ -23,6 +23,10 @@ type Settings struct {
 	MaxConcurrentReconciles    int           `env:"MAX_CONCURRENT_RECONCILES, default=4"`
 	VersionUpdateInterval      time.Duration `env:"VERSION_UPDATE_INTERVAL, default=24h"`
 	DisableVersionUpdateChecks bool          `env:"DISABLE_VERSION_UPDATE_CHECKS, default=false"`
+	// OperatorOwnerID identifies this operator deployment in the clickhouse.com/operator-owner
+	// blue/green handoff protocol. Defaults to the build version; override only to decouple
+	// ownership identity from the build version (e.g. two builds that should share ownership).
+	OperatorOwnerID string `env:"OPERATOR_OWNER_ID"`
 
 	// Manager process wiring, command-line flags only.
 	MetricsAddr          string

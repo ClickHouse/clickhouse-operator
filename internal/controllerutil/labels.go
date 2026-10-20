@@ -20,6 +20,11 @@ const (
 	LabelClickHouseShardID   = "clickhouse.com/shard-id"
 	LabelClickHouseReplicaID = "clickhouse.com/replica-id"
 	LabelDiskName            = "clickhouse.com/disk"
+
+	// LabelOperatorOwner names the operator instance that currently owns (reconciles) the CR.
+	LabelOperatorOwner = "clickhouse.com/operator-owner"
+	// LabelDesiredOperatorOwner names the operator instance the CR should be handed off to.
+	LabelDesiredOperatorOwner = "clickhouse.com/desired-operator-owner"
 )
 
 const (
