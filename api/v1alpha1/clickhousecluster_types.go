@@ -538,6 +538,11 @@ func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
 	}
 }
 
+// ReplicaObsolete reports whether the replica is outside the desired shard and replica counts and is due for removal.
+func (v *ClickHouseCluster) ReplicaObsolete(id ClickHouseReplicaID) bool {
+	return id.ShardID >= v.Shards() || id.Index >= v.Replicas()
+}
+
 // HeadlessServiceName returns name of the headless service for the ClickHouseCluster.
 func (v *ClickHouseCluster) HeadlessServiceName() string {
 	return v.SpecificResourceName("headless")
