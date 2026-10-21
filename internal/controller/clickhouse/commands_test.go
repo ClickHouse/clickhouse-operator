@@ -332,6 +332,59 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		}
 	})
 
+	It("takes the database list from the source replicas only", func(ctx context.Context) {
+		source := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+		stale := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
+
+		By("leaving a database on a replica that is not a source")
+
+		connStale, err := cmd.getConn(stale)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(connStale.Exec(ctx, "CREATE DATABASE orphan ENGINE=Replicated('/clickhouse/databases/orphan', '{shard}', '{replica}')")).To(Succeed())
+
+		DeferCleanup(func(ctx context.Context) {
+			Expect(connStale.Exec(ctx, "DROP DATABASE orphan SYNC")).To(Succeed())
+		})
+
+		all := slices.Collect(cmd.cluster.ReplicaIDs())
+		Expect(cmd.SyncDatabases(ctx, cmd.log, []v1.ClickHouseReplicaID{source}, all)).To(HaveLen(len(all)))
+
+		for _, id := range all {
+			dbs, err := cmd.Databases(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+
+			if id == stale {
+				Expect(dbs).To(HaveKey("orphan"), "a target keeps databases the sources do not have")
+			} else {
+				Expect(dbs).NotTo(HaveKey("orphan"), "a database only a non-source replica has must not be propagated")
+			}
+		}
+	})
+
+	It("reports no target synced while a source cannot be listed", func(ctx context.Context) {
+		source := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+		unlisted := v1.ClickHouseReplicaID{ShardID: 0, Index: testReplicas}
+		target := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
+
+		conn0, err := cmd.getConn(source)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(conn0.Exec(ctx, "CREATE DATABASE partial ENGINE=Replicated('/clickhouse/databases/partial', '{shard}', '{replica}')")).To(Succeed())
+
+		DeferCleanup(func(ctx context.Context) {
+			for _, id := range []v1.ClickHouseReplicaID{source, target} {
+				conn, err := cmd.getConn(id)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(conn.Exec(ctx, "DROP DATABASE IF EXISTS partial SYNC")).To(Succeed())
+			}
+		})
+
+		Expect(cmd.SyncDatabases(ctx, cmd.log, []v1.ClickHouseReplicaID{source, unlisted}, []v1.ClickHouseReplicaID{target})).To(BeEmpty())
+
+		dbs, err := cmd.Databases(ctx, target)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(dbs).To(HaveKey("partial"), "databases of the listed sources are still created")
+	})
+
 	It("recovers a replica whose Keeper metadata outlived its volume", func(ctx context.Context) {
 		id0 := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
 		victim := v1.ClickHouseReplicaID{ShardID: 0, Index: 1}
@@ -365,9 +418,10 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		By("letting database sync rebuild it, which has to drop the stale metadata first")
 
 		all := slices.Collect(cmd.cluster.ReplicaIDs())
-		Eventually(func() bool {
-			return cmd.SyncDatabases(ctx, cmd.log, all)
-		}, "3m", "5s").Should(BeTrue())
+		sources := slices.DeleteFunc(slices.Clone(all), func(id v1.ClickHouseReplicaID) bool { return id == victim })
+		Eventually(func() map[v1.ClickHouseReplicaID]bool {
+			return cmd.SyncDatabases(ctx, cmd.log, sources, all)
+		}, "3m", "5s").Should(HaveLen(len(all)))
 
 		dbs, err := cmd.Databases(ctx, victim)
 		Expect(err).NotTo(HaveOccurred())
