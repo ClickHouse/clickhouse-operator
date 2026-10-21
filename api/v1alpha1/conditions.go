@@ -110,5 +110,6 @@ const (
 const (
 	ReplicaInitializedCondition corev1.PodConditionType = "clickhouse.com/ReplicaInitialized"
 	ReplicaInitializedReason    ConditionReason         = "ReplicaInitialized"
+	ReplicaNotInitializedReason ConditionReason         = "ReplicaNotInitialized"
 	ReplicaDeletionReason       ConditionReason         = "ReplicaScheduledForDeletion"
 )

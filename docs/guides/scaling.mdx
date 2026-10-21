@@ -28,7 +28,8 @@ spec:
     name: my-keeper
 ```
 
-On scale up the operator creates the new per-replica StatefulSets, waits for each pod to become ready, and then synchronizes the schema to the new replicas (see [Automatic schema sync](#automatic-schema-sync)). On scale down it removes the surplus StatefulSets and cleans up the stale replicated-database replica registrations the removed replicas left behind.
+On scale up the operator creates the new per-replica StatefulSets, synchronizes the schema to the new replicas (see [Automatic schema sync](#automatic-schema-sync)), and only then lets each new pod become ready for client traffic.
+On scale down it removes the surplus StatefulSets and cleans up the stale replicated-database replica registrations the removed replicas left behind.
 
 ## Scaling shards {#scaling-shards}
 
@@ -40,16 +41,18 @@ spec:
   replicas: 2
 ```
 
-Each shard holds a distinct slice of the data, and the operator does not copy or move rows between shards. A `Distributed` table or an explicit routing scheme decides which shard a row lands on, so adding a shard gives new writes somewhere to land without touching the rows already stored in the existing shards.
+Each shard holds a distinct slice of the data, and the operator does not copy or move rows between shards.
+A `Distributed` table or an explicit routing scheme decides which shard a row lands on, so adding a shard gives new writes somewhere to land without touching the rows already stored in the existing shards.
 
 ## Automatic schema sync {#automatic-schema-sync}
 
 When `spec.settings.enableDatabaseSync` is `true` (the default), the operator keeps the schema aligned as the topology changes:
 
-- **On scale up** — once at least two replicas are ready, the operator replicates the database definitions to the newly created replicas, so a fresh replica joins with the same `Replicated` and integration databases as the rest of the cluster.
-- **On scale down** — before a replica disappears, the operator drops that replica's registration from each `Replicated` database with `SYSTEM DROP DATABASE REPLICA`, so the shrunk cluster does not wait on a `Replicated` database replica that no longer exists.
+- **On scale up** — the operator replicates the database definitions of the replicas already serving client traffic to the newly created replicas, so a fresh replica joins with the same `Replicated` and integration databases as the rest of the cluster. Before any replica serves traffic, for example on cluster creation, the definitions of all reachable replicas are merged. Replicas that already serve traffic are never changed, so create databases with `ON CLUSTER` to have them on every replica.
+While replicas that served traffic exist but none of them is reachable, new replicas wait.
+- **On scale down** — once a replica is gone, the operator drops its registration from each `Replicated` database with `SYSTEM DROP DATABASE REPLICA`, so the shrunk cluster does not wait on a `Replicated` database replica that no longer exists.
 
-This covers `Replicated` databases and integration database engines. It does not move table data — row data lives in `ReplicatedMergeTree` tables and replicates through Keeper independently of this schema sync. With a single ready replica there is nothing to replicate to, so the operator skips the step and logs that it has no target.
+This covers `Replicated` databases and integration database engines. It does not move table data — row data lives in `ReplicatedMergeTree` tables and replicates through Keeper independently of this schema sync. With a single replica there is nothing to replicate.
 
 Set `enableDatabaseSync: false` to turn the behavior off, for example when an external tool owns schema propagation. The operator then reports the `SchemaSyncDisabled` reason on the `SchemaInSync` condition.
 

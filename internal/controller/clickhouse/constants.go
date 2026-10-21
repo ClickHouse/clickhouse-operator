@@ -85,6 +85,9 @@ const (
 	databaseOpsTimeout  = time.Minute
 	databaseSyncTimeout = 10 * time.Minute
 	shardSyncTimeout    = 10 * time.Minute
+
+	// terminationGracePeriod covers the query drain, the merge_tree unique parts wait from base.yaml.tmpl and the table shutdown.
+	terminationGracePeriod = 90 * time.Second
 )
 
 type secretSpec struct {

@@ -16,6 +16,10 @@ user_defined_zookeeper_path: {{ .UDFZookeeperPath }}
 openSSL:
 {{ yaml .OpenSSL | indent 2 }}
 
+{{- /* Lets peers fetch the parts only a stopping replica has, must fit in the pod terminationGracePeriod */}}
+merge_tree:
+  wait_for_unique_parts_send_before_shutdown_ms: 60000
+
 {{- /* Special settings, required for default config */}}
 display_secrets_in_show_and_select: true
 custom_settings_prefixes: custom_
