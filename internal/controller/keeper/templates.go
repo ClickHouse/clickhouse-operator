@@ -26,13 +26,13 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	ports := []corev1.ServicePort{
 		{
 			Protocol:   corev1.ProtocolTCP,
-			Name:       "raft-ipc",
+			Name:       portNameRaft,
 			Port:       PortInterserver,
 			TargetPort: intstr.FromInt32(PortInterserver),
 		},
 		{
 			Protocol:   corev1.ProtocolTCP,
-			Name:       "prometheus",
+			Name:       portNamePrometheus,
 			Port:       PortPrometheusScrape,
 			TargetPort: intstr.FromInt32(PortPrometheusScrape),
 		},
@@ -41,7 +41,7 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:   corev1.ProtocolTCP,
-			Name:       "keeper",
+			Name:       portNameClient,
 			Port:       PortNative,
 			TargetPort: intstr.FromInt32(PortNative),
 		})
@@ -50,7 +50,7 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	if cr.Spec.Settings.TLS.Enabled {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:   corev1.ProtocolTCP,
-			Name:       "keeper-secure",
+			Name:       portNameClientSecure,
 			Port:       PortNativeSecure,
 			TargetPort: intstr.FromInt32(PortNativeSecure),
 		})
@@ -505,17 +505,17 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 		Ports: []corev1.ContainerPort{
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "raft-ipc",
+				Name:          portNameRaft,
 				ContainerPort: PortInterserver,
 			},
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "prometheus",
+				Name:          portNamePrometheus,
 				ContainerPort: PortPrometheusScrape,
 			},
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "http-control",
+				Name:          portNameHTTPControl,
 				ContainerPort: PortHTTPControl,
 			},
 		},
@@ -537,7 +537,7 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper",
+			Name:          portNameClient,
 			ContainerPort: PortNative,
 		})
 	}
@@ -545,7 +545,7 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 	if cr.Spec.Settings.TLS.Enabled {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper-secure",
+			Name:          portNameClientSecure,
 			ContainerPort: PortNativeSecure,
 		})
 	}
