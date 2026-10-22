@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -12,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/randfill"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
@@ -121,6 +123,83 @@ var _ = Describe("RaftLogsLevel", func() {
 		Expect(data[ConfigFileName]).To(ContainSubstring("raft_logs_level: warning"))
 	})
 })
+
+var _ = Describe("Keeper port names", func() {
+	servicePorts := func(cr *v1.KeeperCluster) map[string]int32 {
+		service := templateHeadlessService(cr)
+		ports := make(map[string]int32, len(service.Spec.Ports))
+
+		for _, port := range service.Spec.Ports {
+			ports[port.Name] = port.Port
+			expectIstioPortName(port.Name)
+		}
+
+		return ports
+	}
+
+	It("should prefix plaintext client, raft, and metrics ports", func() {
+		cr := &v1.KeeperCluster{Name: "test", Namespace: "default"}
+
+		Expect(servicePorts(cr)).To(Equal(map[string]int32{
+			portNameRaft:       PortInterserver,
+			portNamePrometheus: PortPrometheusScrape,
+			portNameClient:     PortNative,
+		}))
+	})
+
+	It("should expose the secure client port alongside plaintext when TLS is optional", func() {
+		cr := &v1.KeeperCluster{Name: "test", Namespace: "default"}
+		cr.Spec.Settings.TLS.Enabled = true
+
+		Expect(servicePorts(cr)).To(Equal(map[string]int32{
+			portNameRaft:         PortInterserver,
+			portNamePrometheus:   PortPrometheusScrape,
+			portNameClient:       PortNative,
+			portNameClientSecure: PortNativeSecure,
+		}))
+	})
+
+	It("should omit the plaintext client port when TLS is required", func() {
+		cr := &v1.KeeperCluster{Name: "test", Namespace: "default"}
+		cr.Spec.Settings.TLS.Enabled = true
+		cr.Spec.Settings.TLS.Required = true
+
+		Expect(servicePorts(cr)).To(Equal(map[string]int32{
+			portNameRaft:         PortInterserver,
+			portNamePrometheus:   PortPrometheusScrape,
+			portNameClientSecure: PortNativeSecure,
+		}))
+	})
+
+	It("should use the same names on the container, plus http-control", func() {
+		cr := &v1.KeeperCluster{Name: "test", Namespace: "default"}
+		cr.Spec.Settings.TLS.Enabled = true
+
+		container, err := templateContainer(cr)
+		Expect(err).NotTo(HaveOccurred())
+
+		ports := make(map[string]int32, len(container.Ports))
+		for _, port := range container.Ports {
+			ports[port.Name] = port.ContainerPort
+			expectIstioPortName(port.Name)
+		}
+
+		Expect(ports).To(Equal(map[string]int32{
+			portNameRaft:         PortInterserver,
+			portNamePrometheus:   PortPrometheusScrape,
+			portNameHTTPControl:  PortHTTPControl,
+			portNameClient:       PortNative,
+			portNameClientSecure: PortNativeSecure,
+		}))
+	})
+})
+
+func expectIstioPortName(name string) {
+	Expect(validation.IsValidPortName(name)).To(BeEmpty())
+
+	protocol, _, _ := strings.Cut(name, "-")
+	Expect(protocol).To(BeElementOf("tcp", "http"))
+}
 
 var _ = Describe("templatePodDisruptionBudget", func() {
 	var cr *v1.KeeperCluster
