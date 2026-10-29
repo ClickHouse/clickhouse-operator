@@ -153,7 +153,7 @@ fuzz: fuzz-keeper fuzz-clickhouse ## Run all fuzz tests
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
-test-e2e: ## Run all e2e tests. Honors E2E_SHARD_INDEX / E2E_SHARD_TOTAL for CI sharding.
+test-e2e: ## Run all e2e tests. Honors E2E_SHARD (index/total) for CI sharding.
 	go test ./test/e2e/ -race -test.timeout 30m -v --ginkgo.v --ginkgo.junit-report=report/junit-report.xml --ginkgo.json-report=report/ginkgo-report.json
 
 .PHONY: test-keeper-e2e  # Run the e2e tests against a Kind k8s instance that is spun up.
@@ -185,18 +185,18 @@ test-compat-e2e-upgrade: ## Run operator upgrade e2e test: deploy on the latest 
 	go test ./test/deploy/ -test.timeout 30m -v --ginkgo.v --ginkgo.label-filter=upgrade --ginkgo.junit-report=report/junit-report.xml
 
 .PHONY: lint
-lint: golangci-lint codespell actionlint ## Run golangci-lint linter, codespell, and actionlint
+lint: golangci-lint codespell actionlint shellcheck ## Run golangci-lint linter, codespell, and actionlint
 	$(GOLANGCI_LINT) run
 	$(CODESPELL) --config ci/.codespellrc
-	$(ACTIONLINT) -config-file ci/actionlint.yaml
+	$(ACTIONLINT) -config-file ci/actionlint.yaml -shellcheck $(SHELLCHECK)
 
 .PHONY: golangci-fmt
 golangci-fmt: golangci-lint ## Run golangci-lint fmt
 	$(GOLANGCI_LINT) fmt
 
 .PHONY: lint-actions
-lint-actions: actionlint ## Lint GitHub Actions workflow files
-	$(ACTIONLINT) -config-file ci/actionlint.yaml -shellcheck "$(shell which shellcheck)"
+lint-actions: actionlint shellcheck ## Lint GitHub Actions workflow files
+	$(ACTIONLINT) -config-file ci/actionlint.yaml -shellcheck $(SHELLCHECK)
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
@@ -390,6 +390,7 @@ CODESPELL ?= $(LOCALBIN)/codespell
 CRD_SCHEMA_CHECKER ?= $(LOCALBIN)/crd-schema-checker
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 ACTIONLINT ?= $(LOCALBIN)/actionlint
+SHELLCHECK ?= $(LOCALBIN)/shellcheck
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -402,6 +403,7 @@ CODESPELL_VERSION ?= 2.4.3
 CRD_SCHEMA_CHECKER_VERSION ?= latest
 CRD_REF_DOCS_VERSION ?= v0.3.0
 ACTIONLINT_VERSION ?= v1.7.12
+SHELLCHECK_VERSION ?= v0.11.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -462,6 +464,20 @@ $(CRD_SCHEMA_CHECKER): $(LOCALBIN)
 actionlint: $(ACTIONLINT) ## Download actionlint locally if necessary.
 $(ACTIONLINT): $(LOCALBIN)
 	$(call go-install-tool,$(ACTIONLINT),github.com/rhysd/actionlint/cmd/actionlint,$(ACTIONLINT_VERSION))
+
+.PHONY: shellcheck
+shellcheck: $(SHELLCHECK) ## Download shellcheck locally if necessary.
+$(SHELLCHECK): $(LOCALBIN)
+	@test -f $(SHELLCHECK)-$(SHELLCHECK_VERSION) || { \
+		set -e ;\
+		echo "Downloading shellcheck $(SHELLCHECK_VERSION)" ;\
+		ARCH=$$(go env GOARCH | sed -e 's/amd64/x86_64/' -e 's/arm64/aarch64/') ;\
+		curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/$(SHELLCHECK_VERSION)/shellcheck-$(SHELLCHECK_VERSION).$(shell go env GOOS).$${ARCH}.tar.gz" \
+			| tar -xzO shellcheck-$(SHELLCHECK_VERSION)/shellcheck > $(SHELLCHECK)-$(SHELLCHECK_VERSION).tmp ;\
+		chmod +x $(SHELLCHECK)-$(SHELLCHECK_VERSION).tmp ;\
+		mv $(SHELLCHECK)-$(SHELLCHECK_VERSION).tmp $(SHELLCHECK)-$(SHELLCHECK_VERSION) ;\
+	}
+	@ln -sf $(SHELLCHECK)-$(SHELLCHECK_VERSION) $(SHELLCHECK)
 
 CRD_BASE_REF ?= origin/main
 # Optional pre-staged baseline directory. When set, each baseline is read from

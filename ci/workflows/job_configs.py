@@ -24,9 +24,9 @@ from ci.settings.settings import RunnerLabels
 
 def _clickhouse_versions():
     """Latest + supported ClickHouse versions from the repo's single source of
-    truth (test/supported/versions.json), mirroring ci.yaml's jq: keep the
-    highest patch per major.minor, sorted descending. Returns (latest, supported)
-    where `supported` is a comma-joined list (latest first)."""
+    truth (test/supported/versions.json): keep the highest patch per
+    major.minor, sorted descending. Returns (latest, supported) where
+    `supported` is a comma-joined list (latest first)."""
     path = Path(__file__).resolve().parents[2] / "test" / "supported" / "versions.json"
     data = json.loads(path.read_text())
     best = {}  # (major, minor) -> (numeric-parts tuple, version string)
@@ -44,8 +44,8 @@ _CH_LATEST, _CH_SUPPORTED = _clickhouse_versions()
 # Consumer pre-hook: extract the go-env bundle delivered as a required artifact
 # (falls back to self-provisioning from S3/build). The bundle holds the Go SDK +
 # helm/kubebuilder/controller-gen/kustomize/golangci-lint/actionlint/
-# crd-schema-checker/crd-ref-docs + warm Go/pip caches + envtest assets, so no Go
-# tooling is baked into the AMI. See ci/jobs/go_env.py.
+# crd-schema-checker/crd-ref-docs + warm Go module/build caches + envtest assets,
+# so no Go tooling is baked into the AMI. See ci/jobs/go_env.py.
 _GO_ENV_INSTALL = "python3 ci/jobs/go_env.py install"
 
 # Per-arch go-env bundle, built once per run by the Prepare Go Env jobs and
@@ -58,13 +58,7 @@ GO_ENV_AMD_ARTIFACT = Artifact.Config(
 )
 
 
-# ci.yaml :: compat-e2e-test matrix (5 variants). Each entry maps to the three
-# env vars ci/jobs/compat_e2e.py consumes; the first field is the GitHub matrix
-# `name`, kept as the praktika job-name suffix via Job.ParamSet(parameter=...).
-# fetch_tags mirrors ci.yaml's checkout `fetch-tags: true` — only the upgrade
-# variant needs release tags (it deploys the latest release, then upgrades).
-# ClickHouse versions come from test/supported/versions.json (single source of
-# truth, auto-updated) — see _clickhouse_versions(), matching ci.yaml #355.
+# Only the upgrade variant needs release tags: it deploys the latest release first.
 _COMPAT_E2E_MATRIX = [
     # (name, k8s node image, clickhouse version(s), make target, fetch_tags)
     ("minimal-k8s-all-deploy-methods", "v1.28.15", _CH_LATEST, "test-compat-e2e", False),
@@ -92,12 +86,8 @@ def _compat_e2e_command(k8s_image, clickhouse_version, deploy_target, fetch_tags
     return cmd + "python3 ci/jobs/compat_e2e.py"
 
 
-# ci.yaml :: e2e-test — number of shards. Each shard runs the full e2e suite
-# filtered to its slice; sharding is round-robin by spec-name hash in the Go
-# harness, so no e2e-shard-plan job / cross-run timings artifact is needed
-# (ci.yaml's plan-based mode still exists for GitHub Actions — see sharding.go).
+# Each shard runs the full suite filtered by spec-name hash (test/testutil/sharding.go).
 _E2E_SHARD_TOTAL = 4
-# e2e Kind node image, matching ci.yaml's pin.
 _E2E_K8S_IMAGE = "v1.34.3"
 
 
@@ -139,8 +129,8 @@ class JobConfigs:
         timeout=30 * 60,
         digest_config=_GO_ENV_DIGEST,
     )
-    # dependabot-regenerate.yaml, migrated. Re-derives the generated artifacts
-    # after a Dependabot go.mod/go.sum bump and pushes them onto the PR branch.
+    # Re-derives the generated artifacts after a Dependabot go.mod/go.sum bump
+    # and pushes them onto the PR branch.
     # Applicability (actor is dependabot[bot], same-repo, go.mod/go.sum touched)
     # is enforced by the workflow filter hook (ci/jobs/filter_job_hook.py), so
     # this job is listed in every PR run but only executes for a bot bump.
@@ -165,12 +155,10 @@ class JobConfigs:
         ),
     )
 
-    # --- Documentation lint (migrated from .github/workflows/docs-lint.yaml) ---
-    # The lint toolchain (Vale, Node + linkspector, Go, pre-warmed crd-ref-docs)
-    # is baked into the runner image by ci/infrastructure/projects.py
-    # (_doc_lint_tools_component), so these jobs just run the Makefile targets.
+    # --- Documentation lint ---
+    # Vale and Node + linkspector are baked into the runner image by
+    # ci/infrastructure/projects.py (_doc_lint_tools_component).
 
-    # docs-lint.yaml :: vale (vale-linter)
     vale_linter = Job.Config(
         name="Vale Linter",
         runs_on=[RunnerLabels.ARM_2CPU_4G],
@@ -181,7 +169,6 @@ class JobConfigs:
         ),
     )
 
-    # docs-lint.yaml :: doc-links (Doc links)
     doc_links = Job.Config(
         name="Doc Links",
         runs_on=[RunnerLabels.ARM_2CPU_4G],
@@ -192,7 +179,6 @@ class JobConfigs:
         ),
     )
 
-    # docs-lint.yaml :: api-reference-generated (API Reference Generated)
     # Needs Go + crd-ref-docs, provisioned by the go-env pre-hook.
     api_reference_generated = Job.Config(
         name="API Reference Generated",
@@ -212,9 +198,8 @@ class JobConfigs:
         ),
     )
 
-    # --- Operator CI (migrated job-by-job from .github/workflows/ci.yaml) ---
-    # Go source paths that gate the Go jobs below — the praktika equivalent of
-    # ci.yaml's `changes` non-docs paths-filter. Shared (read-only) across jobs.
+    # --- Operator CI ---
+    # Go source paths that gate the Go jobs below. Shared (read-only) across jobs.
     _GO_CODE_DIGEST = Job.CacheDigestConfig(
         include_paths=[
             "./api",
@@ -230,13 +215,23 @@ class JobConfigs:
             "./.golangci.yml",
         ],
     )
+    # codespell/actionlint scan beyond Go; ci/ is globbed to keep __pycache__ and ci/tmp out.
+    _LINT_DIGEST = Job.CacheDigestConfig(
+        include_paths=_GO_CODE_DIGEST.include_paths
+        + [
+            "./.github",
+            "./dist",
+            "./ci/*",
+            "./ci/.codespellrc",
+            "./ci/*/*.py",
+            "./ci/*/*.md",
+            "./*Dockerfile",
+            "./Tiltfile",
+            "./PROJECT",
+        ],
+    )
 
-    # ci.yaml :: build_and_test. Go is baked into the runner image; controller-gen
-    # and setup-envtest self-install via `go-install-tool`, and envtest downloads
-    # the kubebuilder assets (K8s 1.36.2) — all in-process, no Docker/cluster.
-    # Runs on a medium runner because `go test -race` across the suite is heavier
-    # than the small pool's 4 GB. The dorny/test-reporter step is dropped; the
-    # job's exit code drives pass/fail (enable_exit_code_result).
+    # `go test -race` across the suite needs more than the 4 GB pool.
     build_and_test = Job.Config(
         name="Build and Unit Tests",
         runs_on=[RunnerLabels.ARM_8CPU_16G],
@@ -246,6 +241,8 @@ class JobConfigs:
             # `setup-envtest use` is an offline hit; absent (e.g. local) it just
             # downloads as usual. Works both ways.
             "if [ -d /opt/ci-go/envtest/k8s ]; then mkdir -p bin && cp -rn /opt/ci-go/envtest/k8s bin/; fi && "
+            # The module cache is restored from the go-env bundle, so re-verify it against go.sum.
+            "go mod download && go mod verify && "
             "go build -v cmd/main.go && make test-ci"
         ),
         timeout=25 * 60,
@@ -254,7 +251,7 @@ class JobConfigs:
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # ci.yaml :: fuzz_specs. Go-only (two 60s fuzz runs).
+    # Go-only (two 60s fuzz runs).
     fuzz_specs = Job.Config(
         name="Fuzz Specs",
         runs_on=[RunnerLabels.ARM_2CPU_4G],
@@ -265,12 +262,7 @@ class JobConfigs:
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # ci.yaml :: lint. golangci-lint/codespell/actionlint are installed by the
-    # Makefile into ./bin using the warm Go/pip caches from the go-env pre-hook.
-    # The driver (ci/jobs/lint.py) runs the regeneration gates + the three linters
-    # as separate sub-results (golangci-lint issues become a per-issue table).
-    # Runs on a medium runner because golangci-lint over the whole module is
-    # memory-hungry.
+    # golangci-lint over the whole module is memory-hungry.
     lint = Job.Config(
         name="Lint",
         runs_on=[RunnerLabels.ARM_8CPU_16G],
@@ -278,12 +270,11 @@ class JobConfigs:
         timeout=15 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_ARM_ARTIFACT.name],
-        digest_config=_GO_CODE_DIGEST,
+        digest_config=_LINT_DIGEST,
     )
 
-    # ci.yaml :: helm-test. helm + kubebuilder come from the go-env pre-hook (on
-    # PATH); KUBEBUILDER points the Makefile at the provisioned binary instead of
-    # re-downloading it.
+    # helm + kubebuilder come from the go-env pre-hook (on PATH); KUBEBUILDER
+    # points the Makefile at the provisioned binary instead of re-downloading it.
     helm_test = Job.Config(
         name="Helm Test",
         runs_on=[RunnerLabels.ARM_2CPU_4G],
@@ -304,6 +295,7 @@ class JobConfigs:
                 "./dist/chart",
                 "./dist/chart-cluster",
                 "./tools/gen-cluster-chart",
+                "./PROJECT",
                 "./go.mod",
                 "./go.sum",
                 "./Makefile",
@@ -311,18 +303,12 @@ class JobConfigs:
         ),
     )
 
-    # ci.yaml :: check-crd-compat. PR-only, advisory (allow_failure). The
-    # crd-breaking-change label gate is a workflow filter hook
-    # (ci/jobs/filter_job_hook.py); the helper fetches the base branch (praktika
-    # checks out an ephemeral merge commit with no base history) and runs the
-    # check. crd-schema-checker self-installs via go-install-tool (cache
-    # pre-warmed).
+    # PR-only; the crd-breaking-change label skips it (ci/jobs/filter_job_hook.py).
     check_crd_compat = Job.Config(
         name="Check CRD Compatibility",
         runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
-        allow_failure=True,
         # On ENABLE_S3_REPO_SNAPSHOT runs there is no `origin`, so the checker
         # falls back to `gh api` for the base manifests — which needs auth, else
         # it exits 4 and the job ERRORs instead of actually checking CRDs.
@@ -341,20 +327,7 @@ class JobConfigs:
         ),
     )
 
-    # ci.yaml :: compat-e2e-test (SPIKE — one matrix variant of five).
-    # Proof-of-concept for the Docker+Kind path on praktika: the single
-    # `maximal-k8s-all-deploy-methods` variant (newest Kind node image, one
-    # ci.yaml :: compat-e2e-test — the full 5-variant matrix, fanned out with
-    # Job.parametrize (see _COMPAT_E2E_MATRIX / _compat_e2e_command above). Each
-    # variant is one Job.Config differing only in the K8S_IMAGE/CLICKHOUSE_VERSION/
-    # DEPLOY_TARGET it passes to ci/jobs/compat_e2e.py. Runs on amd-8cpu-16g
-    # (c7a.4xlarge) to match the existing self-hosted e2e placement and to pull
-    # amd64 ClickHouse images, as the GitHub job does. Needs a working Docker
-    # daemon on the runner; compat_e2e.py installs Kind + kubectl, creates the
-    # cluster, pre-pulls images, runs the suite, and renders per-spec results.
-    # Go/helm come from the go-env artifact (amd). The base `command` is a
-    # placeholder — parametrize overrides it per variant. This attribute is a LIST
-    # of Job.Config; spread it into a workflow's jobs with `*JobConfigs...`.
+    # A LIST (one Job.Config per matrix variant); spread it into workflows with `*`.
     compat_e2e_test = Job.Config(
         name="Compat E2E",
         runs_on=[RunnerLabels.AMD_8CPU_16G],
@@ -375,8 +348,13 @@ class JobConfigs:
                 "./config",
                 "./test",
                 "./tools",
+                "./dist",
+                "./dev.Dockerfile",
+                "./.dockerignore",
+                "./PROJECT",
                 "./ci/kind-cluster.config",
                 "./ci/jobs/compat_e2e.py",
+                "./ci/jobs/kind_env.py",
                 "./ci/jobs/junit_result.py",
                 "./go.mod",
                 "./go.sum",
@@ -393,14 +371,7 @@ class JobConfigs:
         ]
     )
 
-    # ci.yaml :: e2e-test — the full e2e suite, split into _E2E_SHARD_TOTAL shards
-    # fanned out with Job.parametrize. Each shard passes E2E_SHARD="n/total" to
-    # ci/jobs/e2e.py; the Go harness assigns specs round-robin by hash, so there
-    # is no e2e-shard-plan job. Same Docker+Kind runner (amd-8cpu-16g) and go-env
-    # (amd) as compat-e2e; e2e.py creates the cluster, runs `make test-e2e`,
-    # collects kind/kubectl diagnostics on failure, and renders per-spec results.
-    # Base `command` is a placeholder — parametrize overrides it per shard. This
-    # attribute is a LIST of Job.Config; spread it with `*JobConfigs...`.
+    # A LIST (one Job.Config per shard); spread it into workflows with `*`.
     e2e_test = Job.Config(
         name="E2E Tests",
         runs_on=[RunnerLabels.AMD_8CPU_16G],
@@ -434,10 +405,10 @@ class JobConfigs:
         ]
     )
 
-    # ci.yaml :: bundle. Builds the OLM bundle image and runs operator-sdk
-    # scorecard against a throwaway Kind cluster — ci/jobs/bundle.py. Same
-    # Docker+Kind runner (amd-8cpu-16g) and go-env (amd) as compat/e2e; the bundle
-    # image is manifest-only (arch-independent). operator-sdk self-installs via the
+    # Builds the OLM bundle image and runs operator-sdk scorecard against a
+    # throwaway Kind cluster — ci/jobs/bundle.py. Same Docker+Kind runner
+    # (amd-8cpu-16g) and go-env (amd) as compat/e2e; the bundle image is
+    # manifest-only (arch-independent). operator-sdk self-installs via the
     # Makefile targets. Verdict is the scorecard exit code.
     bundle = Job.Config(
         name="Bundle",
@@ -453,6 +424,7 @@ class JobConfigs:
                 "./internal",
                 "./config",
                 "./bundle.Dockerfile",
+                "./PROJECT",
                 "./ci/jobs/bundle.py",
                 "./ci/jobs/kind_env.py",
                 "./go.mod",

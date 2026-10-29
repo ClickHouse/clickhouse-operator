@@ -31,8 +31,8 @@ _PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-0.
 
 # Rarely-changing tooling baked into the runner image for the documentation-lint
 # jobs (vale_linter, doc_links). Fast-moving Go tooling (Go, helm, kubebuilder,
-# controller-gen, ...) is NOT baked — it is installed per job and cached on S3 by
-# the go-env pre-hook (ci/jobs/go_env.py), so version bumps need no AMI rebuild.
+# controller-gen, ...) is NOT baked — it comes from the S3-cached go-env bundle
+# (ci/jobs/go_env.py), so version bumps need no AMI rebuild.
 # This component runs on both the arm64 and x86_64 builders, so every download is
 # arch-aware.
 _NODE_MAJOR = "20"
@@ -68,7 +68,7 @@ def _doc_lint_tools_component():
 
 def _docker_kind_component():
     """Build-phase component that disables Docker's containerd image store so
-    `kind load docker-image` works on the Docker+Kind jobs (compat-e2e, e2e).
+    `kind load docker-image` works on the Docker+Kind jobs (bundle, compat-e2e, e2e).
 
     praktika's base setup installs docker-ce and writes /etc/docker/daemon.json;
     this component runs afterwards (custom components are appended last) and merges
@@ -145,7 +145,7 @@ def _image_builders():
         ),
     ]
     # The Ubuntu 24.04 parent AMI ships an 8 GB gp3 root volume on /dev/sda1;
-    # double it to 16 GB so the baked Go/pip caches + Docker layers have room.
+    # double it to 16 GB so the baked tooling + Docker layers have room.
     block_device_mappings = [
         {
             "deviceName": "/dev/sda1",

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
-ci.yaml :: check-crd-compat, migrated to praktika.
-
 The crd-breaking-change label gate lives in the workflow filter hook
 (ci/jobs/filter_job_hook.py), not here.
 
-What the job does: it obtains each CRD's baseline (the manifest as it currently
-exists on the base branch) and runs `make check-crd-compat`, which compares each
+What the job does: it obtains each CRD's baseline (the manifest at the baseline
+ref below) and runs `make check-crd-compat`, which compares each
 baseline against the PR's current CRD with crd-schema-checker and fails on
 backward-incompatible schema changes. The verdict is returned as a praktika
 Result (OK / FAIL / ERROR) carrying the baseline ref/source, staged counts, and

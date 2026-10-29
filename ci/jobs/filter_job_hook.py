@@ -17,18 +17,16 @@ def should_skip_job(job_name):
     if _info is None:
         _info = Info()
 
-    # ci.yaml :: check-crd-compat only ran when the PR was NOT labeled as an
-    # intentional CRD-breaking change. Reproduce that gate here.
+    # The label marks an intentional CRD-breaking change.
     if (
         job_name == "Check CRD Compatibility"
         and "crd-breaking-change" in _info.pr_labels
     ):
         return True, "PR labeled 'crd-breaking-change'"
 
-    # dependabot-regenerate.yaml's `if:` guard, moved here so the job is listed
-    # in every PR run but only *runs* for a Dependabot dependency bump. It pushes
-    # to the PR head branch, so it is restricted to same-repo PRs (a fork head is
-    # not ours to push to) — exactly the original `head.repo == repository` check.
+    # Listed in every PR run but only runs for a Dependabot dependency bump. It
+    # pushes to the PR head branch, so it is restricted to same-repo PRs (a fork
+    # head is not ours to push to).
     if job_name == "Dependabot Regenerate":
         actor = _info.user_name or ""
         if actor != "dependabot[bot]":

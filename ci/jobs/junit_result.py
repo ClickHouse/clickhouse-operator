@@ -6,7 +6,7 @@ from_pytest_run) but no JUnit one. Our Go suites run under Ginkgo, which emits
 JUnit XML via `--ginkgo.junit-report`. This builds a praktika Result whose
 sub-results are the individual test cases, so the report page renders a per-spec
 table (failures first) instead of a single pass/fail synthesized from the job
-exit code — the replacement for the dropped dorny/test-reporter step.
+exit code.
 
 Reusable across every JUnit-producing job (compat-e2e, e2e, unit tests).
 

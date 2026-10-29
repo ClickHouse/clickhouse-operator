@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Pre-hook that provisions the Go toolchain + CI tools for the Operator CI jobs,
-backed by an S3 cache so version bumps need no AMI rebuild.
+Provisions the Go toolchain + CI tools for the Operator CI jobs, backed by an S3
+cache so version bumps need no AMI rebuild. The Prepare Go Env jobs build the
+bundle (`prepare`); consumer jobs extract it in their pre-hook (`install`).
 
-What it provisions (into default, env-free locations so the job command needs no
-extra env): the Go SDK (/usr/local/go), helm + kubebuilder + the go-installed
-CLIs (controller-gen, kustomize, setup-envtest, golangci-lint, actionlint,
-crd-schema-checker, crd-ref-docs) on PATH, a warm Go module + build cache
-(/root/go, /root/.cache/go-build), the codespell pip wheel cache, and the
-envtest K8s assets.
+What it provisions (so the job command needs no extra env): the Go SDK
+(/usr/local/go), helm + kubebuilder + the go-installed CLIs (controller-gen,
+kustomize, setup-envtest, golangci-lint, actionlint, crd-schema-checker,
+crd-ref-docs) on PATH, a warm Go module + build cache under /opt/ci-go (wired in
+via `go env -w`), and the envtest K8s assets.
 
 Versions are parsed from go.mod / Makefile at runtime (helm is pinned here), so
 the cache key tracks the repo's own pins — bump a version in the Makefile and the
@@ -144,7 +144,7 @@ def _install(arch, versions):
     _sh("go mod download")
     # envtest K8s assets
     _sh(f"mkdir -p {ENVTEST_ASSETS_DIR} && setup-envtest use {versions['envtest_k8s']} --bin-dir {ENVTEST_ASSETS_DIR} -p path")
-    # codespell wheel into the pip cache (Makefile reinstalls it with --target)
+    # Not part of the bundle: only warms pip for a self-provisioning `setup` run.
     _sh(f"python3 -m pip install --break-system-packages codespell=={versions['codespell']}")
 
 
@@ -173,9 +173,8 @@ def _key_and_cache():
 
 
 def ensure():
-    """Workflow pre-hook: populate the S3 bundle once (in the Config job) if it is
-    missing, so the per-job pre-hooks only download instead of each rebuilding on a
-    cache miss. Best-effort — on any failure the jobs still self-provision."""
+    """Populate the S3 bundle once if it is missing. Best-effort — on any failure
+    the jobs still self-provision."""
     arch, versions, key, cache = _key_and_cache()
     if not cache:
         print("No S3 cache; jobs will self-provision")
@@ -193,8 +192,8 @@ def ensure():
 
 
 def setup():
-    """Per-job pre-hook: restore the bundle; on a miss (e.g. the ensure step did
-    not run or a different arch) build it and save it so the run self-heals."""
+    """Self-provisioning fallback for `install`: restore the bundle from S3; on a
+    miss build it and save it so the run self-heals."""
     arch, versions, key, cache = _key_and_cache()
     restored = False
     if cache:

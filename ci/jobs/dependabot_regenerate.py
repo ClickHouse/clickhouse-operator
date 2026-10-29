@@ -1,31 +1,26 @@
 #!/usr/bin/env python3
 """
-.github/workflows/dependabot-regenerate.yaml, migrated to praktika.
-
 What it does: when Dependabot opens a PR that bumps go.mod/go.sum, the committed
 *generated* artifacts (CRDs/RBAC, deepcopy, helm chart, API-reference docs) go
-stale. This job re-derives them and pushes the result back onto the PR branch, so
-the bot PR is self-consistent before the rest of the suite judges it.
+stale. This job re-derives them and pushes the result back onto the PR branch;
+the push starts a fresh run, which judges the now self-consistent bot PR.
 
 Applicability is decided *outside* this script, in the workflow filter hook
 (ci/jobs/filter_job_hook.py): it runs only for a same-repo `dependabot[bot]` PR
 that actually touched go.mod/go.sum. So here we assume we should regenerate.
 
 Why this can't be a `git diff --exit-code` check like Lint: Lint only *detects*
-staleness and fails; this job *fixes* it and pushes, which is the whole point of
-the original dependabot-regenerate workflow — a human never has to touch a bot PR.
+staleness and fails; this job *fixes* it and pushes, so a human never has to
+touch a bot PR.
 
 Branch handling: praktika checks out the PR's ephemeral `refs/pull/<N>/merge`
 commit (detached, no remote). Committing there would commit the merge, not the
 head. So we fetch the real head branch, check it out, regenerate on top of it, and
-push that — exactly what the original workflow's `checkout ref: head.ref` did.
+push that.
 
-Push credentials: the original pushed with GITHUB_TOKEN, whose pushes GitHub
-deliberately does NOT re-trigger workflows on — hence its explicit trailing
-`gh workflow run`. We push with a GitHub App installation token minted here
-(GHAuth), and App-token pushes DO emit a `synchronize` event, so the fresh PR run
-starts on its own; no manual re-dispatch needed. The token minter must grant
-`contents: write`.
+Push credentials: a GitHub App installation token minted here (GHAuth). Unlike
+GITHUB_TOKEN pushes, App-token pushes emit a `synchronize` event, so the fresh PR
+run starts on its own. The token minter must grant `contents: write`.
 """
 import base64
 import subprocess
@@ -34,13 +29,11 @@ import sys
 from praktika.info import Info
 from praktika.gh_auth import GHAuth
 
-# Mirrors dependabot-regenerate.yaml's commit identity.
 _GIT_USER_NAME = "github-actions[bot]"
 _GIT_USER_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 
-# dependabot-regenerate.yaml :: "Regenerate after dependency bump". KUBEBUILDER
-# points generate-helmchart-ci at the binary the go-env pre-hook provisioned,
-# matching the Helm Test job, instead of re-downloading it.
+# KUBEBUILDER points generate-helmchart-ci at the binary the go-env pre-hook
+# provisioned, matching the Helm Test job, instead of re-downloading it.
 _REGEN_CMDS = [
     ["go", "mod", "tidy"],
     [
