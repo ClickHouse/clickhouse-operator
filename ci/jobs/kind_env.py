@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Shared Docker + Kind provisioning for the praktika Docker/Kind jobs
-(compat-e2e, e2e).
+(bundle, compat-e2e, e2e).
 
-Reproduces, in plain shell, what the GitHub Actions jobs did via marketplace
-actions (helm/kind-action + the pre-pull step) so the praktika jobs are
-self-contained. Kind + kubectl are installed here (not baked into the go-env
-bundle) because only the Docker/Kind jobs need them; Docker itself must be
-provided by the runner image.
+Kind + kubectl are installed here (not baked into the go-env bundle) because
+only the Docker/Kind jobs need them; Docker itself must be provided by the
+runner image.
 """
 import json
 import os
@@ -14,10 +12,9 @@ import subprocess
 import sys
 import time
 
-# Pinned to match ci.yaml's `env.kind-version`.
 KIND_VERSION = "v0.32.0"
 # kubectl is not strictly required by the Go test harness (it uses client-go),
-# but several deploy/diagnostic helpers shell out to it; install a recent build.
+# but several deploy/diagnostic helpers shell out to it.
 KUBECTL_VERSION = "v1.31.1"
 INSTALL_DIR = "/usr/local/bin"
 KIND_CONFIG = "ci/kind-cluster.config"
@@ -26,6 +23,8 @@ CLICKHOUSE_IMAGES = (
     "clickhouse/clickhouse-keeper",
     "clickhouse/clickhouse-server",
 )
+DIAG_DIR = "failure-diagnostics"
+DIAG_ARCHIVE = "failure-diagnostics.tgz"
 
 
 def sh(cmd, check=True, **kwargs):
@@ -157,3 +156,20 @@ def prepull(versions, cluster=DEFAULT_CLUSTER):
                 f"docker image inspect {ref} >/dev/null"
             )
             sh(f"kind load docker-image {ref} --name {cluster}")
+
+
+def collect_diagnostics(report_dir, cluster=DEFAULT_CLUSTER):
+    """Archive kind logs, cluster-wide pods/jobs/events and the suite's report dir
+    (per-spec resource dumps and pod logs); return the archive path or None.
+    Best-effort: every command is allowed to fail."""
+    sh(f"mkdir -p {DIAG_DIR}", check=False)
+    sh(f"kind export logs --name {cluster} {DIAG_DIR}/kind", check=False)
+    sh(f"kubectl get pods,jobs -A -o wide > {DIAG_DIR}/pods-jobs.txt 2>&1", check=False)
+    sh(
+        f"kubectl get events -A --sort-by=.metadata.creationTimestamp "
+        f"> {DIAG_DIR}/events.txt 2>&1",
+        check=False,
+    )
+    sh(f"cp -r {report_dir} {DIAG_DIR}/report", check=False)
+    proc = sh(f"tar czf {DIAG_ARCHIVE} {DIAG_DIR}", check=False)
+    return DIAG_ARCHIVE if proc.returncode == 0 and os.path.isfile(DIAG_ARCHIVE) else None

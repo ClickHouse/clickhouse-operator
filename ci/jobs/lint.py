@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-ci.yaml :: lint, migrated to praktika.
-
-Reproduces the GitHub `lint` job as a driver that emits a structured praktika
-Result instead of the bare pass/fail praktika would otherwise synthesize from the
-shell exit code. The job is two concerns, each broken into sub-results so the
-report page shows exactly what failed:
+Lint driver that emits a structured praktika Result instead of the bare
+pass/fail praktika would otherwise synthesize from the shell exit code. The job
+is two concerns, each broken into sub-results so the report page shows exactly
+what failed:
 
   1. "regeneration is committed" gates — `go mod tidy`, `make generate`,
      `make manifests` must not change any tracked file. Each is one sub-result;
@@ -13,15 +11,14 @@ report page shows exactly what failed:
      between gates so one gate's drift never pollutes the next gate's diff.
 
   2. `make lint`'s three linters, run individually so each is its own sub-result:
-       - golangci-lint — JSON output parsed into one sub-result per issue
-         (file:line [linter] -> message), so the report renders an issue table
-         instead of a single pass/fail (the replacement for reading raw logs).
+       - golangci-lint — JSON output parsed into one result whose info lists
+         every issue (file:line:col: message (linter))
        - codespell
-       - actionlint
+       - actionlint, with shellcheck for `run:` scripts
 
 The top-level Result aggregates (any sub-result FAIL -> job FAIL). The linter
 binaries are installed into ./bin by the Makefile targets, served from the warm
-Go module + pip caches provisioned by the go-env pre-hook (ci/jobs/go_env.py).
+Go module cache provisioned by the go-env pre-hook (ci/jobs/go_env.py).
 """
 import json
 import os
@@ -38,6 +35,7 @@ from praktika.utils import Utils  # noqa: E402
 GOLANGCI = "bin/golangci-lint"
 CODESPELL = "bin/codespell"
 ACTIONLINT = "bin/actionlint"
+SHELLCHECK = "bin/shellcheck"
 
 
 def _run(cmd, env=None):
@@ -58,15 +56,15 @@ def _git_restore():
 
 def _ensure_tools():
     """Install the lint tool binaries into ./bin via the Makefile. Cheap thanks to
-    the warm Go module + pip caches from the go-env pre-hook. Raises on failure."""
-    rc, out = _run("make golangci-lint codespell actionlint")
+    the warm Go module cache from the go-env pre-hook. Raises on failure."""
+    rc, out = _run("make golangci-lint codespell actionlint shellcheck")
     if rc != 0:
         raise RuntimeError(f"failed to install lint tools (exit {rc}):\n{out.strip()}")
 
 
 def _diff_gate(name, cmd):
     """Run a regeneration command, then fail if it dirtied any tracked file —
-    mirroring ci.yaml's `<cmd> && git diff --exit-code`."""
+    like `<cmd> && git diff --exit-code`."""
     sw = Utils.Stopwatch()
     rc, out = _run(cmd)
     if rc != 0:
@@ -158,7 +156,10 @@ def main():
         _diff_gate("make manifests", "make manifests"),
         _golangci_result(),
         _cmd_result("codespell", f"{CODESPELL} --config ci/.codespellrc"),
-        _cmd_result("actionlint", f"{ACTIONLINT} -config-file ci/actionlint.yaml"),
+        _cmd_result(
+            "actionlint",
+            f"{ACTIONLINT} -config-file ci/actionlint.yaml -shellcheck {SHELLCHECK}",
+        ),
     ]
     # name/status omitted: create_from defaults name to JOB_NAME ("Lint") so the
     # runner's Result.from_fs(job.name) finds this file, and derives the status by
