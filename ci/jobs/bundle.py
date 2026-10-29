@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """
-ci.yaml :: bundle, migrated to praktika.
-
 Builds the OLM bundle and runs operator-sdk scorecard against a throwaway Kind
-cluster. Reproduces, in-script, what the GitHub Actions job did via marketplace
-actions (shared Docker/Kind plumbing in ci/jobs/kind_env.py):
+cluster (shared Docker/Kind plumbing in ci/jobs/kind_env.py):
 
   - `make bundle`             -> generate + validate the bundle manifests
-  - `helm/kind-action`        -> plain Kind cluster named "test-bundle"
+  - `kind create cluster`     -> plain Kind cluster named "test-bundle"
   - `kind export kubeconfig`  -> point kubectl/scorecard at that cluster
   - `make bundle-build`       -> docker build the bundle image
   - `kind load docker-image`  -> load it into the cluster
   - `make scorecard`          -> operator-sdk scorecard bundle --wait-time=2m
 
 Env:
-  VERSION   bundle version (default 0.0.1, matching ci.yaml), used to derive the
-            bundle image tag and FULL_VERSION the Makefile builds.
+  VERSION   bundle version (default 0.0.1), used to derive the bundle image tag
+            and FULL_VERSION the Makefile builds.
 
 operator-sdk is installed by the Makefile targets themselves (the `operator-sdk`
 prereq), so there is no separate install step. kustomize/controller-gen come from
@@ -36,7 +33,7 @@ CLUSTER_NAME = "test-bundle"
 def main() -> int:
     version = os.environ.get("VERSION") or "0.0.1"
     # Mirrors the Makefile's BUNDLE_IMG for a fixed VERSION (FULL_VERSION=v$VERSION
-    # when VERSION is set); same ref ci.yaml kind-loads.
+    # when VERSION is set).
     bundle_img = f"ghcr.io/clickhouse/clickhouse-operator-bundle:v{version}"
 
     kind_env.require_docker()
@@ -46,8 +43,7 @@ def main() -> int:
     kind_env.install_kubectl()
 
     kind_env.sh("make bundle")
-    # Plain default cluster (no ci/kind-cluster.config, Kind's default node image),
-    # matching the bundle job's kind-action usage.
+    # Plain default cluster (no ci/kind-cluster.config, Kind's default node image).
     kind_env.create_cluster(name=CLUSTER_NAME, config=None)
     kind_env.sh(f"kind export kubeconfig --name {CLUSTER_NAME}")
     kind_env.sh("make bundle-build")

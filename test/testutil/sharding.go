@@ -16,14 +16,14 @@ import (
 
 // ShardingConfig assigns specs to CI shards. Two modes are supported:
 //
-//   - Round-robin (new): set E2E_SHARD to "index/total" (e.g. "2/4"). Specs are
+//   - Round-robin (used by CI): set E2E_SHARD to "index/total" (e.g. "2/4"). Specs are
 //     spread by a deterministic hash of the spec name, so every shard derives the
 //     same assignment independently and each spec runs on exactly one shard — no
 //     pre-computed plan. Takes precedence when E2E_SHARD is set.
 //
 //   - Plan-based / "smart" (legacy): set E2E_SHARD_INDEX + E2E_SHARD_TOTAL +
 //     E2E_SHARD_PLAN (a JSON spec->shard map from the e2e-shard-planner). Used
-//     when E2E_SHARD is empty; this is what .github/workflows/ci.yaml drives.
+//     when E2E_SHARD is empty; no longer used by CI.
 //
 // Duration-weighted sharding can later feed the plan-based mode (or replace the
 // round-robin hash) using per-spec timings collected by main CI.

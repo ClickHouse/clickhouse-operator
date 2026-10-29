@@ -1,5 +1,7 @@
 name: OpenShift Compatibility
 on:
+  push:
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
