@@ -12,22 +12,13 @@ WORKFLOWS = [
         name="PR",
         event=Workflow.Event.PULL_REQUEST,
         base_branches=["main"],
-        ai_orchestrator=Workflow.OrchestratorAI.Config(
-            enabled=True,
-            provider="bedrock-anthropic",
-            model="global.anthropic.claude-sonnet-5",
-            exclude_jobs=["Code Review"],
-        ),
+        runs_on_label_prefix="pr-",
         enable_job_filtering_by_changes=True,
         workflow_filter_hooks=[should_skip_job],
         artifacts=[GO_ENV_ARM_ARTIFACT, GO_ENV_AMD_ARTIFACT],
         jobs=[
-            # Build the per-arch Go toolchain bundles once; the Go jobs below
-            # `require` the matching one and extract it in their pre-hook.
             JobConfigs.prepare_go_env_arm,
             JobConfigs.prepare_go_env_amd,
-            # Gated to Dependabot go.mod/go.sum bumps by the filter hook; runs in
-            # parallel with the suite, and its push starts a fresh run.
             JobConfigs.dependabot_regenerate,
             JobConfigs.vale_linter,
             JobConfigs.doc_links,
@@ -43,8 +34,6 @@ WORKFLOWS = [
             JobConfigs.code_review,
         ],
         pre_hooks=[
-            # Post this run's report link into the PR description before the jobs
-            # start, so reviewers can jump from the PR straight to the live report.
             "python3 ./ci/jobs/ci_links.py",
         ],
         enable_cache=True,
