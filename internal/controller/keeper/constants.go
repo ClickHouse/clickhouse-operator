@@ -13,6 +13,12 @@ const (
 	PortInterserver      = 9234
 	PortHTTPControl      = 9123
 
+	portNameClient       = "tcp-keeper"
+	portNameClientSecure = "tcp-secure"
+	portNameRaft         = "tcp-raft"
+	portNamePrometheus   = "http-prometheus"
+	portNameHTTPControl  = "http-control"
+
 	QuorumConfigPath     = "/etc/clickhouse-keeper/"
 	QuorumConfigFileName = "config.yaml"
 
