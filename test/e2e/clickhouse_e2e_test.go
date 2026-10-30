@@ -1024,6 +1024,28 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute)
 			env.ClickHouseRWChecks(ctx, &cr, &checks)
 
+			source := v1.ClickHouseReplicaID{ShardID: 0, Index: 0}
+			hasLocalDatabase := func(client *testutil.ClickHouseClient, id v1.ClickHouseReplicaID) (bool, error) {
+				var n uint64
+
+				query := "SELECT count() FROM system.databases WHERE name = 'local_only'"
+				if err := client.QueryRowReplica(ctx, id, query, &n); err != nil {
+					return false, fmt.Errorf("count local_only database on %s: %w", id, err)
+				}
+
+				return n > 0, nil
+			}
+
+			By("creating a database on a single serving replica", func() {
+				chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+				Expect(err).NotTo(HaveOccurred())
+
+				defer chClient.Close()
+
+				Expect(chClient.ExecReplica(ctx, source, "CREATE DATABASE local_only "+
+					"ENGINE = Replicated('/clickhouse/databases/local_only', '{shard}', '{replica}')")).To(Succeed())
+			})
+
 			By("discarding the replica's volume and pod")
 
 			victim := v1.ClickHouseReplicaID{ShardID: 1, Index: 0}
@@ -1057,6 +1079,22 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 
 			env.WaitClickHouseUpdatedAndReady(ctx, &cr, 3*time.Minute)
 			env.ClickHouseRWChecks(ctx, &cr, &checks)
+
+			By("ensuring only the rebuilt replica received the database, replicas serving traffic are never changed", func() {
+				chClient, err := testutil.NewClickHouseClient(ctx, podDialer, &cr)
+				Expect(err).NotTo(HaveOccurred())
+
+				defer chClient.Close()
+
+				Expect(hasLocalDatabase(chClient, victim)).To(BeTrue())
+
+				// Holds after the rebuilt replica holding the database becomes initialized, i.e. a sync source.
+				Consistently(func(g Gomega) {
+					for _, id := range []v1.ClickHouseReplicaID{{ShardID: 0, Index: 1}, {ShardID: 1, Index: 1}} {
+						g.Expect(hasLocalDatabase(chClient, id)).To(BeFalse(), "replica %s", id)
+					}
+				}).WithTimeout(20 * time.Second).WithPolling(pollingInterval).Should(Succeed())
+			})
 		})
 
 		It("should support named collections in Keeper with encryption", func(ctx context.Context) {

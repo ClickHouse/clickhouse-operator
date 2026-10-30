@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strconv"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -168,29 +170,44 @@ func (cmd *commander) ReloadConfig(ctx context.Context, id v1.ClickHouseReplicaI
 	return nil
 }
 
-func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logger, replicas []v1.ClickHouseReplicaID) bool {
-	result := true
+// SyncDatabases creates the sources' databases on every target and reports the succeeded targets, none if a source is unlisted.
+func (cmd *commander) SyncDatabases(
+	ctx context.Context,
+	log controllerutil.Logger,
+	sources, targets []v1.ClickHouseReplicaID,
+) map[v1.ClickHouseReplicaID]bool {
+	synced := map[v1.ClickHouseReplicaID]bool{}
 
-	replicaDatabases := controllerutil.ExecuteParallel(replicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]databaseDescriptor, error) {
+	replicas := slices.Concat(sources, targets)
+	slices.SortFunc(replicas, compareReplicaID)
+
+	replicaDatabases := controllerutil.ExecuteParallel(slices.Compact(replicas), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]databaseDescriptor, error) {
 		databases, err := cmd.Databases(ctx, id)
 		return id, databases, err
 	})
 
-	databases := map[string]databaseDescriptor{}
 	for id, dbs := range replicaDatabases {
 		if dbs.Err != nil {
 			log.Warn("failed to get databases from replica", "replica_id", id, "error", dbs.Err)
+		}
+	}
 
-			result = false
+	// Without every source the database list is incomplete: create what is known, but report no target synced.
+	allSourcesListed := true
+	databases := map[string]databaseDescriptor{}
+
+	for _, id := range sources {
+		if replicaDatabases[id].Err != nil {
+			allSourcesListed = false
 			continue
 		}
 
-		databases = controllerutil.MergeMaps(databases, dbs.Result)
+		maps.Copy(databases, replicaDatabases[id].Result)
 	}
 
-	results := controllerutil.ExecuteParallel(replicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
-		if len(databases) == len(replicaDatabases[id].Result) {
-			return id, struct{}{}, nil
+	results := controllerutil.ExecuteParallel(targets, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+		if err := replicaDatabases[id].Err; err != nil {
+			return id, struct{}{}, err
 		}
 
 		dbsToSync := map[string]databaseDescriptor{}
@@ -205,13 +222,17 @@ func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logg
 
 	for id, res := range results {
 		if res.Err != nil {
-			log.Info("failed to create databases", "replica_id", id, "error", res.Err)
+			log.Info("failed to sync databases", "replica_id", id, "error", res.Err)
 
-			result = false
+			continue
+		}
+
+		if allSourcesListed {
+			synced[id] = true
 		}
 	}
 
-	return result
+	return synced
 }
 
 func (cmd *commander) Databases(ctx context.Context, id v1.ClickHouseReplicaID) (map[string]databaseDescriptor, error) {

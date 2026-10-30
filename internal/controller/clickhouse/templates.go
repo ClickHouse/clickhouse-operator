@@ -356,6 +356,7 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		ReadinessGates: []corev1.PodReadinessGate{{
 			ConditionType: v1.ReplicaInitializedCondition,
 		}},
+		TerminationGracePeriodSeconds: new(int64(terminationGracePeriod.Seconds())),
 	}
 
 	if cr.Spec.PodTemplate.TopologyZoneKey != nil && *cr.Spec.PodTemplate.TopologyZoneKey != "" {
