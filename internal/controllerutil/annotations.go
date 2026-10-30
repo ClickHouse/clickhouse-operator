@@ -9,10 +9,14 @@ const (
 	AnnotationConfigHash           = "checksum/configuration"
 	AnnotationReloadableConfigHash = "checksum/reloadable-configuration"
 
-	AnnotationStatefulSetVersion = "clickhouse.com/statefulset-version"
-
+	AnnotationStatefulSetVersion  = "clickhouse.com/statefulset-version"
 	AnnotationPauseReconciliation = "clickhouse.com/pause-reconciliation"
 )
+
+// PauseAnnotated reports whether the pause annotation is set to "true".
+func PauseAnnotated(obj client.Object) bool {
+	return obj.GetAnnotations()[AnnotationPauseReconciliation] == "true"
+}
 
 // PauseRequested reports whether reconciliation is paused by the pause annotation.
 func PauseRequested(obj client.Object, log Logger) bool {
@@ -21,7 +25,7 @@ func PauseRequested(obj client.Object, log Logger) bool {
 		return false
 	}
 
-	if value != "true" {
+	if !PauseAnnotated(obj) {
 		log.Warn("ignoring pause annotation, only \"true\" pauses reconciliation", "value", value)
 		return false
 	}
