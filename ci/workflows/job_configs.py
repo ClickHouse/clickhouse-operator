@@ -42,7 +42,7 @@ def _clickhouse_versions():
 _CH_LATEST, _CH_SUPPORTED = _clickhouse_versions()
 
 # Consumer pre-hook: extract the go-env bundle delivered as a required artifact
-# (falls back to self-provisioning from S3/build). The bundle holds the Go SDK +
+# (falls back to a fresh local build). The bundle holds the Go SDK +
 # helm/kubebuilder/controller-gen/kustomize/golangci-lint/actionlint/
 # crd-schema-checker/crd-ref-docs + warm Go module/build caches + envtest assets,
 # so no Go tooling is baked into the AMI. See ci/jobs/go_env.py.
@@ -100,16 +100,17 @@ def _e2e_command(shard_index):
 
 
 class JobConfigs:
-    # Prep jobs rebuild the bundle only when the tool version sources or the
-    # provisioning scripts change (praktika job cache + the go-env S3 cache both
-    # key off this). Each builds natively on its arch and publishes the tarball.
+    # Prep jobs rebuild the bundle only when the tool-version sources or the
+    # provisioning script change; praktika's job cache keys off this digest and
+    # reuses the published artifact otherwise. go.sum is intentionally excluded —
+    # a dependency-only bump reuses the bundle and consumers' `go mod download`
+    # tops up the module cache. Each builds natively on its arch and publishes the
+    # tarball as the job's artifact.
     _GO_ENV_DIGEST = Job.CacheDigestConfig(
         include_paths=[
             "./go.mod",
-            "./go.sum",
             "./Makefile",
             "./ci/jobs/go_env.py",
-            "./ci/jobs/s3_cache.py",
         ],
     )
 
