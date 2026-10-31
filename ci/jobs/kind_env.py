@@ -136,7 +136,12 @@ def create_cluster(node_image=None, name=DEFAULT_CLUSTER, config=KIND_CONFIG):
         f'[ -n "$ids" ] && docker rm -f $ids || true',
         check=False,
     )
-    cmd = f"kind create cluster --name {name} --wait 120s"
+    # --retain keeps the node containers alive when creation fails (e.g. a worker's
+    # kubelet never goes healthy during `kubeadm join`). Without it kind tears the
+    # partial cluster down on failure, and the later `kind export logs` in
+    # collect_diagnostics finds nothing ("unknown cluster"), so the kubelet journal
+    # is lost. The idempotent teardown above cleans the retained cluster next run.
+    cmd = f"kind create cluster --name {name} --retain --wait 120s"
     if node_image:
         cmd += f" --image kindest/node:{node_image}"
     if config:
