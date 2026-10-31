@@ -24,11 +24,9 @@ _PROJECT_S3_PREFIXES = list(
 
 _TRUSTED_RESOURCES = [
     f"arn:aws:s3:::{Settings.S3_ARTIFACT_BUCKET}/REFs/*",
-    f"arn:aws:s3:::{Settings.S3_ARTIFACT_BUCKET}/repo-snapshots/v1/REFs/*",
 ]
 _PR_RESOURCES = [
     f"arn:aws:s3:::{Settings.S3_ARTIFACT_BUCKET}/PRs/*",
-    f"arn:aws:s3:::{Settings.S3_ARTIFACT_BUCKET}/repo-snapshots/v1/PRs/*",
 ]
 # Untrusted (pr-*): may read trusted tiers, must not write them (no poisoning).
 _UNTRUSTED_DENY_WRITE_TRUSTED = {
@@ -60,8 +58,9 @@ _TRUSTED_DENY_ACCESS_UNTRUSTED = {
 
 # until published in pip
 _PRAKTIKA_PACKAGE_BASE_URL = "https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages"
-_PRAKTIKA_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika-0.1.25-py3-none-any.whl"
-_PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-0.1.25-py3-none-any.whl"
+PRAKTIKA_VERSION="0.1.26"
+_PRAKTIKA_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika-{PRAKTIKA_VERSION}-py3-none-any.whl"
+_PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-{PRAKTIKA_VERSION}-py3-none-any.whl"
 
 _NODE_MAJOR = "20"
 
@@ -94,21 +93,31 @@ def _doc_lint_tools_component():
     }
 
 
-def _docker_kind_component():
-    """Build-phase component that disables Docker's containerd image store so
-    `kind load docker-image` works on the Docker+Kind jobs (bundle, compat-e2e, e2e).
+def _kind_host_setup_component():
+    """Build-phase component that prepares the host for the Docker+Kind jobs
+    (bundle, compat-e2e, e2e). Two fixes, both applied to the AMI:
 
-    praktika's base setup installs docker-ce and writes /etc/docker/daemon.json;
-    this component runs afterwards (custom components are appended last) and merges
-    `features.containerd-snapshotter = false` into it, preserving praktika's keys.
+    1. Disable Docker's containerd image store so `kind load docker-image` works.
+       praktika's base setup installs docker-ce and writes /etc/docker/daemon.json;
+       this component runs afterwards (custom components are appended last) and
+       merges `features.containerd-snapshotter = false` into it, preserving
+       praktika's keys. `kind load docker-image` exports each image with
+       `docker save` and re-imports it via `ctr ... --all-platforms --digests`.
+       With the containerd image store enabled, even a single-arch `docker pull`
+       keeps a multi-platform image index, so the import fails on the other
+       platforms' / attestation blobs ("content digest ... not found"). The
+       classic image store emits a flat single-platform archive, matching
+       GitHub-hosted runners where `kind load` works.
 
-    Why: `kind load docker-image` exports each image with `docker save` and
-    re-imports it via `ctr ... --all-platforms --digests`. With the containerd
-    image store enabled, even a single-arch `docker pull` keeps a multi-platform
-    image index, so the import fails on the other platforms' / attestation blobs
-    ("content digest ... not found"). The classic image store emits a flat
-    single-platform archive, matching GitHub-hosted runners where `kind load`
-    works.
+    2. Raise the kernel inotify limits via a persistent /etc/sysctl.d drop-in.
+       Each Kind node runs as a container whose kubelet + cAdvisor open many
+       inotify instances (static-manifest watcher, CA-file watcher, dynamic
+       plugin prober, raw container factory). The default max_user_instances
+       (128) is exhausted when several nodes start concurrently on one host, so
+       the nodes that lose the race crash-loop with "inotify_init: too many open
+       files" and never go healthy -> `kind create cluster` fails its
+       kubelet-check at the --wait timeout. The drop-in takes effect on runner
+       boot from the AMI (no runtime `sysctl -p` needed).
 
     The image-builder component YAML escaper only escapes double quotes, so the
     JSON-heavy script is base64-wrapped (same technique as praktika's docker
@@ -122,13 +131,17 @@ tmp=$(mktemp)
 jq '.features."containerd-snapshotter" = false' "$f" > "$tmp"
 mv "$tmp" "$f"
 jq -e '.features."containerd-snapshotter" == false' "$f"
+cat > /etc/sysctl.d/99-kind-inotify.conf <<'EOF'
+fs.inotify.max_user_instances=8192
+fs.inotify.max_user_watches=1048576
+EOF
 """
     b64 = base64.b64encode(script.encode()).decode()
     return {
-        "name": "docker-kind-image-store",
+        "name": "kind-host-setup",
         "platform": "Linux",
         "phase": "build",
-        "description": "Disable Docker containerd image store so kind load works",
+        "description": "Prep host for kind: classic image store + inotify limits",
         "commands": [f"printf '%s' '{b64}' | base64 -d | bash"],
     }
 
@@ -136,7 +149,7 @@ jq -e '.features."containerd-snapshotter" == false' "$f"
 def _image_builders():
     # Bump whenever the recipe/components change so Image Builder creates a new
     # recipe + component versions and rebuilds the AMI.
-    image_recipe_version = "1.0.11"
+    image_recipe_version = "1.0.13"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
         # (boto3/PyJWT/cryptography/requests) automatically; pytest and the
@@ -159,8 +172,8 @@ def _image_builders():
         # Build-phase: install the docs-lint toolchain (Vale + Node/linkspector).
         # Go tooling is provisioned per job via the go-env pre-hook, not baked.
         _doc_lint_tools_component(),
-        # Build-phase: disable Docker's containerd image store (kind load fix).
-        _docker_kind_component(),
+        # Build-phase: prep host for kind (classic image store + inotify limits).
+        _kind_host_setup_component(),
         # Test-phase: validate the image after build.
         Components.create_image_test_component(
             name="project-image-test",

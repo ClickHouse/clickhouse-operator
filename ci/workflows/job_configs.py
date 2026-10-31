@@ -252,10 +252,11 @@ class JobConfigs:
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # Go-only (two 60s fuzz runs).
+    # Go-only (two 60s fuzz runs). On an 8-cpu pool to match the fuzzing
+    # throughput of the former ubuntu-latest (4 vCPU) runner.
     fuzz_specs = Job.Config(
         name="Fuzz Specs",
-        runs_on=[RunnerLabels.ARM_2CPU_4G],
+        runs_on=[RunnerLabels.ARM_8CPU_16G],
         command="make fuzz",
         timeout=20 * 60,
         pre_hooks=[_GO_ENV_INSTALL],
@@ -310,10 +311,6 @@ class JobConfigs:
         runs_on=[RunnerLabels.ARM_2CPU_4G],
         command="python3 ci/jobs/check_crd_compat.py",
         timeout=15 * 60,
-        # On ENABLE_S3_REPO_SNAPSHOT runs there is no `origin`, so the checker
-        # falls back to `gh api` for the base manifests — which needs auth, else
-        # it exits 4 and the job ERRORs instead of actually checking CRDs.
-        enable_gh_auth=True,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
