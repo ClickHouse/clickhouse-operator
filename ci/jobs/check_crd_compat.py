@@ -7,34 +7,29 @@ What the job does: it obtains each CRD's baseline (the manifest at the baseline
 ref below) and runs `make check-crd-compat`, which compares each
 baseline against the PR's current CRD with crd-schema-checker and fails on
 backward-incompatible schema changes. The verdict is returned as a praktika
-Result (OK / FAIL / ERROR) carrying the baseline ref/source, staged counts, and
-— on failure — the checker's violations.
+Result (OK / FAIL / ERROR) carrying the baseline ref/source and — on failure —
+the checker's violations.
 
 The baseline commit is the PR's merge-base from Info().base_git_history() (entry
 0, newest first) — a real base-branch commit the controller resolves even for
-jobs on a history-free S3 snapshot, which keeps a 404 unambiguous. Falls back to
-the base branch name when unavailable (local runs).
+jobs on a history-free S3 snapshot. Falls back to the base branch name when
+unavailable (local runs).
 
-Two ways to read the manifests at that ref, picked automatically:
-
-1. git history (preferred): a clone with `origin` shallow-fetches the ref and
-   reads `git show FETCH_HEAD:...`, no per-file network call.
-
-2. GitHub contents API (fallback): on an S3 snapshot there is no `origin`, so the
-   fetch fails; we pull the base manifests via `gh` into a temp dir and pass it as
-   CRD_BASELINE_DIR. A 404 means the path is new on the base and is skipped.
+The baseline is read straight from git history: a shallow `git fetch origin <ref>`
+makes `git show FETCH_HEAD:<path>` resolve the base CRDs, no per-file network
+call. This works on S3-snapshot runners too — the controller now bakes a
+token-less `origin` into the snapshot (see praktika merge.py
+_build_and_publish_snapshot), so there is no longer a no-remote fallback. A fetch
+failure is therefore a real error (ERRORs the job) rather than a silent degrade
+to the GitHub contents API, which could vacuously pass if every per-file lookup
+404'd.
 """
-import glob
-import os
 import subprocess
 import sys
-import tempfile
 
 from praktika.info import Info
 from praktika.result import Result
 from praktika.utils import Utils
-
-CRD_GLOB = "config/crd/bases/*.yaml"
 
 
 def _resolve_base_ref(info):
@@ -49,47 +44,22 @@ def _resolve_base_ref(info):
     return base, f"base branch {base}"
 
 
-def _try_fetch_git_base(ref):
+def _fetch_git_base(ref):
     """Shallow-fetch `ref` so `git show FETCH_HEAD:<path>` resolves base CRDs.
-    Returns True on success (clone with `origin`), False otherwise (snapshot has
-    no remote)."""
+
+    Raises on failure: `origin` is always present (a normal clone, or an S3
+    snapshot with the controller-baked token-less origin), so a failed fetch means
+    the ref is genuinely unreachable — not a missing remote — and must not be
+    masked."""
     cmd = ["git", "fetch", "--no-tags", "--depth=1", "origin", ref]
     print(f"+ {' '.join(cmd)}", flush=True)
-    return subprocess.run(cmd).returncode == 0
-
-
-def _stage_baselines(repo, ref, dest):
-    """Download each CRD's version at `ref` into `dest` via gh api.
-
-    `--method GET` is required: `gh api` switches to POST once any `-f` field is
-    present, and the contents endpoint 404s on POST — which we'd misread as "new
-    CRD" for every file and pass vacuously.
-
-    Returns (staged, skipped): a genuine 404 (file absent at `ref`) is left
-    unstaged so the Makefile treats it as new; raises on any other gh failure."""
-    staged = skipped = 0
-    for crd in sorted(glob.glob(CRD_GLOB)):
-        cmd = [
-            "gh", "api",
-            "--method", "GET",
-            "-H", "Accept: application/vnd.github.raw",
-            f"repos/{repo}/contents/{crd}",
-            "-f", f"ref={ref}",
-        ]
-        print(f"+ {' '.join(cmd)}", flush=True)
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode == 0:
-            with open(os.path.join(dest, os.path.basename(crd)), "w") as f:
-                f.write(proc.stdout)
-            print(f"  staged baseline for {crd}", flush=True)
-            staged += 1
-        elif "404" in proc.stderr or "Not Found" in proc.stderr:
-            print(f"  {crd} absent at {ref} — new CRD, will skip", flush=True)
-            skipped += 1
-        else:
-            sys.stderr.write(proc.stderr)
-            raise RuntimeError(f"gh api failed for {crd}: {proc.stderr.strip()}")
-    return staged, skipped
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+        raise RuntimeError(
+            f"git fetch of baseline ref {ref} failed (rc={proc.returncode}): "
+            f"{proc.stderr.strip()}"
+        )
 
 
 def _run_make(make_args):
@@ -108,20 +78,9 @@ def _check(info_lines):
     ref, label = _resolve_base_ref(info)
     info_lines.append(f"baseline ref: {label}")
 
-    if _try_fetch_git_base(ref):
-        info_lines.append("baseline source: git history (FETCH_HEAD)")
-        return _run_make(["CRD_BASE_REF=FETCH_HEAD"])
-
-    info_lines.append(
-        "baseline source: GitHub API (snapshot checkout, no local git base)"
-    )
-    repo = info.repo_name
-    if not repo:
-        raise RuntimeError("Could not resolve repository (Info().repo_name is empty)")
-    with tempfile.TemporaryDirectory(prefix="crd-baseline-") as dest:
-        staged, skipped = _stage_baselines(repo, ref, dest)
-        info_lines.append(f"baselines: {staged} staged, {skipped} new/absent (skipped)")
-        return _run_make([f"CRD_BASELINE_DIR={dest}"])
+    _fetch_git_base(ref)
+    info_lines.append("baseline source: git history (FETCH_HEAD)")
+    return _run_make(["CRD_BASE_REF=FETCH_HEAD"])
 
 
 def main():
@@ -129,7 +88,7 @@ def main():
     info_lines = []
     try:
         rc, output = _check(info_lines)
-    except Exception as e:  # unexpected: resolution/gh/make plumbing failure
+    except Exception as e:  # unexpected: resolution/fetch/make plumbing failure
         Result.create_from(
             status=Result.Status.ERROR,
             stopwatch=sw,
