@@ -81,7 +81,7 @@ metadata:
 spec:
   targetNamespaces:
     - {{ .namespace }}
----
+{{ define "subscription" -}}
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
@@ -93,3 +93,4 @@ spec:
   source: clickhouse-operator-catalog
   sourceNamespace: {{ .namespace }}
   installPlanApproval: Automatic
+{{ end -}}
