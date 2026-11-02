@@ -15,7 +15,8 @@ concurrency:
 jobs:
   rebuild:
     runs-on: [self-hosted, openshift, operator]
-    timeout-minutes: 120
+    # okd-cluster-install.sh alone budgets 180m for clusterversion Available; observed 60-85m.
+    timeout-minutes: 240
     env:
       KUBECONFIG: /home/runner/okd-install/auth/kubeconfig
     steps:
