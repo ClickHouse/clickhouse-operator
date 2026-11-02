@@ -41,10 +41,11 @@ func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *core
 		}
 
 		ports = append(ports, corev1.ServicePort{
-			Protocol:   corev1.ProtocolTCP,
-			Name:       name,
-			Port:       proto.Port,
-			TargetPort: intstr.FromInt32(proto.Port),
+			Protocol:    corev1.ProtocolTCP,
+			Name:        name,
+			Port:        proto.Port,
+			TargetPort:  intstr.FromInt32(proto.Port),
+			AppProtocol: proto.AppProtocol,
 		})
 	}
 
@@ -585,11 +586,12 @@ const (
 )
 
 type protocol struct {
-	Type        string `yaml:"type"`
-	Port        int32  `yaml:"port,omitempty"`
-	Impl        string `yaml:"impl,omitempty"`
-	Description string `yaml:"description,omitempty"`
-	Internal    bool   `yaml:"-"`
+	Type        string  `yaml:"type"`
+	Port        int32   `yaml:"port,omitempty"`
+	Impl        string  `yaml:"impl,omitempty"`
+	Description string  `yaml:"description,omitempty"`
+	Internal    bool    `yaml:"-"`
+	AppProtocol *string `yaml:"-"`
 }
 
 func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
@@ -599,23 +601,27 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Port:        PortInterserver,
 			Description: protocolTypeInterserver,
 			Internal:    true,
+			AppProtocol: new(controller.AppProtocolHTTP),
 		},
 		protocolTypePrometheus: {
 			Type:        protocolTypePrometheus,
 			Port:        PortPrometheusScrape,
 			Description: protocolTypePrometheus,
+			AppProtocol: new(controller.AppProtocolHTTP),
 		},
 		protocolTypeManagement: {
 			Type:        protocolTypeTCP,
 			Port:        PortManagement,
 			Description: "tcp-management",
 			Internal:    true,
+			AppProtocol: new(controller.AppProtocolTCP),
 		},
 		protocolTypeManagementHTTP: {
 			Type:        protocolTypeHTTP,
 			Port:        PortManagementHTTP,
 			Description: "http-management",
 			Internal:    true,
+			AppProtocol: new(controller.AppProtocolHTTP),
 		},
 		protocolTypeTCP: {
 			Type: protocolTypeTCP,
@@ -630,11 +636,13 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Type:        protocolTypeHTTP,
 			Port:        PortHTTP,
 			Description: protocolTypeHTTP,
+			AppProtocol: new(controller.AppProtocolHTTP),
 		}
 		protocols[protocolTypeTCP] = protocol{
 			Type:        protocolTypeTCP,
 			Port:        PortNative,
 			Description: "native protocol",
+			AppProtocol: new(controller.AppProtocolTCP),
 		}
 	}
 
@@ -644,12 +652,14 @@ func buildProtocols(cr *v1.ClickHouseCluster) map[protocolType]protocol {
 			Port:        PortNativeSecure,
 			Impl:        protocolTypeTCP,
 			Description: "secure native protocol",
+			AppProtocol: new(controller.AppProtocolTCP),
 		}
 		protocols[protocolTypeHTTPSecure] = protocol{
 			Type:        "tls",
 			Port:        PortHTTPSecure,
 			Impl:        protocolTypeHTTP,
 			Description: "https",
+			AppProtocol: new(controller.AppProtocolHTTPS),
 		}
 	}
 

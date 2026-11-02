@@ -503,6 +503,37 @@ var _ = Describe("Service templates", func() {
 		Expect(publicPorts).NotTo(HaveKey(protocolTypeManagement))
 		Expect(publicPorts).NotTo(HaveKey(protocolTypeManagementHTTP))
 	})
+
+	It("should declare an application protocol on every operator-managed port", func() {
+		for _, tls := range []v1.ClusterTLSSpec{{}, {Enabled: true}, {Enabled: true, Required: true}} {
+			cluster := cr.DeepCopy()
+			cluster.Spec.Settings.TLS = tls
+
+			appProtocols := map[string]*string{}
+			for _, service := range []*corev1.Service{
+				templateHeadlessService(cluster),
+				templateInternalService(cluster, v1.ClickHouseReplicaID{}),
+			} {
+				for _, port := range service.Spec.Ports {
+					appProtocols[port.Name] = port.AppProtocol
+				}
+			}
+
+			Expect(appProtocols).To(HaveKeyWithValue("extra", BeNil()))
+			delete(appProtocols, "extra")
+
+			for name, appProtocol := range appProtocols {
+				Expect(appProtocol).To(HaveValue(BeElementOf(
+					controller.AppProtocolHTTP, controller.AppProtocolHTTPS, controller.AppProtocolTCP,
+				)), "%s with %+v", name, tls)
+			}
+
+			if tls.Enabled {
+				Expect(appProtocols).To(HaveKeyWithValue(protocolTypeHTTPSecure, HaveValue(Equal(controller.AppProtocolHTTPS))), "%+v", tls)
+				Expect(appProtocols).To(HaveKeyWithValue(protocolTypeTCPSecure, HaveValue(Equal(controller.AppProtocolTCP))), "%+v", tls)
+			}
+		}
+	})
 })
 
 var _ = Describe("PDB", func() {
