@@ -73,13 +73,16 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 		}
 	}
 
-	n, err := io.WriteString(conn, FLWCommand)
+	// The trailing newline gives mesh proxies the 5 bytes they need to rule out a TLS handshake.
+	command := FLWCommand + "\n"
+
+	n, err := io.WriteString(conn, command)
 	if err != nil {
 		return serverStatus{}, fmt.Errorf("write command: %w", err)
 	}
 
-	if n != len(FLWCommand) {
-		return serverStatus{}, fmt.Errorf("can't write the whole string to socket expected: %d; actual: %d", len(FLWCommand), n)
+	if n != len(command) {
+		return serverStatus{}, fmt.Errorf("can't write the whole string to socket expected: %d; actual: %d", len(command), n)
 	}
 
 	reader := bufio.NewReader(conn)

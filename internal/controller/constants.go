@@ -15,6 +15,13 @@ const (
 	DefaultUser             int64 = 101
 )
 
+// Service port appProtocol values, read by service meshes instead of sniffing the traffic.
+const (
+	AppProtocolHTTP  = "http"
+	AppProtocolHTTPS = "https"
+	AppProtocolTCP   = "tcp"
+)
+
 var (
 	// DefaultLivenessProbeSettings defines default settings for Kubernetes liveness probes.
 	//nolint: mnd // Magic numbers are used as constants.

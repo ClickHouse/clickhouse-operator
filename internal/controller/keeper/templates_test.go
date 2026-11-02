@@ -122,6 +122,24 @@ var _ = Describe("RaftLogsLevel", func() {
 	})
 })
 
+var _ = Describe("templateHeadlessService", func() {
+	It("should declare an application protocol on every port", func() {
+		for _, tls := range []v1.ClusterTLSSpec{{}, {Enabled: true}, {Enabled: true, Required: true}} {
+			cr := &v1.KeeperCluster{Name: "test", Namespace: "default"}
+			cr.Spec.Settings.TLS = tls
+
+			for _, port := range templateHeadlessService(cr).Spec.Ports {
+				Expect(port.AppProtocol).To(HaveValue(BeElementOf(controller.AppProtocolHTTP, controller.AppProtocolTCP)),
+					"%s with %+v", port.Name, tls)
+
+				if port.Port == PortNativeSecure {
+					Expect(*port.AppProtocol).To(Equal(controller.AppProtocolTCP))
+				}
+			}
+		}
+	})
+})
+
 var _ = Describe("templatePodDisruptionBudget", func() {
 	var cr *v1.KeeperCluster
 
