@@ -187,13 +187,13 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 		By("building OLM bundle")
 		Expect(testutil.MustRun(ctx, "make", "bundle", "IMG="+testImage)).To(Succeed())
 
-		By("creating catalog and subscription")
+		By("creating catalog")
 
-		resources := templateTestResources(ctx, namespace)
+		resources, subscription := templateTestResources(ctx, namespace)
 
 		DeferCleanup(func() {
 			if CurrentSpecReport().Failed() {
-				AddReportEntry("OLM resources", resources)
+				AddReportEntry("OLM resources", resources+"---\n"+subscription)
 			}
 		})
 
@@ -217,9 +217,13 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 
 			for _, resource := range []string{"catalogsources", "subscriptions", "installplans", "clusterserviceversions"} {
 				out, _ := testutil.Run(exec.CommandContext(ctx, "kubectl", "get", resource,
-					"-n", namespace, "-o", "wide"))
+					"-n", namespace, "-o", "yaml"))
 				AddReportEntry("=== OLM "+resource, string(out))
 			}
+
+			out, _ := testutil.Run(exec.CommandContext(ctx, "kubectl", "logs",
+				"-n", "olm", "deployment/catalog-operator", "--tail", "200"))
+			AddReportEntry("=== OLM catalog-operator logs", string(out))
 		})
 
 		By("waiting for catalog server to be ready")
@@ -228,6 +232,22 @@ var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), fun
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: "test-catalog-server"}, &pod)).To(Succeed())
 			g.Expect(testutil.CheckPodReady(&pod)).To(BeTrue())
 		}, "2m", testutil.PollInterval).Should(Succeed())
+
+		By("waiting for CatalogSource to be READY")
+		Eventually(func(g Gomega) {
+			out, err := testutil.Run(exec.CommandContext(ctx, "kubectl", "get", "catalogsource",
+				"clickhouse-operator-catalog", "-n", namespace,
+				"-o", "jsonpath={.status.connectionState.lastObservedState}"))
+			g.Expect(err).ToNot(HaveOccurred(), string(out))
+			g.Expect(strings.TrimSpace(string(out))).To(Equal("READY"))
+		}, "3m", "5s").Should(Succeed())
+
+		By("creating subscription")
+
+		cmd = exec.CommandContext(ctx, "kubectl", "create", "-f", "-")
+		cmd.Stdin = strings.NewReader(subscription)
+		out, err = testutil.Run(cmd)
+		Expect(err).ToNot(HaveOccurred(), string(out))
 
 		By("waiting for ClusterServiceVersion to succeed")
 		Eventually(func(g Gomega) {
@@ -559,7 +579,7 @@ func testDeployment(namespace string) {
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
 }
 
-func templateTestResources(ctx context.Context, namespace string) string {
+func templateTestResources(ctx context.Context, namespace string) (string, string) {
 	projectDir, err := testutil.GetProjectDir()
 	Expect(err).NotTo(HaveOccurred())
 
@@ -583,14 +603,19 @@ func templateTestResources(ctx context.Context, namespace string) string {
 	tmpl, err := template.New("olm").Parse(olmManifests)
 	Expect(err).NotTo(HaveOccurred())
 
-	result := strings.Builder{}
-	Expect(tmpl.Execute(&result, map[string]any{
+	data := map[string]any{
 		"namespace":  namespace,
 		"bundleName": bundle["name"],
 		"bundle":     string(bundleBlob),
-	})).To(Succeed())
+	}
 
-	return result.String()
+	result := strings.Builder{}
+	Expect(tmpl.Execute(&result, data)).To(Succeed())
+
+	subscription := strings.Builder{}
+	Expect(tmpl.ExecuteTemplate(&subscription, "subscription", data)).To(Succeed())
+
+	return result.String(), subscription.String()
 }
 
 func latestReleasedVersion(ctx context.Context) string {
