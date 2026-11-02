@@ -58,7 +58,7 @@ _TRUSTED_DENY_ACCESS_UNTRUSTED = {
 
 # until published in pip
 _PRAKTIKA_PACKAGE_BASE_URL = "https://praktika-artifacts-eu-north-1.s3.amazonaws.com/packages"
-PRAKTIKA_VERSION="0.1.26"
+PRAKTIKA_VERSION="0.1.28"
 _PRAKTIKA_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika-{PRAKTIKA_VERSION}-py3-none-any.whl"
 _PRAKTIKA_CONTROLLER_WHL = f"{_PRAKTIKA_PACKAGE_BASE_URL}/praktika_controller-{PRAKTIKA_VERSION}-py3-none-any.whl"
 
@@ -149,7 +149,7 @@ EOF
 def _image_builders():
     # Bump whenever the recipe/components change so Image Builder creates a new
     # recipe + component versions and rebuilds the AMI.
-    image_recipe_version = "1.0.13"
+    image_recipe_version = "1.0.14"
     prebuilt_venvs = [
         # The `infrastructure` extra pulls Praktika's runtime deps
         # (boto3/PyJWT/cryptography/requests) automatically; pytest and the
