@@ -305,7 +305,7 @@ _RUNNER_POOLS = [
     _runner_pool("arm-8cpu-16g", "c7g.2xlarge", _ARM, untrusted=False),
     _runner_pool("amd-8cpu-16g", "c7a.2xlarge", _AMD, untrusted=False),
     _runner_pool("pr-arm-2cpu-4g", "c7g.large", _ARM, untrusted=True, capacity_reserve=4),
-    _runner_pool("pr-amd-2cpu-4g", "c7a.large", _AMD, untrusted=True),
+    _runner_pool("pr-amd-2cpu-4g", "c7a.large", _AMD, untrusted=True, capacity_reserve=4),
     _runner_pool("pr-arm-8cpu-16g", "c7g.2xlarge", _ARM, untrusted=True),
     _runner_pool("pr-amd-8cpu-16g", "c7a.2xlarge", _AMD, untrusted=True),
     _runner_pool(
