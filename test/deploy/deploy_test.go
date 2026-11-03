@@ -45,6 +45,7 @@ var (
 	env                  *testutil.Env
 	k8sClient            client.Client
 	currentTestNamespace string
+	invariants           *testutil.InvariantSet
 	versionEntries       []any
 )
 
@@ -108,7 +109,12 @@ var _ = BeforeSuite(func(ctx context.Context) {
 })
 
 var _ = BeforeEach(func() {
-	testutil.StartInvariants(env, metav1.NamespaceAll)
+	invariants = testutil.StartInvariants(env, metav1.NamespaceAll)
+})
+
+// Must precede the diagnostics hook: violations have to fail the spec before it checks Failed().
+var _ = JustAfterEach(func() {
+	invariants.StopAndCheck()
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {

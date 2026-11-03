@@ -80,6 +80,14 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	env = testutil.SetupEnv(testutil.SetupOptions{})
 	config, k8sClient = env.Config, env.Client
 
+	// JustAfterEach does not run for BeforeSuite failures.
+	ready := false
+	defer func() {
+		if !ready {
+			dumpDiagnostics(ctx)
+		}
+	}()
+
 	By("waiting for project API service")
 	Expect(testutil.MustRun(ctx, "oc", "wait",
 		"--for=jsonpath={.status.conditions[?(@.type=='Available')].status}=True",
@@ -149,6 +157,8 @@ var _ = BeforeSuite(func(ctx context.Context) {
 
 	By("waiting controller to be ready")
 	env.WaitDeploymentAvailable(ctx, namespace, "clickhouse-operator-controller-manager", 2*time.Minute)
+
+	ready = true
 })
 
 func envOrDefault(key, def string) string {
@@ -163,6 +173,10 @@ var _ = JustAfterEach(func(ctx context.Context) {
 		return
 	}
 
+	dumpDiagnostics(ctx)
+})
+
+func dumpDiagnostics(ctx context.Context) {
 	for _, resource := range []string{"catalogsources", "subscriptions", "installplans", "clusterserviceversions"} {
 		out, _ := testutil.Run(exec.CommandContext(ctx, "kubectl", "get", resource,
 			"-n", namespace, "-o", "yaml"))
@@ -174,7 +188,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 	AddReportEntry("=== catalog-operator log", string(catalogLog))
 
 	testutil.DumpNamespaceDiagnostics(ctx, env, namespace, "report")
-})
+}
 
 var _ = Describe("OLM deployment on OpenShift", func() {
 	It("should deploy cluster with default settings", func(ctx context.Context) {

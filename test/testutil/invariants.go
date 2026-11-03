@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -110,10 +111,7 @@ func StartInvariants(env *Env, namespace string) *InvariantSet {
 		return nil
 	}
 
-	set.wg.Add(1)
-
-	go func() {
-		defer set.wg.Done()
+	set.wg.Go(func() {
 		defer GinkgoRecover()
 
 		// Lazy init informers, so suite can create CRDs
@@ -151,7 +149,7 @@ func StartInvariants(env *Env, namespace string) *InvariantSet {
 			time.Sleep(invariantPollMinInterval)
 			timer.Reset(invariantPollInterval)
 		}
-	}()
+	})
 
 	DeferCleanup(set.StopAndCheck)
 
@@ -507,7 +505,8 @@ func (r *readyStableInvariant) Check(ctx context.Context, namespace string) []Vi
 
 		size := clusterSize{replicas: cr.Replicas(), shards: cr.Shards()}
 		out = append(out, r.check(key, size, cr.Status.ReadyReplicas,
-			cr.Generation, cr.Status.ObservedGeneration, cr.Status.Conditions, "")...)
+			cr.Generation, cr.Status.ObservedGeneration, cr.Status.Conditions, "",
+			func() string { return r.podStates(ctx, cr.Namespace, cr.SpecificName()) })...)
 	}
 
 	var keeperList v1.KeeperClusterList
@@ -529,15 +528,42 @@ func (r *readyStableInvariant) Check(ctx context.Context, namespace string) []Vi
 		size := clusterSize{replicas: cr.Replicas(), shards: 1}
 		out = append(out, r.check(key, size, cr.Status.ReadyReplicas,
 			cr.Generation, cr.Status.ObservedGeneration, cr.Status.Conditions,
-			v1.KeeperConditionReasonNoLeader)...)
+			v1.KeeperConditionReasonNoLeader,
+			func() string { return r.podStates(ctx, cr.Namespace, cr.SpecificName()) })...)
 	}
 
 	return out
 }
 
+func (r *readyStableInvariant) podStates(ctx context.Context, namespace, app string) string {
+	var pods corev1.PodList
+	if err := r.reader.List(ctx, &pods, client.InNamespace(namespace), client.MatchingLabels{
+		controllerutil.LabelAppKey: app,
+	}); err != nil {
+		return "list pods: " + err.Error()
+	}
+
+	states := make([]string, 0, len(pods.Items))
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+
+		state := formatPodState(pod)
+		if pod.DeletionTimestamp != nil {
+			state = "deleting " + state
+		}
+
+		states = append(states, pod.Name+"{"+state+"}")
+	}
+
+	slices.Sort(states)
+
+	return strings.Join(states, ", ")
+}
+
 func (r *readyStableInvariant) check(
 	key string, size clusterSize, readyReplicas int32,
 	generation, observedGeneration int64, conditions []metav1.Condition, warnReason string,
+	podStates func() string,
 ) []Violation {
 	armed, wasArmed := r.armed[key]
 
@@ -566,8 +592,14 @@ func (r *readyStableInvariant) check(
 
 	cond := meta.FindStatusCondition(conditions, v1.ConditionTypeReady)
 	if cond != nil && cond.Status == metav1.ConditionFalse {
+		message := "cluster became unready: " + cond.Message
+		if healthy := meta.FindStatusCondition(conditions, v1.ConditionTypeHealthy); healthy != nil &&
+			healthy.Status != metav1.ConditionTrue {
+			message += "; " + healthy.Message
+		}
+
 		return []Violation{{Time: time.Now(), Invariant: r.Name(), Object: key,
-			Message: "cluster became unready: " + cond.Message, Warning: cond.Reason == warnReason}}
+			Message: message + "; pods: " + podStates(), Warning: cond.Reason == warnReason}}
 	}
 
 	return nil
