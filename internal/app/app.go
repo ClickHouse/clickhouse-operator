@@ -147,6 +147,7 @@ func New(components Components, settings Settings) (ctrl.Manager, error) {
 		EnablePDB:               settings.EnablePDB,
 		EnableNetworkPolicy:     settings.EnableNetworkPolicy,
 		ResyncPeriod:            settings.ResyncPeriod,
+		ObserveInterval:         settings.ObserveInterval,
 		MaxConcurrentReconciles: settings.MaxConcurrentReconciles,
 	}
 
