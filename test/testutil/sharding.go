@@ -2,121 +2,59 @@ package testutil
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"hash/fnv"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/sethvargo/go-envconfig"
 )
 
-// ShardingConfig assigns specs to CI shards. Two modes are supported:
-//
-//   - Round-robin (used by CI): set E2E_SHARD to "index/total" (e.g. "2/4"). Specs are
-//     spread by a deterministic hash of the spec name, so every shard derives the
-//     same assignment independently and each spec runs on exactly one shard — no
-//     pre-computed plan. Takes precedence when E2E_SHARD is set.
-//
-//   - Plan-based / "smart" (legacy): set E2E_SHARD_INDEX + E2E_SHARD_TOTAL +
-//     E2E_SHARD_PLAN (a JSON spec->shard map from the e2e-shard-planner). Used
-//     when E2E_SHARD is empty; no longer used by CI.
-//
-// Duration-weighted sharding can later feed the plan-based mode (or replace the
-// round-robin hash) using per-spec timings collected by main CI.
+// ShardingConfig assigns specs to CI shards by a deterministic hash of the spec name.
 type ShardingConfig struct {
-	// Round-robin mode: "index/total". Takes precedence when non-empty.
+	// Shard is "index/total" (e.g. "2/4"); empty runs every spec.
 	Shard string `env:"E2E_SHARD"`
 
-	// Plan-based (legacy) mode.
-	Index    int    `env:"E2E_SHARD_INDEX, default=0"`
-	Total    int    `env:"E2E_SHARD_TOTAL, default=0"`
-	PlanPath string `env:"E2E_SHARD_PLAN"`
-
-	roundRobin       bool
-	shardAssignments map[string]int
+	Index int
+	Total int
 }
 
-// Load reads the sharding configuration from the environment (and, in plan-based
-// mode, the plan file).
+// Load reads the sharding configuration from the environment.
 func (c *ShardingConfig) Load() error {
 	if err := envconfig.Process(context.Background(), c); err != nil {
 		return fmt.Errorf("load sharding config from env: %w", err)
 	}
 
-	// Round-robin mode takes precedence over the legacy plan env vars.
-	if c.Shard != "" {
-		idx, total, ok := strings.Cut(c.Shard, "/")
-		index, indexErr := strconv.Atoi(idx)
-		totalN, totalErr := strconv.Atoi(total)
-
-		if !ok || indexErr != nil || totalErr != nil {
-			return fmt.Errorf("invalid E2E_SHARD %q, want \"index/total\" e.g. \"2/4\"", c.Shard)
-		}
-
-		c.Index, c.Total = index, totalN
-		if c.Total < 1 || c.Index < 1 || c.Index > c.Total {
-			return fmt.Errorf("invalid shard %d/%d", c.Index, c.Total)
-		}
-
-		c.roundRobin = true
-
+	if c.Shard == "" {
 		return nil
 	}
 
-	// Legacy plan-based mode.
-	if c.Total <= 1 {
-		return nil
+	idx, total, ok := strings.Cut(c.Shard, "/")
+	index, indexErr := strconv.Atoi(idx)
+	totalN, totalErr := strconv.Atoi(total)
+
+	if !ok || indexErr != nil || totalErr != nil {
+		return fmt.Errorf("invalid E2E_SHARD %q, want \"index/total\" e.g. \"2/4\"", c.Shard)
 	}
 
-	if c.PlanPath == "" {
-		return errors.New("sharding plan path must be set if more than 1 shard")
-	}
-
-	if c.Index < 1 || c.Index > c.Total {
-		return fmt.Errorf("invalid shard index %d, should be between 1 and %d", c.Index, c.Total)
-	}
-
-	data, err := os.ReadFile(filepath.Clean(c.PlanPath))
-	if err != nil {
-		return fmt.Errorf("read e2e shard plan: %w", err)
-	}
-
-	if err = json.Unmarshal(data, &c.shardAssignments); err != nil {
-		return fmt.Errorf("decode e2e shard plan: %w", err)
+	c.Index, c.Total = index, totalN
+	if c.Total < 1 || c.Index < 1 || c.Index > c.Total {
+		return fmt.Errorf("invalid shard %d/%d", c.Index, c.Total)
 	}
 
 	return nil
 }
 
 // Enabled reports whether the given spec belongs to this shard.
-func (c *ShardingConfig) Enabled(spec string) (bool, error) {
+func (c *ShardingConfig) Enabled(spec string) bool {
 	if c.Total <= 1 {
-		return true, nil
+		return true
 	}
 
-	if c.roundRobin {
-		h := fnv.New32a()
-		_, _ = h.Write([]byte(spec))
-		// Mask to 31 bits so the hash fits a signed int on every platform, then
-		// map it onto [1, Total]. c.Total is validated >= 1 in Load.
-		hash := int(h.Sum32() & 0x7fffffff)
-		shard := hash%c.Total + 1
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(spec))
+	// Mask to 31 bits so the hash fits a signed int on every platform.
+	hash := int(h.Sum32() & 0x7fffffff)
 
-		return shard == c.Index, nil
-	}
-
-	shard, ok := c.shardAssignments[spec]
-	if !ok {
-		return false, fmt.Errorf("test %q is not assigned in sharding plan", spec)
-	}
-
-	if shard < 1 || shard > c.Total {
-		return false, fmt.Errorf("invalid assignment for %q", spec)
-	}
-
-	return shard == c.Index, nil
+	return hash%c.Total+1 == c.Index
 }

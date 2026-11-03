@@ -41,9 +41,6 @@ def main():
         node_image = os.environ.get("K8S_IMAGE") or DEFAULT_K8S_IMAGE
 
         kind_env.require_docker()
-        # Must run before the cluster is created: it may restart the Docker
-        # daemon, which would wipe cluster containers.
-        kind_env.disable_containerd_image_store()
         kind_env.install_kind()
         kind_env.install_kubectl()
         kind_env.create_cluster(node_image)

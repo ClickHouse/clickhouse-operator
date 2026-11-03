@@ -102,10 +102,9 @@ def _e2e_command(shard_index):
 class JobConfigs:
     # Prep jobs rebuild the bundle only when the tool-version sources or the
     # provisioning script change; praktika's job cache keys off this digest and
-    # reuses the published artifact otherwise. go.sum is intentionally excluded —
-    # a dependency-only bump reuses the bundle and consumers' `go mod download`
-    # tops up the module cache. Each builds natively on its arch and publishes the
-    # tarball as the job's artifact.
+    # reuses the published artifact otherwise. go.sum is excluded: consumers'
+    # `go mod download` tops up the module cache. Each builds natively on its arch
+    # and publishes the tarball as the job's artifact.
     _GO_ENV_DIGEST = Job.CacheDigestConfig(
         include_paths=[
             "./go.mod",
@@ -137,9 +136,9 @@ class JobConfigs:
     # this job is listed in every PR run but only executes for a bot bump.
     # Needs the full Go toolchain (controller-gen/kubebuilder/crd-ref-docs) from
     # the go-env pre-hook, hence `requires` the arm bundle like the other Go jobs.
-    # enable_gh_auth so it can mint a contents:write token to push; allow_failure
-    # so a regenerate/push hiccup never blocks merge — Lint still independently
-    # fails on any stale generated file, so correctness stays guarded. The digest
+    # The script mints its own contents:write token to push. allow_failure so a
+    # regenerate/push hiccup never blocks merge — Lint still independently fails
+    # on any stale generated file, so correctness stays guarded. The digest
     # keys on go.mod/go.sum so an unrelated PR that somehow reaches here (it
     # won't, the hook gates it) is change-filtered out too.
     dependabot_regenerate = Job.Config(
@@ -148,7 +147,6 @@ class JobConfigs:
         command="python3 ci/jobs/dependabot_regenerate.py",
         timeout=20 * 60,
         allow_failure=True,
-        enable_gh_auth=True,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_ARM_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(
@@ -252,8 +250,7 @@ class JobConfigs:
         digest_config=_GO_CODE_DIGEST,
     )
 
-    # Go-only (two 60s fuzz runs). On an 8-cpu pool to match the fuzzing
-    # throughput of the former ubuntu-latest (4 vCPU) runner.
+    # Go-only (two 60s fuzz runs); fuzzing throughput scales with vCPUs.
     fuzz_specs = Job.Config(
         name="Fuzz Specs",
         runs_on=[RunnerLabels.ARM_8CPU_16G],
@@ -331,11 +328,6 @@ class JobConfigs:
         runs_on=[RunnerLabels.AMD_8CPU_16G],
         command=_compat_e2e_command(*_COMPAT_E2E_MATRIX[0][1:]),  # overridden per variant
         timeout=60 * 60,
-        # The operator-upgrade variant resolves the latest release tag via `gh api`
-        # (FETCH_TAGS=1) from a snapshot checkout with no `origin` remote; without
-        # pre-authenticated gh that call exits 4. parametrize/ParamSet can't set
-        # enable_gh_auth per variant, so it's set on the base for the whole matrix.
-        enable_gh_auth=True,
         pre_hooks=[_GO_ENV_INSTALL],
         requires=[GO_ENV_AMD_ARTIFACT.name],
         digest_config=Job.CacheDigestConfig(

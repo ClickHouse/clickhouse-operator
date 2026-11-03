@@ -10,7 +10,7 @@ WORKFLOWS = [
     Workflow.Config(
         name="Main",
         event=Workflow.Event.PUSH,
-        branches=["main", "ci/migrate-docs-lint-to-praktika"],
+        branches=["main"],
         artifacts=[GO_ENV_ARM_ARTIFACT, GO_ENV_AMD_ARTIFACT],
         jobs=[
             JobConfigs.prepare_go_env_arm,

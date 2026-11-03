@@ -15,14 +15,9 @@ The baseline commit is the PR's merge-base from Info().base_git_history() (entry
 jobs on a history-free S3 snapshot. Falls back to the base branch name when
 unavailable (local runs).
 
-The baseline is read straight from git history: a shallow `git fetch origin <ref>`
-makes `git show FETCH_HEAD:<path>` resolve the base CRDs, no per-file network
-call. This works on S3-snapshot runners too — the controller now bakes a
-token-less `origin` into the snapshot (see praktika merge.py
-_build_and_publish_snapshot), so there is no longer a no-remote fallback. A fetch
-failure is therefore a real error (ERRORs the job) rather than a silent degrade
-to the GitHub contents API, which could vacuously pass if every per-file lookup
-404'd.
+The baseline is read from git: a shallow `git fetch origin <ref>` (the snapshot
+carries a token-less `origin`) makes `git show FETCH_HEAD:<path>` resolve the base
+CRDs. A fetch failure ERRORs the job.
 """
 import subprocess
 import sys
