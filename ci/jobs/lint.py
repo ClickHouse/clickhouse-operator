@@ -10,7 +10,8 @@ what failed:
      on drift it carries the offending `git diff`. Tracked changes are reverted
      between gates so one gate's drift never pollutes the next gate's diff.
 
-  2. `make lint`'s three linters, run individually so each is its own sub-result:
+  2. `make lint`'s linters, run individually so each is its own sub-result:
+       - golangci-lint config verify
        - golangci-lint — JSON output parsed into one result whose info lists
          every issue (file:line:col: message (linter))
        - codespell
@@ -154,6 +155,7 @@ def main():
         _diff_gate("go mod tidy", "go mod tidy"),
         _diff_gate("make generate", "make generate"),
         _diff_gate("make manifests", "make manifests"),
+        _cmd_result("golangci-lint config verify", f"{GOLANGCI} config verify"),
         _golangci_result(),
         _cmd_result("codespell", f"{CODESPELL} --config ci/.codespellrc"),
         _cmd_result(

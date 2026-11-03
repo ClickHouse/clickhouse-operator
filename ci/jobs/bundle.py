@@ -37,8 +37,6 @@ def main() -> int:
     bundle_img = f"ghcr.io/clickhouse/clickhouse-operator-bundle:v{version}"
 
     kind_env.require_docker()
-    # Before the cluster is created / the bundle image is built: may restart Docker.
-    kind_env.disable_containerd_image_store()
     kind_env.install_kind()
     kind_env.install_kubectl()
 

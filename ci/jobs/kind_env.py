@@ -6,11 +6,9 @@ Kind + kubectl are installed here (not baked into the go-env bundle) because
 only the Docker/Kind jobs need them; Docker itself must be provided by the
 runner image.
 """
-import json
 import os
 import subprocess
 import sys
-import time
 
 KIND_VERSION = "v0.32.0"
 # kubectl is not strictly required by the Go test harness (it uses client-go),
@@ -50,61 +48,6 @@ def require_docker():
         raise
 
 
-def _docker_driver():
-    return subprocess.check_output(
-        ["docker", "info", "-f", "{{.Driver}}"], text=True
-    ).strip()
-
-
-def _restart_docker():
-    for cmd in ("systemctl restart docker", "service docker restart"):
-        try:
-            sh(cmd)
-            break
-        except subprocess.CalledProcessError:
-            continue
-    else:
-        raise RuntimeError("could not restart the Docker daemon")
-    # Wait for the daemon to come back before anything else touches it.
-    for _ in range(30):
-        if subprocess.run("docker version", shell=True).returncode == 0:
-            return
-        time.sleep(2)
-    raise RuntimeError("Docker daemon did not come back after restart")
-
-
-def disable_containerd_image_store():
-    """Transitional fallback for `kind load docker-image`.
-
-    The authoritative fix lives in the runner AMI (ci/infrastructure/projects.py,
-    `_docker_kind_component`, recipe >= 1.0.6): it bakes
-    `features.containerd-snapshotter = false` into /etc/docker/daemon.json. Until
-    that AMI is built and the pools are rolled, runners still boot with the
-    containerd image store, where `kind load` exports via `docker save` and
-    re-imports with `ctr ... --all-platforms --digests` — which fails on the other
-    platforms' / attestation blobs ("content digest ... not found") because a
-    single-arch pull keeps a multi-platform index.
-
-    So on such a runner (Driver=overlayfs) we disable the snapshotter and restart
-    Docker here. Once the baked AMI is in use the driver is the classic store and
-    this is a no-op (early return, no restart), so it can be deleted after the roll.
-    """
-    if _docker_driver() != "overlayfs":
-        return  # classic image store already in use (e.g. baked AMI); nothing to do
-    print("Docker containerd image store detected; disabling for kind load", flush=True)
-    path = "/etc/docker/daemon.json"
-    try:
-        with open(path) as f:
-            cfg = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        cfg = {}
-    cfg.setdefault("features", {})["containerd-snapshotter"] = False
-    os.makedirs("/etc/docker", exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(cfg, f)
-    _restart_docker()
-
-
 def install_kind(a=None):
     a = a or arch()
     url = f"https://github.com/kubernetes-sigs/kind/releases/download/{KIND_VERSION}/kind-linux-{a}"
@@ -128,9 +71,9 @@ def create_cluster(node_image=None, name=DEFAULT_CLUSTER, config=KIND_CONFIG):
     # refuses to clobber it ("node(s) already exist"). `kind delete` is idempotent.
     sh(f"kind delete cluster --name {name}", check=False)
     # `kind delete` can leave the node containers behind when they are only
-    # stopped (e.g. after disable_containerd_image_store() restarted the Docker
-    # daemon), which still trips the "already exist" check. Force-remove any
-    # container carrying this cluster's kind label as a backstop.
+    # stopped (e.g. after a Docker daemon restart), which still trips the
+    # "already exist" check. Force-remove any container carrying this cluster's
+    # kind label as a backstop.
     sh(
         f"ids=$(docker ps -aq --filter label=io.x-k8s.kind.cluster={name}); "
         f'[ -n "$ids" ] && docker rm -f $ids || true',

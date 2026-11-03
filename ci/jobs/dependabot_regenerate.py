@@ -14,8 +14,7 @@ staleness and fails; this job *fixes* it and pushes, so a human never has to
 touch a bot PR.
 
 Branch handling: praktika checks out the PR's ephemeral `refs/pull/<N>/merge`
-commit (detached, no remote). Committing there would commit the merge, not the
-head. So we fetch the real head branch, check it out, regenerate on top of it, and
+commit (detached). Committing there would commit the merge, not the head. So we fetch the real head branch, check it out, regenerate on top of it, and
 push that.
 
 Push credentials: a GitHub App installation token minted here (GHAuth). Unlike
@@ -80,8 +79,8 @@ def main() -> int:
     auth = base64.b64encode(f"x-access-token:{token}".encode()).decode()
     auth_header_key = "http.https://github.com/.extraheader"
 
-    # The ephemeral merge checkout has no remote; add one and lay the real head
-    # branch on top of the working tree before regenerating.
+    # Replace the snapshot's origin with a known URL and lay the real head branch
+    # on top of the working tree before regenerating.
     subprocess.run(["git", "remote", "remove", "origin"], check=False)
     _run(["git", "remote", "add", "origin", remote])
     print(f"+ git config --local {auth_header_key} 'AUTHORIZATION: basic <redacted>'", flush=True)

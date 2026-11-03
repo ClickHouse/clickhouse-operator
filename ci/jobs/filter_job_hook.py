@@ -3,9 +3,9 @@ Workflow filter hooks for the praktika workflows.
 
 A hook has the signature `should_skip_job(job_name) -> (skip: bool, reason: str)`
 and is wired via `Workflow.Config(workflow_filter_hooks=[should_skip_job])`. The
-orchestrator calls it once per job while building the run (see
-praktika.native_jobs), i.e. where `praktika.info.Info` is populated — so label
-gating needs no `gh` call from inside the job.
+Config Workflow job calls it once per job (see praktika.native_jobs), i.e. where
+`praktika.info.Info` is populated — so label gating needs no `gh` call from
+inside the job.
 """
 from praktika.info import Info
 

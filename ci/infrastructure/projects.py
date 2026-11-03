@@ -318,7 +318,7 @@ _RUNNER_POOLS = [
 PROJECTS = [
     CloudInfrastructure.Config(
         name=Settings.PROJECT_NAME,
-        min_praktika_version="0.1.25",
+        min_praktika_version="0.1.26",
         vpcs=[
             VPC.Config(
                 subnets=[
