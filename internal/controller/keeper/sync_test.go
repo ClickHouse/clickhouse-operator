@@ -29,11 +29,12 @@ import (
 )
 
 var _ = Describe("UpdateReplica", Ordered, func() {
+	const replicaID v1.KeeperReplicaID = 1
+
 	var (
 		cancelEvents context.CancelFunc
 		log          util.Logger
 		rec          *keeperReconciler
-		replicaID    v1.KeeperReplicaID = 1
 		cfgKey       types.NamespacedName
 		stsKey       types.NamespacedName
 	)
@@ -271,7 +272,7 @@ var _ = Describe("Keeper version status", func() {
 func mustGet[T client.Object](ctx context.Context, c client.Client, key types.NamespacedName) T {
 	var result T
 
-	result, ok := reflect.New(reflect.TypeOf(result).Elem()).Interface().(T)
+	result, ok := reflect.TypeAssert[T](reflect.New(reflect.TypeOf(result).Elem()))
 	if !ok {
 		panic("unexpected type created")
 	}

@@ -31,12 +31,12 @@ func templateInternalService(cr *v1.ClickHouseCluster, id v1.ClickHouseReplicaID
 	return service
 }
 
-func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *corev1.Service {
+func templateService(cr *v1.ClickHouseCluster, name string, isInternal bool) *corev1.Service {
 	protocols := buildProtocols(cr)
 
 	ports := make([]corev1.ServicePort, 0, len(protocols))
 	for name, proto := range protocols {
-		if proto.Port == 0 || proto.Internal != internal {
+		if proto.Port == 0 || proto.Internal != isInternal {
 			continue
 		}
 
@@ -49,7 +49,7 @@ func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *core
 		})
 	}
 
-	if !internal {
+	if !isInternal {
 		for _, p := range cr.Spec.AdditionalPorts {
 			ports = append(ports, corev1.ServicePort{
 				Protocol:   corev1.ProtocolTCP,
@@ -79,7 +79,7 @@ func templateService(cr *v1.ClickHouseCluster, name string, internal bool) *core
 			ClusterIP: corev1.ClusterIPNone,
 			// Internal Services publish not-yet-ready addresses so replicas and the operator can
 			// reach peers before they report Ready; the public Service gates client traffic on readiness.
-			PublishNotReadyAddresses: internal,
+			PublishNotReadyAddresses: isInternal,
 			Selector: map[string]string{
 				controllerutil.LabelAppKey:  cr.SpecificName(),
 				controllerutil.LabelRoleKey: controllerutil.LabelClickHouseValue,

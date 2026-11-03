@@ -33,7 +33,6 @@ type clusterObject[S any, SP clusterStatus[S]] interface {
 	client.Object
 	GetGeneration() int64
 	NamespacedName() types.NamespacedName
-	SpecificName() string
 	GetStatus() SP
 }
 

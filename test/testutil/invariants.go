@@ -48,7 +48,6 @@ func (v Violation) String() string {
 
 // Invariant represents a single cluster property that should not be violated during the cluster lifetime.
 type Invariant interface {
-	Name() string
 	Check(ctx context.Context, namespace string) []Violation
 }
 
@@ -110,10 +109,7 @@ func StartInvariants(env *Env, namespace string) *InvariantSet {
 		return nil
 	}
 
-	set.wg.Add(1)
-
-	go func() {
-		defer set.wg.Done()
+	set.wg.Go(func() {
 		defer GinkgoRecover()
 
 		// Lazy init informers, so suite can create CRDs
@@ -151,7 +147,7 @@ func StartInvariants(env *Env, namespace string) *InvariantSet {
 			time.Sleep(invariantPollMinInterval)
 			timer.Reset(invariantPollInterval)
 		}
-	}()
+	})
 
 	DeferCleanup(set.StopAndCheck)
 
@@ -506,7 +502,7 @@ func (r *readyStableInvariant) Check(ctx context.Context, namespace string) []Vi
 		}
 
 		size := clusterSize{replicas: cr.Replicas(), shards: cr.Shards()}
-		out = append(out, r.check(key, size, cr.Status.ReadyReplicas,
+		out = append(out, r.checkCluster(key, size, cr.Status.ReadyReplicas,
 			cr.Generation, cr.Status.ObservedGeneration, cr.Status.Conditions, "")...)
 	}
 
@@ -527,7 +523,7 @@ func (r *readyStableInvariant) Check(ctx context.Context, namespace string) []Vi
 		// Leader restarts (no handoff today) elect through a NoLeader window: warn instead of fail.
 		key := "KeeperCluster/" + cr.Namespace + "/" + cr.Name
 		size := clusterSize{replicas: cr.Replicas(), shards: 1}
-		out = append(out, r.check(key, size, cr.Status.ReadyReplicas,
+		out = append(out, r.checkCluster(key, size, cr.Status.ReadyReplicas,
 			cr.Generation, cr.Status.ObservedGeneration, cr.Status.Conditions,
 			v1.KeeperConditionReasonNoLeader)...)
 	}
@@ -535,7 +531,7 @@ func (r *readyStableInvariant) Check(ctx context.Context, namespace string) []Vi
 	return out
 }
 
-func (r *readyStableInvariant) check(
+func (r *readyStableInvariant) checkCluster(
 	key string, size clusterSize, readyReplicas int32,
 	generation, observedGeneration int64, conditions []metav1.Condition, warnReason string,
 ) []Violation {

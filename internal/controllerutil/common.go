@@ -229,18 +229,14 @@ func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	var results = make(chan executionResultWithID[Id, Result], len(tasks))
 
 	for _, task := range tasks {
-		wg.Add(1)
-
-		go func(task Item) {
-			defer wg.Done()
-
+		wg.Go(func() {
 			id, res, err := f(task)
 			results <- executionResultWithID[Id, Result]{
 				id:     id,
 				result: res,
 				err:    err,
 			}
-		}(task)
+		})
 	}
 
 	wg.Wait()

@@ -339,8 +339,8 @@ func (rm *ResourceManager) buildVersionProbeJob(cfg VersionProbeConfig, revision
 					ServiceAccountName:    cfg.PodTemplate.ServiceAccountName,
 					SchedulerName:         cfg.PodTemplate.SchedulerName,
 					Volumes: []corev1.Volume{{
-						Name:         versionProbeTmpVolumeName,
-						VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+						Name:     versionProbeTmpVolumeName,
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
 					}},
 					Containers: []corev1.Container{
 						{

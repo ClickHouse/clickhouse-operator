@@ -49,7 +49,11 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 		pdbs         policyv1.PodDisruptionBudgetList
 		configs      corev1.ConfigMapList
 		statefulsets appsv1.StatefulSetList
-		cr           = &v1.KeeperCluster{
+		cr           *v1.KeeperCluster
+	)
+
+	BeforeAll(func() {
+		cr = &v1.KeeperCluster{
 			Name:      "standalone",
 			Namespace: "default",
 			Spec: v1.KeeperClusterSpec{
@@ -62,9 +66,7 @@ var _ = When("reconciling standalone KeeperCluster resource", Ordered, func() {
 				},
 			},
 		}
-	)
 
-	BeforeAll(func() {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		recorder = events.NewFakeRecorder(128)
 		controller = &ClusterController{

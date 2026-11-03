@@ -11,7 +11,7 @@ const (
 	RequeueProbePoll              = 5 * time.Second
 	LoadReplicaStateTimeout       = 10 * time.Second
 	WarningsPollInterval          = 30 * time.Second
-	TLSFileMode             int32 = 0444
+	TLSFileMode             int32 = 0o444
 	DefaultUser             int64 = 101
 )
 
@@ -24,7 +24,7 @@ const (
 
 var (
 	// DefaultLivenessProbeSettings defines default settings for Kubernetes liveness probes.
-	//nolint: mnd // Magic numbers are used as constants.
+	//nolint:mnd // Magic numbers are used as constants.
 	DefaultLivenessProbeSettings = corev1.Probe{
 		InitialDelaySeconds: 60,
 		TimeoutSeconds:      10,
@@ -34,7 +34,7 @@ var (
 	}
 
 	// DefaultReadinessProbeSettings defines default settings for Kubernetes readiness probes.
-	//nolint: mnd // Magic numbers are used as constants.
+	//nolint:mnd // Magic numbers are used as constants.
 	DefaultReadinessProbeSettings = corev1.Probe{
 		InitialDelaySeconds: 5,
 		TimeoutSeconds:      10,

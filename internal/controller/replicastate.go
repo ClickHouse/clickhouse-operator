@@ -116,12 +116,12 @@ type ReplicaState struct {
 }
 
 // GetReplicaPod loads the Pod of the given StatefulSet.
-func GetReplicaPod(ctx context.Context, log util.Logger, client client.Client, sts *appsv1.StatefulSet) (*corev1.Pod, error) {
+func GetReplicaPod(ctx context.Context, log util.Logger, cli client.Client, sts *appsv1.StatefulSet) (*corev1.Pod, error) {
 	pod := &corev1.Pod{}
 
 	podName := sts.Name + "-0"
 
-	if err := client.Get(ctx, types.NamespacedName{
+	if err := cli.Get(ctx, types.NamespacedName{
 		Namespace: sts.Namespace,
 		Name:      podName,
 	}, pod); err != nil {

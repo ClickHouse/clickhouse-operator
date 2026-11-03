@@ -12,7 +12,11 @@ import (
 )
 
 var _ = Describe("RunSteps", func() {
-	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	var log controllerutil.Logger
+
+	BeforeEach(func() {
+		log = controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	})
 
 	step := func(name string, sr StepResult) ReconcileStep {
 		return ReconcileStep{

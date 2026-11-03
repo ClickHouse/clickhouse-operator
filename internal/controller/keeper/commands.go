@@ -122,14 +122,15 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 	}
 
 	if result.ServerState == ModeLeader {
-		if followers, ok := statMap["zk_followers"]; ok {
-			result.Followers, err = strconv.Atoi(followers)
-			if err != nil {
-				return serverStatus{}, fmt.Errorf("failed to parse field 'zk_followers': %w", err)
-			}
-		} else {
+		followers, ok := statMap["zk_followers"]
+		if !ok {
 			log.Warn("'zk_followers' is missing in keeper response")
 			return serverStatus{}, fmt.Errorf("response missing required field 'Followers': %q", string(data))
+		}
+
+		result.Followers, err = strconv.Atoi(followers)
+		if err != nil {
+			return serverStatus{}, fmt.Errorf("failed to parse field 'zk_followers': %w", err)
 		}
 	}
 

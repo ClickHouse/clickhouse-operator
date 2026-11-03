@@ -32,17 +32,21 @@ func TestUtils(t *testing.T) {
 }
 
 var _ = Describe("ApplyDefault", func() {
-	allSet := SampleStruct{
-		String:  "default",
-		Number:  7,
-		Pointer: new(42),
-		Array:   []int{1, 2, 3},
-		Map:     map[int]string{1: "a", 2: "b", 3: "c"},
-		Struct: InternalStruct{
-			String: "internal",
-			Number: 14,
-		},
-	}
+	var allSet SampleStruct
+
+	BeforeEach(func() {
+		allSet = SampleStruct{
+			String:  "default",
+			Number:  7,
+			Pointer: new(42),
+			Array:   []int{1, 2, 3},
+			Map:     map[int]string{1: "a", 2: "b", 3: "c"},
+			Struct: InternalStruct{
+				String: "internal",
+				Number: 14,
+			},
+		}
+	})
 
 	It("should default all fields", func() {
 		source := SampleStruct{}

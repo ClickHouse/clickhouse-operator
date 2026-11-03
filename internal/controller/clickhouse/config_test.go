@@ -16,43 +16,47 @@ import (
 )
 
 var _ = Describe("ConfigGenerator", func() {
-	ctx := clickhouseReconciler{
-		Cluster: &v1.ClickHouseCluster{
-			Name:      "test-cluster",
-			Namespace: "test-namespace",
-			Spec: v1.ClickHouseClusterSpec{
-				Replicas:            new(int32(3)),
-				Shards:              new(int32(2)),
-				DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
-				AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
-					{Name: "test1"},
-					{Name: "test2"},
+	var ctx clickhouseReconciler
+
+	BeforeEach(func() {
+		ctx = clickhouseReconciler{
+			Cluster: &v1.ClickHouseCluster{
+				Name:      "test-cluster",
+				Namespace: "test-namespace",
+				Spec: v1.ClickHouseClusterSpec{
+					Replicas:            new(int32(3)),
+					Shards:              new(int32(2)),
+					DataVolumeClaimSpec: &corev1.PersistentVolumeClaimSpec{},
+					AdditionalVolumeClaimTemplates: []v1.PersistentVolumeClaimTemplate{
+						{Name: "test1"},
+						{Name: "test2"},
+					},
+					Settings: v1.ClickHouseSettings{
+						Encryption: &v1.EncryptionSettings{
+							PolicyName: "encrypted",
+						},
+						ExtraConfig: runtime.RawExtension{
+							Raw: []byte(`{"test": "value"}`),
+						},
+						ExtraReloadableConfig: runtime.RawExtension{
+							Raw: []byte(`{"reloadable": "value"}`),
+						},
+						ExtraUsersConfig: runtime.RawExtension{
+							Raw: []byte(`{}`),
+						},
+					},
 				},
-				Settings: v1.ClickHouseSettings{
-					Encryption: &v1.EncryptionSettings{
-						PolicyName: "encrypted",
-					},
-					ExtraConfig: runtime.RawExtension{
-						Raw: []byte(`{"test": "value"}`),
-					},
-					ExtraReloadableConfig: runtime.RawExtension{
-						Raw: []byte(`{"reloadable": "value"}`),
-					},
-					ExtraUsersConfig: runtime.RawExtension{
-						Raw: []byte(`{}`),
-					},
+				Status: v1.ClickHouseClusterStatus{
+					Version: "25.12.1.1",
 				},
 			},
-			Status: v1.ClickHouseClusterStatus{
-				Version: "25.12.1.1",
+			keeper: v1.KeeperCluster{
+				Spec: v1.KeeperClusterSpec{
+					Replicas: new(int32(3)),
+				},
 			},
-		},
-		keeper: v1.KeeperCluster{
-			Spec: v1.KeeperClusterSpec{
-				Replicas: new(int32(3)),
-			},
-		},
-	}
+		}
+	})
 
 	for _, generator := range generators {
 		It("should generate config: "+generator.Filename(), func() {
@@ -190,11 +194,8 @@ var _ = Describe("ConfigGenerator", func() {
 func findExposedEnvVars(value any) []string {
 	switch value := value.(type) {
 	case map[any]any:
-		if env, ok := value["@from_env"]; ok {
-			if _, ok := value["@hide_in_preprocessed"]; !ok {
-				return []string{fmt.Sprintf("%v", env)}
-			}
-		} else {
+		env, ok := value["@from_env"]
+		if !ok {
 			var exposed []string
 			for path, child := range value {
 				for _, e := range findExposedEnvVars(child) {
@@ -203,6 +204,10 @@ func findExposedEnvVars(value any) []string {
 			}
 
 			return exposed
+		}
+
+		if _, ok := value["@hide_in_preprocessed"]; !ok {
+			return []string{fmt.Sprintf("%v", env)}
 		}
 
 	case []any:
@@ -220,7 +225,11 @@ func findExposedEnvVars(value any) []string {
 }
 
 var _ = Describe("logTablesConfigGenerator", func() {
-	tmpl := template.Must(template.New("").Parse(logTablesConfigTemplateStr))
+	var tmpl *template.Template
+
+	BeforeEach(func() {
+		tmpl = template.Must(template.New("").Parse(logTablesConfigTemplateStr))
+	})
 
 	generate := func(ttlDays *int32) string {
 		r := &clickhouseReconciler{
