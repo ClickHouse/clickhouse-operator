@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -170,6 +171,38 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 
 		err = rec.GetClient().Get(ctx, podKey, &corev1.Pod{})
 		Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "stuck pod should have been deleted")
+	})
+})
+
+var _ = Describe("ActiveReplicaStatus", func() {
+	It("should probe replicas at their Pod IP", func(ctx context.Context) {
+		log, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		var dialed []string
+
+		rec.Dialer = func(_ context.Context, addr string) (net.Conn, error) {
+			dialed = append(dialed, addr)
+
+			return nil, errors.New("disabled")
+		}
+
+		id := v1.KeeperReplicaID(0)
+		sts := &appsv1.StatefulSet{
+			Namespace: rec.Cluster.Namespace,
+			Name:      rec.Cluster.StatefulSetNameByReplicaID(id),
+			Labels:    util.MergeMaps(id.Labels(), map[string]string{util.LabelAppKey: rec.Cluster.SpecificName()}),
+			Status:    appsv1.StatefulSetStatus{ReadyReplicas: 1},
+		}
+		Expect(rec.GetClient().Create(ctx, sts)).To(Succeed())
+		Expect(rec.GetClient().Create(ctx, &corev1.Pod{
+			Namespace: sts.Namespace, Name: sts.Name + "-0",
+			Status: corev1.PodStatus{PodIP: "10.1.2.3"},
+		})).To(Succeed())
+
+		_, err := rec.reconcileActiveReplicaStatus(ctx, log)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(dialed).To(ConsistOf(net.JoinHostPort("10.1.2.3", strconv.Itoa(PortNative))))
 	})
 })
 

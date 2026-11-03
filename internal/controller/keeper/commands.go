@@ -35,13 +35,13 @@ type serverStatus struct {
 	Version     string
 }
 
-func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) (net.Conn, error) {
+func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, host string, tlsRequired bool) (net.Conn, error) {
 	port := PortNative
 	if tlsRequired {
 		port = PortNativeSecure
 	}
 
-	addr := net.JoinHostPort(hostname, strconv.FormatInt(int64(port), 10))
+	addr := net.JoinHostPort(host, strconv.FormatInt(int64(port), 10))
 
 	if dialer == nil {
 		dialer = func(ctx context.Context, addr string) (net.Conn, error) {
@@ -51,7 +51,7 @@ func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, h
 
 	conn, err := dialer(ctx, addr)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", hostname, err)
+		return nil, fmt.Errorf("connect to %s: %w", host, err)
 	}
 
 	if tlsRequired {
@@ -136,8 +136,8 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 	return result, nil
 }
 
-func getServerStatus(ctx context.Context, log controllerutil.Logger, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) serverStatus {
-	conn, err := getConnection(ctx, dialer, hostname, tlsRequired)
+func getServerStatus(ctx context.Context, log controllerutil.Logger, dialer controllerutil.DialContextFunc, host string, tlsRequired bool) serverStatus {
+	conn, err := getConnection(ctx, dialer, host, tlsRequired)
 	if err != nil {
 		log.Info("failed to get keeper connection", "error", err)
 		return serverStatus{}

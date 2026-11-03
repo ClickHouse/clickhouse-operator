@@ -22,6 +22,7 @@ type connCacheEntry struct {
 	mu       sync.Mutex
 	credHash string
 	conns    map[v1.ClickHouseReplicaID]clickhouse.Conn
+	addrs    map[v1.ClickHouseReplicaID]string
 }
 
 func newConnCache() *connCache {
@@ -108,12 +109,18 @@ func (c *connCache) Close(log controllerutil.Logger) {
 	}
 }
 
-func (e *connCacheEntry) Conn(id v1.ClickHouseReplicaID, dial func() (clickhouse.Conn, error)) (clickhouse.Conn, error) {
+func (e *connCacheEntry) Conn(id v1.ClickHouseReplicaID, addr string, dial func() (clickhouse.Conn, error)) (clickhouse.Conn, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if conn, ok := e.conns[id]; ok {
-		return conn, nil
+		if e.addrs[id] == addr {
+			return conn, nil
+		}
+
+		_ = conn.Close()
+
+		delete(e.conns, id)
 	}
 
 	conn, err := dial()
@@ -121,7 +128,12 @@ func (e *connCacheEntry) Conn(id v1.ClickHouseReplicaID, dial func() (clickhouse
 		return nil, err
 	}
 
+	if e.addrs == nil {
+		e.addrs = map[v1.ClickHouseReplicaID]string{}
+	}
+
 	e.conns[id] = conn
+	e.addrs[id] = addr
 
 	return conn, nil
 }
