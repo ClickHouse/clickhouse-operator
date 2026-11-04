@@ -69,7 +69,7 @@ type KeeperClusterSpec struct {
 }
 
 // WithDefaults sets default values for KeeperClusterSpec fields.
-// Pod and container defaults (image, resources, probes, ...) are not stored in the spec:
+// Pod and container defaults (image, resources, ...) are not stored in the spec:
 // the operator generates them and merges the referenced pod template on top.
 func (s *KeeperClusterSpec) WithDefaults() {
 	defaultSpec := KeeperClusterSpec{

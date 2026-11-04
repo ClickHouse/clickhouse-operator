@@ -218,7 +218,7 @@ DefaultPasswordSelector selects the source for the default user's password.
 |-------|------|-------------|----------|---------|
 | `passwordType` | string | Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true | password |
 | `secret` | [SecretKeySelector](#secretkeyselector) | Select password value from a Secret key | false |  |
-| `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key | false |  |
+| `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key.<br />Deprecated: ConfigMaps are not suitable for credentials; use secret instead. Removed in v1alpha2. | false |  |
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)

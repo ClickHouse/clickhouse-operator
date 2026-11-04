@@ -269,10 +269,19 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 
 			By("Rejecting cr with empty configmap key")
 
-			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{ConfigMap: &chv1.ConfigMapKeySelector{Name: "smth"}}
+			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{ConfigMap: &chv1.ConfigMapKeySelector{Name: "smth"}} //nolint:staticcheck // deprecated field still validated
 			err = k8sClient.Create(ctx, cluster)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("spec.settings.defaultUserPassword.configMap.key: Required value"))
+
+			By("Warning on deprecated configMap source")
+
+			cluster.Spec.Settings.DefaultUserPassword = &chv1.DefaultPasswordSelector{ConfigMap: &chv1.ConfigMapKeySelector{Name: "smth", Key: "smth"}} //nolint:staticcheck // deprecated field still validated
+			err = k8sClient.Create(ctx, cluster)
+			Expect(err).To(Succeed())
+			Expect(warnings).To(ContainElement(ContainSubstring("defaultUserPassword.configMap is deprecated")))
+			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+			cluster = chCluster.DeepCopy()
 
 			By("Warning on empty field")
 
