@@ -121,14 +121,40 @@ STRIP_CRD_DESCRIPTIONS ?= $(LOCALBIN)/strip-crd-descriptions
 
 # Embedded Kubernetes types carry the full upstream docs, which dominate the CRD size.
 # Strip descriptions below these fields; the fields' own and all operator-defined descriptions are kept.
+# v1alpha1 templates are operator-defined structs, so only their corev1-typed fields are stripped.
+STRIP_CRD_V1ALPHA1_PATHS := \
+	-path v1alpha1:spec.podTemplate.topologySpreadConstraints \
+	-path v1alpha1:spec.podTemplate.imagePullSecrets \
+	-path v1alpha1:spec.podTemplate.affinity \
+	-path v1alpha1:spec.podTemplate.tolerations \
+	-path v1alpha1:spec.podTemplate.volumes \
+	-path v1alpha1:spec.podTemplate.securityContext \
+	-path v1alpha1:spec.podTemplate.initContainers \
+	-path v1alpha1:spec.containerTemplate.resources \
+	-path v1alpha1:spec.containerTemplate.volumeMounts \
+	-path v1alpha1:spec.containerTemplate.env \
+	-path v1alpha1:spec.containerTemplate.securityContext \
+	-path v1alpha1:spec.containerTemplate.livenessProbe \
+	-path v1alpha1:spec.containerTemplate.readinessProbe \
+	-path v1alpha1:spec.containerTemplate.startupProbe \
+	-path v1alpha1:spec.containerTemplate.lifecycle \
+	-path v1alpha1:spec.versionProbeTemplate.spec.template.spec.tolerations \
+	-path v1alpha1:spec.versionProbeTemplate.spec.template.spec.securityContext \
+	-path v1alpha1:spec.versionProbeTemplate.spec.template.spec.containers.resources \
+	-path v1alpha1:spec.versionProbeTemplate.spec.template.spec.containers.securityContext \
+	-path v1alpha1:spec.dataVolumeClaimSpec
+
 define strip-crd-descriptions
 $(STRIP_CRD_DESCRIPTIONS) -crd config/crd/bases/clickhouse.com_clickhouseclusters.yaml \
+	$(STRIP_CRD_V1ALPHA1_PATHS) \
+	-path v1alpha1:spec.additionalVolumeClaimTemplates.spec \
 	-path v1alpha2:spec.podTemplates.spec \
 	-path v1alpha2:spec.versionProbeTemplate.spec.template.spec \
 	-path v1alpha2:spec.dataVolumeClaimTemplates.spec \
 	-path v1alpha2:spec.additionalVolumeClaimTemplateSets.templates.spec \
 	-path v1alpha2:spec.podDisruptionBudget.spec
 $(STRIP_CRD_DESCRIPTIONS) -crd config/crd/bases/clickhouse.com_keeperclusters.yaml \
+	$(STRIP_CRD_V1ALPHA1_PATHS) \
 	-path v1alpha2:spec.podTemplate.spec \
 	-path v1alpha2:spec.dataVolumeClaimTemplate.spec \
 	-path v1alpha2:spec.podDisruptionBudget.spec
@@ -492,6 +518,9 @@ CRD_BASE_REF ?= origin/main
 # that are structural to the k8s API, not operator design choices. These are automatically
 # suppressed by ratcheting for existing fields, but appear when adding new fields that embed core types.
 CRD_COMPAT_EMBEDDED_TYPE_RE := (securityContext|windowsOptions)\.|metadata\.(labels|annotations) |resources\.(limits|requests) |selector\.matchLabels|nodeSelector
+# v1alpha2 embeds full corev1 PodSpecs (bools/maps defined upstream) and uses the standard labels/annotations maps.
+# The logger bools are carried over unchanged from v1alpha1.
+CRD_COMPAT_EMBEDDED_TYPE_RE := $(CRD_COMPAT_EMBEDDED_TYPE_RE)|version/v1alpha2 field/\^\.spec\.(podTemplates\[\*\]\.spec|podTemplate\.spec|versionProbeTemplate\.spec\.template\.spec)\.|version/v1alpha2 field/\^\.spec\.(labels|annotations) |version/v1alpha2 field/\^\.spec\.settings\.logger\.(logToFile|jsonLogs) 
 # Budget below etcd's ~1MiB per-object cap so CRD growth fails CI before installs break.
 CRD_MAX_BYTES ?= 800000
 .PHONY: check-crd-size
