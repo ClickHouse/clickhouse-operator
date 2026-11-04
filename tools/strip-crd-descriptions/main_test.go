@@ -4,6 +4,9 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"sigs.k8s.io/yaml"
 )
 
@@ -83,49 +86,41 @@ spec:
         type: object
 `
 
-func strip(t *testing.T, paths ...string) map[string]any {
-	t.Helper()
+func TestStripCRDDescriptions(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "strip-crd-descriptions Suite")
+}
+
+func strip(paths ...string) map[string]any {
+	GinkgoHelper()
 
 	out, err := stripCRD([]byte(testCRD), paths)
-	if err != nil {
-		t.Fatalf("stripCRD: %v", err)
-	}
-
-	if !strings.HasPrefix(string(out), "---\n") {
-		t.Fatalf("output lost the document separator")
-	}
+	Expect(err).NotTo(HaveOccurred())
+	Expect(string(out)).To(HavePrefix("---\n"), "output lost the document separator")
 
 	var crd map[string]any
-	if err := yaml.Unmarshal(out, &crd); err != nil {
-		t.Fatalf("parse output: %v", err)
-	}
+	Expect(yaml.Unmarshal(out, &crd)).To(Succeed())
 
 	return crd
 }
 
-func schemaAt(t *testing.T, crd map[string]any, version, path string) map[string]any {
-	t.Helper()
+func schemaAt(crd map[string]any, version, path string) map[string]any {
+	GinkgoHelper()
 
 	root, err := versionSchema(crd, version)
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err).NotTo(HaveOccurred())
 
 	node, err := lookup(root, strings.Split(path, "."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	Expect(err).NotTo(HaveOccurred())
 
 	return node
 }
 
-func asMap(t *testing.T, v any) map[string]any {
-	t.Helper()
+func asMap(v any) map[string]any {
+	GinkgoHelper()
 
 	m, ok := v.(map[string]any)
-	if !ok {
-		t.Fatalf("expected an object, got %T", v)
-	}
+	Expect(ok).To(BeTrue(), "expected an object, got %T", v)
 
 	return m
 }
@@ -141,80 +136,55 @@ func countDescriptions(node map[string]any) int {
 	return n
 }
 
-func TestStripsOnlyBelowPath(t *testing.T) {
-	crd := strip(t, "v1alpha2:spec.podTemplate.spec")
+var _ = Describe("stripCRD", func() {
+	It("strips only below the path", func() {
+		crd := strip("v1alpha2:spec.podTemplate.spec")
 
-	target := schemaAt(t, crd, "v1alpha2", "spec.podTemplate.spec")
-	if target["description"] != "own field doc" {
-		t.Errorf("target field lost its own description: %v", target["description"])
-	}
+		target := schemaAt(crd, "v1alpha2", "spec.podTemplate.spec")
+		Expect(target["description"]).To(Equal("own field doc"), "target field lost its own description")
+		Expect(countDescriptions(target)).To(Equal(1), "only the target description should remain below the path")
 
-	if got := countDescriptions(target); got != 1 {
-		t.Errorf("expected only the target description to remain below the path, got %d", got)
-	}
+		// The field named "description" must survive as a property, without its doc.
+		Expect(asMap(target["properties"])).To(HaveKey("description"), "property named 'description' was removed")
 
-	// The field named "description" must survive as a property, without its doc.
-	props := asMap(t, target["properties"])
-	if _, ok := props["description"]; !ok {
-		t.Errorf("property named 'description' was removed")
-	}
-
-	for path, want := range map[string]string{
-		"spec.podTemplate":                 "template",
-		"spec.podTemplate.topologyZoneKey": "zone key",
-	} {
-		if got := schemaAt(t, crd, "v1alpha2", path)["description"]; got != want {
-			t.Errorf("%s description = %v, want %q", path, got, want)
+		for path, want := range map[string]string{
+			"spec.podTemplate":                 "template",
+			"spec.podTemplate.topologyZoneKey": "zone key",
+		} {
+			Expect(schemaAt(crd, "v1alpha2", path)["description"]).To(Equal(want), path)
 		}
-	}
 
-	alpha := schemaAt(t, crd, "v1alpha1", "spec.podTemplate.nodeSelector")
-	if alpha["description"] != "alpha node selector" {
-		t.Errorf("other version was modified")
-	}
-}
+		alpha := schemaAt(crd, "v1alpha1", "spec.podTemplate.nodeSelector")
+		Expect(alpha["description"]).To(Equal("alpha node selector"), "other version was modified")
+	})
 
-func TestKeepsValidation(t *testing.T) {
-	crd := strip(t, "v1alpha2:spec.podTemplate.spec")
-	target := schemaAt(t, crd, "v1alpha2", "spec.podTemplate.spec")
-	props := asMap(t, target["properties"])
+	It("keeps validation", func() {
+		crd := strip("v1alpha2:spec.podTemplate.spec")
+		props := asMap(schemaAt(crd, "v1alpha2", "spec.podTemplate.spec")["properties"])
 
-	if asMap(t, props["containers"])["type"] != "array" {
-		t.Errorf("type removed from containers")
-	}
+		Expect(asMap(props["containers"])["type"]).To(Equal("array"), "type removed from containers")
+		Expect(asMap(props["port"])["anyOf"]).To(HaveLen(2), "anyOf branches changed")
+	})
 
-	if anyOf, _ := asMap(t, props["port"])["anyOf"].([]any); len(anyOf) != 2 {
-		t.Errorf("anyOf branches changed")
-	}
-}
+	DescribeTable("rejects invalid paths",
+		func(p string) {
+			_, err := stripCRD([]byte(testCRD), []string{p})
+			Expect(err).To(HaveOccurred())
+		},
+		Entry("missing field", "v1alpha2:spec.missing"),
+		Entry("unknown version", "v9:spec.podTemplate"),
+		Entry("no version", "spec.podTemplate"),
+		Entry("empty path", "v1alpha2:"),
+	)
 
-func TestErrors(t *testing.T) {
-	for _, p := range []string{
-		"v1alpha2:spec.missing",
-		"v9:spec.podTemplate",
-		"spec.podTemplate",
-		"v1alpha2:",
-	} {
-		if _, err := stripCRD([]byte(testCRD), []string{p}); err == nil {
-			t.Errorf("expected error for path %q", p)
-		}
-	}
-}
+	It("traverses list items", func() {
+		crd := strip("v1alpha2:spec.podTemplate.spec.containers.ports")
 
-func TestTraversesListItems(t *testing.T) {
-	crd := strip(t, "v1alpha2:spec.podTemplate.spec.containers.ports")
+		ports := schemaAt(crd, "v1alpha2", "spec.podTemplate.spec.containers.ports")
+		Expect(ports["description"]).To(Equal("ports"), "list field lost its own description")
+		Expect(countDescriptions(ports)).To(Equal(1), "only the list field description should remain")
 
-	ports := schemaAt(t, crd, "v1alpha2", "spec.podTemplate.spec.containers.ports")
-	if ports["description"] != "ports" {
-		t.Errorf("list field lost its own description: %v", ports["description"])
-	}
-
-	if got := countDescriptions(ports); got != 1 {
-		t.Errorf("expected only the list field description to remain, got %d", got)
-	}
-
-	containers := schemaAt(t, crd, "v1alpha2", "spec.podTemplate.spec.containers")
-	if asMap(t, containers["items"])["description"] != "container" {
-		t.Errorf("descriptions above the path were stripped")
-	}
-}
+		containers := schemaAt(crd, "v1alpha2", "spec.podTemplate.spec.containers")
+		Expect(asMap(containers["items"])["description"]).To(Equal("container"), "descriptions above the path were stripped")
+	})
+})
