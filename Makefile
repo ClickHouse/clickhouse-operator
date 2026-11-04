@@ -117,9 +117,31 @@ help: ## Display this help.
 
 ##@ Development
 
+STRIP_CRD_DESCRIPTIONS ?= $(LOCALBIN)/strip-crd-descriptions
+
+# Embedded Kubernetes types carry the full upstream docs, which dominate the CRD size.
+# Strip descriptions below these fields; the fields' own and all operator-defined descriptions are kept.
+define strip-crd-descriptions
+$(STRIP_CRD_DESCRIPTIONS) -crd config/crd/bases/clickhouse.com_clickhouseclusters.yaml \
+	-path v1alpha2:spec.podTemplates.spec \
+	-path v1alpha2:spec.versionProbeTemplate.spec.template.spec \
+	-path v1alpha2:spec.dataVolumeClaimTemplates.spec \
+	-path v1alpha2:spec.additionalVolumeClaimTemplateSets.templates.spec \
+	-path v1alpha2:spec.podDisruptionBudget.spec
+$(STRIP_CRD_DESCRIPTIONS) -crd config/crd/bases/clickhouse.com_keeperclusters.yaml \
+	-path v1alpha2:spec.podTemplate.spec \
+	-path v1alpha2:spec.dataVolumeClaimTemplate.spec \
+	-path v1alpha2:spec.podDisruptionBudget.spec
+endef
+
+.PHONY: strip-crd-descriptions-bin
+strip-crd-descriptions-bin: $(LOCALBIN) ## Build the CRD description stripping tool.
+	go build -o $(STRIP_CRD_DESCRIPTIONS) ./tools/strip-crd-descriptions
+
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen strip-crd-descriptions-bin ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(strip-crd-descriptions)
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -330,12 +352,13 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 .PHONY: build-installer-stripped
-build-installer-stripped: controller-gen kustomize ## Generate a consolidated installer with description-stripped CRDs (for client-side kubectl apply).
+build-installer-stripped: controller-gen strip-crd-descriptions-bin kustomize ## Generate a consolidated installer with description-stripped CRDs (for client-side kubectl apply).
 	mkdir -p dist
 	$(CONTROLLER_GEN) crd:maxDescLen=0 paths="./..." output:crd:artifacts:config=config/crd/bases
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install-stripped-crds.yaml
 	$(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(strip-crd-descriptions)
 
 .PHONY: build-crds
 build-crds: manifests kustomize ## Generate standalone CRD manifests.
@@ -343,11 +366,12 @@ build-crds: manifests kustomize ## Generate standalone CRD manifests.
 	$(KUSTOMIZE) build config/crd > dist/crds.yaml
 
 .PHONY: build-crds-stripped
-build-crds-stripped: controller-gen kustomize ## Generate standalone CRD manifests with descriptions stripped (for client-side kubectl apply).
+build-crds-stripped: controller-gen strip-crd-descriptions-bin kustomize ## Generate standalone CRD manifests with descriptions stripped (for client-side kubectl apply).
 	mkdir -p dist
 	$(CONTROLLER_GEN) crd:maxDescLen=0 paths="./..." output:crd:artifacts:config=config/crd/bases
 	$(KUSTOMIZE) build config/crd > dist/crds-stripped.yaml
 	$(CONTROLLER_GEN) crd paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(strip-crd-descriptions)
 
 ##@ Deployment
 

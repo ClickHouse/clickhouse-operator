@@ -465,7 +465,10 @@ type DefaultPasswordSelector struct {
 	// Select password value from a Secret key
 	// +optional
 	Secret *SecretKeySelector `json:"secret,omitempty"`
-	// Select password value from a ConfigMap key
+	// Select password value from a ConfigMap key.
+	//
+	// Deprecated: ConfigMaps are not suitable for credentials; use secret instead. Removed in v1alpha2.
+	//
 	// +optional
 	ConfigMap *ConfigMapKeySelector `json:"configMap,omitempty"`
 }

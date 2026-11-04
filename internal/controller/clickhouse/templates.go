@@ -548,10 +548,11 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 			}
 		}
 
-		if cr.Spec.Settings.DefaultUserPassword.ConfigMap != nil {
+		// Deprecated source, still supported in v1alpha1.
+		if cm := cr.Spec.Settings.DefaultUserPassword.ConfigMap; cm != nil { //nolint:staticcheck // see comment above
 			configMapRef = &corev1.ConfigMapKeySelector{
-				Name: cr.Spec.Settings.DefaultUserPassword.ConfigMap.Name,
-				Key:  cr.Spec.Settings.DefaultUserPassword.ConfigMap.Key,
+				Name: cm.Name,
+				Key:  cm.Key,
 			}
 		}
 
