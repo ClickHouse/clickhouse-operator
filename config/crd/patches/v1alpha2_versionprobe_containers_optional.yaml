@@ -1,0 +1,8 @@
+# corev1.PodSpec marks `containers` as required. In v1alpha2 `versionProbeTemplate.spec.template.spec` is merged
+# onto the operator-generated version probe PodSpec which always provides the probe container, so users may omit it.
+# The `test` op guards against the v1alpha2 version moving to a different index.
+- op: test
+  path: /spec/versions/1/name
+  value: v1alpha2
+- op: remove
+  path: /spec/versions/1/schema/openAPIV3Schema/properties/spec/properties/versionProbeTemplate/properties/spec/properties/template/properties/spec/required
