@@ -1071,6 +1071,11 @@ spec:
                       description: |-
                         Image is the full image reference, compared by exact string match with the ClickHouse server container image
                         (e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").
+                        Must be pinned by a digest or by a tag other than `latest`; a tag starting with a digit must start with
+                        major.minor (e.g. "25.8", "25.8.2.29", "25.8-alpine"), so major-only tags like "25" are rejected.
+                        Tags are checked by naming heuristics only and can still be moved by the registry:
+                        a digest ("repo@sha256:...") is the only reference that is guaranteed to be immutable.
+                      maxLength: 512
                       minLength: 1
                       type: string
                     version:
@@ -1082,6 +1087,12 @@ spec:
                   - image
                   - version
                   type: object
+                  x-kubernetes-validations:
+                  - message: image must be pinned by a digest or by a tag other than
+                      'latest'; a numeric tag must start with major.minor (e.g. 25.8)
+                    rule: self.image.contains('@') || (self.image.matches(':[^/]+$')
+                      && !self.image.endsWith(':latest') && (!self.image.matches(':[0-9][^/]*$')
+                      || self.image.matches(':[0-9]+[.][0-9]+[^/]*$')))
                 maxItems: 64
                 type: array
                 x-kubernetes-list-map-keys:
@@ -4532,6 +4543,9 @@ spec:
                   container in `podTemplates` must have an entry here (enforced by ValidateImageVersionCatalog, the check
                   is too expensive for CRD CEL rules). Images are matched by exact string, so
                   "clickhouse/clickhouse-server:25.8" and "docker.io/clickhouse/clickhouse-server:25.8" are different entries.
+                  Images that are not pinned are rejected, because their version can change: images without a tag or digest,
+                  tagged `latest`, or with a numeric tag that does not start with major.minor (e.g. "25").
+                  Tags are checked by naming heuristics only; prefer digests, the only immutable image reference.
                 items:
                   description: ImageVersionEntry maps a ClickHouse server container
                     image to the ClickHouse version it contains.
@@ -4540,6 +4554,11 @@ spec:
                       description: |-
                         Image is the full image reference, compared by exact string match with the ClickHouse server container image
                         (e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").
+                        Must be pinned by a digest or by a tag other than `latest`; a tag starting with a digit must start with
+                        major.minor (e.g. "25.8", "25.8.2.29", "25.8-alpine"), so major-only tags like "25" are rejected.
+                        Tags are checked by naming heuristics only and can still be moved by the registry:
+                        a digest ("repo@sha256:...") is the only reference that is guaranteed to be immutable.
+                      maxLength: 512
                       minLength: 1
                       type: string
                     version:
@@ -4551,6 +4570,12 @@ spec:
                   - image
                   - version
                   type: object
+                  x-kubernetes-validations:
+                  - message: image must be pinned by a digest or by a tag other than
+                      'latest'; a numeric tag must start with major.minor (e.g. 25.8)
+                    rule: self.image.contains('@') || (self.image.matches(':[^/]+$')
+                      && !self.image.endsWith(':latest') && (!self.image.matches(':[0-9][^/]*$')
+                      || self.image.matches(':[0-9]+[.][0-9]+[^/]*$')))
                 maxItems: 64
                 type: array
                 x-kubernetes-list-map-keys:

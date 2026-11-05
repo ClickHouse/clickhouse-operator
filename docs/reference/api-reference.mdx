@@ -303,7 +303,7 @@ ImageVersionEntry maps a ClickHouse server container image to the ClickHouse ver
 
 | Field | Type | Description | Required | Default |
 |-------|------|-------------|----------|---------|
-| `image` | string | Image is the full image reference, compared by exact string match with the ClickHouse server container image<br />(e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29"). | true |  |
+| `image` | string | Image is the full image reference, compared by exact string match with the ClickHouse server container image<br />(e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").<br />Must be pinned by a digest or by a tag other than `latest`; a tag starting with a digit must start with<br />major.minor (e.g. "25.8", "25.8.2.29", "25.8-alpine"), so major-only tags like "25" are rejected.<br />Tags are checked by naming heuristics only and can still be moved by the registry:<br />a digest ("repo@sha256:...") is the only reference that is guaranteed to be immutable. | true |  |
 | `version` | string | Version is the ClickHouse version contained in the image (e.g. "25.8.2.29"). | true |  |
 
 Appears in:

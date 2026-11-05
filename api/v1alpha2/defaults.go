@@ -19,6 +19,9 @@ const (
 	DefaultClickHouseContainerRepository = "docker.io/clickhouse/clickhouse-server"
 	// DefaultClickHouseVersion is the ClickHouse version of the default server image.
 	// The default image tag is pinned to it, so the built-in image version catalog entry is always correct.
+	// v1alpha1 defaults to the "latest" tag: the future v1alpha1 to v1alpha2 conversion must turn the version a
+	// cluster actually runs into an explicit image and imageVersionCatalog entry instead of falling back to this
+	// default, which could be a downgrade.
 	DefaultClickHouseVersion         = "25.8.2.29"
 	DefaultClickHouseContainerTag    = DefaultClickHouseVersion
 	DefaultClickHouseContainerPolicy = "IfNotPresent"

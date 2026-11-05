@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -176,6 +177,9 @@ type ClickHouseClusterSpec struct {
 	// container in `podTemplates` must have an entry here (enforced by ValidateImageVersionCatalog, the check
 	// is too expensive for CRD CEL rules). Images are matched by exact string, so
 	// "clickhouse/clickhouse-server:25.8" and "docker.io/clickhouse/clickhouse-server:25.8" are different entries.
+	// Images that are not pinned are rejected, because their version can change: images without a tag or digest,
+	// tagged `latest`, or with a numeric tag that does not start with major.minor (e.g. "25").
+	// Tags are checked by naming heuristics only; prefer digests, the only immutable image reference.
 	// +optional
 	// +listType=map
 	// +listMapKey=image
@@ -264,6 +268,9 @@ func (s *ClickHouseClusterSpec) PodTemplate() *PodTemplateSpec {
 	return findPodTemplate(s.PodTemplates, s.PodTemplateName)
 }
 
+// majorMinorTagPattern matches image tags that start with a major.minor version.
+var majorMinorTagPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+`)
+
 // ResolveImageVersion returns the ClickHouse version of the given server image.
 // The user-provided imageVersionCatalog takes precedence over the operator built-in catalog.
 func (s *ClickHouseClusterSpec) ResolveImageVersion(image string) (string, bool) {
@@ -290,6 +297,15 @@ func (s *ClickHouseClusterSpec) ValidateImageVersionCatalog() error {
 				continue
 			}
 
+			if !isPinnedImage(c.Image) {
+				errs = append(errs, fmt.Errorf(
+					"spec.podTemplates[%d].spec.containers[%d].image: image %q must be pinned by a digest or by a tag other than \"latest\"; "+
+						"a numeric tag must start with major.minor (e.g. 25.8)",
+					i, j, c.Image))
+
+				continue
+			}
+
 			if _, ok := s.ResolveImageVersion(c.Image); !ok {
 				errs = append(errs, fmt.Errorf(
 					"spec.podTemplates[%d].spec.containers[%d].image: image %q has no entry in spec.imageVersionCatalog",
@@ -299,6 +315,34 @@ func (s *ClickHouseClusterSpec) ValidateImageVersionCatalog() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// isPinnedImage reports whether the image reference has a digest, or a tag other than "latest".
+// A tag starting with a digit must start with major.minor, so major-only tags like "25", which move across
+// minor releases, are rejected. Other tags are accepted: whether a custom tag moves cannot be told from its name.
+// A ':' before the last '/' belongs to the registry port, not to a tag.
+func isPinnedImage(image string) bool {
+	if strings.Contains(image, "@") {
+		return true
+	}
+
+	lastSegment := image[strings.LastIndex(image, "/")+1:]
+
+	idx := strings.LastIndex(lastSegment, ":")
+	if idx < 0 || idx == len(lastSegment)-1 {
+		return false
+	}
+
+	tag := lastSegment[idx+1:]
+	if tag == "latest" {
+		return false
+	}
+
+	if tag[0] >= '0' && tag[0] <= '9' {
+		return majorMinorTagPattern.MatchString(tag)
+	}
+
+	return true
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.

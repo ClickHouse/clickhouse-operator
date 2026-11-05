@@ -296,6 +296,33 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
 			cluster = chCluster.DeepCopy()
 
+			By("Rejecting imageVersionCatalog entries with mutable images")
+
+			for _, image := range []string{
+				"docker.io/clickhouse/clickhouse-server:latest",
+				"docker.io/clickhouse/clickhouse-server",
+				"registry.example.com:5000/clickhouse-server",
+				"docker.io/clickhouse/clickhouse-server:25",
+				"docker.io/clickhouse/clickhouse-server:25-alpine",
+			} {
+				cluster.Spec.ImageVersionCatalog = []chv1.ImageVersionEntry{{Image: image, Version: "25.8"}}
+				err = k8sClient.Create(ctx, cluster)
+				Expect(err).To(HaveOccurred(), image)
+				Expect(err.Error()).To(ContainSubstring("image must be pinned by a digest or by a tag other than 'latest'"))
+			}
+
+			By("Accepting imageVersionCatalog entries pinned by tag or digest")
+
+			cluster.Spec.ImageVersionCatalog = []chv1.ImageVersionEntry{
+				{Image: "registry.example.com:5000/clickhouse-server:25.8", Version: "25.8"},
+				{Image: "docker.io/clickhouse/clickhouse-server@sha256:9f2c1e", Version: "25.12.1.649"},
+				{Image: "docker.io/clickhouse/clickhouse-server:25.8-alpine", Version: "25.8"},
+				{Image: "registry.example.com/clickhouse-server:prod-2026-11", Version: "25.8.2.29"},
+			}
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+			cluster = chCluster.DeepCopy()
+
 			By("Warning on empty field")
 
 			cluster.Spec.Settings.DefaultUserPassword = nil
