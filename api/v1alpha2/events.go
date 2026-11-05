@@ -33,9 +33,8 @@ const (
 
 // Event reasons for version checks.
 const (
-	EventReasonVersionDiverge     EventReason = "VersionDiverge"
-	EventReasonVersionProbeFailed EventReason = "VersionProbeFailed"
-	EventReasonUpgradeAvailable   EventReason = "VersionUpgradeAvailable"
+	EventReasonVersionDiverge   EventReason = "VersionDiverge"
+	EventReasonUpgradeAvailable EventReason = "VersionUpgradeAvailable"
 )
 
 // ClickHouse warning event.

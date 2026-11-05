@@ -44,11 +44,10 @@ const (
 	ConditionReasonConfigReloadPending  ConditionReason = "ConfigReloadPending"
 
 	// ConditionTypeVersionInSync indicates that all replicas report the same version.
-	ConditionTypeVersionInSync        ConditionType   = "VersionInSync"
-	ConditionReasonVersionMatch       ConditionReason = "VersionMatch"
-	ConditionReasonVersionMismatch    ConditionReason = "VersionMismatch"
-	ConditionReasonVersionPending     ConditionReason = "VersionPending"
-	ConditionReasonVersionProbeFailed ConditionReason = "VersionProbeFailed"
+	ConditionTypeVersionInSync     ConditionType   = "VersionInSync"
+	ConditionReasonVersionMatch    ConditionReason = "VersionMatch"
+	ConditionReasonVersionMismatch ConditionReason = "VersionMismatch"
+	ConditionReasonVersionPending  ConditionReason = "VersionPending"
 
 	// ConditionTypeVersionUpgraded indicates whether latest version within upgrade channel selected.
 	ConditionTypeVersionUpgraded        ConditionType   = "VersionUpgraded"

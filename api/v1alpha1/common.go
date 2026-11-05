@@ -41,6 +41,18 @@ func (c *ContainerImage) String() string {
 	return c.Repository
 }
 
+// ImageVersionEntry maps a ClickHouse server container image to the ClickHouse version it contains.
+type ImageVersionEntry struct {
+	// Image is the full image reference, compared by exact string match with the ClickHouse server container image
+	// (e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
+
+	// Version is the ClickHouse version contained in the image (e.g. "25.8.2.29").
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+(\.\d+){0,2}$`
+	Version string `json:"version"`
+}
+
 // LoggerConfig defines server logging configuration.
 type LoggerConfig struct {
 	// If false then disable all logging to file.

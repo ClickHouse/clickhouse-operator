@@ -122,8 +122,20 @@ type ClickHouseClusterSpec struct {
 	UpgradeChannel string `json:"upgradeChannel,omitempty"`
 
 	// VersionProbeTemplate overrides for the version detection Job.
+	//
+	// Deprecated: replaced by imageVersionCatalog in v1alpha2; still used by the v1alpha1 controller.
 	// +optional
 	VersionProbeTemplate *VersionProbeTemplate `json:"versionProbeTemplate,omitempty"`
+
+	// ImageVersionCatalog maps ClickHouse server container images to the ClickHouse version they contain.
+	// The v1alpha1 controller ignores this field and keeps detecting the version with the version probe Job.
+	// It exists as a migration preparation step: fill it in before migrating the cluster to v1alpha2,
+	// where it replaces the version probe and is required for every custom ClickHouse image.
+	// +optional
+	// +listType=map
+	// +listMapKey=image
+	// +kubebuilder:validation:MaxItems=64
+	ImageVersionCatalog []ImageVersionEntry `json:"imageVersionCatalog,omitempty"`
 
 	// ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
 	// The secret must reside in the same namespace as the cluster.
@@ -314,6 +326,8 @@ type ClickHouseClusterStatus struct {
 	Version string `json:"version,omitempty"`
 	// VersionProbeRevision is the image hash of the last successful version probe.
 	// When this matches the current image hash, the cached Version is used directly.
+	//
+	// Deprecated: the version probe is replaced by spec.imageVersionCatalog in v1alpha2; still used by the v1alpha1 controller.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	VersionProbeRevision string `json:"versionProbeRevision,omitempty"`
