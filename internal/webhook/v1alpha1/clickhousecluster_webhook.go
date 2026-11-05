@@ -163,6 +163,11 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		}
 	}
 
+	if obj.Spec.VersionProbeTemplate != nil { //nolint:staticcheck // warn on deprecated field
+		warns = append(warns, ".spec.versionProbeTemplate is deprecated and will be removed in v1alpha2: "+
+			"the version probe is replaced by .spec.imageVersionCatalog")
+	}
+
 	seenPorts := make(map[int32]int, len(obj.Spec.AdditionalPorts))
 	for i, p := range obj.Spec.AdditionalPorts {
 		if prev, ok := seenPorts[p.Port]; ok {

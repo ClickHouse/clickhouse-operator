@@ -168,9 +168,19 @@ type ClickHouseClusterSpec struct {
 	// +kubebuilder:validation:Pattern=`^(lts|stable|\d+\.\d+)?$`
 	UpgradeChannel string `json:"upgradeChannel,omitempty"`
 
-	// VersionProbeTemplate overrides for the version detection Job.
+	// ImageVersionCatalog maps ClickHouse server container images to the ClickHouse version they contain.
+	// It replaces the version probe Job of v1alpha1: the operator reads the version of every ClickHouse
+	// server image used by the cluster from this catalog, so the version is known before any Pod starts.
+	// The version drives version-dependent server configuration and upgrade checks.
+	// The default operator image is covered by a built-in entry; every custom image set on the "clickhouse"
+	// container in `podTemplates` must have an entry here (enforced by ValidateImageVersionCatalog, the check
+	// is too expensive for CRD CEL rules). Images are matched by exact string, so
+	// "clickhouse/clickhouse-server:25.8" and "docker.io/clickhouse/clickhouse-server:25.8" are different entries.
 	// +optional
-	VersionProbeTemplate *VersionProbeTemplate `json:"versionProbeTemplate,omitempty"`
+	// +listType=map
+	// +listMapKey=image
+	// +kubebuilder:validation:MaxItems=64
+	ImageVersionCatalog []ImageVersionEntry `json:"imageVersionCatalog,omitempty"`
 
 	// ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
 	// The secret must reside in the same namespace as the cluster.
@@ -252,6 +262,43 @@ type ClickHouseReplicaSpec struct {
 // PodTemplate returns the pod template referenced by PodTemplateName, or nil when none is referenced.
 func (s *ClickHouseClusterSpec) PodTemplate() *PodTemplateSpec {
 	return findPodTemplate(s.PodTemplates, s.PodTemplateName)
+}
+
+// ResolveImageVersion returns the ClickHouse version of the given server image.
+// The user-provided imageVersionCatalog takes precedence over the operator built-in catalog.
+func (s *ClickHouseClusterSpec) ResolveImageVersion(image string) (string, bool) {
+	for _, catalog := range [][]ImageVersionEntry{s.ImageVersionCatalog, BuiltinImageVersionCatalog()} {
+		for _, entry := range catalog {
+			if entry.Image == image {
+				return entry.Version, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// ValidateImageVersionCatalog checks that the image of every "clickhouse" container in podTemplates
+// resolves to a version through imageVersionCatalog or the built-in catalog.
+// Every template is checked, referenced or not. Other containers (sidecars, init containers) are not checked.
+func (s *ClickHouseClusterSpec) ValidateImageVersionCatalog() error {
+	var errs []error
+
+	for i, tmpl := range s.PodTemplates {
+		for j, c := range tmpl.Spec.Containers {
+			if c.Name != ClickHouseServerContainerName || c.Image == "" {
+				continue
+			}
+
+			if _, ok := s.ResolveImageVersion(c.Image); !ok {
+				errs = append(errs, fmt.Errorf(
+					"spec.podTemplates[%d].spec.containers[%d].image: image %q has no entry in spec.imageVersionCatalog",
+					i, j, c.Image))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // WithDefaults sets default values for ClickHouseClusterSpec fields.
@@ -438,7 +485,7 @@ type ClickHouseClusterStatus struct {
 	// ObservedGeneration indicates latest generation observed by controller.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
-	// ImageVersions lists the version detected by the version probe for every distinct ClickHouse image
+	// ImageVersions lists the version resolved from imageVersionCatalog for every distinct ClickHouse image
 	// referenced by the cluster Pods. Entries are removed once no Pod references the image anymore.
 	// +optional
 	// +listType=map

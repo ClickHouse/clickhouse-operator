@@ -287,6 +287,19 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
 			cluster = chCluster.DeepCopy()
 
+			By("Warning on deprecated versionProbeTemplate")
+
+			cluster.Spec.VersionProbeTemplate = &chv1.VersionProbeTemplate{} //nolint:staticcheck // deprecated field still validated
+			cluster.Spec.ImageVersionCatalog = []chv1.ImageVersionEntry{{
+				Image:   "docker.io/clickhouse/clickhouse-server:25.8.2.29",
+				Version: "25.8.2.29",
+			}}
+			err = k8sClient.Create(ctx, cluster)
+			Expect(err).To(Succeed())
+			Expect(warnings).To(ContainElement(ContainSubstring(".spec.versionProbeTemplate is deprecated")))
+			Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+			cluster = chCluster.DeepCopy()
+
 			By("Warning on empty field")
 
 			cluster.Spec.Settings.DefaultUserPassword = nil

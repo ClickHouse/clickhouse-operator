@@ -149,7 +149,6 @@ $(STRIP_CRD_DESCRIPTIONS) -crd config/crd/bases/clickhouse.com_clickhousecluster
 	$(STRIP_CRD_V1ALPHA1_PATHS) \
 	-path v1alpha1:spec.additionalVolumeClaimTemplates.spec \
 	-path v1alpha2:spec.podTemplates.spec \
-	-path v1alpha2:spec.versionProbeTemplate.spec.template.spec \
 	-path v1alpha2:spec.dataVolumeClaimTemplates.spec \
 	-path v1alpha2:spec.additionalVolumeClaimTemplateSets.templates.spec \
 	-path v1alpha2:spec.podDisruptionBudget.spec

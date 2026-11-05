@@ -5,7 +5,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -64,36 +63,6 @@ var _ = Describe("PodTemplate", func() {
 	It("should return nil when the referenced template does not exist", func() {
 		spec := ClickHouseClusterSpec{PodTemplates: templates, PodTemplateName: "missing"}
 		Expect(spec.PodTemplate()).To(BeNil())
-	})
-})
-
-var _ = Describe("VersionProbeTemplate", func() {
-	It("should accept a native pod spec without containers", func() {
-		raw := `{"metadata":{"labels":{"job":"probe"}},"spec":{"ttlSecondsAfterFinished":60,"backoffLimit":2,` +
-			`"template":{"spec":{"priorityClassName":"low","affinity":{"nodeAffinity":{}}}}}}`
-
-		var tmpl VersionProbeTemplate
-		Expect(json.Unmarshal([]byte(raw), &tmpl)).To(Succeed())
-		Expect(tmpl.Metadata.Labels).To(HaveKeyWithValue("job", "probe"))
-		Expect(*tmpl.Spec.TTLSecondsAfterFinished).To(BeEquivalentTo(60))
-		Expect(*tmpl.Spec.BackoffLimit).To(BeEquivalentTo(2))
-		Expect(tmpl.Spec.Template.Spec.PriorityClassName).To(Equal("low"))
-		Expect(tmpl.Spec.Template.Spec.Affinity).NotTo(BeNil())
-		Expect(tmpl.Spec.Template.Spec.Containers).To(BeEmpty())
-	})
-
-	It("should keep the batchv1.Job JSON shape for strategic merge patch", func() {
-		tmpl := VersionProbeTemplate{Spec: VersionProbeJobSpec{Template: VersionProbePodTemplate{
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: VersionProbeContainerName}}},
-		}}}
-
-		data, err := json.Marshal(tmpl)
-		Expect(err).NotTo(HaveOccurred())
-
-		var job batchv1.Job
-		Expect(json.Unmarshal(data, &job)).To(Succeed())
-		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
-		Expect(job.Spec.Template.Spec.Containers[0].Name).To(Equal(VersionProbeContainerName))
 	})
 })
 

@@ -491,52 +491,16 @@ type TemplateMeta struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// VersionProbeTemplate is the template of the version detection Job.
-// The structure mirrors batchv1.JobTemplateSpec and is merged onto the operator-generated Job
-// using strategic merge patch semantics.
-type VersionProbeTemplate struct {
-	// Metadata applied to the version probe Job.
-	// +optional
-	Metadata TemplateMeta `json:"metadata,omitempty"`
+// ImageVersionEntry maps a ClickHouse server container image to the ClickHouse version it contains.
+type ImageVersionEntry struct {
+	// Image is the full image reference, compared by exact string match with the ClickHouse server container image
+	// (e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
 
-	// Specification of the desired behavior of the version probe Job.
-	// +optional
-	Spec VersionProbeJobSpec `json:"spec,omitempty"`
-}
-
-// VersionProbeJobSpec defines Job-level overrides for the version probe.
-// Only Job fields that are safe for a single-run probe are exposed: selector, completions,
-// parallelism, suspend etc. are owned by the operator.
-type VersionProbeJobSpec struct {
-	// TTLSecondsAfterFinished limits the lifetime of a completed Job.
-	// +optional
-	TTLSecondsAfterFinished *int32 `json:"ttlSecondsAfterFinished,omitempty"`
-
-	// BackoffLimit is the number of retries before marking the version probe Job as failed.
-	// +optional
-	// +kubebuilder:validation:Minimum=0
-	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
-
-	// Template describes the Pod that will be created for the version probe Job.
-	// +optional
-	Template VersionProbePodTemplate `json:"template,omitempty"`
-}
-
-// VersionProbePodTemplate is the template of the version probe Pod.
-type VersionProbePodTemplate struct {
-	// Metadata applied to version probe Pods.
-	// +optional
-	Metadata TemplateMeta `json:"metadata,omitempty"`
-
-	// Spec is merged onto the operator-generated version probe PodSpec using strategic merge patch.
-	// The operator-generated PodSpec inherits imagePullSecrets, nodeSelector, tolerations, serviceAccountName
-	// and schedulerName from `podTemplate.spec`, and the image and imagePullPolicy from the server container.
-	// The probe container is addressed by name "version-probe" in `containers`; containers with other
-	// names are added to the Pod.
-	// The `containers` list is optional here, the operator always provides the probe container.
-	// Nested field documentation is omitted from the CRD, see `kubectl explain pod.spec`.
-	// +optional
-	Spec corev1.PodSpec `json:"spec,omitempty"`
+	// Version is the ClickHouse version contained in the image (e.g. "25.8.2.29").
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+(\.\d+){0,2}$`
+	Version string `json:"version"`
 }
 
 // NamedTemplateMeta defines supported metadata settings for template objects that require a name.
