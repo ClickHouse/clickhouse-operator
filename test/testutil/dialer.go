@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/httpstream" //nolint:staticcheck // deprecated but still in-use by client-go
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -59,9 +60,9 @@ func (a spdyAddr) String() string  { return string(a) }
 
 // NewPortForwardDialer returns a DialContextFunc that connects to pods inside a Kubernetes cluster
 // by creating SPDY port-forward streams through the API server.
-// It resolves both Pod and Service hostnames to their target Pod.
+// It resolves Pod IPs, Pod hostnames and Service hostnames to their target Pod.
 func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
-	return func(_ context.Context, addr string) (net.Conn, error) {
+	return func(ctx context.Context, addr string) (net.Conn, error) {
 		host, portStr, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, fmt.Errorf("split host port %q: %w", addr, err)
@@ -72,7 +73,7 @@ func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 			return nil, fmt.Errorf("create k8s client: %w", err)
 		}
 
-		namespace, podName, err := podForHostname(host)
+		namespace, podName, err := podForHost(ctx, clientset, host)
 		if err != nil {
 			return nil, err
 		}
@@ -140,6 +141,28 @@ func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 			addr:     addr,
 		}, nil
 	}
+}
+
+// podForHost returns the Pod addressed by a Pod IP, or by a Kubernetes Pod or Service hostname.
+func podForHost(ctx context.Context, clientset kubernetes.Interface, host string) (string, string, error) {
+	if net.ParseIP(host) == nil {
+		return podForHostname(host)
+	}
+
+	pods, err := clientset.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		FieldSelector: "status.podIP=" + host,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("list pods with IP %s: %w", host, err)
+	}
+
+	for _, pod := range pods.Items {
+		if pod.DeletionTimestamp == nil && pod.Status.Phase == corev1.PodRunning {
+			return pod.Namespace, pod.Name, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("no running pod with IP %s", host)
 }
 
 // podForHostname returns the Pod addressed by a Kubernetes Pod or Service hostname.

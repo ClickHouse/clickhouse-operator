@@ -247,11 +247,11 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		startupErr := chctrl.PodStartupError(pod)
 
 		var status serverStatus
-		if startupErr == nil && sts.Status.ReadyReplicas > 0 {
+		if startupErr == nil && sts.Status.ReadyReplicas > 0 && pod != nil && pod.Status.PodIP != "" {
 			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 			defer cancel()
 
-			status = getServerStatus(ctx, log.With("replica_id", id), r.Dialer, r.Cluster.HostnameByID(id),
+			status = getServerStatus(ctx, log.With("replica_id", id), r.Dialer, pod.Status.PodIP,
 				r.Cluster.Spec.Settings.TLS.Required)
 		}
 

@@ -152,7 +152,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 		chPort := strconv.FormatInt(PortNative, 10) + "/tcp"
 		chHTTPPort := strconv.FormatInt(PortHTTP, 10) + "/tcp"
-		hostTargets := map[string]string{}
+		addrs := map[v1.ClickHouseReplicaID]string{}
 		cluster := v1.ClickHouseCluster{
 			Name:      "test",
 			Namespace: "default",
@@ -194,7 +194,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			port, err := ctr.MappedPort(ctx, chPort)
 			Expect(err).NotTo(HaveOccurred())
 
-			hostTargets[cluster.InternalHostnameByID(v1.ClickHouseReplicaID{Index: i})] = net.JoinHostPort(host, port.Port())
+			addrs[v1.ClickHouseReplicaID{Index: i}] = net.JoinHostPort(host, port.Port())
 
 			return ctr
 		}
@@ -216,23 +216,18 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		logf.SetLogger(zapr.NewLogger(zapLogger))
 		logger := controllerutil.NewLogger(zapLogger)
 
-		dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-			host, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, fmt.Errorf("split addr %q: %w", addr, err)
-			}
-
-			target, ok := hostTargets[host]
+		resolve := func(id v1.ClickHouseReplicaID) (string, error) {
+			addr, ok := addrs[id]
 			if !ok {
-				return nil, fmt.Errorf("no test container for host %q", host)
+				return "", fmt.Errorf("no test container for replica %s", id)
 			}
 
-			return (&net.Dialer{}).DialContext(ctx, "tcp", target)
+			return addr, nil
 		}
 
 		secret := &corev1.Secret{Data: map[string][]byte{SecretKeyManagementPassword: []byte(testPassword)}}
 		cache = newConnCache()
-		cmd = newCommander(logger, &cluster, secret, dialer, cache)
+		cmd = newCommander(logger, &cluster, secret, nil, resolve, cache)
 
 		DeferCleanup(func() {
 			cache.Close(logger)
