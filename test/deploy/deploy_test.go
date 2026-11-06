@@ -124,7 +124,7 @@ var _ = JustAfterEach(func(ctx context.Context) {
 })
 
 var _ = Describe("Manifests deployment", Ordered, ContinueOnFailure, Label("manifest"), func() {
-	namespace := "clickhouse-operator-system"
+	const namespace = "clickhouse-operator-system"
 
 	BeforeAll(func(ctx context.Context) {
 		currentTestNamespace = namespace
@@ -149,7 +149,7 @@ var _ = Describe("Manifests deployment", Ordered, ContinueOnFailure, Label("mani
 })
 
 var _ = Describe("OLM deployment", Ordered, ContinueOnFailure, Label("olm"), func() {
-	namespace := "clickhouse-operator-olm"
+	const namespace = "clickhouse-operator-olm"
 
 	BeforeAll(func(ctx context.Context) {
 		currentTestNamespace = namespace
@@ -273,8 +273,8 @@ var _ = Describe("Helm deployment", Ordered, ContinueOnFailure, Label("helm"), f
 				"watchNamespaces": []string{"{{ .Release.Namespace }}"},
 			}
 			values["crd"] = map[string]any{
-				"enable": true,
-				"keep":   false,
+				"enabled": true,
+				"keep":    false,
 			}
 			values["manager"] = map[string]any{
 				"image": map[string]any{
@@ -316,7 +316,7 @@ var _ = Describe("Helm deployment", Ordered, ContinueOnFailure, Label("helm"), f
 		Entry("default values", "default", map[string]any{}),
 		Entry("disabled webhook", "webhookless", map[string]any{
 			"webhook": map[string]any{
-				"enable": false,
+				"enabled": false,
 			},
 		}),
 		Entry("custom certificate issuer", "custom-issuer", map[string]any{
@@ -337,11 +337,11 @@ spec:
 		}),
 		Entry("secure metrics service monitor", "secure-metrics", map[string]any{
 			"metrics": map[string]any{
-				"enable": true,
-				"secure": true,
+				"enabled": true,
+				"secure":  true,
 			},
 			"prometheus": map[string]any{
-				"service_monitor": true,
+				"enabled": true,
 			},
 		}),
 	)
@@ -357,21 +357,13 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 		chName         = "ch"
 	)
 
-	version := testutil.UpdateVersion
-
-	helmArgs := []string{"-n", namespace,
-		"--set", "controller.watchNamespaces={" + namespace + "}",
-		"--set", "crd.enable=true", "--set", "crd.keep=false",
-	}
-
-	storage := &corev1.PersistentVolumeClaimSpec{
-		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-		Resources: corev1.VolumeResourceRequirements{
-			Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
-		},
-	}
+	var helmArgs []string
 
 	BeforeAll(func(ctx context.Context) {
+		helmArgs = []string{"-n", namespace,
+			"--set", "controller.watchNamespaces={" + namespace + "}",
+			"--set", "crd.enabled=true", "--set", "crd.keep=false",
+		}
 		currentTestNamespace = namespace
 
 		fromVersion := latestReleasedVersion(ctx)
@@ -395,6 +387,13 @@ var _ = Describe("Operator upgrade", Ordered, ContinueOnFailure, Label("upgrade"
 
 	It("should reconcile cluster after upgrade without data loss", func(ctx context.Context) {
 		dialer := env.Dialer
+		version := testutil.UpdateVersion
+		storage := &corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+			},
+		}
 
 		keeperCR := testutil.NewKeeperCluster(namespace, keeperName).
 			WithReplicas(3).
@@ -579,7 +578,7 @@ func testDeployment(namespace string) {
 	DescribeTable("should successfully work with", append(tableArgs, versionEntries...)...)
 }
 
-func templateTestResources(ctx context.Context, namespace string) (string, string) {
+func templateTestResources(ctx context.Context, namespace string) (resources, subscriptionManifest string) {
 	projectDir, err := testutil.GetProjectDir()
 	Expect(err).NotTo(HaveOccurred())
 

@@ -70,6 +70,7 @@ linters:
     - makezero
     - mirror
     - mnd
+    - modernize
     - musttag
     - noctx
     - nosprintfhostport
@@ -87,7 +88,7 @@ linters:
     - wsl_v5
   settings:
     revive:
-      enable-default-rules: true
+      enable-all-rules: true
       rules:
         - name: exported
           severity: warning
@@ -104,7 +105,24 @@ linters:
               - "github.com/onsi/gomega"
         - name: package-comments
           disabled: true
+        - name: struct-tag
+          arguments: [ "json,inline" ]
+        - { name: add-constant, disabled: true }
+        - { name: cognitive-complexity, disabled: true }
+        - { name: cyclomatic, disabled: true }
+        - { name: deep-exit, disabled: true }
+        - { name: enforce-switch-style, disabled: true }
+        - { name: flag-parameter, disabled: true }
+        - { name: function-length, disabled: true }
+        - { name: line-length-limit, disabled: true }
+        - { name: max-public-structs, disabled: true }
+        - { name: multiline-if-init, disabled: true }
+        - { name: nested-structs, disabled: true }
+        - { name: unchecked-type-assertion, disabled: true }
+        - { name: unhandled-error, disabled: true }
+        - { name: unused-receiver, disabled: true }
     staticcheck:
+      checks: [ "all", "-ST1000" ]
       dot-import-whitelist:
         - "github.com/onsi/ginkgo/v2"
         - "github.com/onsi/gomega"
@@ -134,6 +152,44 @@ linters:
       ignore-tests: true
       ignore-string-values:
         - \S+\s+\S*
+    wrapcheck:
+      extra-ignore-sigs:
+        - k8s.io/apimachinery/pkg/api/errors.New
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+        - shadow
+    gocritic:
+      enabled-tags: [ diagnostic ]
+      enabled-checks: [ octalLiteral ]
+      disabled-checks: [ sprintfQuotedString ]
+    usetesting:
+      context-background: true
+      context-todo: true
+      os-temp-dir: true
+    ginkgolinter:
+      forbid-focus-container: true
+      forbid-spec-pollution: true
+    nolintlint:
+      require-specific: true
+    unparam:
+      check-exported: true
+    loggercheck:
+      require-string-key: true
+      no-printf-like: true
+      rules:
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).With
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Debug
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Info
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Warn
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Error
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Fatal
+        - (github.com/ClickHouse/clickhouse-operator/internal/controllerutil.Logger).Panic
+    nakedret:
+      max-func-lines: 0
+    iface:
+      enable: [ identical, unusedmethod ]
   exclusions:
     generated: lax
     rules:

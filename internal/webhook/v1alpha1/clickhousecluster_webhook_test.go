@@ -130,15 +130,19 @@ var _ = Describe("ClickHouseCluster Webhook", func() {
 	})
 
 	Context("When creating ClickHouseCluster under Validating Webhook", func() {
-		chCluster := &chv1.ClickHouseCluster{
-			Namespace: "default",
-			Name:      "test-validate",
-			Spec: chv1.ClickHouseClusterSpec{
-				KeeperClusterRef: &chv1.KeeperClusterReference{
-					Name: "some-keeper-cluster",
+		var chCluster *chv1.ClickHouseCluster
+
+		BeforeEach(func() {
+			chCluster = &chv1.ClickHouseCluster{
+				Namespace: "default",
+				Name:      "test-validate",
+				Spec: chv1.ClickHouseClusterSpec{
+					KeeperClusterRef: &chv1.KeeperClusterReference{
+						Name: "some-keeper-cluster",
+					},
 				},
-			},
-		}
+			}
+		})
 
 		It("Should check TLS enabled if required", func(ctx context.Context) {
 			By("Rejecting wrong settings")

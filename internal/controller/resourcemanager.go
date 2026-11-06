@@ -59,7 +59,7 @@ func (rm *ResourceManager) ReconcileResource(
 	action v1.EventAction,
 ) (bool, error) {
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
-	log = log.With(kind, resource.GetName())
+	log = log.With("kind", kind, "name", resource.GetName())
 
 	if err := ctrlruntime.SetControllerReference(rm.owner, resource, rm.ctrl.GetScheme()); err != nil {
 		return false, fmt.Errorf("set %s/%s Ctrl reference: %w", kind, resource.GetName(), err)
@@ -414,7 +414,7 @@ func (rm *ResourceManager) ListReplicaResources[
 	Res client.Object,
 	RList client.ObjectList,
 ](ctx context.Context, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
-	list, ok := reflect.New(reflect.TypeFor[RList]().Elem()).Interface().(RList)
+	list, ok := reflect.TypeAssert[RList](reflect.New(reflect.TypeFor[RList]().Elem()))
 	if !ok {
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
 	}
@@ -427,7 +427,7 @@ func (rm *ResourceManager) ListReplicaResources[
 
 	items := reflect.ValueOf(list).Elem().FieldByName("Items")
 	for i := range items.Len() {
-		item, ok := items.Index(i).Addr().Interface().(Res)
+		item, ok := reflect.TypeAssert[Res](items.Index(i).Addr())
 		if !ok {
 			return nil, fmt.Errorf("not compatible list item type: %s", items.Index(i).Addr().Type().Name())
 		}

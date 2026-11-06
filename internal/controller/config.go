@@ -82,10 +82,10 @@ type OpenSSLConfig struct {
 	Client OpenSSLParams `yaml:"client,omitempty"`
 }
 
-// UserMountsAt reports whether any of the given mounts targets path.
-func UserMountsAt(mounts []corev1.VolumeMount, path string) bool {
+// UserMountsAt reports whether any of the given mounts targets mountPath.
+func UserMountsAt(mounts []corev1.VolumeMount, mountPath string) bool {
 	for _, m := range mounts {
-		if m.MountPath == path {
+		if m.MountPath == mountPath {
 			return true
 		}
 	}

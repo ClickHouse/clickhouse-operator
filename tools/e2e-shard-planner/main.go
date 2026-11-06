@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,7 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
+	"strings"
 	"time"
 
 	"github.com/onsi/ginkgo/v2/types"
@@ -214,16 +215,8 @@ func createPlan(timings map[string]int64, shards int) (map[string]int, []int64, 
 
 	loads := make([]int64, shards)
 	assignments := make(map[string]int, len(timings))
-	ordered := append([]string(nil), slices.Collect(maps.Keys(timings))...)
-	sort.Slice(ordered, func(i, j int) bool {
-		left := timings[ordered[i]]
-		right := timings[ordered[j]]
-
-		if left != right {
-			return left > right
-		}
-
-		return ordered[i] < ordered[j]
+	ordered := slices.SortedFunc(maps.Keys(timings), func(a, b string) int {
+		return cmp.Or(cmp.Compare(timings[b], timings[a]), strings.Compare(a, b))
 	})
 
 	for _, spec := range ordered {

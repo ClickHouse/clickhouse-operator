@@ -143,7 +143,7 @@ func NewPortForwardDialer(config *rest.Config) controllerutil.DialContextFunc {
 }
 
 // podForHostname returns the Pod addressed by a Kubernetes Pod or Service hostname.
-func podForHostname(hostname string) (string, string, error) {
+func podForHostname(hostname string) (namespace, podName string, err error) {
 	parts := strings.Split(hostname, ".")
 	if len(parts) < 3 {
 		return "", "", fmt.Errorf("can't parse Kubernetes hostname %q", hostname)
@@ -165,15 +165,15 @@ func podForHostname(hostname string) (string, string, error) {
 
 	hashStart := internalServiceIndex - resourceNameHashLength
 	if len(serviceName) == maxKubernetesResourceNameLength && hashStart > 0 && serviceName[hashStart-1] == '-' {
-		_, err := strconv.ParseUint(
+		_, parseErr := strconv.ParseUint(
 			serviceName[hashStart:internalServiceIndex], 16, resourceNameHashLength*4,
 		)
-		if err == nil {
+		if parseErr == nil {
 			return "", "", fmt.Errorf("can't reconstruct Pod from truncated Service %q", serviceName)
 		}
 	}
 
-	podName := serviceName[:internalServiceIndex] + "-" + serviceName[internalServiceIndex+len("-internal-"):] + "-0"
+	podName = serviceName[:internalServiceIndex] + "-" + serviceName[internalServiceIndex+len("-internal-"):] + "-0"
 
 	return namespace, podName, nil
 }

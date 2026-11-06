@@ -23,7 +23,11 @@ import (
 )
 
 var _ = Describe("BuildVolumes", func() {
-	ctx := clickhouseReconciler{}
+	var ctx clickhouseReconciler
+
+	BeforeEach(func() {
+		ctx = clickhouseReconciler{}
+	})
 
 	It("should generate default volumes", func() {
 		ctx.Cluster = &v1.ClickHouseCluster{
@@ -328,8 +332,8 @@ var _ = Describe("TopologySpreadConstraints", func() {
 		spec.TopologyMinDomains = minDomains
 
 		return &v1.ClickHouseCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "test"},
-			Spec:       v1.ClickHouseClusterSpec{PodTemplate: spec},
+			Name: "test",
+			Spec: v1.ClickHouseClusterSpec{PodTemplate: spec},
 		}
 	}
 	int32p := func(v int32) *int32 { return &v }
@@ -388,16 +392,20 @@ var _ = Describe("TopologySpreadConstraints", func() {
 })
 
 var _ = Describe("Service templates", func() {
-	cr := &v1.ClickHouseCluster{
-		Name:      "test",
-		Namespace: "default",
-		Spec: v1.ClickHouseClusterSpec{
-			AdditionalPorts: []v1.AdditionalPort{{
-				Name: "extra",
-				Port: 19000,
-			}},
-		},
-	}
+	var cr *v1.ClickHouseCluster
+
+	BeforeEach(func() {
+		cr = &v1.ClickHouseCluster{
+			Name:      "test",
+			Namespace: "default",
+			Spec: v1.ClickHouseClusterSpec{
+				AdditionalPorts: []v1.AdditionalPort{{
+					Name: "extra",
+					Port: 19000,
+				}},
+			},
+		}
+	})
 
 	It("should expose client ports through the public headless service and gate them on readiness", func() {
 		service := templateHeadlessService(cr)

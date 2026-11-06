@@ -56,10 +56,14 @@ var _ = Describe("KeeperCluster Webhook", func() {
 	})
 
 	Context("When creating KeeperCluster under Validating Webhook", func() {
-		meta := metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "test-keeper-validate",
-		}
+		var meta metav1.ObjectMeta
+
+		BeforeEach(func() {
+			meta = metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      "test-keeper-validate",
+			}
+		})
 
 		It("Should check TLS enabled if required", func(ctx context.Context) {
 			By("Rejecting wrong settings")

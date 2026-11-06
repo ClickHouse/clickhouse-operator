@@ -60,7 +60,7 @@ func TestE2E(t *testing.T) {
 		t.Fatalf("failed to load sharding config: %v", err)
 	}
 
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting clickhouse-operator suite\n")
+	_, _ = fmt.Fprintln(GinkgoWriter, "Starting clickhouse-operator suite")
 
 	RunSpecs(t, "e2e suite")
 }

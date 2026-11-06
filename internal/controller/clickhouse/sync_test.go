@@ -14,12 +14,16 @@ import (
 )
 
 var _ = Describe("UpdateStage", func() {
-	rev := chctrl.RevisionState{
-		StatefulSetRevision:   "sts-rev",
-		ConfigurationRevision: "cfg-rev",
-		RestartConfigRevision: "restart-rev",
-		ReloadConfigRevision:  "reload-rev",
-	}
+	var rev chctrl.RevisionState
+
+	BeforeEach(func() {
+		rev = chctrl.RevisionState{
+			StatefulSetRevision:   "sts-rev",
+			ConfigurationRevision: "cfg-rev",
+			RestartConfigRevision: "restart-rev",
+			ReloadConfigRevision:  "reload-rev",
+		}
+	})
 
 	settledReplica := func() replicaState {
 		sts := &appsv1.StatefulSet{

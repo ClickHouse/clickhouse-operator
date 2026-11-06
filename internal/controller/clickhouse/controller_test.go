@@ -48,18 +48,24 @@ func TestControllers(t *testing.T) {
 var _ = AfterSuite(testutil.AssertNoLeakedGoroutines)
 
 var _ = When("reconciling ClickHouseCluster", Ordered, func() {
+	const keeperName = "keeper"
+
 	var (
 		suite        testutil.TestSuit
 		recorder     *events.FakeRecorder
 		controller   *ClusterController
-		keeperName   = "keeper"
 		services     corev1.ServiceList
 		pdbs         policyv1.PodDisruptionBudgetList
 		secrets      corev1.SecretList
 		configs      corev1.ConfigMapList
 		statefulsets appsv1.StatefulSetList
 		jobs         batchv1.JobList
-		cr           = &v1.ClickHouseCluster{
+		cr           *v1.ClickHouseCluster
+		listOpts     *client.ListOptions
+	)
+
+	BeforeAll(func(ctx context.Context) {
+		cr = &v1.ClickHouseCluster{
 			Name:      "standalone",
 			Namespace: "default",
 			Spec: v1.ClickHouseClusterSpec{
@@ -79,9 +85,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 			},
 		}
 		listOpts = controllerutil.AppRequirements(cr.Namespace, cr.SpecificName())
-	)
 
-	BeforeAll(func(ctx context.Context) {
 		suite = testutil.SetupEnvironment(v1.AddToScheme)
 		recorder = events.NewFakeRecorder(128)
 		controller = &ClusterController{

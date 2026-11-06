@@ -107,34 +107,34 @@ var _ = Describe("URL version fetcher", func() {
 })
 
 var _ = Describe("Version Checker", func() {
-	fetcher := &StaticFetcher{Releases: map[string][]ClickHouseVersion{
-		ChannelStable: {
-			{25, 1, 2, 3},
-			{25, 2, 1, 21},
-			{25, 10, 5, 12},
-			{26, 1, 1, 7},
-			{26, 1, 2, 42},
-			{26, 2, 1, 3},
-		},
-		ChannelLTS: {
-			{25, 3, 4, 11},
-			{25, 8, 1, 5},
-			{25, 8, 2, 15},
-			{25, 8, 3, 16},
-			{26, 3, 1, 1},
-		},
-	}}
-
-	logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
-	logf.SetLogger(zapr.NewLogger(logger))
-	updater := NewReleaseUpdater(fetcher, time.Hour*24, controllerutil.NewLogger(logger))
-	checker := NewChecker(updater)
+	var (
+		updater *ReleaseUpdater
+		checker *Checker
+	)
 
 	BeforeEach(func(ctx context.Context) {
-		// Run update loop for the first test and use cached data for the following.
-		if updater.cached.Load() != nil {
-			return
-		}
+		fetcher := &StaticFetcher{Releases: map[string][]ClickHouseVersion{
+			ChannelStable: {
+				{25, 1, 2, 3},
+				{25, 2, 1, 21},
+				{25, 10, 5, 12},
+				{26, 1, 1, 7},
+				{26, 1, 2, 42},
+				{26, 2, 1, 3},
+			},
+			ChannelLTS: {
+				{25, 3, 4, 11},
+				{25, 8, 1, 5},
+				{25, 8, 2, 15},
+				{25, 8, 3, 16},
+				{26, 3, 1, 1},
+			},
+		}}
+
+		logger := zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
+		logf.SetLogger(zapr.NewLogger(logger))
+		updater = NewReleaseUpdater(fetcher, time.Hour*24, controllerutil.NewLogger(logger))
+		checker = NewChecker(updater)
 
 		updCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
