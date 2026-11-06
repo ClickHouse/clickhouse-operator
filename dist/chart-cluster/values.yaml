@@ -80,6 +80,12 @@ clickhouse:
     # The secret must reside in the same namespace as the cluster.
     # externalSecret: {}
 
+    # ImageVersionCatalog maps ClickHouse server container images to the ClickHouse version they contain.
+    # The v1alpha1 controller ignores this field and keeps detecting the version with the version probe Job.
+    # It exists as a migration preparation step: fill it in before migrating the cluster to v1alpha2,
+    # where it replaces the version probe and is required for every custom ClickHouse image.
+    # imageVersionCatalog: []
+
     # Reference to the KeeperCluster that is used for ClickHouse coordination.
     # When namespace is omitted, the ClickHouseCluster namespace is used.
     # Mutually exclusive with `externalKeeper`, exactly one of them must be set.
@@ -113,6 +119,8 @@ clickhouse:
     # upgradeChannel: ""
 
     # VersionProbeTemplate overrides for the version detection Job.
+    #
+    # Deprecated: replaced by imageVersionCatalog in v1alpha2; still used by the v1alpha1 controller.
     # versionProbeTemplate: {}
 
 keeper:

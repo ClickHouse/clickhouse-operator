@@ -5,3 +5,18 @@ resources:
 - bases/clickhouse.com_keeperclusters.yaml
 - bases/clickhouse.com_clickhouseclusters.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+- path: patches/v1alpha2_podtemplate_containers_optional.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: clickhouseclusters.clickhouse.com
+- path: patches/v1alpha2_keeper_podtemplate_containers_optional.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: keeperclusters.clickhouse.com
+# +kubebuilder:scaffold:crdkustomizewebhookpatch

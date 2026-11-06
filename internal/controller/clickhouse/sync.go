@@ -462,9 +462,9 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 		Annotations:       r.Cluster.Spec.Annotations,
 		PodTemplate:       r.Cluster.Spec.PodTemplate,
 		ContainerTemplate: r.Cluster.Spec.ContainerTemplate,
-		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate,
+		VersionProbe:      r.Cluster.Spec.VersionProbeTemplate, //nolint:staticcheck // deprecated, still used by v1alpha1
 		CachedVersion:     r.Cluster.Status.Version,
-		CachedRevision:    r.Cluster.Status.VersionProbeRevision,
+		CachedRevision:    r.Cluster.Status.VersionProbeRevision, //nolint:staticcheck // deprecated, still used by v1alpha1
 	})
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("run version probe: %w", err)
@@ -473,7 +473,7 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 	r.versionProbe = probeResult
 	if probeResult.Completed() {
 		r.Cluster.Status.Version = probeResult.Version
-		r.Cluster.Status.VersionProbeRevision = probeResult.Revision
+		r.Cluster.Status.VersionProbeRevision = probeResult.Revision //nolint:staticcheck // deprecated, still used by v1alpha1
 	} else {
 		reason := v1.ConditionReasonVersionPending
 		message := "Version probe has not completed yet"

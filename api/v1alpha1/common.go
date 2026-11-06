@@ -41,6 +41,24 @@ func (c *ContainerImage) String() string {
 	return c.Repository
 }
 
+// ImageVersionEntry maps a ClickHouse server container image to the ClickHouse version it contains.
+// +kubebuilder:validation:XValidation:rule="self.image.contains('@') || (self.image.matches(':[^/]+$') && !self.image.endsWith(':latest') && (!self.image.matches(':[0-9][^/]*$') || self.image.matches(':[0-9]+[.][0-9]+[^/]*$')))",message="image must be pinned by a digest or by a tag other than 'latest'; a numeric tag must start with major.minor (e.g. 25.8)"
+type ImageVersionEntry struct {
+	// Image is the full image reference, compared by exact string match with the ClickHouse server container image
+	// (e.g. "docker.io/clickhouse/clickhouse-server:25.8.2.29").
+	// Must be pinned by a digest or by a tag other than `latest`; a tag starting with a digit must start with
+	// major.minor (e.g. "25.8", "25.8.2.29", "25.8-alpine"), so major-only tags like "25" are rejected.
+	// Tags are checked by naming heuristics only and can still be moved by the registry:
+	// a digest ("repo@sha256:...") is the only reference that is guaranteed to be immutable.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Image string `json:"image"`
+
+	// Version is the ClickHouse version contained in the image (e.g. "25.8.2.29").
+	// +kubebuilder:validation:Pattern=`^\d+\.\d+(\.\d+){0,2}$`
+	Version string `json:"version"`
+}
+
 // LoggerConfig defines server logging configuration.
 type LoggerConfig struct {
 	// If false then disable all logging to file.
@@ -465,7 +483,10 @@ type DefaultPasswordSelector struct {
 	// Select password value from a Secret key
 	// +optional
 	Secret *SecretKeySelector `json:"secret,omitempty"`
-	// Select password value from a ConfigMap key
+	// Select password value from a ConfigMap key.
+	//
+	// Deprecated: ConfigMaps are not suitable for credentials; use secret instead. Removed in v1alpha2.
+	//
 	// +optional
 	ConfigMap *ConfigMapKeySelector `json:"configMap,omitempty"`
 }
