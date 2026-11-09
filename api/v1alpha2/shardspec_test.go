@@ -79,21 +79,28 @@ var _ = Describe("ShardSpecs", func() {
 	})
 
 	Describe("PodTemplateFor", func() {
-		templates := []NamedPodTemplate{
-			{Name: "cluster", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{PriorityClassName: "cluster"}}},
-			{Name: "shard", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{PriorityClassName: "shard"}}},
-			{Name: "replica", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{PriorityClassName: "replica"}}},
-		}
+		var (
+			templates []NamedPodTemplate
+			cluster   *ClickHouseCluster
+		)
 
-		cluster := newCluster(ClickHouseClusterSpec{
-			PodTemplates:    templates,
-			PodTemplateName: "cluster",
-			ShardSpecs: []ClickHouseShardSpec{
-				{Name: "plain", Replicas: new(int32(1))},
-				{Name: "custom", PodTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-					{}, {PodTemplateName: "replica"}, {PodTemplateName: "missing"},
-				}},
-			},
+		BeforeEach(func() {
+			templates = []NamedPodTemplate{
+				{Name: "cluster", Spec: corev1.PodSpec{PriorityClassName: "cluster"}},
+				{Name: "shard", Spec: corev1.PodSpec{PriorityClassName: "shard"}},
+				{Name: "replica", Spec: corev1.PodSpec{PriorityClassName: "replica"}},
+			}
+
+			cluster = newCluster(ClickHouseClusterSpec{
+				PodTemplates:    templates,
+				PodTemplateName: "cluster",
+				ShardSpecs: []ClickHouseShardSpec{
+					{Name: "plain", Replicas: new(int32(1))},
+					{Name: "custom", PodTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
+						{}, {PodTemplateName: "replica"}, {PodTemplateName: "missing"},
+					}},
+				},
+			})
 		})
 
 		DescribeTable("should select the most specific template",
@@ -126,21 +133,28 @@ var _ = Describe("ShardSpecs", func() {
 			return DataVolumeClaimTemplate{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: new(class)}}
 		}
 
-		templates := []NamedDataVolumeClaimTemplate{
-			{Name: "cluster", DataVolumeClaimTemplate: storage("cluster")},
-			{Name: "shard", DataVolumeClaimTemplate: storage("shard")},
-			{Name: "replica", DataVolumeClaimTemplate: storage("replica")},
-		}
+		var (
+			templates []NamedDataVolumeClaimTemplate
+			cluster   *ClickHouseCluster
+		)
 
-		cluster := newCluster(ClickHouseClusterSpec{
-			DataVolumeClaimTemplates:    templates,
-			DataVolumeClaimTemplateName: "cluster",
-			ShardSpecs: []ClickHouseShardSpec{
-				{Name: "plain", Replicas: new(int32(1))},
-				{Name: "custom", DataVolumeClaimTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-					{}, {DataVolumeClaimTemplateName: "replica"}, {DataVolumeClaimTemplateName: "missing"},
-				}},
-			},
+		BeforeEach(func() {
+			templates = []NamedDataVolumeClaimTemplate{
+				{Name: "cluster", DataVolumeClaimTemplate: storage("cluster")},
+				{Name: "shard", DataVolumeClaimTemplate: storage("shard")},
+				{Name: "replica", DataVolumeClaimTemplate: storage("replica")},
+			}
+
+			cluster = newCluster(ClickHouseClusterSpec{
+				DataVolumeClaimTemplates:    templates,
+				DataVolumeClaimTemplateName: "cluster",
+				ShardSpecs: []ClickHouseShardSpec{
+					{Name: "plain", Replicas: new(int32(1))},
+					{Name: "custom", DataVolumeClaimTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
+						{}, {DataVolumeClaimTemplateName: "replica"}, {DataVolumeClaimTemplateName: "missing"},
+					}},
+				},
+			})
 		})
 
 		DescribeTable("should select the most specific template",
@@ -180,7 +194,7 @@ var _ = Describe("ShardSpecs", func() {
 		set := func(name string, disks ...string) NamedVolumeClaimTemplateSet {
 			s := NamedVolumeClaimTemplateSet{Name: name}
 			for _, d := range disks {
-				s.Templates = append(s.Templates, PersistentVolumeClaimTemplate{NamedTemplateMeta: NamedTemplateMeta{Name: d}})
+				s.Templates = append(s.Templates, PersistentVolumeClaimTemplate{Name: d})
 			}
 
 			return s
@@ -195,21 +209,28 @@ var _ = Describe("ShardSpecs", func() {
 			return names
 		}
 
-		sets := []NamedVolumeClaimTemplateSet{
-			set("cluster", "c1"),
-			set("shard", "s1", "s2"),
-			set("replica", "r1", "r2", "r3"),
-		}
+		var (
+			sets    []NamedVolumeClaimTemplateSet
+			cluster *ClickHouseCluster
+		)
 
-		cluster := newCluster(ClickHouseClusterSpec{
-			AdditionalVolumeClaimTemplateSets:    sets,
-			AdditionalVolumeClaimTemplateSetName: "cluster",
-			ShardSpecs: []ClickHouseShardSpec{
-				{Name: "plain", Replicas: new(int32(1))},
-				{Name: "custom", AdditionalVolumeClaimTemplateSetName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-					{}, {AdditionalVolumeClaimTemplateSetName: "replica"}, {AdditionalVolumeClaimTemplateSetName: "missing"},
-				}},
-			},
+		BeforeEach(func() {
+			sets = []NamedVolumeClaimTemplateSet{
+				set("cluster", "c1"),
+				set("shard", "s1", "s2"),
+				set("replica", "r1", "r2", "r3"),
+			}
+
+			cluster = newCluster(ClickHouseClusterSpec{
+				AdditionalVolumeClaimTemplateSets:    sets,
+				AdditionalVolumeClaimTemplateSetName: "cluster",
+				ShardSpecs: []ClickHouseShardSpec{
+					{Name: "plain", Replicas: new(int32(1))},
+					{Name: "custom", AdditionalVolumeClaimTemplateSetName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
+						{}, {AdditionalVolumeClaimTemplateSetName: "replica"}, {AdditionalVolumeClaimTemplateSetName: "missing"},
+					}},
+				},
+			})
 		})
 
 		DescribeTable("should select the most specific set",

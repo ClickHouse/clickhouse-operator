@@ -45,10 +45,14 @@ var _ = Describe("SchedulingSpec", func() {
 })
 
 var _ = Describe("PodTemplate", func() {
-	templates := []NamedPodTemplate{
-		{Name: "default", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{PriorityClassName: "normal"}}},
-		{Name: "highmem", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{PriorityClassName: "high"}}},
-	}
+	var templates []NamedPodTemplate
+
+	BeforeEach(func() {
+		templates = []NamedPodTemplate{
+			{Name: "default", Spec: corev1.PodSpec{PriorityClassName: "normal"}},
+			{Name: "highmem", Spec: corev1.PodSpec{PriorityClassName: "high"}},
+		}
+	})
 
 	It("should return the referenced ClickHouseCluster template", func() {
 		spec := ClickHouseClusterSpec{PodTemplates: templates, PodTemplateName: "highmem"}
@@ -68,7 +72,7 @@ var _ = Describe("PodTemplate", func() {
 
 var _ = Describe("WithDefaults", func() {
 	userTemplates := func(name string) []NamedPodTemplate {
-		return []NamedPodTemplate{{Name: "default", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{
+		return []NamedPodTemplate{{Name: "default", Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{
 				Name:  name,
 				Image: "example.com/custom:1",
@@ -76,7 +80,7 @@ var _ = Describe("WithDefaults", func() {
 					Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
 				},
 			}},
-		}}}}
+		}}}
 	}
 
 	It("should default ClickHouseCluster scalars and leave the pod templates untouched", func() {
@@ -118,9 +122,9 @@ var _ = Describe("WithDefaults", func() {
 	It("should default access modes of named data volume claim templates", func() {
 		spec := ClickHouseClusterSpec{DataVolumeClaimTemplates: []NamedDataVolumeClaimTemplate{
 			{Name: "empty"},
-			{Name: "explicit", DataVolumeClaimTemplate: DataVolumeClaimTemplate{Spec: corev1.PersistentVolumeClaimSpec{
+			{Name: "explicit", Spec: corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod},
-			}}},
+			}},
 		}}
 		spec.WithDefaults()
 		Expect(spec.DataVolumeClaimTemplates[0].Spec.AccessModes).To(ConsistOf(DefaultAccessMode))
@@ -131,8 +135,8 @@ var _ = Describe("WithDefaults", func() {
 		spec := ClickHouseClusterSpec{AdditionalVolumeClaimTemplateSets: []NamedVolumeClaimTemplateSet{{
 			Name: "jbod",
 			Templates: []PersistentVolumeClaimTemplate{
-				{NamedTemplateMeta: NamedTemplateMeta{Name: "empty"}},
-				{NamedTemplateMeta: NamedTemplateMeta{Name: "explicit"}, Spec: corev1.PersistentVolumeClaimSpec{
+				{Name: "empty"},
+				{Name: "explicit", Spec: corev1.PersistentVolumeClaimSpec{
 					AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod},
 				}},
 			},

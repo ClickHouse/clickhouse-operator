@@ -11,10 +11,8 @@ import (
 var _ = Describe("PodDisruptionBudgetTemplate", func() {
 	operatorPDB := func() *policyv1.PodDisruptionBudget {
 		return &policyv1.PodDisruptionBudget{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels:      map[string]string{"app": "ch"},
-				Annotations: map[string]string{"owner": "operator"},
-			},
+			Labels:      map[string]string{"app": "ch"},
+			Annotations: map[string]string{"owner": "operator"},
 			Spec: policyv1.PodDisruptionBudgetSpec{
 				Selector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app": "ch"}},
 				MaxUnavailable: new(intstr.FromInt32(1)),

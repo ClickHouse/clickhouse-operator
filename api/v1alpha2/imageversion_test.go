@@ -10,7 +10,7 @@ var _ = Describe("ImageVersionCatalog", func() {
 	const customImage = "registry.example.com/clickhouse-server:25.12.1.649"
 
 	templateWith := func(containers ...corev1.Container) NamedPodTemplate {
-		return NamedPodTemplate{Name: "default", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{Containers: containers}}}
+		return NamedPodTemplate{Name: "default", Spec: corev1.PodSpec{Containers: containers}}
 	}
 
 	Describe("ResolveImageVersion", func() {
@@ -120,9 +120,9 @@ var _ = Describe("ValidateImageVersionCatalog mutable tags", func() {
 		It("should reject "+image+" even with a catalog entry", func() {
 			spec := ClickHouseClusterSpec{
 				ImageVersionCatalog: []ImageVersionEntry{{Image: image, Version: "25.8"}},
-				PodTemplates: []NamedPodTemplate{{Name: "default", PodTemplateSpec: PodTemplateSpec{Spec: corev1.PodSpec{
+				PodTemplates: []NamedPodTemplate{{Name: "default", Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{Name: ClickHouseServerContainerName, Image: image}},
-				}}}},
+				}}},
 			}
 			err := spec.ValidateImageVersionCatalog()
 			Expect(err).To(HaveOccurred())

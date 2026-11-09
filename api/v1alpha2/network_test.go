@@ -16,9 +16,10 @@ var _ = Describe("NetworkSpec", func() {
 	})
 })
 
-var _ = Describe("TLSSpec", func() {
-	cert := &corev1.LocalObjectReference{Name: "server-cert"}
+// tlsServerCert is package-level because DescribeTable Entry arguments are evaluated at tree construction.
+var tlsServerCert = &corev1.LocalObjectReference{Name: "server-cert"}
 
+var _ = Describe("TLSSpec", func() {
 	DescribeTable("Enabled and Required",
 		func(mode TLSMode, enabled, required bool) {
 			spec := &TLSSpec{Mode: mode}
@@ -50,22 +51,22 @@ var _ = Describe("TLSSpec", func() {
 		Entry("enabled without cert", TLSSpec{Mode: TLSModeEnabled}, false),
 		Entry("required without cert", TLSSpec{Mode: TLSModeRequired}, false),
 		Entry("enabled with empty cert name", TLSSpec{Mode: TLSModeEnabled, ServerCertSecret: &corev1.LocalObjectReference{}}, false),
-		Entry("enabled with cert", TLSSpec{Mode: TLSModeEnabled, ServerCertSecret: cert}, true),
-		Entry("required with cert", TLSSpec{Mode: TLSModeRequired, ServerCertSecret: cert}, true),
+		Entry("enabled with cert", TLSSpec{Mode: TLSModeEnabled, ServerCertSecret: tlsServerCert}, true),
+		Entry("required with cert", TLSSpec{Mode: TLSModeRequired, ServerCertSecret: tlsServerCert}, true),
 		Entry("CA bundle from secret", TLSSpec{
-			Mode: TLSModeEnabled, ServerCertSecret: cert,
+			Mode: TLSModeEnabled, ServerCertSecret: tlsServerCert,
 			CABundle: &CABundleSource{Secret: &CABundleKeySelector{Name: "ca"}},
 		}, true),
 		Entry("CA bundle from configMap", TLSSpec{
-			Mode: TLSModeEnabled, ServerCertSecret: cert,
+			Mode: TLSModeEnabled, ServerCertSecret: tlsServerCert,
 			CABundle: &CABundleSource{ConfigMap: &CABundleKeySelector{Name: "ca"}},
 		}, true),
 		Entry("CA bundle with no source", TLSSpec{
-			Mode: TLSModeEnabled, ServerCertSecret: cert,
+			Mode: TLSModeEnabled, ServerCertSecret: tlsServerCert,
 			CABundle: &CABundleSource{},
 		}, false),
 		Entry("CA bundle with both sources", TLSSpec{
-			Mode: TLSModeEnabled, ServerCertSecret: cert,
+			Mode: TLSModeEnabled, ServerCertSecret: tlsServerCert,
 			CABundle: &CABundleSource{
 				Secret:    &CABundleKeySelector{Name: "ca"},
 				ConfigMap: &CABundleKeySelector{Name: "ca"},
