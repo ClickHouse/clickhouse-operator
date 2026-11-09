@@ -532,7 +532,11 @@ var _ = Describe("observeDigest", func() {
 		}
 	}
 
-	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	var log controllerutil.Logger
+
+	BeforeEach(func() {
+		log = controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	})
 
 	It("should digest the server states in replica order", func(ctx context.Context) {
 		cc := &ClusterController{
@@ -547,6 +551,6 @@ var _ = Describe("observeDigest", func() {
 			Logger: log,
 			Dialer: func(context.Context, string) (net.Conn, error) { return nil, errors.New("down") }}
 
-		Expect(cc.observeDigest(ctx, cluster(2))).To(Equal("0=;1=;"))
+		Expect(cc.observeDigest(ctx, cluster(2))).To(Equal("0=unreachable;1=unreachable;"))
 	})
 })

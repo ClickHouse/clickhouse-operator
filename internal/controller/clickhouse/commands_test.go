@@ -496,8 +496,15 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 })
 
 var _ = Describe("connCache", func() {
-	log := controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-	key := types.NamespacedName{Namespace: "default", Name: "cached"}
+	var (
+		log controllerutil.Logger
+		key types.NamespacedName
+	)
+
+	BeforeEach(func() {
+		log = controllerutil.NewLogger(zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+		key = types.NamespacedName{Namespace: "default", Name: "cached"}
+	})
 
 	It("should expose entries read-only through TryGet", func() {
 		cache := newConnCache()

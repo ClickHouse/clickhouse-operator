@@ -15,9 +15,6 @@ import (
 )
 
 const (
-	// ObserverProbeTimeout bounds a single cluster probe within an observation tick.
-	ObserverProbeTimeout = 10 * time.Second
-
 	observerParallelism   = 8
 	observerChannelBuffer = 1024
 )
@@ -102,10 +99,7 @@ func (o *Observer[C]) observe(ctx context.Context) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			probeCtx, cancel := context.WithTimeout(ctx, ObserverProbeTimeout)
-			defer cancel()
-
-			digests[i] = o.probe(probeCtx, cluster)
+			digests[i] = o.probe(ctx, cluster)
 		})
 	}
 

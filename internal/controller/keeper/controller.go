@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"strings"
@@ -249,7 +250,7 @@ func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.Keep
 		status := getServerStatus(probeCtx, cc.Logger.With("replica_id", id), cc.Dialer,
 			cluster.HostnameByID(id), cluster.Spec.Settings.TLS.Required)
 
-		return id, status.ServerState, nil
+		return id, cmp.Or(status.ServerState, "unreachable"), nil
 	})
 
 	var sb strings.Builder
