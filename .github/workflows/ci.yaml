@@ -350,10 +350,14 @@ jobs:
             done
             return 1
           }
+          # kind load docker-image breaks on multi-arch images under the containerd image store (kind#3795); save the runner platform explicitly.
+          platform="linux/$(docker version --format '{{.Server.Arch}}')"
           for version in $(echo "${{ matrix.clickhouse_version }}" | tr ',' ' '); do
             for image in clickhouse/clickhouse-keeper clickhouse/clickhouse-server; do
               pull "docker.io/${image}:${version}"
-              kind load docker-image "docker.io/${image}:${version}"
+              docker image save --platform "$platform" --output /tmp/image.tar "docker.io/${image}:${version}"
+              kind load image-archive /tmp/image.tar
+              rm /tmp/image.tar
             done
           done
 
