@@ -64,6 +64,11 @@ func (r replicaState) UpdateStage(rev chctrl.RevisionState, replicaCount int) ch
 		return chctrl.StageUpdating
 	}
 
+	// Checked before HasDiff: an outdated leader must also block restarting the next replica.
+	if r.Status.SyncedFollowers < r.Status.Followers {
+		return chctrl.StageNotReadyUpToDate
+	}
+
 	if r.HasDiff(rev) {
 		return chctrl.StageHasDiff
 	}
