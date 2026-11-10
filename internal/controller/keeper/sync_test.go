@@ -174,6 +174,56 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 	})
 })
 
+var _ = Describe("UpdateStage", func() {
+	var rev controller.RevisionState
+
+	BeforeEach(func() {
+		rev = controller.RevisionState{
+			StatefulSetRevision:   "sts-rev",
+			ConfigurationRevision: "cfg-rev",
+			RestartConfigRevision: "restart-rev",
+		}
+	})
+
+	leader := func(followers, synced int) replicaState {
+		sts := &appsv1.StatefulSet{
+			Generation: 1,
+			Spec: appsv1.StatefulSetSpec{
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{util.AnnotationConfigHash: rev.RestartConfigRevision},
+					},
+				},
+			},
+			Status: appsv1.StatefulSetStatus{ObservedGeneration: 1, ReadyReplicas: 1},
+		}
+		util.AddSpecHashToObject(sts, rev.StatefulSetRevision)
+
+		cfg := &corev1.ConfigMap{}
+		util.AddObjectConfigHash(cfg, rev.ConfigurationRevision)
+
+		return replicaState{
+			STS: sts, CFG: cfg,
+			Status: serverStatus{ServerState: ModeLeader, Followers: followers, SyncedFollowers: synced},
+		}
+	}
+
+	It("should report UpToDate for a leader with synced followers", func() {
+		Expect(leader(2, 2).UpdateStage(rev, 3)).To(Equal(controller.StageUpToDate))
+	})
+
+	It("should report NotReadyUpToDate for a leader with a follower catching up", func() {
+		Expect(leader(2, 1).UpdateStage(rev, 3)).To(Equal(controller.StageNotReadyUpToDate))
+	})
+
+	It("should report NotReadyUpToDate for an outdated leader with a follower catching up", func() {
+		replica := leader(2, 1)
+		util.AddSpecHashToObject(replica.STS, "next-sts-rev")
+
+		Expect(replica.UpdateStage(rev, 3)).To(Equal(controller.StageNotReadyUpToDate))
+	})
+})
+
 var _ = Describe("Keeper version status", func() {
 	It("should report matching live replica versions", func() {
 		_, rec, cancelEvents := setupReconciler()

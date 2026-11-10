@@ -30,9 +30,10 @@ var (
 
 // serverStatus holds parsed fields of the "mntr" command response.
 type serverStatus struct {
-	ServerState string
-	Followers   int
-	Version     string
+	ServerState     string
+	Followers       int
+	SyncedFollowers int
+	Version         string
 }
 
 func getConnection(ctx context.Context, dialer controllerutil.DialContextFunc, hostname string, tlsRequired bool) (net.Conn, error) {
@@ -131,6 +132,16 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 		result.Followers, err = strconv.Atoi(followers)
 		if err != nil {
 			return serverStatus{}, fmt.Errorf("failed to parse field 'zk_followers': %w", err)
+		}
+
+		synced, ok := statMap["zk_synced_followers"]
+		if !ok {
+			return serverStatus{}, fmt.Errorf("response missing required field 'SyncedFollowers': %q", string(data))
+		}
+
+		result.SyncedFollowers, err = strconv.Atoi(synced)
+		if err != nil {
+			return serverStatus{}, fmt.Errorf("failed to parse field 'zk_synced_followers': %w", err)
 		}
 	}
 
