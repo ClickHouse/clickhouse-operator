@@ -2,68 +2,59 @@ package testutil
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"hash/fnv"
+	"strconv"
+	"strings"
 
 	"github.com/sethvargo/go-envconfig"
 )
 
-// ShardingConfig assigns specs to CI shards from a pre-computed plan.
+// ShardingConfig assigns specs to CI shards by a deterministic hash of the spec name.
 type ShardingConfig struct {
-	Index    int    `env:"E2E_SHARD_INDEX, default=0"`
-	Total    int    `env:"E2E_SHARD_TOTAL, default=0"`
-	PlanPath string `env:"E2E_SHARD_PLAN"`
+	// Shard is "index/total" (e.g. "2/4"); empty runs every spec.
+	Shard string `env:"E2E_SHARD"`
 
-	shardAssignments map[string]int
+	Index int
+	Total int
 }
 
-// Load reads the sharding configuration from the environment and the plan file.
+// Load reads the sharding configuration from the environment.
 func (c *ShardingConfig) Load() error {
 	if err := envconfig.Process(context.Background(), c); err != nil {
 		return fmt.Errorf("load sharding config from env: %w", err)
 	}
 
-	if c.Total <= 1 {
+	if c.Shard == "" {
 		return nil
 	}
 
-	if c.PlanPath == "" {
-		return errors.New("sharding plan path must be set if more than 1 shard")
+	idx, total, ok := strings.Cut(c.Shard, "/")
+	index, indexErr := strconv.Atoi(idx)
+	totalN, totalErr := strconv.Atoi(total)
+
+	if !ok || indexErr != nil || totalErr != nil {
+		return fmt.Errorf("invalid E2E_SHARD %q, want \"index/total\" e.g. \"2/4\"", c.Shard)
 	}
 
-	if c.Index < 1 || c.Index > c.Total {
-		return fmt.Errorf("invalid shard index %d, should be between 1 and %d", c.Index, c.Total)
-	}
-
-	data, err := os.ReadFile(filepath.Clean(c.PlanPath))
-	if err != nil {
-		return fmt.Errorf("read e2e shard plan: %w", err)
-	}
-
-	if err = json.Unmarshal(data, &c.shardAssignments); err != nil {
-		return fmt.Errorf("decode e2e shard plan: %w", err)
+	c.Index, c.Total = index, totalN
+	if c.Total < 1 || c.Index < 1 || c.Index > c.Total {
+		return fmt.Errorf("invalid shard %d/%d", c.Index, c.Total)
 	}
 
 	return nil
 }
 
 // Enabled reports whether the given spec belongs to this shard.
-func (c *ShardingConfig) Enabled(spec string) (bool, error) {
+func (c *ShardingConfig) Enabled(spec string) bool {
 	if c.Total <= 1 {
-		return true, nil
+		return true
 	}
 
-	shard, ok := c.shardAssignments[spec]
-	if !ok {
-		return false, fmt.Errorf("test %q is not assigned in sharding plan", spec)
-	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(spec))
+	// Mask to 31 bits so the hash fits a signed int on every platform.
+	hash := int(h.Sum32() & 0x7fffffff)
 
-	if shard < 1 || shard > c.Total {
-		return false, fmt.Errorf("invalid assignment for %q", spec)
-	}
-
-	return shard == c.Index, nil
+	return hash%c.Total+1 == c.Index
 }
