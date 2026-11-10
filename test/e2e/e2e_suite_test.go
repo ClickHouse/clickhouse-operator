@@ -122,6 +122,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 		EnableNetworkPolicy:     true,
 		ResyncPeriod:            time.Minute,
 		MaxConcurrentReconciles: 4,
+		ObserveInterval:         15 * time.Second,
 		VersionUpdateInterval:   time.Hour,
 	}
 
@@ -164,12 +165,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 })
 
 var _ = BeforeEach(func() {
-	enabled, err := sharding.Enabled(CurrentSpecReport().FullText())
-	if err != nil {
-		Fail(err.Error())
-	}
-
-	if !enabled {
+	if !sharding.Enabled(CurrentSpecReport().FullText()) {
 		Skip(fmt.Sprintf("not in shard %d/%d", sharding.Index, sharding.Total))
 	}
 })
