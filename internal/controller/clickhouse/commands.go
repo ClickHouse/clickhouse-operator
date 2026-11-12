@@ -226,7 +226,7 @@ func (cmd *commander) SyncDatabases(ctx context.Context, log controllerutil.Logg
 
 	for id, res := range results {
 		if res.Err != nil {
-			log.Info("failed to create databases", "replica_id", id, "error", res.Err)
+			log.Warn("failed to create databases", "replica_id", id, "error", res.Err)
 
 			result = false
 		}
@@ -276,7 +276,7 @@ func (cmd *commander) CreateDatabases(ctx context.Context, log controllerutil.Lo
 	for name, desc := range databases {
 		ctx := dbCtx(ctx, name)
 
-		log.Debug("creating database", "replica_id", id, "database", name)
+		log.Info("creating database", "replica_id", id, "database", name)
 
 		if err = cmd.createDatabase(ctx, log, conn, id, name, fmt.Sprintf(
 			"CREATE DATABASE IF NOT EXISTS {database:Identifier} UUID '%s' ENGINE = %s",
@@ -322,7 +322,6 @@ func (cmd *commander) EnsureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 
 		var count uint64
 		if err = conn.QueryRow(ctx, "SELECT COUNT() FROM system.tables WHERE database='default'").Scan(&count); err != nil {
-			log.Error(err, "error checking if database 'default' has tables")
 			return false, fmt.Errorf("check tables in  %s: %w", id, err)
 		}
 
@@ -331,14 +330,14 @@ func (cmd *commander) EnsureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 			return false, nil
 		}
 
-		log.Debug("dropping default database")
+		log.Info("dropping default database")
 
 		if err := conn.Exec(ctx, "DROP DATABASE default SYNC"); err != nil {
 			return false, fmt.Errorf("failed to drop default database on replica %s: %w", id, err)
 		}
 	}
 
-	log.Debug("creating replicated default database")
+	log.Info("creating replicated default database")
 
 	defaultDatabaseUUID := uuid.NewSHA1(uuid.Nil, []byte(cmd.cluster.SpecificName())).String()
 	if err = cmd.createDatabase(ctx, log, conn, id, "default", createDefaultDatabaseQuery, defaultDatabaseUUID); err != nil {
@@ -480,7 +479,7 @@ func (cmd *commander) CleanupDatabaseReplicas(
 		total++
 
 		if err = rows.Scan(&database, &toDrop.ShardID, &toDrop.Index, &isActive); err != nil {
-			log.Info("failed to scan stale database replica", "error", err)
+			log.Warn("failed to scan stale database replica", "error", err)
 			continue
 		}
 
@@ -494,12 +493,12 @@ func (cmd *commander) CleanupDatabaseReplicas(
 			continue
 		}
 
-		log.Debug("deleting stale database replica", "database", database, "replica_id", toDrop)
+		log.Info("deleting stale database replica", "database", database, "replica_id", toDrop)
 
 		// Both parameters don't support query parameters, and arg binding doesn't support identifiers
 		err = conn.Exec(ctx, fmt.Sprintf("SYSTEM DROP DATABASE REPLICA '%d|%d' FROM DATABASE `%s`", toDrop.ShardID, toDrop.Index, database))
 		if err != nil {
-			log.Info("failed to drop stale database replica", "replica_id", toDrop, "error", err)
+			log.Warn("failed to drop stale database replica", "replica_id", toDrop, "error", err)
 			continue
 		}
 
@@ -610,7 +609,6 @@ func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error
 			DialTimeout: dialTimeout,
 		})
 		if err != nil {
-			cmd.log.Error(err, "failed to open ClickHouse connection", "replica_id", id)
 			return nil, fmt.Errorf("open ClickHouse connection: %w", err)
 		}
 

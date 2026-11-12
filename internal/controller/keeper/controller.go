@@ -65,8 +65,6 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, nil
 		}
 
-		cc.Logger.Error(err, "failed to Get keeper cluster")
-
 		return ctrl.Result{}, fmt.Errorf("get KeeperCluster %s: %w", req.String(), err)
 	}
 

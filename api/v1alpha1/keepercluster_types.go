@@ -1,7 +1,6 @@
 package v1alpha1
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -229,7 +228,11 @@ type KeeperReplicaID int32
 func KeeperReplicaIDFromLabels(labels map[string]string) (KeeperReplicaID, error) {
 	idStr, ok := labels[controllerutil.LabelKeeperReplicaID]
 	if !ok {
-		return 0, errors.New("missing replica ID label")
+		return 0, fmt.Errorf("missing replica ID label: %w", ErrNotReplicaResource)
+	}
+
+	if idStr == controllerutil.LabelKeeperAllReplicas {
+		return 0, fmt.Errorf("replica ID label %q: %w", idStr, ErrNotReplicaResource)
 	}
 
 	id, err := strconv.ParseInt(idStr, 10, 32)
