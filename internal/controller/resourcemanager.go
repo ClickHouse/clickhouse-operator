@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -59,7 +60,7 @@ func (rm *ResourceManager) ReconcileResource(
 	action v1.EventAction,
 ) (bool, error) {
 	kind := resource.GetObjectKind().GroupVersionKind().Kind
-	log = log.With("kind", kind, "name", resource.GetName())
+	log = log.With("kind", kind, "resource", resource.GetName())
 
 	if err := ctrlruntime.SetControllerReference(rm.owner, resource, rm.ctrl.GetScheme()); err != nil {
 		return false, fmt.Errorf("set %s/%s Ctrl reference: %w", kind, resource.GetName(), err)
@@ -292,7 +293,7 @@ func (rm *ResourceManager) ReconcileReplicaResources(
 	// via HasDiff and retry. This avoids blocking the STS update on transient PVC conflicts.
 	for name, revision := range input.Revisions.PVCRevisions {
 		if err := rm.updatePVC(ctx, log, input.Existing.PVCs[name], input.Desired.PVCs[name], revision); err != nil {
-			log.Warn("failed to update replica PVC", "pvc", name, "error", err)
+			log.Warn("failed to update replica PVC", "disk", name, "error", err)
 		}
 	}
 
@@ -409,11 +410,12 @@ func diffFilter(specFields []string) gcmp.Option {
 }
 
 // ListReplicaResources lists the resources for replicas and maps them to replica IDs using the provided labelToID function.
+// Resources without replica labels are skipped silently, resources with invalid replica labels are skipped with a warning.
 func (rm *ResourceManager) ListReplicaResources[
 	ID comparable,
 	Res client.Object,
 	RList client.ObjectList,
-](ctx context.Context, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
+](ctx context.Context, log util.Logger, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
 	list, ok := reflect.TypeAssert[RList](reflect.New(reflect.TypeFor[RList]().Elem()))
 	if !ok {
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
@@ -426,6 +428,8 @@ func (rm *ResourceManager) ListReplicaResources[
 	result := map[ID]Res{}
 
 	items := reflect.ValueOf(list).Elem().FieldByName("Items")
+	log = log.With("kind", items.Type().Elem().Name())
+
 	for i := range items.Len() {
 		item, ok := reflect.TypeAssert[Res](items.Index(i).Addr())
 		if !ok {
@@ -433,8 +437,17 @@ func (rm *ResourceManager) ListReplicaResources[
 		}
 
 		id, err := labelToID(item.GetLabels())
-		if err != nil {
+		if errors.Is(err, v1.ErrNotReplicaResource) {
 			continue
+		}
+
+		if err != nil {
+			log.Warn("skipping resource with invalid replica labels", "resource", item.GetName(), "error", err)
+			continue
+		}
+
+		if existing, ok := result[id]; ok {
+			log.Warn("multiple resources for single replica", "replica_id", id, "resources", []string{existing.GetName(), item.GetName()})
 		}
 
 		result[id] = item

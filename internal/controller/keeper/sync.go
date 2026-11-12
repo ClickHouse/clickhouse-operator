@@ -104,7 +104,7 @@ var keeperConditionTypes = []v1.ConditionType{
 }
 
 func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
-	log.Info("Enter Keeper Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
+	log.Debug("Enter Keeper Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
 	if ctrlutil.PauseRequested(r.Cluster, log) {
 		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", keeperConditionTypes)
@@ -145,8 +145,6 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
-		log.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
-
 		r.SetCondition(metav1.Condition{Type: v1.ConditionTypeReconcileSucceeded, Status: metav1.ConditionFalse, Reason: v1.ConditionReasonStepFailed, Message: "Reconcile returned error"})
 
 		if updateErr := r.UpsertStatus(ctx, log); updateErr != nil {
@@ -159,7 +157,7 @@ func (r *keeperReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.
 	r.Cluster.Status.ObservedGeneration = r.Cluster.Generation
 
 	r.SetCondition(metav1.Condition{Type: v1.ConditionTypeReconcileSucceeded, Status: metav1.ConditionTrue, Reason: v1.ConditionReasonReconcileFinished, Message: "Reconcile succeeded"})
-	log.Info("reconciliation loop end", "result", result)
+	log.Debug("reconciliation loop end", "result", result)
 
 	if err := r.UpsertStatus(ctx, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
@@ -220,26 +218,20 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepContinue(), nil
 	}
 
-	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
-
-	var statefulSets appsv1.StatefulSetList
-	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
+	statefulSets, err := r.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, log, v1.KeeperReplicaIDFromLabels)
+	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.KeeperReplicaIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, log, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
 
-	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.KeeperReplicaID, replicaState, error) {
-		id, err := v1.KeeperReplicaIDFromLabels(sts.Labels)
-		if err != nil {
-			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
-			return -1, replicaState{}, fmt.Errorf("get StatefulSet replica ID: %w", err)
-		}
+	execResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(statefulSets)), func(id v1.KeeperReplicaID) (v1.KeeperReplicaID, replicaState, error) {
+		sts := statefulSets[id]
 
-		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), &sts)
+		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), sts)
 		if err != nil {
 			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
 		}
@@ -255,7 +247,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 				r.Cluster.Spec.Settings.TLS.Required)
 		}
 
-		pvcs, err := r.GetReplicaPVCs(ctx, &sts)
+		pvcs, err := r.GetReplicaPVCs(ctx, sts)
 		if err != nil {
 			log.Error(err, "failed to get PVCs for replica", "replica_id", id)
 		}
@@ -265,7 +257,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return id, replicaState{
 			Status: status,
 
-			STS:          &sts,
+			STS:          sts,
 			CFG:          configMaps[id],
 			PVCs:         pvcs,
 			Pod:          pod,
@@ -277,12 +269,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 			return chctrl.StepResult{}, fmt.Errorf("load replica state %d: %w", id, res.Err)
 		}
 
-		if _, ok := r.ReplicaState[id]; !ok {
-			r.ReplicaState[id] = res.Result
-		} else {
-			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %s, %s",
-				r.ReplicaState[id].STS.Name, res.Result.STS.Name), "replica_id", id)
-		}
+		r.ReplicaState[id] = res.Result
 	}
 
 	// If replica existed before we need to mark it active as quorum expects it.
@@ -537,13 +524,13 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 			}
 		}
 
-		log.Info(fmt.Sprintf("updating chosen replica %d with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
+		log.Info("updating chosen replica", "replica_id", chosenReplica, "replicas", replicasInStatus, "priority", highestStage.String())
 
 		requeueAfter = chctrl.RequeueProbePoll
 		replicasInStatus = []v1.KeeperReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:
-		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
+		log.Info("updating replicas", "replicas", replicasInStatus, "priority", highestStage.String())
 	}
 
 	for _, id := range replicasInStatus {
@@ -563,7 +550,7 @@ func (r *keeperReconciler) reconcileReplicaResources(ctx context.Context, log ct
 }
 
 func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.KeeperReplicaIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, log, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
@@ -580,7 +567,7 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 		}
 	}
 
-	statefulSets, err := r.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, v1.KeeperReplicaIDFromLabels)
+	statefulSets, err := r.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, log, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}

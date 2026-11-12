@@ -58,7 +58,7 @@ var _ admission.Validator[*chv1.ClickHouseCluster] = &ClickHouseClusterWebhook{}
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind ClickHouseCluster.
 func (w *ClickHouseClusterWebhook) Default(_ context.Context, cluster *chv1.ClickHouseCluster) error {
-	w.Log.Info("Fill defaults", "name", cluster.Name, "namespace", cluster.Namespace)
+	w.Log.Debug("Fill defaults", "name", cluster.Name, "namespace", cluster.Namespace)
 	cluster.Spec.WithDefaults()
 
 	// Only on create: existing clusters keep their system log tables unbounded.
@@ -78,7 +78,7 @@ func (w *ClickHouseClusterWebhook) ValidateCreate(_ context.Context, cluster *ch
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClickHouseCluster.
 func (w *ClickHouseClusterWebhook) ValidateUpdate(_ context.Context, oldCluster, newCluster *chv1.ClickHouseCluster) (admission.Warnings, error) {
-	w.Log.Info("Validate update spec", "name", newCluster.Name, "namespace", newCluster.Namespace)
+	w.Log.Debug("Validate update spec", "name", newCluster.Name, "namespace", newCluster.Namespace)
 
 	warns, errs := w.validateImpl(newCluster)
 	if oldCluster.Spec.Shards != nil && newCluster.Spec.Shards != nil &&
@@ -114,7 +114,7 @@ func (w *ClickHouseClusterWebhook) ValidateDelete(context.Context, *chv1.ClickHo
 }
 
 func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (admission.Warnings, []error) {
-	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
+	w.Log.Debug("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
 
 	var (
 		warns admission.Warnings

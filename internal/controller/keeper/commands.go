@@ -124,7 +124,6 @@ func queryKeeper(ctx context.Context, log controllerutil.Logger, conn net.Conn) 
 	if result.ServerState == ModeLeader {
 		followers, ok := statMap["zk_followers"]
 		if !ok {
-			log.Warn("'zk_followers' is missing in keeper response")
 			return serverStatus{}, fmt.Errorf("response missing required field 'Followers': %q", string(data))
 		}
 

@@ -179,7 +179,7 @@ func (u *ReleaseUpdater) updateReleases(ctx context.Context) bool {
 
 	allReleases, err := u.fetcher.FetchReleases(ctx)
 	if err != nil {
-		u.l.Error(err, "fetch releases")
+		u.l.Warn("fetch releases", "error", err)
 		return false
 	}
 
