@@ -1,0 +1,17 @@
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackup
+metadata:
+  name: sample
+spec:
+  clusterRef:
+    name: sample
+  storage:
+    s3:
+      endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+      credentials:
+        accessKeyID:
+          name: sample-backup-storage
+          key: access-key-id
+        secretAccessKey:
+          name: sample-backup-storage
+          key: secret-access-key

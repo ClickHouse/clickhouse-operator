@@ -2,4 +2,7 @@
 resources:
 - v1alpha1_keeper.yaml
 - v1alpha1_clickhouse.yaml
+- v1alpha1_clickhousebackup.yaml
+- v1alpha1_clickhousescheduledbackup.yaml
+- v1alpha1_clickhouserestore.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

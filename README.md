@@ -25,6 +25,7 @@ The Operator handles the full lifecycle of ClickHouse clusters, including scalin
 - **High Availability**: Fault-tolerant installations for ClickHouse and Keeper clusters
 - **Security**: Built-in security features TLS/SSL support for secure cluster communication
 - **Monitoring**: Prometheus metrics integration for observability
+- **Backup and Restore**: Scheduled full and incremental backups to S3 and restores using native ClickHouse backups
 
 ## Getting Started
 
@@ -105,6 +106,7 @@ The `examples/` directory contains various ClickHouse cluster configurations:
 - **aws_eks_gp3.yaml**: Configuration for AWS EKS with gp3 storage
 - **gcp_gke_ssd.yaml**: Configuration for GCP GKE with SSD storage
 - **custom_configuration.yaml**: ClickHouse cluster with configuration overrides
+- **scheduled_backup_s3.yaml**: Nightly full and incremental backups of a cluster to S3
 - **prometheus_secure_metrics_scraper.yaml**: Configuration for secure operator metrics scraping. Requires Prometheus operator and enabled secure metrics endpoint
 
 To deploy any example:

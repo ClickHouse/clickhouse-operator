@@ -40,6 +40,7 @@ const (
 var (
 	keeperImage     = "clickhouse/clickhouse-keeper:" + supported.Latest.Version()
 	clickhouseImage = "clickhouse/clickhouse-server:" + supported.Latest.Version()
+	s3Image         = "adobe/s3mock:5.2.3"
 )
 
 func generateKeeperConfig() *strings.Reader {
@@ -419,6 +420,155 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 			Expect(row.Scan(&count)).To(Succeed())
 			Expect(count).To(Equal(uint64(10)))
 		}
+	})
+
+	Describe("backup operations", Ordered, func() {
+		const (
+			s3Hostname      = "test-s3"
+			s3Port          = "9090/tcp"
+			s3Bucket        = "backups"
+			s3Endpoint      = "http://test-s3:9090/backups"
+			s3MissingBucket = "http://test-s3:9090/missing-bucket"
+		)
+
+		// The zero value is the first replica of the first shard.
+		var id0 v1.ClickHouseReplicaID
+
+		location := func(name string) s3Location {
+			return s3Location{URL: s3Endpoint + "/" + name, AccessKeyID: "test", SecretAccessKey: "test"}
+		}
+
+		waitFinished := func(ctx context.Context, operationID string) backupOperationState {
+			GinkgoHelper()
+
+			var state backupOperationState
+
+			Eventually(func(g Gomega) {
+				var (
+					found bool
+					err   error
+				)
+
+				state, found, err = cmd.BackupOperationState(ctx, id0, operationID)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(found).To(BeTrue())
+				g.Expect(state.running()).To(BeFalse())
+			}, "2m", "200ms").Should(Succeed())
+
+			return state
+		}
+
+		BeforeAll(func(ctx context.Context) {
+			By("starting S3 storage")
+
+			ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+				Image: s3Image,
+				ConfigModifier: func(c *container.Config) {
+					c.Hostname = s3Hostname
+				},
+				Env:          map[string]string{"COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS": s3Bucket},
+				Networks:     []string{testNetwork.Name},
+				ExposedPorts: []string{s3Port},
+				WaitingFor:   wait.ForListeningPort(s3Port),
+				Started:      true,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func(ctx context.Context) {
+				By("terminating S3 storage")
+
+				_ = ctr.Terminate(ctx, testcontainers.StopTimeout(time.Second))
+			})
+		})
+
+		It("should back up and restore a replicated table", func(ctx context.Context) {
+			conn, err := cmd.getConn(id0)
+			Expect(err).NotTo(HaveOccurred())
+
+			scope := &v1.BackupScope{Tables: []v1.BackupTable{{Database: "default", Table: "backup_src"}}}
+
+			Expect(conn.Exec(ctx, `CREATE TABLE default.backup_src (id UInt64) ENGINE=ReplicatedMergeTree ORDER BY id`)).To(Succeed())
+			Expect(conn.Exec(ctx, `INSERT INTO default.backup_src SELECT number FROM numbers(1000)`)).To(Succeed())
+
+			By("taking a full backup")
+
+			full := backupStatement{Scope: scope, Location: location("full"), ID: "backup-full"}
+			Expect(cmd.StartBackupOperation(ctx, id0, full.SQL())).To(Succeed())
+
+			By("accepting a repeated submission of the same operation")
+
+			Expect(cmd.StartBackupOperation(ctx, id0, full.SQL())).To(Succeed())
+
+			state := waitFinished(ctx, full.ID)
+			Expect(state.succeeded()).To(BeTrue(), "status %s: %s", state.Status, state.Error)
+			Expect(state.NumFiles).To(BeNumerically(">", 0))
+			Expect(state.CompressedSize).To(BeNumerically(">", 0))
+
+			By("taking an incremental backup")
+
+			Expect(conn.Exec(ctx, `INSERT INTO default.backup_src SELECT number + 1000 FROM numbers(500)`)).To(Succeed())
+
+			base := location("full")
+			incremental := backupStatement{Scope: scope, Location: location("incremental"), Base: &base, ID: "backup-incremental"}
+			Expect(cmd.StartBackupOperation(ctx, id0, incremental.SQL())).To(Succeed())
+
+			incrementalState := waitFinished(ctx, incremental.ID)
+			Expect(incrementalState.succeeded()).To(BeTrue(), "status %s: %s", incrementalState.Status, incrementalState.Error)
+
+			By("restoring the dropped table from the incremental backup")
+
+			Expect(conn.Exec(ctx, `DROP TABLE default.backup_src SYNC`)).To(Succeed())
+
+			restore := backupStatement{Restore: true, Scope: scope, Location: location("incremental"), ID: "restore-incremental"}
+			Expect(cmd.StartBackupOperation(ctx, id0, restore.SQL())).To(Succeed())
+
+			restoreState := waitFinished(ctx, restore.ID)
+			Expect(restoreState.succeeded()).To(BeTrue(), "status %s: %s", restoreState.Status, restoreState.Error)
+
+			for id := range cmd.cluster.ReplicaIDs() {
+				replicaConn, err := cmd.getConn(id)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func(g Gomega) {
+					var count uint64
+					g.Expect(replicaConn.QueryRow(ctx, `SELECT count() FROM default.backup_src`).Scan(&count)).To(Succeed())
+					g.Expect(count).To(Equal(uint64(1500)))
+				}, "1m", "200ms").Should(Succeed())
+			}
+
+			Expect(conn.Exec(ctx, `DROP TABLE default.backup_src SYNC`)).To(Succeed())
+		})
+
+		It("should report a failed operation", func(ctx context.Context) {
+			failed := backupStatement{
+				Scope:    &v1.BackupScope{Databases: []string{"default"}},
+				Location: s3Location{URL: s3MissingBucket + "/full", AccessKeyID: "test", SecretAccessKey: "test"},
+				ID:       "backup-failed",
+			}
+			Expect(cmd.StartBackupOperation(ctx, id0, failed.SQL())).To(Succeed())
+
+			state := waitFinished(ctx, failed.ID)
+			Expect(state.succeeded()).To(BeFalse())
+			Expect(state.Status).To(Equal("BACKUP_FAILED"))
+			Expect(errorSummary(state.Error)).To(ContainSubstring("bucket"))
+		})
+
+		It("should not find an unknown operation", func(ctx context.Context) {
+			_, found, err := cmd.BackupOperationState(ctx, id0, "unknown")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeFalse())
+		})
+
+		It("should detect the settings known to the server", func(ctx context.Context) {
+			Expect(cmd.Ping(ctx, id0)).To(Succeed())
+
+			known, err := cmd.HasSetting(ctx, id0, "max_threads")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(known).To(BeTrue())
+
+			known, err = cmd.HasSetting(ctx, id0, "no_such_setting")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(known).To(BeFalse())
+		})
 	})
 
 	It("should evict a single replica connection from the cache", func(_ context.Context) {

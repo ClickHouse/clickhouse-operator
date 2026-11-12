@@ -1,0 +1,9 @@
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseRestore
+metadata:
+  name: sample
+spec:
+  clusterRef:
+    name: sample
+  backupRef:
+    name: sample

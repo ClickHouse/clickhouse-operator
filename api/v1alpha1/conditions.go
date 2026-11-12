@@ -106,6 +106,33 @@ const (
 	KeeperConditionReasonReadyToScale             ConditionReason = "ReadyToScale"
 )
 
+// ClickHouseBackup and ClickHouseRestore specific condition types and reasons.
+const (
+	// BackupConditionTypeCompleted indicates that the backup or the restore finished successfully.
+	BackupConditionTypeCompleted ConditionType = "Completed"
+
+	BackupConditionReasonSucceeded          ConditionReason = "Succeeded"
+	BackupConditionReasonInProgress         ConditionReason = "InProgress"
+	BackupConditionReasonFailed             ConditionReason = "Failed"
+	BackupConditionReasonStateLost          ConditionReason = "StateLost"
+	BackupConditionReasonClusterNotFound    ConditionReason = "ClusterNotFound"
+	BackupConditionReasonClusterNotReady    ConditionReason = "ClusterNotReady"
+	BackupConditionReasonCredentialsInvalid ConditionReason = "CredentialsInvalid"
+	BackupConditionReasonBackupNotFound     ConditionReason = "BackupNotFound"
+	BackupConditionReasonBackupNotCompleted ConditionReason = "BackupNotCompleted"
+	BackupConditionReasonBackupFailed       ConditionReason = "BackupFailed"
+)
+
+// ClickHouseScheduledBackup specific condition types and reasons.
+const (
+	// ScheduledBackupConditionTypeScheduled indicates that the schedule is valid and creates backups.
+	ScheduledBackupConditionTypeScheduled ConditionType = "Scheduled"
+
+	ScheduledBackupConditionReasonActive          ConditionReason = "Active"
+	ScheduledBackupConditionReasonSuspended       ConditionReason = "Suspended"
+	ScheduledBackupConditionReasonInvalidSchedule ConditionReason = "InvalidSchedule"
+)
+
 // Special condition added to the ClickHouseCluster pods to indicate that replica is initialized by the operator.
 const (
 	ReplicaInitializedCondition corev1.PodConditionType = "clickhouse.com/ReplicaInitialized"

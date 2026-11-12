@@ -1,0 +1,34 @@
+{{- if .Values.rbac.helpers.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.rbac.namespaced }}
+kind: Role
+{{- else }}
+kind: ClusterRole
+{{- end }}
+metadata:
+{{- if .Values.rbac.namespaced }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "clickhouse-operator.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+  name: {{ include "clickhouse-operator.resourceName" (dict "suffix" "clickhousebackup-viewer-role" "context" $) }}
+rules:
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - clickhousebackups
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - clickhouse.com
+  resources:
+  - clickhousebackups/status
+  verbs:
+  - get
+{{- end }}
