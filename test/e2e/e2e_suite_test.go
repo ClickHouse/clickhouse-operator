@@ -10,6 +10,9 @@ import (
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	uberzap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/rest"
@@ -42,6 +45,7 @@ var (
 	k8sClient      client.Client
 	config         *rest.Config
 	podDialer      controllerutil.DialContextFunc
+	errorLogs      *observer.ObservedLogs
 	defaultStorage = corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{
@@ -80,9 +84,14 @@ var _ = ReportBeforeSuite(func(report Report) {
 })
 
 var _ = BeforeSuite(func(ctx context.Context) {
+	errorCore, observed := observer.New(zapcore.ErrorLevel)
+	errorLogs = observed
+
 	var (
-		err       error
-		logger    = zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
+		err    error
+		logger = zap.NewRaw(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true), zap.RawZapOpts(
+			uberzap.WrapCore(func(core zapcore.Core) zapcore.Core { return zapcore.NewTee(core, errorCore) }),
+		))
 		zapLogger = controllerutil.NewLogger(logger)
 	)
 
@@ -172,6 +181,23 @@ var _ = BeforeEach(func() {
 
 var _ = BeforeEach(func() {
 	testutil.StartInvariants(env, testutil.TestNamespace())
+})
+
+var _ = AfterEach(func() {
+	var entries []string
+
+	for _, entry := range errorLogs.TakeAll() {
+		text := fmt.Sprintf("%s %v", entry.Message, entry.ContextMap())
+
+		// Teardown of earlier specs keeps logging errors for their terminating namespaces.
+		if strings.Contains(text, "e2e-") && !strings.Contains(text, testutil.TestNamespace()) {
+			continue
+		}
+
+		entries = append(entries, text)
+	}
+
+	Expect(entries).To(BeEmpty(), "operator logged errors")
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {

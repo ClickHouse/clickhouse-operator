@@ -99,7 +99,7 @@ func (rm *ResourceManager) updatePVC(
 		return fmt.Errorf("patch PVC %s spec: %w", existing.Name, err)
 	}
 
-	log.Info("updating PVC", "pvc", existing.Name, "diff", gcmp.Diff(existing.Spec, *targetSpec))
+	log.Info("updating PVC", "persistentvolumeclaim", existing.Name, "diff", gcmp.Diff(existing.Spec, *targetSpec))
 
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: *existing.ObjectMeta.DeepCopy(),

@@ -136,7 +136,7 @@ func (rm *ResourceManager) VersionProbe(
 			return VersionProbeResult{}, fmt.Errorf("get version probe job: %w", err)
 		}
 
-		log.Debug("creating version probe job")
+		log.Info("creating version probe job")
 
 		if err = rm.Create(ctx, &job, v1.EventActionVersionCheck); err != nil {
 			return VersionProbeResult{}, fmt.Errorf("create version probe job: %w", err)
@@ -150,7 +150,7 @@ func (rm *ResourceManager) VersionProbe(
 
 		// Recreate the failed job with the same image only if spec changed
 		if controllerutil.GetSpecHashFromObject(&job) != controllerutil.GetSpecHashFromObject(&existingJob) {
-			log.Debug("spec changed, deleting failed version probe job for recreation")
+			log.Info("spec changed, deleting failed version probe job for recreation")
 
 			if delErr := rm.Delete(
 				ctx,
@@ -170,7 +170,7 @@ func (rm *ResourceManager) VersionProbe(
 			return VersionProbeResult{Pending: true, RetryAfter: cooldown, Err: errors.New(c.Message)}, nil
 		}
 
-		log.Debug("retry cooldown elapsed, recreating failed version probe job", "attempt", attempt+1)
+		log.Info("retry cooldown elapsed, recreating failed version probe job", "attempt", attempt+1)
 
 		if delErr := rm.Delete(
 			ctx,

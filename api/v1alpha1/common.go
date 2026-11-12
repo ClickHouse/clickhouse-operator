@@ -12,6 +12,9 @@ import (
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
+// ErrNotReplicaResource reports labels of a resource that does not belong to a single replica.
+var ErrNotReplicaResource = errors.New("not a per-replica resource")
+
 // ContainerImage defines a container image with repository, tag or hash.
 type ContainerImage struct {
 	// Container image registry name

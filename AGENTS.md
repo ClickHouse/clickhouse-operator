@@ -81,6 +81,7 @@ make check-crd-compat       # Check CRD backward compatibility against origin/ma
 - Follow existing error handling patterns
 - Try to minimize diff
 - Avoid API changes unless necessary
+- Follow the contribution rules in [docs/development.md](docs/development.md)
 - Always ensure `make lint` passes, use `make lint-fix` to automatically fix issues before writing code
 
 ## CI Pipeline (what runs on PRs)

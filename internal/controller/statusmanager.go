@@ -140,7 +140,7 @@ func (r *StatusManager[S, SP, C]) UpsertStatus(ctx context.Context, log util.Log
 
 		diff := gcmp.Diff(preSnapshot, apiStatus)
 		if diff == "" {
-			log.Info("statuses are equal, nothing to do")
+			log.Debug("statuses are equal, nothing to do")
 			return nil
 		}
 

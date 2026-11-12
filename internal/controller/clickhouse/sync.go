@@ -143,7 +143,7 @@ func (r *clickhouseReconciler) stateConditionTypes() []v1.ConditionType {
 }
 
 func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (ctrl.Result, error) {
-	log.Info("Enter ClickHouse Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
+	log.Debug("Enter ClickHouse Reconcile", "spec", r.Cluster.Spec, "status", r.Cluster.Status)
 
 	if ctrlutil.PauseRequested(r.Cluster, log) {
 		r.SetUnknownConditions(v1.ConditionReasonReconciliationPaused, "Reconciliation is paused", r.stateConditionTypes())
@@ -191,8 +191,6 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 
 	result, err := chctrl.RunSteps(ctx, log, steps)
 	if err != nil {
-		log.Error(err, "unexpected error, setting conditions to unknown and rescheduling reconciliation to try again")
-
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ConditionTypeReconcileSucceeded,
 			Status:  metav1.ConditionFalse,
@@ -215,7 +213,7 @@ func (r *clickhouseReconciler) sync(ctx context.Context, log ctrlutil.Logger) (c
 		Reason:  v1.ConditionReasonReconcileFinished,
 		Message: "Reconcile succeeded",
 	})
-	log.Info("reconciliation loop end", "result", result)
+	log.Debug("reconciliation loop end", "result", result)
 
 	if err := r.UpsertStatus(ctx, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update status after reconciliation: %w", err)
@@ -266,12 +264,12 @@ func (r *clickhouseReconciler) reconcilePodDisruptionBudget(ctx context.Context,
 		for _, pdb := range disruptionBudgets.Items {
 			shardID, err := strconv.Atoi(pdb.Labels[ctrlutil.LabelClickHouseShardID])
 			if err != nil {
-				log.Warn("failed to get shard ID from PodDisruptionBudget labels", "pdb", pdb.Name, "error", err)
+				log.Warn("failed to get shard ID from PodDisruptionBudget labels", "poddisruptionbudget", pdb.Name, "error", err)
 				continue
 			}
 
 			if !pdbEnabled || shardID >= int(r.Cluster.Shards()) {
-				log.Info("removing PodDisruptionBudget", "pdb", pdb.Name)
+				log.Info("removing PodDisruptionBudget", "poddisruptionbudget", pdb.Name)
 
 				if err := r.Delete(ctx, &pdb, v1.EventActionReconciling); err != nil {
 					return chctrl.StepResult{}, fmt.Errorf("remove shard %d: %w", shardID, err)
@@ -383,7 +381,7 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 		}
 
 		fail(v1.ClickHouseConditionReasonExternalSecretNotFound, v1.EventReasonExternalSecretNotFound, msg)
-		log.Info(msg)
+		log.Warn(msg)
 
 		return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
 	}
@@ -503,26 +501,20 @@ func (r *clickhouseReconciler) reconcileVersionProbe(ctx context.Context, log ct
 }
 
 func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	listOpts := ctrlutil.AppRequirements(r.Cluster.Namespace, r.Cluster.SpecificName())
-
-	var statefulSets appsv1.StatefulSetList
-	if err := r.GetClient().List(ctx, &statefulSets, listOpts); err != nil {
+	statefulSets, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, log, v1.ClickHouseIDFromLabels)
+	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
 
-	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.ClickHouseIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, log, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
 
-	execResults := ctrlutil.ExecuteParallel(statefulSets.Items, func(sts appsv1.StatefulSet) (v1.ClickHouseReplicaID, replicaState, error) {
-		id, err := v1.ClickHouseIDFromLabels(sts.Labels)
-		if err != nil {
-			log.Error(err, "get replica ID from StatefulSet labels", "statefulset", sts.Name)
-			return v1.ClickHouseReplicaID{}, replicaState{}, fmt.Errorf("get replica ID from StatefulSet labels: %w", err)
-		}
+	execResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(statefulSets)), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, replicaState, error) {
+		sts := statefulSets[id]
 
-		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), &sts)
+		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), sts)
 		if err != nil {
 			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
 		}
@@ -550,7 +542,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			}
 		}
 
-		pvcs, pvcErr := r.GetReplicaPVCs(ctx, &sts)
+		pvcs, pvcErr := r.GetReplicaPVCs(ctx, sts)
 		if pvcErr != nil {
 			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
 		}
@@ -560,7 +552,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return id, replicaState{
 			ReloadError:  reloadErr,
 			replicaProbe: probe,
-			STS:          &sts,
+			STS:          sts,
 			CFG:          configMaps[id],
 			PVCs:         pvcs,
 			Pod:          pod,
@@ -573,12 +565,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			return chctrl.StepResult{}, fmt.Errorf("load replica state %s: %w", id, res.Err)
 		}
 
-		if _, ok := r.ReplicaState[id]; !ok {
-			r.ReplicaState[id] = res.Result
-		} else {
-			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %s, %s",
-				r.ReplicaState[id].STS.Name, res.Result.STS.Name), "replica_id", id)
-		}
+		r.ReplicaState[id] = res.Result
 	}
 
 	r.evaluateReplicaConditions()
@@ -648,7 +635,7 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 		keeperNamespacedName := r.Cluster.KeeperClusterNamespacedName()
 		if err := r.GetClient().Get(ctx, keeperNamespacedName, &r.keeper); err != nil {
 			if k8serrors.IsNotFound(err) {
-				log.Debug("keeper cluster not found, waiting", "keeper", keeperNamespacedName.String())
+				log.Warn("keeper cluster not found, waiting", "keepercluster", keeperNamespacedName.String())
 
 				return chctrl.StepBlocked(chctrl.RequeueOnRefreshTimeout), nil
 			}
@@ -793,13 +780,13 @@ func (r *clickhouseReconciler) reconcileReplicaResources(ctx context.Context, lo
 			}
 		}
 
-		log.Info(fmt.Sprintf("updating chosen replica %v with priority %s: %v", chosenReplica, highestStage.String(), replicasInStatus))
+		log.Info("updating chosen replica", "replica_id", chosenReplica, "replicas", replicasInStatus, "priority", highestStage.String())
 
 		requeueAfter = chctrl.RequeueProbePoll
 		replicasInStatus = []v1.ClickHouseReplicaID{chosenReplica}
 
 	case chctrl.StageNotExists, chctrl.StageError:
-		log.Info(fmt.Sprintf("updating replicas with priority %s: %v", highestStage.String(), replicasInStatus))
+		log.Info("updating replicas", "replicas", replicasInStatus, "priority", highestStage.String())
 	}
 
 	for _, id := range replicasInStatus {
@@ -879,7 +866,7 @@ func (r *clickhouseReconciler) reconcileDatabaseSync(ctx context.Context, log ct
 	})
 	for id, res := range defaultDBRes {
 		if res.Err != nil {
-			log.Info("failed to recreate default database as Replicated", "replica_id", id, "error", res.Err)
+			log.Warn("failed to recreate default database as Replicated", "replica_id", id, "error", res.Err)
 
 			allReplicasInitialized = false
 
@@ -1004,7 +991,7 @@ func (r *clickhouseReconciler) initializeReplicas(ctx context.Context, log ctrlu
 
 	for id, repl := range res {
 		if repl.Err != nil {
-			log.Info("failed to mark replica initialized", "replica_id", id, "error", repl.Err)
+			log.Warn("failed to mark replica initialized", "replica_id", id, "error", repl.Err)
 
 			initialized = false
 		}
@@ -1050,7 +1037,7 @@ func (r *clickhouseReconciler) unloadRemovedReplicas(ctx context.Context, log ct
 	})
 	for id, res := range drainRes {
 		if res.Err != nil {
-			log.Info("failed to unload client traffic from replica scheduled for deletion", "replica_id", id, "error", res.Err)
+			log.Warn("failed to unload client traffic from replica scheduled for deletion", "replica_id", id, "error", res.Err)
 
 			r.unsyncedShards[id.ShardID] = true
 
@@ -1083,14 +1070,14 @@ func (r *clickhouseReconciler) syncShardsPendingRemoval(ctx context.Context, log
 
 		switch {
 		case drainingShards[id.ShardID]:
-			log.Debug("replica scheduled for deletion is still serving client traffic, delaying sync", "shard", id.ShardID)
+			log.Debug("replica scheduled for deletion is still serving client traffic, delaying sync", "shard_id", id.ShardID)
 			r.unsyncedShards[id.ShardID] = true
 		case id.ShardID >= r.Cluster.Shards():
 			// Whole shard removal drops the shard data by design, no surviving replicas to sync.
 		case shardHasReachableReplica[id.ShardID]:
 			shardsToSyncSet[id.ShardID] = struct{}{}
 		default:
-			log.Debug("no reachable replicas in shard, skipping sync", "shard", id.ShardID)
+			log.Debug("no reachable replicas in shard, skipping sync", "shard_id", id.ShardID)
 			r.unsyncedShards[id.ShardID] = true
 		}
 	}
@@ -1106,7 +1093,7 @@ func (r *clickhouseReconciler) syncShardsPendingRemoval(ctx context.Context, log
 
 	for id, res := range syncRes {
 		if res.Err != nil {
-			log.Info("failed to sync shard", "shard_id", id, "error", res.Err)
+			log.Warn("failed to sync shard", "shard_id", id, "error", res.Err)
 			r.unsyncedShards[id] = true
 		}
 	}
@@ -1123,7 +1110,7 @@ type resourcesWithService struct {
 func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	var replicasToRemove = map[v1.ClickHouseReplicaID]resourcesWithService{}
 
-	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, v1.ClickHouseIDFromLabels)
+	configMaps, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.ConfigMap, *corev1.ConfigMapList](ctx, log, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
@@ -1138,7 +1125,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	services, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Service, *corev1.ServiceList](ctx, v1.ClickHouseIDFromLabels)
+	services, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Service, *corev1.ServiceList](ctx, log, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list internal Services: %w", err)
 	}
@@ -1158,7 +1145,7 @@ func (r *clickhouseReconciler) reconcileCleanUp(ctx context.Context, log ctrluti
 		}
 	}
 
-	statefulSets, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, v1.ClickHouseIDFromLabels)
+	statefulSets, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, log, v1.ClickHouseIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
 	}
