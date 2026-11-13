@@ -249,7 +249,7 @@ func SetupWithManager(mgr ctrl.Manager, deps chctrl.Dependencies, settings chctr
 		return fmt.Errorf("close cached ClickHouse connections: %w", err)
 	}
 
-	return nil
+	return setupBackupControllers(mgr, deps, settings, clickhouseController.connCache)
 }
 
 func (cc *ClusterController) clickHouseClustersForKeeper(ctx context.Context, obj client.Object) []reconcile.Request {

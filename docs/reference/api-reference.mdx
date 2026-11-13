@@ -22,6 +22,92 @@ AdditionalPort declares one extra TCP port to expose on the ClickHouse Pod and t
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 
+## BackupOperationStatus {#backupoperationstatus}
+
+BackupOperationStatus is the observed state shared by backups and restores.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `phase` | [BackupPhase](#backupphase) | Phase is the lifecycle phase of the operation. | false |  |
+| `id` | string | ID identifies the operation in the `system.backups` table of the replica that executes it. | false |  |
+| `replica` | [BackupReplica](#backupreplica) | Replica is the cluster replica that executes the operation. | false |  |
+| `location` | string | Location is the URL of the backup in the storage. | false |  |
+| `startTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | StartTime is the time the operation was submitted to ClickHouse. | false |  |
+| `completionTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | CompletionTime is the time the operation finished. | false |  |
+
+Appears in:
+- [ClickHouseBackupStatus](#clickhousebackupstatus)
+- [ClickHouseRestoreStatus](#clickhouserestorestatus)
+
+## BackupPhase {#backupphase}
+
+BackupPhase is the lifecycle phase of a backup or a restore.
+
+| Field | Description |
+|-------|-------------|
+| `Pending` | BackupPhasePending means that the operation is not started yet.<br /> |
+| `Running` | BackupPhaseRunning means that ClickHouse is executing the operation.<br /> |
+| `Completed` | BackupPhaseCompleted means that the operation finished successfully.<br /> |
+| `Failed` | BackupPhaseFailed means that the operation failed. Failed operations are not retried.<br /> |
+
+Appears in:
+- [BackupOperationStatus](#backupoperationstatus)
+- [ClickHouseBackupStatus](#clickhousebackupstatus)
+- [ClickHouseRestoreStatus](#clickhouserestorestatus)
+
+## BackupReplica {#backupreplica}
+
+BackupReplica identifies the cluster replica that executes a backup or a restore.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `shardID` | integer | ShardID is the shard of the replica. | true |  |
+| `index` | integer | Index is the index of the replica within the shard. | true |  |
+
+Appears in:
+- [BackupOperationStatus](#backupoperationstatus)
+- [ClickHouseBackupStatus](#clickhousebackupstatus)
+- [ClickHouseRestoreStatus](#clickhouserestorestatus)
+
+## BackupScope {#backupscope}
+
+BackupScope limits a backup or a restore to a subset of the cluster data.
+When no databases and no tables are listed, everything except the `system` database is included.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `databases` | string array | Databases lists the databases to include. | false |  |
+| `tables` | [BackupTable](#backuptable) array | Tables lists the individual tables to include. | false |  |
+
+Appears in:
+- [ClickHouseBackupSpec](#clickhousebackupspec)
+- [ClickHouseRestoreSpec](#clickhouserestorespec)
+
+## BackupStorage {#backupstorage}
+
+BackupStorage selects the storage that holds backups.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `s3` | [S3BackupStorage](#s3backupstorage) | S3 stores backups in an S3-compatible object storage. | false |  |
+
+Appears in:
+- [ClickHouseBackupSpec](#clickhousebackupspec)
+- [RestoreSource](#restoresource)
+
+## BackupTable {#backuptable}
+
+BackupTable identifies a table.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `database` | string | Database is the name of the database that holds the table. | true |  |
+| `table` | string | Table is the name of the table. | true |  |
+
+Appears in:
+- [BackupScope](#backupscope)
+
 ## CABundleSelector {#cabundleselector}
 
 CABundleSelector selects a key holding a CA bundle from a Secret in the cluster's namespace.
@@ -33,6 +119,89 @@ CABundleSelector selects a key holding a CA bundle from a Secret in the cluster'
 
 Appears in:
 - [ClusterTLSSpec](#clustertlsspec)
+
+## ClickHouseBackup {#clickhousebackup}
+
+ClickHouseBackup is the Schema for the `clickhousebackups` API.
+It runs a single backup of a ClickHouseCluster using the ClickHouse BACKUP statement.
+
+### API Version and Kind {#clickhousebackup-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackup
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [ClickHouseBackupSpec](#clickhousebackupspec) |  | true |  |
+| `status` | [ClickHouseBackupStatus](#clickhousebackupstatus) |  | true |  |
+
+Appears in:
+- [ClickHouseBackupList](#clickhousebackuplist)
+
+## ClickHouseBackupList {#clickhousebackuplist}
+
+ClickHouseBackupList contains a list of ClickHouseBackup.
+
+### API Version and Kind {#clickhousebackuplist-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackupList
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `items` | [ClickHouseBackup](#clickhousebackup) array |  | true |  |
+
+## ClickHouseBackupSpec {#clickhousebackupspec}
+
+ClickHouseBackupSpec defines the desired state of ClickHouseBackup.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `clusterRef` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ClusterRef references the ClickHouseCluster to back up. The cluster must be in the namespace of the backup. | true |  |
+| `storage` | [BackupStorage](#backupstorage) | Storage is the storage the backup is written to.<br />The backup is stored in the directory named after this resource. | true |  |
+| `scope` | [BackupScope](#backupscope) | Scope limits the backup to the listed databases and tables.<br />When omitted, everything except the `system` database is backed up. | false |  |
+| `baseBackupRef` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | BaseBackupRef makes the backup incremental: only the data that is missing from the referenced<br />ClickHouseBackup is stored. The base backup must be completed and must stay in the storage<br />for as long as this backup is needed. | false |  |
+| `settings` | object (keys:string, values:string) | Settings are additional settings passed to the BACKUP statement. | false |  |
+
+Appears in:
+- [ClickHouseBackup](#clickhousebackup)
+- [ClickHouseBackupTemplate](#clickhousebackuptemplate)
+
+## ClickHouseBackupStatus {#clickhousebackupstatus}
+
+ClickHouseBackupStatus defines the observed state of ClickHouseBackup.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `phase` | [BackupPhase](#backupphase) | Phase is the lifecycle phase of the operation. | false |  |
+| `id` | string | ID identifies the operation in the `system.backups` table of the replica that executes it. | false |  |
+| `replica` | [BackupReplica](#backupreplica) | Replica is the cluster replica that executes the operation. | false |  |
+| `location` | string | Location is the URL of the backup in the storage. | false |  |
+| `startTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | StartTime is the time the operation was submitted to ClickHouse. | false |  |
+| `completionTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | CompletionTime is the time the operation finished. | false |  |
+| `baseLocation` | string | BaseLocation is the URL of the base backup of an incremental backup. | false |  |
+| `numFiles` | integer | NumFiles is the number of files stored in the backup. | false |  |
+| `totalSize` | integer | TotalSize is the size in bytes of the data covered by the backup, including the data stored in base backups. | false |  |
+| `compressedSize` | integer | CompressedSize is the size in bytes the backup takes in the storage. | false |  |
+
+Appears in:
+- [ClickHouseBackup](#clickhousebackup)
+
+## ClickHouseBackupTemplate {#clickhousebackuptemplate}
+
+ClickHouseBackupTemplate describes the ClickHouseBackup resources created by a ClickHouseScheduledBackup.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [ClickHouseBackupSpec](#clickhousebackupspec) | Spec of the created backups. `baseBackupRef` is managed by the schedule and must not be set. | true |  |
+
+Appears in:
+- [ClickHouseScheduledBackupSpec](#clickhousescheduledbackupspec)
 
 ## ClickHouseCluster {#clickhousecluster}
 
@@ -129,6 +298,140 @@ Any other ingress, including client connections and metrics scraping, requires u
 
 Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+## ClickHouseRestore {#clickhouserestore}
+
+ClickHouseRestore is the Schema for the `clickhouserestores` API.
+It restores a backup into a ClickHouseCluster once using the ClickHouse RESTORE statement.
+
+### API Version and Kind {#clickhouserestore-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseRestore
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [ClickHouseRestoreSpec](#clickhouserestorespec) |  | true |  |
+| `status` | [ClickHouseRestoreStatus](#clickhouserestorestatus) |  | true |  |
+
+Appears in:
+- [ClickHouseRestoreList](#clickhouserestorelist)
+
+## ClickHouseRestoreList {#clickhouserestorelist}
+
+ClickHouseRestoreList contains a list of ClickHouseRestore.
+
+### API Version and Kind {#clickhouserestorelist-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseRestoreList
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `items` | [ClickHouseRestore](#clickhouserestore) array |  | true |  |
+
+## ClickHouseRestoreSpec {#clickhouserestorespec}
+
+ClickHouseRestoreSpec defines the desired state of ClickHouseRestore.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `clusterRef` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ClusterRef references the ClickHouseCluster to restore into. The cluster must be in the namespace of the restore. | true |  |
+| `backupRef` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | BackupRef references the completed ClickHouseBackup to restore from.<br />Mutually exclusive with `source`, exactly one of them must be set. | false |  |
+| `source` | [RestoreSource](#restoresource) | Source locates the backup to restore from directly in the storage.<br />Mutually exclusive with `backupRef`, exactly one of them must be set. | false |  |
+| `scope` | [BackupScope](#backupscope) | Scope limits the restore to the listed databases and tables.<br />When omitted, everything except the `system` database is restored. | false |  |
+| `settings` | object (keys:string, values:string) | Settings are additional settings passed to the RESTORE statement,<br />for example `allow_non_empty_tables` or `structure_only`. | false |  |
+
+Appears in:
+- [ClickHouseRestore](#clickhouserestore)
+
+## ClickHouseRestoreStatus {#clickhouserestorestatus}
+
+ClickHouseRestoreStatus defines the observed state of ClickHouseRestore.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `phase` | [BackupPhase](#backupphase) | Phase is the lifecycle phase of the operation. | false |  |
+| `id` | string | ID identifies the operation in the `system.backups` table of the replica that executes it. | false |  |
+| `replica` | [BackupReplica](#backupreplica) | Replica is the cluster replica that executes the operation. | false |  |
+| `location` | string | Location is the URL of the backup in the storage. | false |  |
+| `startTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | StartTime is the time the operation was submitted to ClickHouse. | false |  |
+| `completionTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | CompletionTime is the time the operation finished. | false |  |
+
+Appears in:
+- [ClickHouseRestore](#clickhouserestore)
+
+## ClickHouseScheduledBackup {#clickhousescheduledbackup}
+
+ClickHouseScheduledBackup is the Schema for the `clickhousescheduledbackups` API.
+It creates ClickHouseBackup resources on a schedule.
+
+### API Version and Kind {#clickhousescheduledbackup-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseScheduledBackup
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `spec` | [ClickHouseScheduledBackupSpec](#clickhousescheduledbackupspec) |  | true |  |
+| `status` | [ClickHouseScheduledBackupStatus](#clickhousescheduledbackupstatus) |  | true |  |
+
+Appears in:
+- [ClickHouseScheduledBackupList](#clickhousescheduledbackuplist)
+
+## ClickHouseScheduledBackupList {#clickhousescheduledbackuplist}
+
+ClickHouseScheduledBackupList contains a list of ClickHouseScheduledBackup.
+
+### API Version and Kind {#clickhousescheduledbackuplist-api-version-and-kind}
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseScheduledBackupList
+```
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `items` | [ClickHouseScheduledBackup](#clickhousescheduledbackup) array |  | true |  |
+
+## ClickHouseScheduledBackupSpec {#clickhousescheduledbackupspec}
+
+ClickHouseScheduledBackupSpec defines the desired state of ClickHouseScheduledBackup.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `schedule` | string | Schedule in the cron format, see https://en.wikipedia.org/wiki/Cron. | true |  |
+| `timeZone` | string | TimeZone is the IANA time zone name the schedule is evaluated in. Defaults to UTC. | false |  |
+| `suspend` | boolean | Suspend stops the creation of new backups. Backups that are already running are not affected. | false |  |
+| `fullBackupInterval` | integer | FullBackupInterval makes the schedule take incremental backups: every full backup is followed by<br />`fullBackupInterval - 1` incremental backups based on it.<br />When unset or 1, every backup is a full backup. | false |  |
+| `successfulBackupsHistoryLimit` | integer | SuccessfulBackupsHistoryLimit is the number of completed ClickHouseBackup resources to keep.<br />The most recent full backup and the base backups of the kept incremental backups are always kept.<br />Deleting a ClickHouseBackup resource does not delete the backup data from the storage. | false | 10 |
+| `failedBackupsHistoryLimit` | integer | FailedBackupsHistoryLimit is the number of failed ClickHouseBackup resources to keep. | false | 3 |
+| `template` | [ClickHouseBackupTemplate](#clickhousebackuptemplate) | Template describes the backups created by the schedule. | true |  |
+
+Appears in:
+- [ClickHouseScheduledBackup](#clickhousescheduledbackup)
+
+## ClickHouseScheduledBackupStatus {#clickhousescheduledbackupstatus}
+
+ClickHouseScheduledBackupStatus defines the observed state of ClickHouseScheduledBackup.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `conditions` | [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) array |  | false |  |
+| `lastScheduleTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | LastScheduleTime is the schedule time of the most recent backup created by the schedule. | false |  |
+| `lastBackupName` | string | LastBackupName is the name of the most recent ClickHouseBackup created by the schedule. | false |  |
+| `lastSuccessfulTime` | [Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#time-v1-meta) | LastSuccessfulTime is the completion time of the most recent successful backup. | false |  |
+| `lastSuccessfulBackupName` | string | LastSuccessfulBackupName is the name of the most recent successful ClickHouseBackup. | false |  |
+
+Appears in:
+- [ClickHouseScheduledBackup](#clickhousescheduledbackup)
 
 ## ClickHouseSettings {#clickhousesettings}
 
@@ -523,6 +826,43 @@ Appears in:
 - [ClickHouseClusterSpec](#clickhouseclusterspec)
 - [KeeperClusterSpec](#keeperclusterspec)
 
+## RestoreSource {#restoresource}
+
+RestoreSource locates a backup that is not described by a ClickHouseBackup resource,
+for example a backup taken in another Kubernetes cluster.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `storage` | [BackupStorage](#backupstorage) | Storage is the storage that holds the backup. | true |  |
+| `name` | string | Name is the name of the backup directory in the storage.<br />It is the name of the ClickHouseBackup resource that created the backup. | true |  |
+
+Appears in:
+- [ClickHouseRestoreSpec](#clickhouserestorespec)
+
+## S3BackupStorage {#s3backupstorage}
+
+S3BackupStorage describes an S3-compatible backup storage.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `endpoint` | string | Endpoint is the URL of the bucket and the prefix that holds backups, for example<br />`https://my-bucket.s3.eu-west-1.amazonaws.com/clickhouse/my-cluster`.<br />Every backup is written to its own directory under this URL. | true |  |
+| `credentials` | [S3Credentials](#s3credentials) | Credentials used to access the storage.<br />When omitted, ClickHouse uses the credentials available to the server itself,<br />such as an IAM role attached to the Pod or the node. | false |  |
+
+Appears in:
+- [BackupStorage](#backupstorage)
+
+## S3Credentials {#s3credentials}
+
+S3Credentials references the access key used to access an S3-compatible storage.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `accessKeyID` | [SecretKeySelector](#secretkeyselector) | AccessKeyID selects the Secret key that holds the access key ID. | true |  |
+| `secretAccessKey` | [SecretKeySelector](#secretkeyselector) | SecretAccessKey selects the Secret key that holds the secret access key. | true |  |
+
+Appears in:
+- [S3BackupStorage](#s3backupstorage)
+
 ## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector selects a key of a Secret.
@@ -534,6 +874,7 @@ SecretKeySelector selects a key of a Secret.
 
 Appears in:
 - [DefaultPasswordSelector](#defaultpasswordselector)
+- [S3Credentials](#s3credentials)
 
 ## TemplateMeta {#templatemeta}
 

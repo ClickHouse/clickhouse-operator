@@ -1,0 +1,344 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: clickhouserestores.clickhouse.com
+spec:
+  group: clickhouse.com
+  names:
+    kind: ClickHouseRestore
+    listKind: ClickHouseRestoreList
+    plural: clickhouserestores
+    shortNames:
+    - chrestore
+    singular: clickhouserestore
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.clusterRef.name
+      name: Cluster
+      type: string
+    - jsonPath: .spec.backupRef.name
+      name: Backup
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.completionTime
+      name: Completed
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClickHouseRestore is the Schema for the `clickhouserestores` API.
+          It restores a backup into a ClickHouseCluster once using the ClickHouse RESTORE statement.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ClickHouseRestoreSpec defines the desired state of ClickHouseRestore.
+            properties:
+              backupRef:
+                description: |-
+                  BackupRef references the completed ClickHouseBackup to restore from.
+                  Mutually exclusive with `source`, exactly one of them must be set.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              clusterRef:
+                description: ClusterRef references the ClickHouseCluster to restore
+                  into. The cluster must be in the namespace of the restore.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              scope:
+                description: |-
+                  Scope limits the restore to the listed databases and tables.
+                  When omitted, everything except the `system` database is restored.
+                properties:
+                  databases:
+                    description: Databases lists the databases to include.
+                    items:
+                      minLength: 1
+                      type: string
+                    maxItems: 256
+                    type: array
+                    x-kubernetes-list-type: set
+                  tables:
+                    description: Tables lists the individual tables to include.
+                    items:
+                      description: BackupTable identifies a table.
+                      properties:
+                        database:
+                          description: Database is the name of the database that holds
+                            the table.
+                          minLength: 1
+                          type: string
+                        table:
+                          description: Table is the name of the table.
+                          minLength: 1
+                          type: string
+                      required:
+                      - database
+                      - table
+                      type: object
+                    maxItems: 1024
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              settings:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Settings are additional settings passed to the RESTORE statement,
+                  for example `allow_non_empty_tables` or `structure_only`.
+                maxProperties: 64
+                type: object
+                x-kubernetes-validations:
+                - message: setting names must be valid identifiers
+                  rule: self.all(k, k.matches('^[A-Za-z_][A-Za-z0-9_]*$'))
+              source:
+                description: |-
+                  Source locates the backup to restore from directly in the storage.
+                  Mutually exclusive with `backupRef`, exactly one of them must be set.
+                properties:
+                  name:
+                    description: |-
+                      Name is the name of the backup directory in the storage.
+                      It is the name of the ClickHouseBackup resource that created the backup.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[^\s'\\]+$
+                    type: string
+                  storage:
+                    description: Storage is the storage that holds the backup.
+                    properties:
+                      s3:
+                        description: S3 stores backups in an S3-compatible object
+                          storage.
+                        properties:
+                          credentials:
+                            description: |-
+                              Credentials used to access the storage.
+                              When omitted, ClickHouse uses the credentials available to the server itself,
+                              such as an IAM role attached to the Pod or the node.
+                            properties:
+                              accessKeyID:
+                                description: AccessKeyID selects the Secret key that
+                                  holds the access key ID.
+                                properties:
+                                  key:
+                                    description: The key of the secret to select from.  Must
+                                      be a valid secret key.
+                                    type: string
+                                  name:
+                                    description: The name of the secret in the cluster's
+                                      namespace to select from.
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
+                              secretAccessKey:
+                                description: SecretAccessKey selects the Secret key
+                                  that holds the secret access key.
+                                properties:
+                                  key:
+                                    description: The key of the secret to select from.  Must
+                                      be a valid secret key.
+                                    type: string
+                                  name:
+                                    description: The name of the secret in the cluster's
+                                      namespace to select from.
+                                    type: string
+                                required:
+                                - key
+                                - name
+                                type: object
+                            required:
+                            - accessKeyID
+                            - secretAccessKey
+                            type: object
+                          endpoint:
+                            description: |-
+                              Endpoint is the URL of the bucket and the prefix that holds backups, for example
+                              `https://my-bucket.s3.eu-west-1.amazonaws.com/clickhouse/my-cluster`.
+                              Every backup is written to its own directory under this URL.
+                            maxLength: 2048
+                            pattern: ^https?://[^\s'\\]+$
+                            type: string
+                        required:
+                        - endpoint
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: s3 storage must be set
+                      rule: has(self.s3)
+                required:
+                - name
+                - storage
+                type: object
+            required:
+            - clusterRef
+            type: object
+            x-kubernetes-validations:
+            - message: exactly one of backupRef or source must be set
+              rule: has(self.backupRef) != has(self.source)
+            - message: settings id, async and base_backup are managed by the operator
+              rule: '!has(self.settings) || self.settings.all(k, !(k in [''id'', ''async'',
+                ''base_backup'']))'
+          status:
+            description: ClickHouseRestoreStatus defines the observed state of ClickHouseRestore.
+            properties:
+              completionTime:
+                description: CompletionTime is the time the operation finished.
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              id:
+                description: ID identifies the operation in the `system.backups` table
+                  of the replica that executes it.
+                type: string
+              location:
+                description: Location is the URL of the backup in the storage.
+                type: string
+              phase:
+                description: Phase is the lifecycle phase of the operation.
+                enum:
+                - Pending
+                - Running
+                - Completed
+                - Failed
+                type: string
+              replica:
+                description: Replica is the cluster replica that executes the operation.
+                properties:
+                  index:
+                    description: Index is the index of the replica within the shard.
+                    format: int32
+                    type: integer
+                  shardID:
+                    description: ShardID is the shard of the replica.
+                    format: int32
+                    type: integer
+                required:
+                - index
+                - shardID
+                type: object
+              startTime:
+                description: StartTime is the time the operation was submitted to
+                  ClickHouse.
+                format: date-time
+                type: string
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: spec is required
+          rule: has(self.spec)
+        - message: spec is immutable
+          rule: '!has(oldSelf.spec) || self.spec == oldSelf.spec'
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

@@ -26,6 +26,12 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&KeeperClusterList{},
 		&ClickHouseCluster{},
 		&ClickHouseClusterList{},
+		&ClickHouseBackup{},
+		&ClickHouseBackupList{},
+		&ClickHouseRestore{},
+		&ClickHouseRestoreList{},
+		&ClickHouseScheduledBackup{},
+		&ClickHouseScheduledBackupList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, GroupVersion)

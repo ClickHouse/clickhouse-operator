@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## Project Overview
 
-Kubernetes operator for managing ClickHouse database clusters and ClickHouse Keeper clusters. Built with `Kubebuilder` and `controller-runtime`. Manages two CRDs: `ClickHouseCluster` and `KeeperCluster` (both `v1alpha1` in the `clickhouse.com` API group).
+Kubernetes operator for managing ClickHouse database clusters and ClickHouse Keeper clusters. Built with `Kubebuilder` and `controller-runtime`. Manages two CRDs: `ClickHouseCluster` and `KeeperCluster` (both `v1alpha1` in the `clickhouse.com` API group). Backups are driven by three more CRDs in the same group: `ClickHouseBackup`, `ClickHouseScheduledBackup` and `ClickHouseRestore`.
 
 ## Common Commands
 
@@ -97,6 +97,7 @@ make check-crd-compat       # Check CRD backward compatibility against origin/ma
 ### CRD API Types (`api/v1alpha1/`)
 - `clickhousecluster_types.go` — ClickHouseCluster spec: shards, replicas per shard, keeper reference, storage, settings
 - `keepercluster_types.go` — KeeperCluster spec: replicas (odd, 0-15), storage, settings
+- `clickhousebackup_types.go`, `clickhousescheduledbackup_types.go`, `clickhouserestore_types.go` — Backup resources: one-shot backup, schedule, one-shot restore
 - `common.go` — Shared types: ContainerImage, LoggerConfig, PodDisruptionBudgetSpec, ClickHouseSettings, KeeperSettings
 - `defaults.go` — Default value logic applied by webhooks
 - `conditions.go` — Status condition helpers
@@ -113,6 +114,9 @@ Both controllers follow the same pattern, extending a shared base:
 - `clickhouse/templates.go`, `keeper/templates.go` — Generate Kubernetes resource specs
 - `clickhouse/config.go` — Generate ClickHouse YAML configuration
 - `clickhouse/commands.go`, `keeper/commands.go` — Interfaces to communicate to running containers
+- `clickhouse/backup_controller.go` — ClickHouseBackup and ClickHouseRestore reconcilers: submit an asynchronous `BACKUP`/`RESTORE ... ON CLUSTER` statement to one replica and poll `system.backups`
+- `clickhouse/backup_commands.go` — Statement rendering and the replica commands used by backups
+- `clickhouse/scheduledbackup_controller.go` — ClickHouseScheduledBackup reconciler: creates ClickHouseBackup resources on a cron schedule and prunes old ones
 - `overrides.go` — Pod/container spec overrides helpers via strategic merge patch
 - `versionprobe.go` — Creates Jobs to detect actual ClickHouse/Keeper versions
 - `upgradecheck.go` — Checks for newer version availability

@@ -1,0 +1,43 @@
+# Nightly backups of a cluster to S3: one full backup a week followed by incremental ones.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-storage
+stringData:
+  access-key-id: <access key ID>
+  secret-access-key: <secret access key>
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseScheduledBackup
+metadata:
+  name: nightly
+spec:
+  schedule: "0 2 * * *"
+  fullBackupInterval: 7
+  successfulBackupsHistoryLimit: 14
+  template:
+    spec:
+      clusterRef:
+        name: sample
+      storage:
+        s3:
+          endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+          # Omit credentials to use the IAM role of the ClickHouse pods.
+          credentials:
+            accessKeyID:
+              name: backup-storage
+              key: access-key-id
+            secretAccessKey:
+              name: backup-storage
+              key: secret-access-key
+---
+# Restores the backup of a run into the cluster.
+# apiVersion: clickhouse.com/v1alpha1
+# kind: ClickHouseRestore
+# metadata:
+#   name: restore-nightly
+# spec:
+#   clusterRef:
+#     name: sample
+#   backupRef:
+#     name: nightly-20260101020000

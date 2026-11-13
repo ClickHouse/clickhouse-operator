@@ -4,4 +4,7 @@
 resources:
 - bases/clickhouse.com_keeperclusters.yaml
 - bases/clickhouse.com_clickhouseclusters.yaml
+- bases/clickhouse.com_clickhousebackups.yaml
+- bases/clickhouse.com_clickhouserestores.yaml
+- bases/clickhouse.com_clickhousescheduledbackups.yaml
 # +kubebuilder:scaffold:crdkustomizeresource

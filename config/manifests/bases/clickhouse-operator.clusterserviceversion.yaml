@@ -15,6 +15,13 @@ spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
+    - description: |-
+        ClickHouseBackup is the Schema for the `clickhousebackups` API.
+        It runs a single backup of a ClickHouseCluster using the ClickHouse BACKUP statement.
+      displayName: ClickHouse Backup
+      kind: ClickHouseBackup
+      name: clickhousebackups.clickhouse.com
+      version: v1alpha1
     - description: ClickHouseCluster is the Schema for the `clickhouseclusters` API.
       displayName: ClickHouse Cluster
       kind: ClickHouseCluster
@@ -93,6 +100,24 @@ spec:
           When this matches the current image hash, the cached Version is used directly.
         displayName: Version Probe Revision
         path: versionProbeRevision
+      version: v1alpha1
+    - description: |-
+        ClickHouseRestore is the Schema for the `clickhouserestores` API.
+        It restores a backup into a ClickHouseCluster once using the ClickHouse RESTORE statement.
+      displayName: ClickHouse Restore
+      kind: ClickHouseRestore
+      name: clickhouserestores.clickhouse.com
+      version: v1alpha1
+    - description: |-
+        ClickHouseScheduledBackup is the Schema for the `clickhousescheduledbackups` API.
+        It creates ClickHouseBackup resources on a schedule.
+      displayName: ClickHouse Scheduled Backup
+      kind: ClickHouseScheduledBackup
+      name: clickhousescheduledbackups.clickhouse.com
+      resources:
+      - kind: ClickHouseBackup
+        name: ""
+        version: v1alpha1
       version: v1alpha1
     - description: KeeperCluster is the Schema for the `keeperclusters` API.
       displayName: Keeper Cluster

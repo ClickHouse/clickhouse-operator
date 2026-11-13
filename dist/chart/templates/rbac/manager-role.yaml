@@ -63,7 +63,10 @@ rules:
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhousebackups
   - clickhouseclusters
+  - clickhouserestores
+  - clickhousescheduledbackups
   - keeperclusters
   verbs:
   - create
@@ -76,14 +79,20 @@ rules:
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhousebackups/finalizers
   - clickhouseclusters/finalizers
+  - clickhouserestores/finalizers
+  - clickhousescheduledbackups/finalizers
   - keeperclusters/finalizers
   verbs:
   - update
 - apiGroups:
   - clickhouse.com
   resources:
+  - clickhousebackups/status
   - clickhouseclusters/status
+  - clickhouserestores/status
+  - clickhousescheduledbackups/status
   - keeperclusters/status
   verbs:
   - get

@@ -21,6 +21,7 @@ The Operator handles the full lifecycle of ClickHouse clusters including scaling
 - **High Availability**: Fault tolerant installations for ClickHouse and Keeper clusters
 - **Security**: Built-in security features TLS/SSL support for secure cluster communication
 - **Monitoring**: Prometheus metrics integration for observability
+- **Backup and Restore**: Scheduled full and incremental backups to S3 and restores using native ClickHouse backups
 
 ## Installation {#installation}
 
@@ -38,6 +39,7 @@ Choose your preferred installation method:
 - **[Scaling](/products/kubernetes-operator/guides/scaling)** - Scale replicas, shards, and Keeper quorum
 - **[Securing with TLS](/products/kubernetes-operator/guides/tls)** - Encrypt clusters end-to-end with cert-manager
 - **[Network policies](/products/kubernetes-operator/guides/network-policies)** - Restrict ingress to the operator's metrics and webhook endpoints
+- **[Backup and restore](/products/kubernetes-operator/guides/backup)** - Back up clusters to S3 on a schedule and restore them
 - **[Kubernetes events](/products/kubernetes-operator/guides/kubernetes-events)** - Reconcile, scaling, version, and ClickHouse server events on cluster objects
 
 ## Reference {#reference}

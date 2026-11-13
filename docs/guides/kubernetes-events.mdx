@@ -126,6 +126,22 @@ Emitted by the version checks for `ClickHouseCluster` and `KeeperCluster`.
 | `VersionDiverge` | Warning | A replica's detected version differs from the version the operator detected for the cluster. Suppressed during rolling updates. |
 | `VersionUpgradeAvailable` | Warning | A newer version is available on the configured upgrade channel, the running version is not on that channel, or it is out of support. The operator never upgrades on its own — this event only informs. |
 
+### Backup and restore {#backup-and-restore}
+
+These events are emitted on the `ClickHouseBackup`, `ClickHouseRestore` and `ClickHouseScheduledBackup` resources, see [Backup and restore](/products/kubernetes-operator/guides/backup).
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `BackupStarted` | Normal | The backup statement was submitted to a replica. |
+| `BackupCompleted` | Normal | The backup is written to the storage. |
+| `BackupFailed` | Warning | The backup failed. The message carries the error reported by ClickHouse. |
+| `RestoreStarted` | Normal | The restore statement was submitted to a replica. |
+| `RestoreCompleted` | Normal | The backup is restored into the cluster. |
+| `RestoreFailed` | Warning | The restore failed. The message carries the error reported by ClickHouse. |
+| `BackupScheduled` | Normal | A schedule created the `ClickHouseBackup` of a run. |
+| `BackupSkipped` | Warning | A schedule skipped a run because its previous backup is not finished. |
+| `InvalidSchedule` | Warning | The cron expression or the time zone of a schedule is invalid. |
+
 ### ClickHouse server warnings {#clickhouse-warnings}
 
 | Reason | Type | Meaning |
