@@ -42,6 +42,7 @@ var (
 	k8sClient      client.Client
 	config         *rest.Config
 	podDialer      controllerutil.DialContextFunc
+	invariants     *testutil.InvariantSet
 	defaultStorage = corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{
@@ -171,7 +172,14 @@ var _ = BeforeEach(func() {
 })
 
 var _ = BeforeEach(func() {
-	testutil.StartInvariants(env, testutil.TestNamespace())
+	invariants = testutil.StartInvariants(env, testutil.TestNamespace())
+})
+
+// Must precede the diagnostics hook: violations have to fail the spec before it checks Failed().
+var _ = JustAfterEach(func() {
+	if invariants != nil {
+		invariants.StopAndCheck()
+	}
 })
 
 var _ = JustAfterEach(func(ctx context.Context) {
