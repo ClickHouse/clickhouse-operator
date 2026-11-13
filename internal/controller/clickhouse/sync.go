@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"maps"
+	"net"
 	"slices"
 	"strconv"
 	"strings"
@@ -299,7 +300,7 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 
 		secretExists = false
 	} else {
-		r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
+		r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.replicaAddress, r.connCache)
 	}
 
 	if !r.versionProbe.Completed() {
@@ -331,7 +332,7 @@ func (r *clickhouseReconciler) reconcileClusterSecret(ctx context.Context, log c
 	}
 
 	// Create or recreate commander with new credentials
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.replicaAddress, r.connCache)
 
 	if !secretExists {
 		log.Info("cluster secret not found, creating", "secret", r.Cluster.SecretName())
@@ -392,7 +393,7 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 		r.secret.Data = make(map[string][]byte)
 	}
 
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.replicaAddress, r.connCache)
 
 	if !r.versionProbe.Completed() {
 		log.Info("version probe is not completed yet, skipping external secret validation")
@@ -445,7 +446,7 @@ func (r *clickhouseReconciler) reconcileExternalSecret(ctx context.Context, log 
 		return chctrl.StepResult{}, fmt.Errorf("fill external secret %q: %w", r.Cluster.SecretName(), err)
 	}
 
-	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.connCache)
+	r.commander = newCommander(log, r.Cluster, &r.secret, r.Dialer, r.replicaAddress, r.connCache)
 
 	r.SetCondition(metav1.Condition{
 		Type:   v1.ClickHouseConditionTypeExternalSecretValid,
@@ -527,29 +528,6 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
 		}
 
-		startupErr := chctrl.PodStartupError(pod)
-
-		var (
-			probe     replicaProbe
-			reloadErr error
-		)
-
-		if startupErr == nil && chctrl.ContainerRunning(pod, ContainerName) && r.commander != nil {
-			ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-			defer cancel()
-
-			probe, err = r.commander.Probe(ctx, id)
-			if err != nil {
-				log.Debug("failed to probe replica", "replica_id", id, "error", err)
-			} else if cfg, ok := configMaps[id]; ok && !probe.Reloaded(cfg.Annotations[ctrlutil.AnnotationReloadableConfigHash]) {
-				if reloadErr = r.commander.ReloadConfig(ctx, id); reloadErr != nil {
-					log.Debug("replica config reload failed", "replica_id", id, "error", reloadErr)
-				} else if probe, err = r.commander.Probe(ctx, id); err != nil {
-					log.Debug("failed to re-probe replica after reload", "replica_id", id, "error", err)
-				}
-			}
-		}
-
 		pvcs, pvcErr := r.GetReplicaPVCs(ctx, &sts)
 		if pvcErr != nil {
 			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
@@ -558,13 +536,11 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
 		return id, replicaState{
-			ReloadError:  reloadErr,
-			replicaProbe: probe,
 			STS:          &sts,
 			CFG:          configMaps[id],
 			PVCs:         pvcs,
 			Pod:          pod,
-			StartupError: startupErr,
+			StartupError: chctrl.PodStartupError(pod),
 		}, nil
 	})
 
@@ -579,6 +555,35 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			log.Debug(fmt.Sprintf("multiple StatefulSets for single replica %s, %s",
 				r.ReplicaState[id].STS.Name, res.Result.STS.Name), "replica_id", id)
 		}
+	}
+
+	probeResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(r.ReplicaState)), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, replicaState, error) {
+		state := r.ReplicaState[id]
+		if state.StartupError != nil || !chctrl.ContainerRunning(state.Pod, ContainerName) || r.commander == nil {
+			return id, state, nil
+		}
+
+		ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
+		defer cancel()
+
+		var err error
+
+		state.replicaProbe, err = r.commander.Probe(ctx, id)
+		if err != nil {
+			log.Debug("failed to probe replica", "replica_id", id, "error", err)
+		} else if state.CFG != nil && !state.Reloaded(state.CFG.Annotations[ctrlutil.AnnotationReloadableConfigHash]) {
+			if state.ReloadError = r.commander.ReloadConfig(ctx, id); state.ReloadError != nil {
+				log.Debug("replica config reload failed", "replica_id", id, "error", state.ReloadError)
+			} else if state.replicaProbe, err = r.commander.Probe(ctx, id); err != nil {
+				log.Debug("failed to re-probe replica after reload", "replica_id", id, "error", err)
+			}
+		}
+
+		return id, state, nil
+	})
+
+	for id, res := range probeResults {
+		r.ReplicaState[id] = res.Result
 	}
 
 	r.evaluateReplicaConditions()
@@ -1235,6 +1240,20 @@ func (r *clickhouseReconciler) reconcileNetworkPolicy(ctx context.Context, log c
 	}
 
 	return chctrl.StepContinue(), nil
+}
+
+// replicaAddress resolves replicas by Pod IP: cluster DNS serves stale records for a while after a Pod restart.
+func (r *clickhouseReconciler) replicaAddress(id v1.ClickHouseReplicaID) (string, error) {
+	pod := r.ReplicaState[id].Pod
+	if pod == nil {
+		return "", errors.New("replica pod is not loaded")
+	}
+
+	if pod.Status.PodIP == "" {
+		return "", errors.New("replica pod has no IP")
+	}
+
+	return net.JoinHostPort(pod.Status.PodIP, strconv.FormatInt(int64(PortManagement), 10)), nil
 }
 
 func (r *clickhouseReconciler) evaluateReplicaConditions() {
