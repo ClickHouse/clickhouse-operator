@@ -69,11 +69,11 @@ var _ = Describe("replica connections", func() {
 		dialer := func(context.Context, string) (net.Conn, error) {
 			return nil, errors.New("unexpected dial")
 		}
-		resolve := func(v1.ClickHouseReplicaID) (string, error) {
+		resolver := func(v1.ClickHouseReplicaID) (string, error) {
 			return "", errors.New("replica pod has no IP")
 		}
 
-		cmd := newCommander(logger, &cluster, &corev1.Secret{}, dialer, resolve, nil)
+		cmd := newCommander(logger, &cluster, &corev1.Secret{}, dialer, resolver, nil)
 
 		_, err := cmd.Probe(ctx, id)
 		Expect(err).To(MatchError(ContainSubstring("replica pod has no IP")))

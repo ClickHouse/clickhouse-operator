@@ -59,11 +59,11 @@ type databaseDescriptor struct {
 type replicaResolver func(id v1.ClickHouseReplicaID) (string, error)
 
 type commander struct {
-	log     controllerutil.Logger
-	cluster *v1.ClickHouseCluster
-	auth    clickhouse.Auth
-	dialer  controllerutil.DialContextFunc
-	resolve replicaResolver
+	log      controllerutil.Logger
+	cluster  *v1.ClickHouseCluster
+	auth     clickhouse.Auth
+	dialer   controllerutil.DialContextFunc
+	resolver replicaResolver
 
 	entry *connCacheEntry
 }
@@ -78,11 +78,11 @@ func newObservingCommander(log controllerutil.Logger, cluster *v1.ClickHouseClus
 	}
 
 	return &commander{
-		log:     log.Named("commander"),
-		entry:   entry,
-		cluster: cluster,
-		dialer:  dialer,
-		resolve: entry.Addr,
+		log:      log.Named("commander"),
+		entry:    entry,
+		cluster:  cluster,
+		dialer:   dialer,
+		resolver: entry.Addr,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
 			Password: string(secret.Data[SecretKeyManagementPassword]),
@@ -90,16 +90,16 @@ func newObservingCommander(log controllerutil.Logger, cluster *v1.ClickHouseClus
 	}, true
 }
 
-func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, resolve replicaResolver, cache *connCache) *commander {
+func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, resolver replicaResolver, cache *connCache) *commander {
 	log = log.Named("commander")
 	credHash, _ := controllerutil.DeepHashObject(secret.Data[SecretKeyManagementPassword])
 
 	return &commander{
-		log:     log,
-		entry:   cache.Get(cluster.NamespacedName(), credHash, log),
-		cluster: cluster,
-		dialer:  dialer,
-		resolve: resolve,
+		log:      log,
+		entry:    cache.Get(cluster.NamespacedName(), credHash, log),
+		cluster:  cluster,
+		dialer:   dialer,
+		resolver: resolver,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
 			Password: string(secret.Data[SecretKeyManagementPassword]),
@@ -604,7 +604,7 @@ func (cmd *commander) shardPeerConn(ctx context.Context, exclude v1.ClickHouseRe
 }
 
 func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
-	addr, err := cmd.resolve(id)
+	addr, err := cmd.resolver(id)
 	if err != nil {
 		return nil, fmt.Errorf("resolve replica %s address: %w", id, err)
 	}

@@ -218,7 +218,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 		logf.SetLogger(zapr.NewLogger(zapLogger))
 		logger := controllerutil.NewLogger(zapLogger)
 
-		resolve := func(id v1.ClickHouseReplicaID) (string, error) {
+		resolver := func(id v1.ClickHouseReplicaID) (string, error) {
 			addr, ok := addrs[id]
 			if !ok {
 				return "", fmt.Errorf("no test container for replica %s", id)
@@ -229,7 +229,7 @@ var _ = Describe("commander", Ordered, Label("integration"), func() {
 
 		secret := &corev1.Secret{Data: map[string][]byte{SecretKeyManagementPassword: []byte(testPassword)}}
 		cache = newConnCache()
-		cmd = newCommander(logger, &cluster, secret, nil, resolve, cache)
+		cmd = newCommander(logger, &cluster, secret, nil, resolver, cache)
 
 		DeferCleanup(func() {
 			cache.Close(logger)
