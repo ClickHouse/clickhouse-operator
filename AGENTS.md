@@ -56,7 +56,7 @@ make docs-generate-api-ref  # Generate API reference docs (docs/reference/api-re
 
 ### Helm Chart
 The Helm chart in `dist/chart/` is partially **generated from `Kustomize` configs** — do not edit templates directly. Regenerate with `make generate-helmchart-ci`. Except you are directly asked.
-`hack/patch-helm-crd-annotations.py` runs at the end of `generate-helmchart` and restores `crd.annotations` on the CRDs. The Helm plugin does not emit that hook.
+`tools/helm-crd-annotations.py` runs at the end of `generate-helmchart` and restores `crd.annotations` on the CRDs. The Helm plugin does not emit that hook.
 
 ### Linting & Formatting
 ```bash

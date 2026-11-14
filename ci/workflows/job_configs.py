@@ -298,7 +298,7 @@ class JobConfigs:
                 "./go.mod",
                 "./go.sum",
                 "./Makefile",
-                "./hack/patch-helm-crd-annotations.py",
+                "./tools/helm-crd-annotations.py",
             ],
         ),
     )

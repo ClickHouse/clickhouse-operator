@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Restore crd.annotations after the kubebuilder Helm plugin regenerates dist/chart.
 
-The plugin emits crd.enabled and crd.keep only. This hook merges a caller-supplied
+The plugin emits crd.enabled and crd.keep only. This step merges a caller-supplied
 annotation map onto both CRDs so GitOps tools can mark those objects for
 server-side apply. generate-helmchart runs this script, and Helm CI fails if the
 committed chart drifts from that output.
@@ -33,32 +33,33 @@ VALUES_INSERT = (
 )
 
 
-def patch_crd(path: Path) -> None:
-    text = path.read_text()
+def crd_text(path: Path, text: str) -> str:
     if ".Values.crd.annotations" in text:
-        return
+        return text
     index = text.find(CRD_ANCHOR)
     if index == -1:
         raise SystemExit(f"{path}: controller-gen annotation line not found")
-    path.write_text(text[:index] + CRD_BLOCK + text[index:])
+    return text[:index] + CRD_BLOCK + text[index:]
 
 
-def patch_values(path: Path) -> None:
-    text = path.read_text()
+def values_text(path: Path, text: str) -> str:
     if VALUES_INSERT in text:
-        return
+        return text
     if VALUES_ANCHOR not in text:
         raise SystemExit(f"{path}: crd values block not found")
-    path.write_text(text.replace(VALUES_ANCHOR, VALUES_ANCHOR + VALUES_INSERT, 1))
+    return text.replace(VALUES_ANCHOR, VALUES_ANCHOR + VALUES_INSERT, 1)
 
 
 def main() -> None:
     crds = sorted((CHART / "templates" / "crd").glob("*.yaml"))
     if len(crds) != 2:
         raise SystemExit(f"expected 2 CRD templates, found {len(crds)}")
-    for path in crds:
-        patch_crd(path)
-    patch_values(CHART / "values.yaml")
+    values = CHART / "values.yaml"
+    # Validate every input before writing, so a bad file does not leave a half-updated chart.
+    updated = [(path, crd_text(path, path.read_text())) for path in crds]
+    updated.append((values, values_text(values, values.read_text())))
+    for path, text in updated:
+        path.write_text(text)
 
 
 if __name__ == "__main__":
