@@ -210,6 +210,7 @@ generate-helmchart: kubebuilder kustomize ## Generate helm charts
 	$(KUSTOMIZE) build config/helm -o dist/install-helm.yaml
 	$(KUBEBUILDER) edit --plugins=helm/v2-alpha --manifests dist/install-helm.yaml
 	rm .github/workflows/test-chart.yml dist/install-helm.yaml
+	python3 tools/helm-crd-annotations.py
 
 .PHONY: generate-helmchart-ci
 generate-helmchart-ci: generate-helmchart generate-cluster-chart ## Generate helm charts and reset some files that will always generate diff

@@ -95,5 +95,17 @@ rbac:
 With `rbac.namespaced: true` the manager's permissions become a Role/RoleBinding in the release namespace,
 so watching other namespaces requires cluster-scoped RBAC (the default).
 
+### CRD annotations {#crd-annotations}
+
+Client-side apply stores the last-applied configuration in an annotation. These CRDs exceed that annotation's size limit, so the apply fails with `metadata.annotations: Too long`.
+
+`crd.annotations` is merged onto both CRDs. Argo CD server-side applies one resource when that resource has `argocd.argoproj.io/sync-options: ServerSideApply=true`:
+
+```yaml
+crd:
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+```
+
 ### Configuration options {#configuration-options}
 For advanced configuration options, refer to the [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) file in the Helm chart
