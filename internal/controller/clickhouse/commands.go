@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net"
-	"strconv"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/google/uuid"
@@ -57,11 +55,15 @@ type databaseDescriptor struct {
 	IsReplicated bool   `ch:"is_replicated"`
 }
 
+// replicaResolver returns the host:port address of the replica management endpoint.
+type replicaResolver func(id v1.ClickHouseReplicaID) (string, error)
+
 type commander struct {
-	log     controllerutil.Logger
-	cluster *v1.ClickHouseCluster
-	auth    clickhouse.Auth
-	dialer  controllerutil.DialContextFunc
+	log      controllerutil.Logger
+	cluster  *v1.ClickHouseCluster
+	auth     clickhouse.Auth
+	dialer   controllerutil.DialContextFunc
+	resolver replicaResolver
 
 	entry *connCacheEntry
 }
@@ -76,10 +78,11 @@ func newObservingCommander(log controllerutil.Logger, cluster *v1.ClickHouseClus
 	}
 
 	return &commander{
-		log:     log.Named("commander"),
-		entry:   entry,
-		cluster: cluster,
-		dialer:  dialer,
+		log:      log.Named("commander"),
+		entry:    entry,
+		cluster:  cluster,
+		dialer:   dialer,
+		resolver: entry.Addr,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
 			Password: string(secret.Data[SecretKeyManagementPassword]),
@@ -87,15 +90,16 @@ func newObservingCommander(log controllerutil.Logger, cluster *v1.ClickHouseClus
 	}, true
 }
 
-func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, cache *connCache) *commander {
+func newCommander(log controllerutil.Logger, cluster *v1.ClickHouseCluster, secret *corev1.Secret, dialer controllerutil.DialContextFunc, resolver replicaResolver, cache *connCache) *commander {
 	log = log.Named("commander")
 	credHash, _ := controllerutil.DeepHashObject(secret.Data[SecretKeyManagementPassword])
 
 	return &commander{
-		log:     log,
-		entry:   cache.Get(cluster.NamespacedName(), credHash, log),
-		cluster: cluster,
-		dialer:  dialer,
+		log:      log,
+		entry:    cache.Get(cluster.NamespacedName(), credHash, log),
+		cluster:  cluster,
+		dialer:   dialer,
+		resolver: resolver,
 		auth: clickhouse.Auth{
 			Username: OperatorManagementUsername,
 			Password: string(secret.Data[SecretKeyManagementPassword]),
@@ -600,11 +604,16 @@ func (cmd *commander) shardPeerConn(ctx context.Context, exclude v1.ClickHouseRe
 }
 
 func (cmd *commander) getConn(id v1.ClickHouseReplicaID) (clickhouse.Conn, error) {
-	return cmd.entry.Conn(id, func() (clickhouse.Conn, error) {
-		cmd.log.Debug("creating new ClickHouse connection", "replica_id", id)
+	addr, err := cmd.resolver(id)
+	if err != nil {
+		return nil, fmt.Errorf("resolve replica %s address: %w", id, err)
+	}
+
+	return cmd.entry.Conn(id, addr, func() (clickhouse.Conn, error) {
+		cmd.log.Debug("creating new ClickHouse connection", "replica_id", id, "addr", addr)
 
 		conn, err := clickhouse.Open(&clickhouse.Options{
-			Addr:        []string{net.JoinHostPort(cmd.cluster.InternalHostnameByID(id), strconv.FormatInt(int64(PortManagement), 10))},
+			Addr:        []string{addr},
 			Auth:        cmd.auth,
 			DialContext: cmd.dialer,
 			DialTimeout: dialTimeout,
