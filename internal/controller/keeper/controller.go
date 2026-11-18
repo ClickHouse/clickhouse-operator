@@ -238,17 +238,33 @@ func listClusters(mgr ctrl.Manager) func(ctx context.Context) ([]*v1.KeeperClust
 
 // observeDigest summarizes the externally observable quorum state of the cluster.
 func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.KeeperCluster) string {
+	var pods corev1.PodList
+	if err := cc.List(ctx, &pods, controllerutil.AppRequirements(cluster.Namespace, cluster.SpecificName())); err != nil {
+		return "pods-unavailable"
+	}
+
+	podIPs := map[v1.KeeperReplicaID]string{}
+	for _, pod := range pods.Items {
+		if id, err := v1.KeeperReplicaIDFromLabels(pod.Labels); err == nil {
+			podIPs[id] = pod.Status.PodIP
+		}
+	}
+
 	ids := make([]v1.KeeperReplicaID, 0, cluster.Replicas())
 	for i := range cluster.Replicas() {
 		ids = append(ids, v1.KeeperReplicaID(i))
 	}
 
 	states := controllerutil.ExecuteParallel(ids, func(id v1.KeeperReplicaID) (v1.KeeperReplicaID, string, error) {
+		if podIPs[id] == "" {
+			return id, "unreachable", nil
+		}
+
 		probeCtx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
 		defer cancel()
 
 		status := getServerStatus(probeCtx, cc.Logger.With("replica_id", id), cc.Dialer,
-			cluster.HostnameByID(id), cluster.Spec.Settings.TLS.Required)
+			podIPs[id], cluster.Spec.Settings.TLS.Required)
 
 		return id, cmp.Or(status.ServerState, "unreachable"), nil
 	})

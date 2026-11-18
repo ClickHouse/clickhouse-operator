@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -517,9 +518,19 @@ func (f fakeConn) Write(b []byte) (n int, err error) { return len(b), nil }
 
 var _ net.Conn = &fakeConn{}
 
-func fakeDialer(data []byte) controllerutil.DialContextFunc {
-	return func(context.Context, string) (net.Conn, error) {
-		return &fakeConn{data: data}, nil
+func fakeDialer(responses map[string]string) controllerutil.DialContextFunc {
+	return func(_ context.Context, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, fmt.Errorf("parse address %s: %w", addr, err)
+		}
+
+		response, ok := responses[host]
+		if !ok {
+			return nil, fmt.Errorf("dial %s: unknown host", addr)
+		}
+
+		return &fakeConn{data: []byte(response)}, nil
 	}
 }
 
@@ -532,6 +543,20 @@ var _ = Describe("observeDigest", func() {
 		}
 	}
 
+	replicaPods := func(cr *v1.KeeperCluster) client.Client {
+		builder := fake.NewClientBuilder()
+		for id := range cr.Replicas() {
+			builder = builder.WithObjects(&corev1.Pod{
+				Name:      fmt.Sprintf("replica-%d", id),
+				Namespace: cr.Namespace,
+				Labels:    replicaLabels(cr, v1.KeeperReplicaID(id)),
+				Status:    corev1.PodStatus{PodIP: fmt.Sprintf("10.0.0.%d", id)},
+			})
+		}
+
+		return builder.Build()
+	}
+
 	var log controllerutil.Logger
 
 	BeforeEach(func() {
@@ -539,18 +564,26 @@ var _ = Describe("observeDigest", func() {
 	})
 
 	It("should digest the server states in replica order", func(ctx context.Context) {
+		cr := cluster(3)
 		cc := &ClusterController{
+			Client: replicaPods(cr),
 			Logger: log,
-			Dialer: fakeDialer([]byte("zk_server_state\tfollower\n"))}
+			Dialer: fakeDialer(map[string]string{
+				"10.0.0.0": "zk_server_state\tleader\nzk_followers\t2\nzk_synced_followers\t2\n",
+				"10.0.0.1": "zk_server_state\tfollower\n",
+				"10.0.0.2": "zk_server_state\tfollower\n",
+			})}
 
-		Expect(cc.observeDigest(ctx, cluster(3))).To(Equal("0=follower;1=follower;2=follower;"))
+		Expect(cc.observeDigest(ctx, cr)).To(Equal("0=leader;1=follower;2=follower;"))
 	})
 
 	It("should classify unreachable replicas distinctly", func(ctx context.Context) {
+		cr := cluster(2)
 		cc := &ClusterController{
+			Client: replicaPods(cr),
 			Logger: log,
 			Dialer: func(context.Context, string) (net.Conn, error) { return nil, errors.New("down") }}
 
-		Expect(cc.observeDigest(ctx, cluster(2))).To(Equal("0=unreachable;1=unreachable;"))
+		Expect(cc.observeDigest(ctx, cr)).To(Equal("0=unreachable;1=unreachable;"))
 	})
 })
