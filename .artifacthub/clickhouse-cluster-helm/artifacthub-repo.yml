@@ -1,0 +1,5 @@
+# Artifact Hub repository metadata: https://artifacthub.io/docs/topics/repositories/
+repositoryID: ebc56c06-8f5a-4e88-9289-78ad9efd9acd
+owners:
+  - name: ClickHouse
+    email: artifacthub-admin@clickhouse.com
