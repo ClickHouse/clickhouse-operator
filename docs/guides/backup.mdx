@@ -1,0 +1,239 @@
+---
+position: 9
+slug: /clickhouse-operator/guides/backup
+title: Backup and restore
+keywords: ['kubernetes', 'backup', 'restore', 's3', 'incremental', 'schedule']
+description: 'How to back up a ClickHouse cluster to S3, schedule full and incremental backups, and restore a backup.'
+doc_type: 'guide'
+---
+
+The operator backs up and restores a `ClickHouseCluster` with the ClickHouse [`BACKUP` and `RESTORE`](https://clickhouse.com/docs/operations/backup) statements. Three Custom Resources drive them:
+
+| Resource | Purpose |
+|---|---|
+| `ClickHouseBackup` | Takes one backup of a cluster. |
+| `ClickHouseScheduledBackup` | Creates `ClickHouseBackup` resources on a schedule, optionally as incremental backups. |
+| `ClickHouseRestore` | Restores a backup into a cluster once. |
+
+The operator submits a single statement that runs `ON CLUSTER`, so ClickHouse itself coordinates the replicas and shards and writes one consistent backup. The data flows from the ClickHouse pods to the storage directly: the operator needs no access to the storage, and no sidecar or extra pod is created.
+
+Backups are stored in an S3-compatible object storage.
+
+## Taking a backup {#taking-a-backup}
+
+Create a `ClickHouseBackup` in the namespace of the cluster:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackup
+metadata:
+  name: before-upgrade
+spec:
+  clusterRef:
+    name: sample
+  storage:
+    s3:
+      endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+      credentials:
+        accessKeyID:
+          name: backup-storage
+          key: access-key-id
+        secretAccessKey:
+          name: backup-storage
+          key: secret-access-key
+```
+
+The backup is written to the directory named after the resource under `endpoint`, here `https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample/before-upgrade`. The resolved URL is reported in `status.location`.
+
+Follow the progress with `kubectl`:
+
+```bash
+kubectl get clickhousebackups
+```
+
+```text
+NAME             CLUSTER   PHASE       BASE   SIZE      COMPLETED   AGE
+before-upgrade   sample    Completed          1027069   12s         40s
+```
+
+| Phase | Meaning |
+|---|---|
+| `Pending` | The backup is not started yet. The `Completed` condition explains what it waits for: the cluster, a reachable replica, the credentials Secret, or the base backup. |
+| `Running` | ClickHouse is creating the backup. |
+| `Completed` | The backup is in the storage. `status.numFiles`, `status.totalSize` and `status.compressedSize` describe it. |
+| `Failed` | The backup failed. The `Completed` condition carries the error reported by ClickHouse. |
+
+A `ClickHouseBackup` describes one attempt: its spec is immutable and a failed backup is not retried. Create a new resource to try again.
+
+<Note>
+Deleting a `ClickHouseBackup` resource does not delete the backup from the storage and does not cancel a backup that is already running. Use the lifecycle rules of the bucket to expire old backups, and keep every full backup for as long as the incremental backups based on it are needed.
+</Note>
+
+### Storage credentials {#storage-credentials}
+
+`spec.storage.s3.credentials` references the keys of a Secret in the namespace of the backup. The operator reads the Secret and passes the keys in the statement; ClickHouse hides them in its logs and system tables.
+
+When `credentials` is omitted, ClickHouse uses the credentials available to the server itself, for example an IAM role bound to the ServiceAccount of the ClickHouse pods:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  podTemplate:
+    serviceAccountName: clickhouse-backup
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackup
+metadata:
+  name: before-upgrade
+spec:
+  clusterRef:
+    name: sample
+  storage:
+    s3:
+      endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+```
+
+Recent ClickHouse versions refuse to use the server credentials in a statement unless the `s3_allow_server_credentials_in_user_queries` setting is enabled. The operator enables it for the backup and restore statements it submits on the servers that know the setting.
+
+### Choosing what to back up {#backup-scope}
+
+By default a backup covers everything except the `system` database. `spec.scope` limits it to the listed databases and tables:
+
+```yaml
+spec:
+  scope:
+    databases:
+      - analytics
+    tables:
+      - database: default
+        table: events
+```
+
+### Backup settings {#backup-settings}
+
+`spec.settings` passes additional [settings](https://clickhouse.com/docs/operations/backup#command-summary) to the statement:
+
+```yaml
+spec:
+  settings:
+    compression_method: zstd
+    compression_level: "3"
+```
+
+The `id`, `async` and `base_backup` settings are managed by the operator and cannot be set.
+
+## Incremental backups {#incremental-backups}
+
+`spec.baseBackupRef` makes a backup incremental: ClickHouse stores only the data that is missing from the referenced backup.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseBackup
+metadata:
+  name: tuesday
+spec:
+  clusterRef:
+    name: sample
+  baseBackupRef:
+    name: monday
+  storage:
+    s3:
+      endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+```
+
+The incremental backup waits in `Pending` until the base backup is completed and fails if the base backup failed. Restoring an incremental backup reads the base backup too, so the base must stay in the storage.
+
+## Scheduling backups {#scheduling-backups}
+
+`ClickHouseScheduledBackup` creates a `ClickHouseBackup` for every run of a [cron](https://en.wikipedia.org/wiki/Cron) schedule:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseScheduledBackup
+metadata:
+  name: nightly
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Europe/Amsterdam
+  fullBackupInterval: 7
+  successfulBackupsHistoryLimit: 14
+  failedBackupsHistoryLimit: 3
+  template:
+    spec:
+      clusterRef:
+        name: sample
+      storage:
+        s3:
+          endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+```
+
+The created backups are named `<schedule name>-<run time>`, for example `nightly-20260101020000`, and are owned by the schedule.
+
+| Field | Behavior |
+|---|---|
+| `schedule` | Cron expression of the runs, evaluated in UTC unless `timeZone` is set. |
+| `suspend` | Stops the creation of new backups without affecting the running ones. |
+| `fullBackupInterval` | With a value of `N`, every full backup is followed by `N - 1` incremental backups based on it. When unset, every backup is full. A failed full backup is taken again on the next run. |
+| `successfulBackupsHistoryLimit` | Number of completed `ClickHouseBackup` resources to keep, 10 by default. The most recent full backup and the base backups of the kept incremental backups are always kept. |
+| `failedBackupsHistoryLimit` | Number of failed `ClickHouseBackup` resources to keep, 3 by default. |
+| `template.spec` | Spec of the created backups. `baseBackupRef` is managed by the schedule. |
+
+A run is skipped while the previous backup of the schedule is not finished, and only the most recent run is started after the operator was down. `status.lastScheduleTime`, `status.lastBackupName`, `status.lastSuccessfulTime` and `status.lastSuccessfulBackupName` report the state of the schedule.
+
+<Note>
+The history limits remove `ClickHouseBackup` resources only. The backup data stays in the storage until the lifecycle rules of the bucket remove it.
+</Note>
+
+## Restoring a backup {#restoring-a-backup}
+
+Create a `ClickHouseRestore` that references a completed `ClickHouseBackup`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseRestore
+metadata:
+  name: restore-before-upgrade
+spec:
+  clusterRef:
+    name: sample
+  backupRef:
+    name: before-upgrade
+```
+
+To restore a backup that has no `ClickHouseBackup` resource in the namespace, for example into a new Kubernetes cluster, locate it in the storage with `spec.source`. `name` is the name of the `ClickHouseBackup` that created the backup:
+
+```yaml
+spec:
+  clusterRef:
+    name: sample
+  source:
+    name: nightly-20260101020000
+    storage:
+      s3:
+        endpoint: https://my-bucket.s3.us-east-1.amazonaws.com/clickhouse/sample
+```
+
+The restore goes through the same phases as a backup and is not retried when it fails. `spec.scope` restores a subset of the backup, and `spec.settings` passes additional [settings](https://clickhouse.com/docs/operations/backup#command-summary) to the statement.
+
+<Note>
+ClickHouse refuses to restore a table that already contains data. Restore into an empty cluster, drop the tables first, or set `allow_non_empty_tables: "true"` in `spec.settings` to accept that the restored rows are added to the existing ones.
+</Note>
+
+## Failures {#failures}
+
+| `Completed` condition reason | Meaning |
+|---|---|
+| `Failed` | ClickHouse rejected the statement or reported that the operation failed. The message carries the error, for example a missing bucket or a backup that already exists at the location. |
+| `StateLost` | The replica that executed the operation was restarted or removed before the operation finished. ClickHouse keeps the state of an operation in memory, so the operator cannot tell how it ended. |
+| `BackupFailed` | The referenced backup failed. |
+
+The operator emits `BackupStarted`, `BackupCompleted`, `BackupFailed`, `RestoreStarted`, `RestoreCompleted` and `RestoreFailed` events on the backup and restore resources, and `BackupScheduled`, `BackupSkipped` and `InvalidSchedule` events on the schedules.
+
+## Related guides {#related-guides}
+
+- [Storage](/products/kubernetes-operator/guides/storage)
+- [Kubernetes events](/products/kubernetes-operator/guides/kubernetes-events)
+- [API reference](/products/kubernetes-operator/reference/api-reference)

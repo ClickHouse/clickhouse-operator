@@ -13,6 +13,7 @@ Choose your preferred installation method:
 - **[Introduction](./guides/introduction.mdx)** - General overview of ClickHouse Operator concepts
 - **[Configuration Guide](./guides/configuration.mdx)** - Configure ClickHouse and Keeper clusters
 - **[Monitoring](./guides/monitoring.mdx)** - Monitor clickhouse-operator using Prometheus metrics
+- **[Backup and restore](./guides/backup.mdx)** - Back up clusters to S3 on a schedule and restore them
 
 ## Reference
 

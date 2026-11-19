@@ -38,4 +38,28 @@ resources:
     defaulting: true
     validation: true
     webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: clickhouse.com
+  kind: ClickHouseBackup
+  path: github.com/ClickHouse/clickhouse-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: clickhouse.com
+  kind: ClickHouseRestore
+  path: github.com/ClickHouse/clickhouse-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: clickhouse.com
+  kind: ClickHouseScheduledBackup
+  path: github.com/ClickHouse/clickhouse-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"

@@ -43,6 +43,19 @@ const (
 	EventReasonClickHouseWarning EventReason = "ClickHouseWarning"
 )
 
+// Event reasons for backups and restores.
+const (
+	EventReasonBackupStarted    EventReason = "BackupStarted"
+	EventReasonBackupCompleted  EventReason = "BackupCompleted"
+	EventReasonBackupFailed     EventReason = "BackupFailed"
+	EventReasonRestoreStarted   EventReason = "RestoreStarted"
+	EventReasonRestoreCompleted EventReason = "RestoreCompleted"
+	EventReasonRestoreFailed    EventReason = "RestoreFailed"
+	EventReasonBackupScheduled  EventReason = "BackupScheduled"
+	EventReasonBackupSkipped    EventReason = "BackupSkipped"
+	EventReasonInvalidSchedule  EventReason = "InvalidSchedule"
+)
+
 // EventAction represents the action associated with an event.
 type EventAction = string
 
@@ -52,4 +65,7 @@ const (
 	EventActionBecameReady    EventAction = "BecameReady"
 	EventActionBecameNotReady EventAction = "BecameNotReady"
 	EventActionVersionCheck   EventAction = "VersionCheck"
+	EventActionBackup         EventAction = "Backup"
+	EventActionRestore        EventAction = "Restore"
+	EventActionScheduling     EventAction = "Scheduling"
 )

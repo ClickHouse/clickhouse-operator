@@ -28,4 +28,13 @@ resources:
 - keepercluster_admin_role.yaml
 - keepercluster_editor_role.yaml
 - keepercluster_viewer_role.yaml
+- clickhousebackup_admin_role.yaml
+- clickhousebackup_editor_role.yaml
+- clickhousebackup_viewer_role.yaml
+- clickhouserestore_admin_role.yaml
+- clickhouserestore_editor_role.yaml
+- clickhouserestore_viewer_role.yaml
+- clickhousescheduledbackup_admin_role.yaml
+- clickhousescheduledbackup_editor_role.yaml
+- clickhousescheduledbackup_viewer_role.yaml
 

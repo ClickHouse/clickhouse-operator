@@ -20,6 +20,7 @@ const (
 	LabelClickHouseShardID   = "clickhouse.com/shard-id"
 	LabelClickHouseReplicaID = "clickhouse.com/replica-id"
 	LabelDiskName            = "clickhouse.com/disk"
+	LabelScheduledBackup     = "clickhouse.com/scheduled-backup"
 )
 
 const (
