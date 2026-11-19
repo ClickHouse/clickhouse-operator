@@ -429,6 +429,11 @@ type ClickHouseReplicaID struct {
 
 // ClickHouseIDFromLabels extracts ClickHouseReplicaID from given labels map.
 func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, error) {
+	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
+	if !ok {
+		return ClickHouseReplicaID{}, fmt.Errorf("missing replica ID label: %w", ErrNotReplicaResource)
+	}
+
 	shardIDStr, ok := labels[controllerutil.LabelClickHouseShardID]
 	if !ok {
 		return ClickHouseReplicaID{}, errors.New("missing shard ID label")
@@ -437,11 +442,6 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
 	if err != nil {
 		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
-	}
-
-	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
-	if !ok {
-		return ClickHouseReplicaID{}, errors.New("missing replica ID label")
 	}
 
 	index, err := strconv.ParseInt(replicaIDStr, 10, 32)

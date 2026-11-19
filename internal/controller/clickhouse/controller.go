@@ -81,8 +81,6 @@ func (cc *ClusterController) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, nil
 		}
 
-		cc.Logger.Error(err, "failed to Get ClickHouse cluster")
-
 		return ctrl.Result{}, fmt.Errorf("get ClickHouseCluster %s: %w", req.String(), err)
 	}
 

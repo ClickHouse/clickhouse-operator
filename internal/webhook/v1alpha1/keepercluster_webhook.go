@@ -42,7 +42,7 @@ func SetupKeeperWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) 
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the type.
 func (w *KeeperClusterWebhook) Default(_ context.Context, cluster *chv1.KeeperCluster) error {
-	w.Log.Info("Filling defaults", "name", cluster.Name, "namespace", cluster.Namespace)
+	w.Log.Debug("Filling defaults", "name", cluster.Name, "namespace", cluster.Namespace)
 	cluster.Spec.WithDefaults()
 
 	return nil
@@ -75,7 +75,7 @@ func (w *KeeperClusterWebhook) ValidateDelete(context.Context, *chv1.KeeperClust
 }
 
 func (w *KeeperClusterWebhook) validateImpl(obj *chv1.KeeperCluster) (admission.Warnings, []error) {
-	w.Log.Info("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
+	w.Log.Debug("Validating spec", "name", obj.Name, "namespace", obj.Namespace)
 
 	var (
 		warns admission.Warnings
