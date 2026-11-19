@@ -13,6 +13,8 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/upgrade"
 )
 
+// The Port* values below, and the protocolType* names in templates.go, are also hard-coded as reserved
+// in the v1alpha1 webhook and the v1alpha2 ClickHouseNetworkSpec.AdditionalPorts CEL rules; keep them in sync.
 const (
 	PortManagement     = 9001
 	PortManagementHTTP = 9002

@@ -3756,8 +3756,9 @@ spec:
                 description: Additional annotations that are added to resources.
                 type: object
               dataVolumeClaimTemplate:
-                description: Template of the persistent volume claim for ClickHouse
-                  Keeper data.
+                description: |-
+                  Template of the persistent volume claim for ClickHouse Keeper data.
+                  Cannot be added or removed after cluster creation.
                 properties:
                   metadata:
                     description: Metadata applied to the data volume claim.
@@ -3970,7 +3971,9 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: serverCertSecret must be specified when TLS is enabled
-                      rule: '!has(self.mode) || self.mode == ''Disabled'' || has(self.serverCertSecret)'
+                      rule: '!has(self.mode) || self.mode == ''Disabled'' || (has(self.serverCertSecret)
+                        && has(self.serverCertSecret.name) && size(self.serverCertSecret.name)
+                        > 0)'
                 type: object
               podDisruptionBudget:
                 description: |-
@@ -4089,7 +4092,8 @@ spec:
                       and `imagePullSecrets` by name, `topologySpreadConstraints` by topologyKey.
                       The server container is addressed by name: "clickhouse" for ClickHouseCluster, "keeper" for KeeperCluster;
                       set its `image`, `resources`, `env`, `volumeMounts`, probes etc. there.
-                      A volume replaces any operator volume with the same name, affinity scheduling term lists are
+                      Volumes must not use the names of the operator-managed volumes (and, for ClickHouseCluster, of the
+                      additional disks); other volumes are added to the operator volumes. Affinity scheduling term lists are
                       appended to the operator defaults, and a non-nil securityContext, probe or lifecycle fully
                       replaces the corresponding operator default.
                       The `containers` list is optional here, the operator always provides the server container.
@@ -8054,7 +8058,7 @@ spec:
                       across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
                       Pods of different shards may share a domain, so multiple pods per domain are allowed.
                       With fewer domains than replicas, several replicas share a domain, still evenly balanced.
-                      For ClickHouseCluster with keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
+                      For ClickHouseCluster with coordination.keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
                       Recommended to be set to "topology.kubernetes.io/zone".
                     type: string
                 type: object
@@ -8113,6 +8117,17 @@ spec:
                 pattern: ^(lts|stable|\d+\.\d+)?$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: dataVolumeClaimTemplate cannot be added or removed after cluster
+                creation
+              rule: has(self.dataVolumeClaimTemplate) == has(oldSelf.dataVolumeClaimTemplate)
+            - message: podTemplate volumes must not use a name reserved by the operator
+                (clickhouse-keeper-quorum-config-volume, clickhouse-storage-volume,
+                clickhouse-keeper-config-volume, clickhouse-server-tls-volume)
+              rule: '!has(self.podTemplate) || !has(self.podTemplate.spec) || !has(self.podTemplate.spec.volumes)
+                || self.podTemplate.spec.volumes.all(v, !(v.name in [''clickhouse-keeper-quorum-config-volume'',
+                ''clickhouse-storage-volume'', ''clickhouse-keeper-config-volume'',
+                ''clickhouse-server-tls-volume'']))'
           status:
             description: KeeperClusterStatus defines the observed state of KeeperCluster.
             properties:

@@ -4158,6 +4158,7 @@ spec:
                   AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for the
                   ClickHouse replicas. Overridden per shard and per replica in `shardSpecs`.
                   When no set is referenced, replicas have no additional disks.
+                maxLength: 63
                 type: string
               additionalVolumeClaimTemplateSets:
                 description: |-
@@ -4166,6 +4167,8 @@ spec:
                   Each replica uses the most specific reference: `shardSpecs[].replicaSpecs[].additionalVolumeClaimTemplateSetName`,
                   then `shardSpecs[].additionalVolumeClaimTemplateSetName`, then `additionalVolumeClaimTemplateSetName`.
                   Sets are not merged with each other.
+                  The set of disks of a replica is fixed at its creation: the disks of an existing set and the set references
+                  of existing shards and replicas cannot be changed, new shards and replicas may reference any set.
                 items:
                   description: NamedVolumeClaimTemplateSet is a named group of additional
                     per-pod PVC templates for JBOD / multi-disk storage.
@@ -4181,13 +4184,15 @@ spec:
                         Templates of the additional per-pod PVCs.
                         Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at `/var/lib/clickhouse/disks/<name>` and
                         added to the generated JBOD storage policy.
-                        The set of disks of a replica is fixed at its creation.
+                        Disk names must be unique within the set. The disks of an existing set cannot be added, removed or renamed,
+                        because the set of disks of a replica is fixed at its creation.
                       items:
                         description: PersistentVolumeClaimTemplate is a named template
                           for a per-replica PersistentVolumeClaim.
                         properties:
                           metadata:
-                            description: Metadata template of the volume claim.
+                            description: Metadata template of the volume claim. The
+                              name is the disk name.
                             properties:
                               annotations:
                                 additionalProperties:
@@ -4301,20 +4306,34 @@ spec:
                               volumeName:
                                 type: string
                             type: object
+                        required:
+                        - metadata
                         type: object
-                      maxItems: 128
+                      maxItems: 64
                       minItems: 1
                       type: array
                       x-kubernetes-list-type: atomic
                       x-kubernetes-validations:
                       - message: names ending in '-encrypted' are reserved for generated
                           encrypted disk names
-                        rule: self.all(t, !has(t.metadata) || !t.metadata.name.endsWith('-encrypted'))
+                        rule: self.all(t, !t.metadata.name.endsWith('-encrypted'))
+                      - message: disk names 'clickhouse-storage-volume' and 'default'
+                          are reserved for the data volume and the ClickHouse default
+                          disk
+                        rule: self.all(t, !(t.metadata.name in ['clickhouse-storage-volume',
+                          'default']))
+                      - message: disk names must be unique within a set
+                        rule: self.all(t, self.exists_one(u, u.metadata.name == t.metadata.name))
+                      - message: 'disks of an existing set cannot be added, removed
+                          or renamed: the set of disks of a replica is fixed at its
+                          creation'
+                        rule: self.size() == oldSelf.size() && oldSelf.all(o, self.exists(n,
+                          n.metadata.name == o.metadata.name))
                   required:
                   - name
                   - templates
                   type: object
-                maxItems: 64
+                maxItems: 32
                 type: array
                 x-kubernetes-list-map-keys:
                 - name
@@ -4324,10 +4343,93 @@ spec:
                   type: string
                 description: Additional annotations that are added to resources.
                 type: object
+              coordination:
+                description: |-
+                  Coordination configures the Keeper ensemble ClickHouse uses for coordination.
+                  When omitted, ClickHouse runs without Keeper.
+                properties:
+                  externalKeeper:
+                    description: |-
+                      Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+                      The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+                      Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+                    properties:
+                      nodes:
+                        description: Servers of the Keeper ensemble ClickHouse connects
+                          to for coordination.
+                        items:
+                          description: ExternalKeeperNode addresses a single server
+                            of an external Keeper ensemble.
+                          properties:
+                            host:
+                              description: Host name or IP address of the Keeper server.
+                                IPv6 addresses must be enclosed in square brackets.
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                            port:
+                              default: 9181
+                              description: Port the Keeper server accepts client connections
+                                on.
+                              format: int32
+                              maximum: 65535
+                              minimum: 1
+                              type: integer
+                          required:
+                          - host
+                          type: object
+                        maxItems: 15
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: nodes must not repeat the same host and port
+                          rule: self.all(n, self.exists_one(m, m.host.lowerAscii()
+                            == n.host.lowerAscii() && m.port == n.port))
+                      tls:
+                        default: Disabled
+                        description: |-
+                          TLS controls whether ClickHouse connects to the ensemble over TLS.
+                          The ports in nodes must match the chosen policy.
+                          Server certificates are verified against the system trust store and `spec.network.tls.caBundle`.
+                        enum:
+                        - Enabled
+                        - Disabled
+                        type: string
+                    required:
+                    - nodes
+                    type: object
+                  keeperClusterRef:
+                    description: |-
+                      Reference to the KeeperCluster that is used for ClickHouse coordination.
+                      When namespace is omitted, the ClickHouseCluster namespace is used.
+                      Mutually exclusive with `externalKeeper`, exactly one of them must be set.
+                    properties:
+                      name:
+                        description: Name of the KeeperCluster resource.
+                        maxLength: 63
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      namespace:
+                        description: |-
+                          Namespace of the KeeperCluster resource.
+                          When omitted, the ClickHouseCluster namespace is used.
+                        maxLength: 63
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of keeperClusterRef or externalKeeper must
+                    be set
+                  rule: has(self.keeperClusterRef) != has(self.externalKeeper)
               dataVolumeClaimTemplateName:
                 description: |-
                   DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the ClickHouse data
                   volume claims. Overridden per shard and per replica in `shardSpecs`.
+                maxLength: 63
                 type: string
               dataVolumeClaimTemplates:
                 description: |-
@@ -4461,57 +4563,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
-              externalKeeper:
-                description: |-
-                  Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
-                  The operator does not own the lifecycle of these servers and only points ClickHouse at them.
-                  Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
-                properties:
-                  nodes:
-                    description: Servers of the Keeper ensemble ClickHouse connects
-                      to for coordination.
-                    items:
-                      description: ExternalKeeperNode addresses a single server of
-                        an external Keeper ensemble.
-                      properties:
-                        host:
-                          description: Host name or IP address of the Keeper server.
-                            IPv6 addresses must be enclosed in square brackets.
-                          maxLength: 253
-                          minLength: 1
-                          type: string
-                        port:
-                          default: 9181
-                          description: Port the Keeper server accepts client connections
-                            on.
-                          format: int32
-                          maximum: 65535
-                          minimum: 1
-                          type: integer
-                      required:
-                      - host
-                      type: object
-                    maxItems: 15
-                    minItems: 1
-                    type: array
-                    x-kubernetes-list-type: atomic
-                    x-kubernetes-validations:
-                    - message: nodes must not repeat the same host and port
-                      rule: self.all(n, self.exists_one(m, m.host.lowerAscii() ==
-                        n.host.lowerAscii() && m.port == n.port))
-                  tls:
-                    default: Disabled
-                    description: |-
-                      TLS controls whether ClickHouse connects to the ensemble over TLS.
-                      The ports in nodes must match the chosen policy.
-                      Server certificates are verified against the system trust store and `spec.network.tls.caBundle`.
-                    enum:
-                    - Enabled
-                    - Disabled
-                    type: string
-                required:
-                - nodes
-                type: object
               externalSecret:
                 description: |-
                   ExternalSecret is an optional reference to an externally-managed Secret containing cluster secrets.
@@ -4581,27 +4632,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - image
                 x-kubernetes-list-type: map
-              keeperClusterRef:
-                description: |-
-                  Reference to the KeeperCluster that is used for ClickHouse coordination.
-                  When namespace is omitted, the ClickHouseCluster namespace is used.
-                  Mutually exclusive with `externalKeeper`, exactly one of them must be set.
-                properties:
-                  name:
-                    description: Name of the KeeperCluster resource.
-                    maxLength: 63
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                    type: string
-                  namespace:
-                    description: |-
-                      Namespace of the KeeperCluster resource.
-                      When omitted, the ClickHouseCluster namespace is used.
-                    maxLength: 63
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
-                    type: string
-                required:
-                - name
-                type: object
               labels:
                 additionalProperties:
                   type: string
@@ -4616,10 +4646,21 @@ spec:
                     description: |-
                       AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.
                       The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
+                      Names and port numbers must be unique, and must not collide with the operator-managed endpoints,
+                      including the TLS ones, which stay reserved whether TLS is enabled or not.
                     items:
                       description: AdditionalPort declares one extra TCP port to expose
                         on the ClickHouse Pod and the public headless Service.
                       properties:
+                        appProtocol:
+                          description: |-
+                            AppProtocol is the application protocol of the port, set as `appProtocol` on the Service port.
+                            Service meshes and load balancers use it to pick how to handle the traffic instead of detecting the protocol.
+                            Must be an IANA standard service name (e.g. "http", "tcp") or a domain-prefixed name
+                            (e.g. "kubernetes.io/h2c", "example.com/custom-protocol").
+                          maxLength: 317
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$
+                          type: string
                         name:
                           description: |-
                             Name uniquely identifies the port within the list. Used as both the container port name and the Service port name.
@@ -4637,10 +4678,22 @@ spec:
                       - name
                       - port
                       type: object
+                    maxItems: 64
                     type: array
                     x-kubernetes-list-map-keys:
                     - name
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: additionalPorts must not repeat the same port
+                      rule: self.all(p, self.exists_one(q, q.port == p.port))
+                    - message: additionalPorts must not use a port reserved for operator-managed
+                        endpoints (8123, 8443, 9000, 9440, 9009, 9363, 9001, 9002)
+                      rule: self.all(p, !(p.port in [8123, 8443, 9000, 9440, 9009,
+                        9363, 9001, 9002]))
+                    - message: additionalPorts must not use a name reserved by the
+                        operator
+                      rule: self.all(p, !(p.name in ['http', 'http-secure', 'tcp',
+                        'tcp-secure', 'interserver', 'prometheus', 'management', 'management-http']))
                   clusterDomain:
                     default: cluster.local
                     description: ClusterDomain is the Kubernetes cluster domain suffix
@@ -4734,7 +4787,9 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: serverCertSecret must be specified when TLS is enabled
-                      rule: '!has(self.mode) || self.mode == ''Disabled'' || has(self.serverCertSecret)'
+                      rule: '!has(self.mode) || self.mode == ''Disabled'' || (has(self.serverCertSecret)
+                        && has(self.serverCertSecret.name) && size(self.serverCertSecret.name)
+                        > 0)'
                 type: object
               podDisruptionBudget:
                 description: |-
@@ -4829,6 +4884,7 @@ spec:
                   PodTemplateName references the entry of `podTemplates` used for the ClickHouse Pods.
                   Overridden per shard and per replica in `shardSpecs`.
                   When no template is referenced, Pods use the operator defaults only.
+                maxLength: 63
                 type: string
               podTemplates:
                 description: |-
@@ -4837,6 +4893,8 @@ spec:
                   Each Pod uses the most specific reference: `shardSpecs[].replicaSpecs[].podTemplateName`, then
                   `shardSpecs[].podTemplateName`, then `podTemplateName`. Templates are not merged with each other.
                   The ClickHouse server container is addressed by name "clickhouse" in `spec.containers` of a template.
+                  Volumes must not use the names of the operator-managed volumes or of the additional disks
+                  (enforced by ValidatePodTemplateVolumes, the check is too expensive for CRD CEL rules).
                 items:
                   description: NamedPodTemplate is a pod template that is referenced
                     by name.
@@ -4870,7 +4928,8 @@ spec:
                         and `imagePullSecrets` by name, `topologySpreadConstraints` by topologyKey.
                         The server container is addressed by name: "clickhouse" for ClickHouseCluster, "keeper" for KeeperCluster;
                         set its `image`, `resources`, `env`, `volumeMounts`, probes etc. there.
-                        A volume replaces any operator volume with the same name, affinity scheduling term lists are
+                        Volumes must not use the names of the operator-managed volumes (and, for ClickHouseCluster, of the
+                        additional disks); other volumes are added to the operator volumes. Affinity scheduling term lists are
                         appended to the operator defaults, and a non-nil securityContext, probe or lifecycle fully
                         replaces the corresponding operator default.
                         The `containers` list is optional here, the operator always provides the server container.
@@ -8834,7 +8893,7 @@ spec:
                       across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
                       Pods of different shards may share a domain, so multiple pods per domain are allowed.
                       With fewer domains than replicas, several replicas share a domain, still evenly balanced.
-                      For ClickHouseCluster with keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
+                      For ClickHouseCluster with coordination.keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
                       Recommended to be set to "topology.kubernetes.io/zone".
                     type: string
                 type: object
@@ -8884,10 +8943,12 @@ spec:
                           key:
                             description: The key of the secret to select from.  Must
                               be a valid secret key.
+                            minLength: 1
                             type: string
                           name:
                             description: The name of the secret in the cluster's namespace
                               to select from.
+                            minLength: 1
                             type: string
                         required:
                         - key
@@ -8998,11 +9059,13 @@ spec:
                       description: |-
                         AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for the
                         replicas of this shard. Overrides `spec.additionalVolumeClaimTemplateSetName`.
+                      maxLength: 63
                       type: string
                     dataVolumeClaimTemplateName:
                       description: |-
                         DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the data volume
                         claims of this shard. Overrides `spec.dataVolumeClaimTemplateName`.
+                      maxLength: 63
                       type: string
                     name:
                       description: |-
@@ -9015,11 +9078,17 @@ spec:
                       description: |-
                         PodTemplateName references the entry of `podTemplates` used for the Pods of this shard.
                         Overrides `spec.podTemplateName`.
+                      maxLength: 63
                       type: string
                     replicaSpecs:
                       description: |-
-                        ReplicaSpecs describes every replica of the shard individually, the replica index is the list index.
+                        ReplicaSpecs describes every replica of the shard individually.
                         Exactly one of `replicas` or `replicaSpecs` must be set.
+                        The replica name is the stable identity of the replica: it is used in the names of the replica resources.
+                        Removing an entry removes that replica only, the other replicas keep their names and templates.
+                        List order is not significant: replicas are ordered by name, numeric names by value first.
+                        With `replicas: N` the replicas are named "0" to "N-1", so a shard switched to `replicaSpecs` with these
+                        names keeps its existing replicas.
                       items:
                         description: ClickHouseReplicaSpec describes a single replica
                           of a shard.
@@ -9028,22 +9097,44 @@ spec:
                             description: |-
                               AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for this
                               replica. Overrides the shard and cluster `additionalVolumeClaimTemplateSetName`.
+                            maxLength: 63
                             type: string
                           dataVolumeClaimTemplateName:
                             description: |-
                               DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the data volume
                               claim of this replica. Overrides the shard and cluster `dataVolumeClaimTemplateName`.
+                            maxLength: 63
+                            type: string
+                          name:
+                            description: |-
+                              Name of the replica, its stable identity within the shard.
+                              Lowercase alphanumerics only, kept short to fit Kubernetes resource names. '-' is not allowed, so the
+                              "<shard>-<replica>" resource names stay unique.
+                            maxLength: 15
+                            pattern: ^[a-z0-9]+$
                             type: string
                           podTemplateName:
                             description: |-
                               PodTemplateName references the entry of `podTemplates` used for the Pod of this replica.
                               Overrides the shard and cluster `podTemplateName`.
+                            maxLength: 63
                             type: string
+                        required:
+                        - name
                         type: object
+                        x-kubernetes-validations:
+                        - message: 'replica additionalVolumeClaimTemplateSetName cannot
+                            be changed: the set of disks of a replica is fixed at
+                            its creation'
+                          rule: has(self.additionalVolumeClaimTemplateSetName) ==
+                            has(oldSelf.additionalVolumeClaimTemplateSetName) && (!has(self.additionalVolumeClaimTemplateSetName)
+                            || self.additionalVolumeClaimTemplateSetName == oldSelf.additionalVolumeClaimTemplateSetName)
                       maxItems: 32
                       minItems: 1
                       type: array
-                      x-kubernetes-list-type: atomic
+                      x-kubernetes-list-map-keys:
+                      - name
+                      x-kubernetes-list-type: map
                     replicas:
                       description: |-
                         Number of replicas in the shard.
@@ -9057,6 +9148,11 @@ spec:
                   x-kubernetes-validations:
                   - message: exactly one of replicas or replicaSpecs must be set
                     rule: has(self.replicas) != has(self.replicaSpecs)
+                  - message: 'shard additionalVolumeClaimTemplateSetName cannot be
+                      changed: the set of disks of a replica is fixed at its creation'
+                    rule: has(self.additionalVolumeClaimTemplateSetName) == has(oldSelf.additionalVolumeClaimTemplateSetName)
+                      && (!has(self.additionalVolumeClaimTemplateSetName) || self.additionalVolumeClaimTemplateSetName
+                      == oldSelf.additionalVolumeClaimTemplateSetName)
                 maxItems: 128
                 minItems: 1
                 type: array
@@ -9078,8 +9174,6 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: exactly one of keeperClusterRef or externalKeeper must be set
-              rule: has(self.keeperClusterRef) != has(self.externalKeeper)
             - message: podTemplateName must reference an entry in podTemplates
               rule: '!has(self.podTemplateName) || (has(self.podTemplates) && self.podTemplates.exists(t,
                 t.name == self.podTemplateName))'
@@ -9121,6 +9215,11 @@ spec:
                 || s.replicaSpecs.all(r, !has(r.additionalVolumeClaimTemplateSetName)
                 || (has(self.additionalVolumeClaimTemplateSets) && self.additionalVolumeClaimTemplateSets.exists(t,
                 t.name == r.additionalVolumeClaimTemplateSetName))))'
+            - message: 'additionalVolumeClaimTemplateSetName cannot be changed: the
+                set of disks of a replica is fixed at its creation'
+              rule: has(self.additionalVolumeClaimTemplateSetName) == has(oldSelf.additionalVolumeClaimTemplateSetName)
+                && (!has(self.additionalVolumeClaimTemplateSetName) || self.additionalVolumeClaimTemplateSetName
+                == oldSelf.additionalVolumeClaimTemplateSetName)
           status:
             description: ClickHouseClusterStatus defines the observed state of ClickHouseCluster.
             properties:
@@ -9183,6 +9282,10 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              configurationRevision:
+                description: ConfigurationRevision indicates target configuration
+                  revision for every replica.
+                type: string
               currentRevision:
                 description: CurrentRevision indicates latest applied ClickHouseCluster
                   spec revision.
@@ -9225,6 +9328,10 @@ spec:
                   all shards.
                 format: int32
                 type: integer
+              statefulSetRevision:
+                description: StatefulSetRevision indicates target StatefulSet revision
+                  for every replica.
+                type: string
               updateRevision:
                 description: UpdateRevision indicates latest requested ClickHouseCluster
                   spec revision.

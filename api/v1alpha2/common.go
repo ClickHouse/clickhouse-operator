@@ -2,7 +2,6 @@ package v1alpha2
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -102,23 +101,6 @@ func (t *PodDisruptionBudgetTemplate) Ignored() bool {
 	return t != nil && t.Policy == PDBPolicyIgnored
 }
 
-// Validate validates the PodDisruptionBudgetTemplate configuration.
-func (t *PodDisruptionBudgetTemplate) Validate() error {
-	if t == nil {
-		return nil
-	}
-
-	if t.Spec.Selector != nil {
-		return errors.New("podDisruptionBudget.spec.selector is managed by the operator")
-	}
-
-	if t.Spec.MinAvailable != nil && t.Spec.MaxUnavailable != nil {
-		return errors.New("only one of podDisruptionBudget.spec.minAvailable or podDisruptionBudget.spec.maxUnavailable can be set")
-	}
-
-	return nil
-}
-
 // ApplyOverrides merges the template onto the operator-generated PodDisruptionBudget.
 // The operator-generated selector, labels and annotations take precedence over the template.
 func (t *PodDisruptionBudgetTemplate) ApplyOverrides(pdb *policyv1.PodDisruptionBudget) error {
@@ -181,7 +163,8 @@ type PodTemplateSpec struct {
 	// and `imagePullSecrets` by name, `topologySpreadConstraints` by topologyKey.
 	// The server container is addressed by name: "clickhouse" for ClickHouseCluster, "keeper" for KeeperCluster;
 	// set its `image`, `resources`, `env`, `volumeMounts`, probes etc. there.
-	// A volume replaces any operator volume with the same name, affinity scheduling term lists are
+	// Volumes must not use the names of the operator-managed volumes (and, for ClickHouseCluster, of the
+	// additional disks); other volumes are added to the operator volumes. Affinity scheduling term lists are
 	// appended to the operator defaults, and a non-nil securityContext, probe or lifecycle fully
 	// replaces the corresponding operator default.
 	// The `containers` list is optional here, the operator always provides the server container.
@@ -227,7 +210,7 @@ type SchedulingSpec struct {
 	// across domains: a required TopologySpreadConstraint (maxSkew 1, DoNotSchedule) plus a preferred PodAntiAffinity rule.
 	// Pods of different shards may share a domain, so multiple pods per domain are allowed.
 	// With fewer domains than replicas, several replicas share a domain, still evenly balanced.
-	// For ClickHouseCluster with keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
+	// For ClickHouseCluster with coordination.keeperClusterRef, pods additionally prefer domains hosting the Keeper pods they use.
 	// Recommended to be set to "topology.kubernetes.io/zone".
 	// +optional
 	ZoneKey *string `json:"zoneKey,omitempty"`
@@ -298,7 +281,7 @@ const (
 )
 
 // TLSSpec defines cluster TLS configuration.
-// +kubebuilder:validation:XValidation:rule="!has(self.mode) || self.mode == 'Disabled' || has(self.serverCertSecret)",message="serverCertSecret must be specified when TLS is enabled"
+// +kubebuilder:validation:XValidation:rule="!has(self.mode) || self.mode == 'Disabled' || (has(self.serverCertSecret) && has(self.serverCertSecret.name) && size(self.serverCertSecret.name) > 0)",message="serverCertSecret must be specified when TLS is enabled"
 type TLSSpec struct {
 	// Mode controls whether TLS is enabled and whether it is enforced for all connections.
 	// "Enabled" opens secure ports alongside the plain text ones, "Required" disables the plain text ports.
@@ -329,19 +312,6 @@ func (s *TLSSpec) Required() bool {
 	return s != nil && s.Mode == TLSModeRequired
 }
 
-// Validate validates the TLSSpec configuration.
-func (s *TLSSpec) Validate() error {
-	if s == nil {
-		return nil
-	}
-
-	if s.Enabled() && (s.ServerCertSecret == nil || s.ServerCertSecret.Name == "") {
-		return errors.New("serverCertSecret must be specified when TLS is enabled")
-	}
-
-	return s.CABundle.Validate()
-}
-
 // CABundleSource selects the source of a CA bundle, exactly one of secret or configMap must be set.
 // +kubebuilder:validation:XValidation:rule="has(self.secret) != has(self.configMap)",message="exactly one of secret or configMap must be set"
 type CABundleSource struct {
@@ -351,19 +321,6 @@ type CABundleSource struct {
 	// Select the CA bundle from a ConfigMap key.
 	// +optional
 	ConfigMap *CABundleKeySelector `json:"configMap,omitempty"`
-}
-
-// Validate validates the CABundleSource configuration.
-func (s *CABundleSource) Validate() error {
-	if s == nil {
-		return nil
-	}
-
-	if (s.Secret != nil) == (s.ConfigMap != nil) {
-		return errors.New("exactly one of caBundle secret or configMap must be set")
-	}
-
-	return nil
 }
 
 // CABundleKeySelector selects a key holding a CA bundle from an object in the cluster's namespace.
@@ -409,9 +366,11 @@ type ExternalSecret struct {
 type SecretKeySelector struct {
 	// The name of the secret in the cluster's namespace to select from.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name,omitempty"`
 	// The key of the secret to select from.  Must be a valid secret key.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key,omitempty"`
 }
 
@@ -423,23 +382,6 @@ type DefaultPasswordSelector struct {
 	// Select password value from a Secret key
 	// +kubebuilder:validation:Required
 	Secret *SecretKeySelector `json:"secret,omitempty"`
-}
-
-// Validate validates the DefaultPasswordSelector configuration.
-func (s *DefaultPasswordSelector) Validate() error {
-	if s == nil {
-		return nil
-	}
-
-	if s.Secret == nil {
-		return errors.New("default user password secret must be specified")
-	}
-
-	if s.Secret.Name == "" || s.Secret.Key == "" {
-		return errors.New("default user secret name and key must be specified")
-	}
-
-	return nil
 }
 
 const (
@@ -572,11 +514,15 @@ type NamedVolumeClaimTemplateSet struct {
 	// Templates of the additional per-pod PVCs.
 	// Each entry is propagated in StatefulSet volumeClaimTemplate, mounted at `/var/lib/clickhouse/disks/<name>` and
 	// added to the generated JBOD storage policy.
-	// The set of disks of a replica is fixed at its creation.
+	// Disk names must be unique within the set. The disks of an existing set cannot be added, removed or renamed,
+	// because the set of disks of a replica is fixed at its creation.
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:MaxItems=128
-	// +kubebuilder:validation:XValidation:rule="self.all(t, !has(t.metadata) || !t.metadata.name.endsWith('-encrypted'))",message="names ending in '-encrypted' are reserved for generated encrypted disk names"
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:XValidation:rule="self.all(t, !t.metadata.name.endsWith('-encrypted'))",message="names ending in '-encrypted' are reserved for generated encrypted disk names"
+	// +kubebuilder:validation:XValidation:rule="self.all(t, !(t.metadata.name in ['clickhouse-storage-volume', 'default']))",message="disk names 'clickhouse-storage-volume' and 'default' are reserved for the data volume and the ClickHouse default disk"
+	// +kubebuilder:validation:XValidation:rule="self.all(t, self.exists_one(u, u.metadata.name == t.metadata.name))",message="disk names must be unique within a set"
+	// +kubebuilder:validation:XValidation:rule="self.size() == oldSelf.size() && oldSelf.all(o, self.exists(n, n.metadata.name == o.metadata.name))",message="disks of an existing set cannot be added, removed or renamed: the set of disks of a replica is fixed at its creation"
 	Templates []PersistentVolumeClaimTemplate `json:"templates"`
 }
 
@@ -598,7 +544,8 @@ func findVolumeClaimTemplateSet(sets []NamedVolumeClaimTemplateSet, name string)
 
 // PersistentVolumeClaimTemplate is a named template for a per-replica PersistentVolumeClaim.
 type PersistentVolumeClaimTemplate struct {
-	// Metadata template of the volume claim.
+	// Metadata template of the volume claim. The name is the disk name.
+	// +kubebuilder:validation:Required
 	NamedTemplateMeta `json:"metadata,omitempty"`
 
 	// Spec defines the desired characteristics of a volume requested by a pod author.

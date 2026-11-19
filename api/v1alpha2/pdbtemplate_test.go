@@ -59,14 +59,4 @@ var _ = Describe("PodDisruptionBudgetTemplate", func() {
 		Expect(pdb.Spec.Selector).To(Equal(operatorPDB().Spec.Selector))
 		Expect(*pdb.Spec.MaxUnavailable).To(Equal(intstr.FromInt32(1)))
 	})
-
-	It("should reject a selector and both minAvailable and maxUnavailable", func() {
-		Expect((&PodDisruptionBudgetTemplate{Spec: policyv1.PodDisruptionBudgetSpec{
-			Selector: &metav1.LabelSelector{},
-		}}).Validate()).To(MatchError(ContainSubstring("selector")))
-		Expect((&PodDisruptionBudgetTemplate{Spec: policyv1.PodDisruptionBudgetSpec{
-			MinAvailable:   new(intstr.FromInt32(1)),
-			MaxUnavailable: new(intstr.FromInt32(1)),
-		}}).Validate()).To(MatchError(ContainSubstring("only one of")))
-	})
 })

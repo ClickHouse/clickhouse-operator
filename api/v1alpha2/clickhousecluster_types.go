@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/distribution/reference"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/ClickHouse/clickhouse-operator/internal"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
@@ -25,14 +27,19 @@ type ClickHouseNetworkSpec struct {
 
 	// AdditionalPorts declares extra TCP ports to expose on the ClickHouse Pod and the public headless Service.
 	// The operator only adds the ports to the Kubernetes resources, it does not configure the ClickHouse server to listen on them.
+	// Names and port numbers must be unique, and must not collide with the operator-managed endpoints,
+	// including the TLS ones, which stay reserved whether TLS is enabled or not.
 	// +listType=map
 	// +listMapKey=name
 	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:XValidation:rule="self.all(p, self.exists_one(q, q.port == p.port))",message="additionalPorts must not repeat the same port"
+	// +kubebuilder:validation:XValidation:rule="self.all(p, !(p.port in [8123, 8443, 9000, 9440, 9009, 9363, 9001, 9002]))",message="additionalPorts must not use a port reserved for operator-managed endpoints (8123, 8443, 9000, 9440, 9009, 9363, 9001, 9002)"
+	// +kubebuilder:validation:XValidation:rule="self.all(p, !(p.name in ['http', 'http-secure', 'tcp', 'tcp-secure', 'interserver', 'prometheus', 'management', 'management-http']))",message="additionalPorts must not use a name reserved by the operator"
 	AdditionalPorts []AdditionalPort `json:"additionalPorts,omitempty"`
 }
 
 // ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
-// +kubebuilder:validation:XValidation:rule="has(self.keeperClusterRef) != has(self.externalKeeper)",message="exactly one of keeperClusterRef or externalKeeper must be set"
 // +kubebuilder:validation:XValidation:rule="!has(self.podTemplateName) || (has(self.podTemplates) && self.podTemplates.exists(t, t.name == self.podTemplateName))",message="podTemplateName must reference an entry in podTemplates"
 // +kubebuilder:validation:XValidation:rule="!has(self.shardSpecs) || (!has(self.shards) && !has(self.replicas))",message="shardSpecs is mutually exclusive with shards and replicas"
 // +kubebuilder:validation:XValidation:rule="!has(self.shardSpecs) || self.shardSpecs.all(s, !has(s.podTemplateName) || (has(self.podTemplates) && self.podTemplates.exists(t, t.name == s.podTemplateName)))",message="shardSpecs podTemplateName must reference an entry in podTemplates"
@@ -43,6 +50,7 @@ type ClickHouseNetworkSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.additionalVolumeClaimTemplateSetName) || (has(self.additionalVolumeClaimTemplateSets) && self.additionalVolumeClaimTemplateSets.exists(t, t.name == self.additionalVolumeClaimTemplateSetName))",message="additionalVolumeClaimTemplateSetName must reference an entry in additionalVolumeClaimTemplateSets"
 // +kubebuilder:validation:XValidation:rule="!has(self.shardSpecs) || self.shardSpecs.all(s, !has(s.additionalVolumeClaimTemplateSetName) || (has(self.additionalVolumeClaimTemplateSets) && self.additionalVolumeClaimTemplateSets.exists(t, t.name == s.additionalVolumeClaimTemplateSetName)))",message="shardSpecs additionalVolumeClaimTemplateSetName must reference an entry in additionalVolumeClaimTemplateSets"
 // +kubebuilder:validation:XValidation:rule="!has(self.shardSpecs) || self.shardSpecs.all(s, !has(s.replicaSpecs) || s.replicaSpecs.all(r, !has(r.additionalVolumeClaimTemplateSetName) || (has(self.additionalVolumeClaimTemplateSets) && self.additionalVolumeClaimTemplateSets.exists(t, t.name == r.additionalVolumeClaimTemplateSetName))))",message="replicaSpecs additionalVolumeClaimTemplateSetName must reference an entry in additionalVolumeClaimTemplateSets"
+// +kubebuilder:validation:XValidation:rule="has(self.additionalVolumeClaimTemplateSetName) == has(oldSelf.additionalVolumeClaimTemplateSetName) && (!has(self.additionalVolumeClaimTemplateSetName) || self.additionalVolumeClaimTemplateSetName == oldSelf.additionalVolumeClaimTemplateSetName)",message="additionalVolumeClaimTemplateSetName cannot be changed: the set of disks of a replica is fixed at its creation"
 type ClickHouseClusterSpec struct {
 	// Number of replicas in every shard.
 	// Mutually exclusive with `shardSpecs`. Defaults to 3 when `shardSpecs` is unset.
@@ -69,19 +77,11 @@ type ClickHouseClusterSpec struct {
 	// +kubebuilder:validation:MaxItems=128
 	ShardSpecs []ClickHouseShardSpec `json:"shardSpecs,omitempty"`
 
-	// Reference to the KeeperCluster that is used for ClickHouse coordination.
-	// When namespace is omitted, the ClickHouseCluster namespace is used.
-	// Mutually exclusive with `externalKeeper`, exactly one of them must be set.
+	// Coordination configures the Keeper ensemble ClickHouse uses for coordination.
+	// When omitted, ClickHouse runs without Keeper.
 	// +optional
-	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
-	KeeperClusterRef *KeeperClusterReference `json:"keeperClusterRef,omitempty"`
-
-	// Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
-	// The operator does not own the lifecycle of these servers and only points ClickHouse at them.
-	// Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
-	// +optional
-	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="External Keeper"
-	ExternalKeeper *ExternalKeeperSpec `json:"externalKeeper,omitempty"`
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Coordination"
+	Coordination *CoordinationSpec `json:"coordination,omitempty"`
 
 	// Scheduling configures how the ClickHouse Pods are spread across nodes and topology domains.
 	// The generated rules apply to every Pod, regardless of the pod template it uses.
@@ -93,6 +93,8 @@ type ClickHouseClusterSpec struct {
 	// Each Pod uses the most specific reference: `shardSpecs[].replicaSpecs[].podTemplateName`, then
 	// `shardSpecs[].podTemplateName`, then `podTemplateName`. Templates are not merged with each other.
 	// The ClickHouse server container is addressed by name "clickhouse" in `spec.containers` of a template.
+	// Volumes must not use the names of the operator-managed volumes or of the additional disks
+	// (enforced by ValidatePodTemplateVolumes, the check is too expensive for CRD CEL rules).
 	// +optional
 	// +listType=map
 	// +listMapKey=name
@@ -103,6 +105,7 @@ type ClickHouseClusterSpec struct {
 	// Overridden per shard and per replica in `shardSpecs`.
 	// When no template is referenced, Pods use the operator defaults only.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	PodTemplateName string `json:"podTemplateName,omitempty"`
 
 	// DataVolumeClaimTemplates is the set of named templates for the ClickHouse data persistent volume claims.
@@ -120,6 +123,7 @@ type ClickHouseClusterSpec struct {
 	// DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the ClickHouse data
 	// volume claims. Overridden per shard and per replica in `shardSpecs`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	DataVolumeClaimTemplateName string `json:"dataVolumeClaimTemplateName,omitempty"`
 
 	// AdditionalVolumeClaimTemplateSets is the set of named groups of additional per-pod PVC templates for
@@ -127,16 +131,19 @@ type ClickHouseClusterSpec struct {
 	// Each replica uses the most specific reference: `shardSpecs[].replicaSpecs[].additionalVolumeClaimTemplateSetName`,
 	// then `shardSpecs[].additionalVolumeClaimTemplateSetName`, then `additionalVolumeClaimTemplateSetName`.
 	// Sets are not merged with each other.
+	// The set of disks of a replica is fixed at its creation: the disks of an existing set and the set references
+	// of existing shards and replicas cannot be changed, new shards and replicas may reference any set.
 	// +optional
 	// +listType=map
 	// +listMapKey=name
-	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:MaxItems=32
 	AdditionalVolumeClaimTemplateSets []NamedVolumeClaimTemplateSet `json:"additionalVolumeClaimTemplateSets,omitempty"`
 
 	// AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for the
 	// ClickHouse replicas. Overridden per shard and per replica in `shardSpecs`.
 	// When no set is referenced, replicas have no additional disks.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	AdditionalVolumeClaimTemplateSetName string `json:"additionalVolumeClaimTemplateSetName,omitempty"`
 
 	// Additional labels that are added to resources.
@@ -204,10 +211,20 @@ type AdditionalPort struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
+
+	// AppProtocol is the application protocol of the port, set as `appProtocol` on the Service port.
+	// Service meshes and load balancers use it to pick how to handle the traffic instead of detecting the protocol.
+	// Must be an IANA standard service name (e.g. "http", "tcp") or a domain-prefixed name
+	// (e.g. "kubernetes.io/h2c", "example.com/custom-protocol").
+	// +optional
+	// +kubebuilder:validation:MaxLength=317
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`
+	AppProtocol *string `json:"appProtocol,omitempty"`
 }
 
 // ClickHouseShardSpec describes a single shard of the cluster.
 // +kubebuilder:validation:XValidation:rule="has(self.replicas) != has(self.replicaSpecs)",message="exactly one of replicas or replicaSpecs must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.additionalVolumeClaimTemplateSetName) == has(oldSelf.additionalVolumeClaimTemplateSetName) && (!has(self.additionalVolumeClaimTemplateSetName) || self.additionalVolumeClaimTemplateSetName == oldSelf.additionalVolumeClaimTemplateSetName)",message="shard additionalVolumeClaimTemplateSetName cannot be changed: the set of disks of a replica is fixed at its creation"
 type ClickHouseShardSpec struct {
 	// Name of the shard, its stable identity.
 	// Lowercase alphanumerics and '-', kept short to fit Kubernetes resource names.
@@ -221,10 +238,16 @@ type ClickHouseShardSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// ReplicaSpecs describes every replica of the shard individually, the replica index is the list index.
+	// ReplicaSpecs describes every replica of the shard individually.
 	// Exactly one of `replicas` or `replicaSpecs` must be set.
+	// The replica name is the stable identity of the replica: it is used in the names of the replica resources.
+	// Removing an entry removes that replica only, the other replicas keep their names and templates.
+	// List order is not significant: replicas are ordered by name, numeric names by value first.
+	// With `replicas: N` the replicas are named "0" to "N-1", so a shard switched to `replicaSpecs` with these
+	// names keeps its existing replicas.
 	// +optional
-	// +listType=atomic
+	// +listType=map
+	// +listMapKey=name
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=32
 	ReplicaSpecs []ClickHouseReplicaSpec `json:"replicaSpecs,omitempty"`
@@ -232,34 +255,48 @@ type ClickHouseShardSpec struct {
 	// PodTemplateName references the entry of `podTemplates` used for the Pods of this shard.
 	// Overrides `spec.podTemplateName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	PodTemplateName string `json:"podTemplateName,omitempty"`
 
 	// DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the data volume
 	// claims of this shard. Overrides `spec.dataVolumeClaimTemplateName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	DataVolumeClaimTemplateName string `json:"dataVolumeClaimTemplateName,omitempty"`
 
 	// AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for the
 	// replicas of this shard. Overrides `spec.additionalVolumeClaimTemplateSetName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	AdditionalVolumeClaimTemplateSetName string `json:"additionalVolumeClaimTemplateSetName,omitempty"`
 }
 
 // ClickHouseReplicaSpec describes a single replica of a shard.
+// +kubebuilder:validation:XValidation:rule="has(self.additionalVolumeClaimTemplateSetName) == has(oldSelf.additionalVolumeClaimTemplateSetName) && (!has(self.additionalVolumeClaimTemplateSetName) || self.additionalVolumeClaimTemplateSetName == oldSelf.additionalVolumeClaimTemplateSetName)",message="replica additionalVolumeClaimTemplateSetName cannot be changed: the set of disks of a replica is fixed at its creation"
 type ClickHouseReplicaSpec struct {
+	// Name of the replica, its stable identity within the shard.
+	// Lowercase alphanumerics only, kept short to fit Kubernetes resource names. '-' is not allowed, so the
+	// "<shard>-<replica>" resource names stay unique.
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]+$`
+	// +kubebuilder:validation:MaxLength=15
+	Name string `json:"name"`
+
 	// PodTemplateName references the entry of `podTemplates` used for the Pod of this replica.
 	// Overrides the shard and cluster `podTemplateName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	PodTemplateName string `json:"podTemplateName,omitempty"`
 
 	// DataVolumeClaimTemplateName references the entry of `dataVolumeClaimTemplates` used for the data volume
 	// claim of this replica. Overrides the shard and cluster `dataVolumeClaimTemplateName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	DataVolumeClaimTemplateName string `json:"dataVolumeClaimTemplateName,omitempty"`
 
 	// AdditionalVolumeClaimTemplateSetName references the entry of `additionalVolumeClaimTemplateSets` used for this
 	// replica. Overrides the shard and cluster `additionalVolumeClaimTemplateSetName`.
 	// +optional
+	// +kubebuilder:validation:MaxLength=63
 	AdditionalVolumeClaimTemplateSetName string `json:"additionalVolumeClaimTemplateSetName,omitempty"`
 }
 
@@ -317,23 +354,57 @@ func (s *ClickHouseClusterSpec) ValidateImageVersionCatalog() error {
 	return errors.Join(errs...)
 }
 
+// ValidatePodTemplateVolumes checks that no volume in podTemplates uses the name of an operator-managed volume
+// or of a disk in additionalVolumeClaimTemplateSets: the operator adds volumes with these names to every Pod.
+// Every template is checked, referenced or not, against the disks of every set.
+func (s *ClickHouseClusterSpec) ValidatePodTemplateVolumes() error {
+	reserved := make(map[string]string, len(internal.ReservedClickHouseVolumeNames))
+	for _, name := range internal.ReservedClickHouseVolumeNames {
+		reserved[name] = "an operator-managed volume"
+	}
+
+	for _, set := range s.AdditionalVolumeClaimTemplateSets {
+		for _, disk := range set.Templates {
+			if _, ok := reserved[disk.Name]; !ok {
+				reserved[disk.Name] = fmt.Sprintf("a disk of additionalVolumeClaimTemplateSets %q", set.Name)
+			}
+		}
+	}
+
+	var errs []error
+
+	for i, tmpl := range s.PodTemplates {
+		for j, volume := range tmpl.Spec.Volumes {
+			if owner, ok := reserved[volume.Name]; ok {
+				errs = append(errs, fmt.Errorf(
+					"spec.podTemplates[%d].spec.volumes[%d].name: %q is reserved for %s", i, j, volume.Name, owner))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 // isPinnedImage reports whether the image reference has a digest, or a tag other than "latest".
 // A tag starting with a digit must start with major.minor, so major-only tags like "25", which move across
 // minor releases, are rejected. Other tags are accepted: whether a custom tag moves cannot be told from its name.
-// A ':' before the last '/' belongs to the registry port, not to a tag.
+// Malformed references are reported as not pinned.
 func isPinnedImage(image string) bool {
-	if strings.Contains(image, "@") {
-		return true
-	}
-
-	lastSegment := image[strings.LastIndex(image, "/")+1:]
-
-	idx := strings.LastIndex(lastSegment, ":")
-	if idx < 0 || idx == len(lastSegment)-1 {
+	ref, err := reference.ParseNormalizedNamed(image)
+	if err != nil {
 		return false
 	}
 
-	tag := lastSegment[idx+1:]
+	if _, ok := ref.(reference.Digested); ok {
+		return true
+	}
+
+	tagged, ok := ref.(reference.Tagged)
+	if !ok {
+		return false
+	}
+
+	tag := tagged.Tag()
 	if tag == "latest" {
 		return false
 	}
@@ -519,6 +590,12 @@ type ClickHouseClusterStatus struct {
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	ReadyReplicas int32 `json:"readyReplicas"`
+	// ConfigurationRevision indicates target configuration revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
+	ConfigurationRevision string `json:"configurationRevision,omitempty"`
+	// StatefulSetRevision indicates target StatefulSet revision for every replica.
+	// +operator-sdk:csv:customresourcedefinitions:type=status
+	StatefulSetRevision string `json:"statefulSetRevision,omitempty"`
 
 	// CurrentRevision indicates latest applied ClickHouseCluster spec revision.
 	// +operator-sdk:csv:customresourcedefinitions:type=status
@@ -544,6 +621,24 @@ type ImageVersion struct {
 	Image string `json:"image"`
 	// Version is the version reported by the image.
 	Version string `json:"version"`
+}
+
+// CoordinationSpec configures the Keeper ensemble used for ClickHouse coordination.
+// +kubebuilder:validation:XValidation:rule="has(self.keeperClusterRef) != has(self.externalKeeper)",message="exactly one of keeperClusterRef or externalKeeper must be set"
+type CoordinationSpec struct {
+	// Reference to the KeeperCluster that is used for ClickHouse coordination.
+	// When namespace is omitted, the ClickHouseCluster namespace is used.
+	// Mutually exclusive with `externalKeeper`, exactly one of them must be set.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Keeper Cluster Reference"
+	KeeperClusterRef *KeeperClusterReference `json:"keeperClusterRef,omitempty"`
+
+	// Keeper ensemble that is not managed by this operator, used for ClickHouse coordination.
+	// The operator does not own the lifecycle of these servers and only points ClickHouse at them.
+	// Mutually exclusive with `keeperClusterRef`, exactly one of them must be set.
+	// +optional
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="External Keeper"
+	ExternalKeeper *ExternalKeeperSpec `json:"externalKeeper,omitempty"`
 }
 
 // KeeperClusterReference identifies the KeeperCluster used by a ClickHouseCluster.
@@ -653,7 +748,8 @@ type ClickHouseCluster struct {
 type ClickHouseReplicaID struct {
 	// Shard is the shard name: "0" to "N-1" with `shards`, the entry name with `shardSpecs`.
 	Shard string
-	Index int32
+	// Replica is the replica name within the shard: "0" to "N-1" with `replicas`, the entry name with `replicaSpecs`.
+	Replica string
 }
 
 // ClickHouseIDFromLabels extracts ClickHouseReplicaID from given labels map.
@@ -663,19 +759,14 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 		return ClickHouseReplicaID{}, errors.New("missing shard ID label")
 	}
 
-	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
-	if !ok {
+	replica, ok := labels[controllerutil.LabelClickHouseReplicaID]
+	if !ok || replica == "" {
 		return ClickHouseReplicaID{}, errors.New("missing replica ID label")
 	}
 
-	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
-	if err != nil {
-		return ClickHouseReplicaID{}, fmt.Errorf("invalid replica ID %q: %w", replicaIDStr, err)
-	}
-
 	return ClickHouseReplicaID{
-		Shard: shard,
-		Index: int32(index),
+		Shard:   shard,
+		Replica: replica,
 	}, nil
 }
 
@@ -683,7 +774,7 @@ func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, erro
 func (id ClickHouseReplicaID) Labels() map[string]string {
 	return map[string]string{
 		controllerutil.LabelClickHouseShardID:   id.Shard,
-		controllerutil.LabelClickHouseReplicaID: strconv.Itoa(int(id.Index)),
+		controllerutil.LabelClickHouseReplicaID: id.Replica,
 	}
 }
 
@@ -695,7 +786,7 @@ func (id ClickHouseReplicaID) MarshalLog() any {
 }
 
 func (id ClickHouseReplicaID) String() string {
-	return fmt.Sprintf("(%s:%d)", id.Shard, id.Index)
+	return fmt.Sprintf("(%s:%s)", id.Shard, id.Replica)
 }
 
 // NamespacedName returns NamespacedName for the ClickHouseCluster.
@@ -772,13 +863,39 @@ func (v *ClickHouseCluster) ShardNames() []string {
 		names = append(names, shard.Name)
 	}
 
-	slices.SortFunc(names, compareShardNames)
+	slices.SortFunc(names, compareNames)
 
 	return names
 }
 
-// compareShardNames orders numeric names by value before the other names, which are ordered lexicographically.
-func compareShardNames(a, b string) int {
+// ShardReplicaNames returns the names of the replicas of the given shard in a deterministic order independent of
+// the `replicaSpecs` order: numeric names by value first, then the other names lexicographically.
+// With a replica count the names are "0" to "N-1".
+func (v *ClickHouseCluster) ShardReplicaNames(shard string) []string {
+	spec := v.ShardSpec(shard)
+	if spec == nil || len(spec.ReplicaSpecs) == 0 {
+		count := v.ShardReplicas(shard)
+
+		names := make([]string, 0, count)
+		for replica := range count {
+			names = append(names, strconv.Itoa(int(replica)))
+		}
+
+		return names
+	}
+
+	names := make([]string, 0, len(spec.ReplicaSpecs))
+	for _, replica := range spec.ReplicaSpecs {
+		names = append(names, replica.Name)
+	}
+
+	slices.SortFunc(names, compareNames)
+
+	return names
+}
+
+// compareNames orders numeric names by value before the other names, which are ordered lexicographically.
+func compareNames(a, b string) int {
 	an, aErr := strconv.ParseUint(a, 10, 64)
 	bn, bErr := strconv.ParseUint(b, 10, 64)
 
@@ -804,6 +921,22 @@ func (v *ClickHouseCluster) ShardSpec(shard string) *ClickHouseShardSpec {
 	for i := range v.Spec.ShardSpecs {
 		if v.Spec.ShardSpecs[i].Name == shard {
 			return &v.Spec.ShardSpecs[i]
+		}
+	}
+
+	return nil
+}
+
+// ReplicaSpec returns the `replicaSpecs` entry for the given replica, or nil when its shard defines replicas by count.
+func (v *ClickHouseCluster) ReplicaSpec(id ClickHouseReplicaID) *ClickHouseReplicaSpec {
+	shard := v.ShardSpec(id.Shard)
+	if shard == nil {
+		return nil
+	}
+
+	for i := range shard.ReplicaSpecs {
+		if shard.ReplicaSpecs[i].Name == id.Replica {
+			return &shard.ReplicaSpecs[i]
 		}
 	}
 
@@ -841,8 +974,8 @@ func (v *ClickHouseCluster) TotalReplicas() int32 {
 func (v *ClickHouseCluster) ReplicaIDs() iter.Seq[ClickHouseReplicaID] {
 	return func(yield func(ClickHouseReplicaID) bool) {
 		for _, shard := range v.ShardNames() {
-			for index := range v.ShardReplicas(shard) {
-				if !yield(ClickHouseReplicaID{Shard: shard, Index: index}) {
+			for _, replica := range v.ShardReplicaNames(shard) {
+				if !yield(ClickHouseReplicaID{Shard: shard, Replica: replica}) {
 					return
 				}
 			}
@@ -904,7 +1037,7 @@ func (v *ClickHouseCluster) HeadlessServiceName() string {
 
 // InternalServiceNameByReplicaID returns name of the internal headless Service for a replica.
 func (v *ClickHouseCluster) InternalServiceNameByReplicaID(id ClickHouseReplicaID) string {
-	return v.SpecificResourceName(fmt.Sprintf("internal-%s-%d", id.Shard, id.Index))
+	return v.SpecificResourceName(fmt.Sprintf("internal-%s-%s", id.Shard, id.Replica))
 }
 
 // PodDisruptionBudgetNameByShard returns name of the PodDisruptionBudget for the specific shard.
@@ -924,17 +1057,22 @@ func (v *ClickHouseCluster) SecretName() string {
 
 // ConfigMapNameByReplicaID returns name of the ConfigMap for the specific replica.
 func (v *ClickHouseCluster) ConfigMapNameByReplicaID(id ClickHouseReplicaID) string {
-	return v.SpecificResourceName(fmt.Sprintf("%s-%d", id.Shard, id.Index))
+	return v.SpecificResourceName(fmt.Sprintf("%s-%s", id.Shard, id.Replica))
 }
 
 // StatefulSetNameByReplicaID returns name of the StatefulSet for the specific replica.
 func (v *ClickHouseCluster) StatefulSetNameByReplicaID(id ClickHouseReplicaID) string {
-	return v.SpecificResourceName(fmt.Sprintf("%s-%d", id.Shard, id.Index))
+	return v.SpecificResourceName(fmt.Sprintf("%s-%s", id.Shard, id.Replica))
 }
 
 // KeeperClusterNamespacedName returns the fully-qualified KeeperCluster reference.
+// It returns an empty name when the cluster does not reference a KeeperCluster.
 func (v *ClickHouseCluster) KeeperClusterNamespacedName() types.NamespacedName {
-	return v.Spec.KeeperClusterRef.NamespacedName(v.Namespace)
+	if v.Spec.Coordination == nil {
+		return types.NamespacedName{}
+	}
+
+	return v.Spec.Coordination.KeeperClusterRef.NamespacedName(v.Namespace)
 }
 
 // HostnameByID returns domain name for the specific replica to access within Kubernetes cluster.
@@ -955,13 +1093,13 @@ func (v *ClickHouseCluster) templateNameFor(
 	shardName func(*ClickHouseShardSpec) string,
 	replicaName func(*ClickHouseReplicaSpec) string,
 ) string {
-	if shard := v.ShardSpec(id.Shard); shard != nil {
-		if id.Index >= 0 && int(id.Index) < len(shard.ReplicaSpecs) {
-			if name := replicaName(&shard.ReplicaSpecs[id.Index]); name != "" {
-				return name
-			}
+	if replica := v.ReplicaSpec(id); replica != nil {
+		if name := replicaName(replica); name != "" {
+			return name
 		}
+	}
 
+	if shard := v.ShardSpec(id.Shard); shard != nil {
 		if name := shardName(shard); name != "" {
 			return name
 		}

@@ -14,6 +14,8 @@ import (
 )
 
 // KeeperClusterSpec defines the desired state of KeeperCluster.
+// +kubebuilder:validation:XValidation:rule="has(self.dataVolumeClaimTemplate) == has(oldSelf.dataVolumeClaimTemplate)",message="dataVolumeClaimTemplate cannot be added or removed after cluster creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.podTemplate) || !has(self.podTemplate.spec) || !has(self.podTemplate.spec.volumes) || self.podTemplate.spec.volumes.all(v, !(v.name in ['clickhouse-keeper-quorum-config-volume', 'clickhouse-storage-volume', 'clickhouse-keeper-config-volume', 'clickhouse-server-tls-volume']))",message="podTemplate volumes must not use a name reserved by the operator (clickhouse-keeper-quorum-config-volume, clickhouse-storage-volume, clickhouse-keeper-config-volume, clickhouse-server-tls-volume)"
 type KeeperClusterSpec struct {
 	// Number of replicas in the cluster
 	// +optional
@@ -34,6 +36,7 @@ type KeeperClusterSpec struct {
 	PodTemplate *PodTemplateSpec `json:"podTemplate,omitempty"`
 
 	// Template of the persistent volume claim for ClickHouse Keeper data.
+	// Cannot be added or removed after cluster creation.
 	// +optional
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Data Volume Claim Template"
 	DataVolumeClaimTemplate *DataVolumeClaimTemplate `json:"dataVolumeClaimTemplate,omitempty"`

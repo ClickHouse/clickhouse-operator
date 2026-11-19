@@ -79,8 +79,10 @@ var _ = Describe("ClickHouseCluster", func() {
 				Name:      "test",
 				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
-					KeeperClusterRef: &KeeperClusterReference{
-						Name: "keeper",
+					Coordination: &CoordinationSpec{
+						KeeperClusterRef: &KeeperClusterReference{
+							Name: "keeper",
+						},
 					},
 				},
 			}
@@ -96,9 +98,11 @@ var _ = Describe("ClickHouseCluster", func() {
 				Name:      "test",
 				Namespace: "clickhouse-ns",
 				Spec: ClickHouseClusterSpec{
-					KeeperClusterRef: &KeeperClusterReference{
-						Name:      "keeper",
-						Namespace: "keeper-ns",
+					Coordination: &CoordinationSpec{
+						KeeperClusterRef: &KeeperClusterReference{
+							Name:      "keeper",
+							Namespace: "keeper-ns",
+						},
 					},
 				},
 			}
@@ -107,6 +111,15 @@ var _ = Describe("ClickHouseCluster", func() {
 				Namespace: "keeper-ns",
 				Name:      "keeper",
 			}))
+		})
+
+		It("should return an empty name when coordination is not set", func() {
+			cluster := &ClickHouseCluster{
+				Name:      "test",
+				Namespace: "clickhouse-ns",
+			}
+
+			Expect(cluster.KeeperClusterNamespacedName()).To(Equal(types.NamespacedName{}))
 		})
 	})
 
@@ -123,25 +136,25 @@ var _ = Describe("ClickHouseCluster", func() {
 
 		It("should use cluster.local when clusterDomain is empty", func() {
 			cluster.Spec.Network.ClusterDomain = ""
-			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Index: 0})
+			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Replica: "0"})
 			Expect(hostname).To(Equal("test-clickhouse-0-0-0.test-clickhouse-headless.test-ns.svc." + testDefaultClusterDomain))
 		})
 
 		It("should use custom cluster domain when specified", func() {
 			cluster.Spec.Network.ClusterDomain = "k8s.example.com"
-			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Index: 0})
+			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Replica: "0"})
 			Expect(hostname).To(Equal("test-clickhouse-0-0-0.test-clickhouse-headless.test-ns.svc.k8s.example.com"))
 		})
 
 		It("should use explicit cluster.local when specified", func() {
 			cluster.Spec.Network.ClusterDomain = testDefaultClusterDomain
-			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "1", Index: 2})
+			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "1", Replica: "2"})
 			Expect(hostname).To(Equal("test-clickhouse-1-2-0.test-clickhouse-headless.test-ns.svc." + testDefaultClusterDomain))
 		})
 
 		It("should handle complex domain with subdomains", func() {
 			cluster.Spec.Network.ClusterDomain = "internal.corp.example.com"
-			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Index: 1})
+			hostname := cluster.HostnameByID(ClickHouseReplicaID{Shard: "0", Replica: "1"})
 			Expect(hostname).To(Equal("test-clickhouse-0-1-0.test-clickhouse-headless.test-ns.svc.internal.corp.example.com"))
 		})
 	})
@@ -158,7 +171,7 @@ var _ = Describe("ClickHouseCluster", func() {
 		})
 
 		It("should use the internal service with the default cluster domain", func() {
-			id := ClickHouseReplicaID{Shard: "0", Index: 1}
+			id := ClickHouseReplicaID{Shard: "0", Replica: "1"}
 			hostname := cluster.InternalHostnameByID(id)
 			Expect(cluster.InternalServiceNameByReplicaID(id)).To(Equal("test-clickhouse-internal-0-1"))
 			Expect(hostname).To(Equal("test-clickhouse-internal-0-1.test-ns.svc." + testDefaultClusterDomain))
@@ -166,7 +179,7 @@ var _ = Describe("ClickHouseCluster", func() {
 
 		It("should use a custom cluster domain", func() {
 			cluster.Spec.Network.ClusterDomain = "k8s.example.com"
-			hostname := cluster.InternalHostnameByID(ClickHouseReplicaID{Shard: "1", Index: 2})
+			hostname := cluster.InternalHostnameByID(ClickHouseReplicaID{Shard: "1", Replica: "2"})
 			Expect(hostname).To(Equal("test-clickhouse-internal-1-2.test-ns.svc.k8s.example.com"))
 		})
 	})

@@ -147,3 +147,38 @@ var _ = Describe("WithDefaults", func() {
 		Expect(templates[1].Spec.AccessModes).To(ConsistOf(corev1.ReadWriteOncePod))
 	})
 })
+
+var _ = Describe("ValidatePodTemplateVolumes", func() {
+	withVolume := func(name string) ClickHouseClusterSpec {
+		return ClickHouseClusterSpec{
+			PodTemplates: []NamedPodTemplate{{
+				Name: "tmpl",
+				Spec: corev1.PodSpec{Volumes: []corev1.Volume{{Name: name}}},
+			}},
+			AdditionalVolumeClaimTemplateSets: []NamedVolumeClaimTemplateSet{{
+				Name:      "jbod",
+				Templates: []PersistentVolumeClaimTemplate{{Name: "disk1"}},
+			}},
+		}
+	}
+
+	DescribeTable("should reject operator-reserved names",
+		func(name, expectedOwner string) {
+			spec := withVolume(name)
+			if expectedOwner == "" {
+				Expect(spec.ValidatePodTemplateVolumes()).To(Succeed())
+				return
+			}
+
+			Expect(spec.ValidatePodTemplateVolumes()).To(MatchError(And(
+				ContainSubstring("spec.podTemplates[0].spec.volumes[0].name"),
+				ContainSubstring(expectedOwner),
+			)))
+		},
+		Entry("custom volume", "extra", ""),
+		Entry("data volume", "clickhouse-storage-volume", "an operator-managed volume"),
+		Entry("TLS volume", "clickhouse-server-tls-volume", "an operator-managed volume"),
+		Entry("custom CA volume", "clickhouse-server-custom-ca-volume", "an operator-managed volume"),
+		Entry("additional disk", "disk1", `a disk of additionalVolumeClaimTemplateSets "jbod"`),
+	)
+})

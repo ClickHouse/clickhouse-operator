@@ -25,12 +25,12 @@ var _ = Describe("ShardSpecs", func() {
 			cluster := newCluster(ClickHouseClusterSpec{Shards: new(int32(2)), Replicas: new(int32(3))})
 			Expect(cluster.ShardNames()).To(Equal([]string{"0", "1"}))
 			Expect(slices.Collect(cluster.ReplicaIDs())).To(Equal([]ClickHouseReplicaID{
-				{Shard: "0", Index: 0}, {Shard: "0", Index: 1}, {Shard: "0", Index: 2},
-				{Shard: "1", Index: 0}, {Shard: "1", Index: 1}, {Shard: "1", Index: 2},
+				{Shard: "0", Replica: "0"}, {Shard: "0", Replica: "1"}, {Shard: "0", Replica: "2"},
+				{Shard: "1", Replica: "0"}, {Shard: "1", Replica: "1"}, {Shard: "1", Replica: "2"},
 			}))
 			Expect(cluster.TotalReplicas()).To(BeEquivalentTo(6))
 
-			id := ClickHouseReplicaID{Shard: "1", Index: 2}
+			id := ClickHouseReplicaID{Shard: "1", Replica: "2"}
 			Expect(cluster.StatefulSetNameByReplicaID(id)).To(Equal("test-clickhouse-1-2"))
 			Expect(cluster.ConfigMapNameByReplicaID(id)).To(Equal("test-clickhouse-1-2"))
 			Expect(cluster.InternalServiceNameByReplicaID(id)).To(Equal("test-clickhouse-internal-1-2"))
@@ -45,7 +45,7 @@ var _ = Describe("ShardSpecs", func() {
 			cluster = newCluster(ClickHouseClusterSpec{ShardSpecs: []ClickHouseShardSpec{
 				{Name: "b", Replicas: new(int32(1))},
 				{Name: "10", Replicas: new(int32(2))},
-				{Name: "a", ReplicaSpecs: []ClickHouseReplicaSpec{{}, {}, {}}},
+				{Name: "a", ReplicaSpecs: []ClickHouseReplicaSpec{{Name: "canary"}, {Name: "10"}, {Name: "2"}}},
 				{Name: "2", Replicas: new(int32(1))},
 			}})
 		})
@@ -64,16 +64,23 @@ var _ = Describe("ShardSpecs", func() {
 
 		It("should iterate replicas of every shard in shard order", func() {
 			Expect(slices.Collect(cluster.ReplicaIDs())).To(Equal([]ClickHouseReplicaID{
-				{Shard: "2", Index: 0},
-				{Shard: "10", Index: 0}, {Shard: "10", Index: 1},
-				{Shard: "a", Index: 0}, {Shard: "a", Index: 1}, {Shard: "a", Index: 2},
-				{Shard: "b", Index: 0},
+				{Shard: "2", Replica: "0"},
+				{Shard: "10", Replica: "0"}, {Shard: "10", Replica: "1"},
+				{Shard: "a", Replica: "2"}, {Shard: "a", Replica: "10"}, {Shard: "a", Replica: "canary"},
+				{Shard: "b", Replica: "0"},
 			}))
 		})
 
-		It("should use the shard name in resource names", func() {
-			id := ClickHouseReplicaID{Shard: "a", Index: 1}
-			Expect(cluster.StatefulSetNameByReplicaID(id)).To(Equal("test-clickhouse-a-1"))
+		It("should order replicas of a shard numerically first, then lexicographically", func() {
+			Expect(cluster.ShardReplicaNames("a")).To(Equal([]string{"2", "10", "canary"}))
+			Expect(cluster.ShardReplicaNames("10")).To(Equal([]string{"0", "1"}))
+			Expect(cluster.ShardReplicaNames("missing")).To(BeEmpty())
+		})
+
+		It("should use the shard and replica names in resource names", func() {
+			id := ClickHouseReplicaID{Shard: "a", Replica: "canary"}
+			Expect(cluster.StatefulSetNameByReplicaID(id)).To(Equal("test-clickhouse-a-canary"))
+			Expect(cluster.InternalServiceNameByReplicaID(id)).To(Equal("test-clickhouse-internal-a-canary"))
 			Expect(cluster.PodDisruptionBudgetNameByShard("a")).To(Equal("test-clickhouse-a"))
 		})
 	})
@@ -97,7 +104,7 @@ var _ = Describe("ShardSpecs", func() {
 				ShardSpecs: []ClickHouseShardSpec{
 					{Name: "plain", Replicas: new(int32(1))},
 					{Name: "custom", PodTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-						{}, {PodTemplateName: "replica"}, {PodTemplateName: "missing"},
+						{Name: "0"}, {Name: "1", PodTemplateName: "replica"}, {Name: "2", PodTemplateName: "missing"},
 					}},
 				},
 			})
@@ -116,15 +123,25 @@ var _ = Describe("ShardSpecs", func() {
 				Expect(tmpl).NotTo(BeNil())
 				Expect(tmpl.Spec.PriorityClassName).To(Equal(expectedPriority))
 			},
-			Entry("cluster template", ClickHouseReplicaID{Shard: "plain", Index: 0}, "cluster", "cluster"),
-			Entry("shard template", ClickHouseReplicaID{Shard: "custom", Index: 0}, "shard", "shard"),
-			Entry("replica template", ClickHouseReplicaID{Shard: "custom", Index: 1}, "replica", "replica"),
-			Entry("missing template", ClickHouseReplicaID{Shard: "custom", Index: 2}, "missing", ""),
+			Entry("cluster template", ClickHouseReplicaID{Shard: "plain", Replica: "0"}, "cluster", "cluster"),
+			Entry("shard template", ClickHouseReplicaID{Shard: "custom", Replica: "0"}, "shard", "shard"),
+			Entry("replica template", ClickHouseReplicaID{Shard: "custom", Replica: "1"}, "replica", "replica"),
+			Entry("missing template", ClickHouseReplicaID{Shard: "custom", Replica: "2"}, "missing", ""),
 		)
+
+		It("should keep the templates of the other replicas when a replica is removed", func() {
+			shard := cluster.ShardSpec("custom")
+			shard.ReplicaSpecs = slices.Delete(shard.ReplicaSpecs, 0, 1)
+
+			Expect(cluster.ShardReplicaNames("custom")).To(Equal([]string{"1", "2"}))
+			Expect(cluster.PodTemplateNameFor(ClickHouseReplicaID{Shard: "custom", Replica: "1"})).To(Equal("replica"))
+			Expect(cluster.PodTemplateNameFor(ClickHouseReplicaID{Shard: "custom", Replica: "2"})).To(Equal("missing"))
+			Expect(cluster.ReplicaSpec(ClickHouseReplicaID{Shard: "custom", Replica: "0"})).To(BeNil())
+		})
 
 		It("should return nil when nothing is referenced", func() {
 			plain := newCluster(ClickHouseClusterSpec{PodTemplates: templates, Shards: new(int32(1))})
-			Expect(plain.PodTemplateFor(ClickHouseReplicaID{Shard: "0", Index: 0})).To(BeNil())
+			Expect(plain.PodTemplateFor(ClickHouseReplicaID{Shard: "0", Replica: "0"})).To(BeNil())
 		})
 	})
 
@@ -151,7 +168,7 @@ var _ = Describe("ShardSpecs", func() {
 				ShardSpecs: []ClickHouseShardSpec{
 					{Name: "plain", Replicas: new(int32(1))},
 					{Name: "custom", DataVolumeClaimTemplateName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-						{}, {DataVolumeClaimTemplateName: "replica"}, {DataVolumeClaimTemplateName: "missing"},
+						{Name: "0"}, {Name: "1", DataVolumeClaimTemplateName: "replica"}, {Name: "2", DataVolumeClaimTemplateName: "missing"},
 					}},
 				},
 			})
@@ -170,23 +187,23 @@ var _ = Describe("ShardSpecs", func() {
 				Expect(tmpl).NotTo(BeNil())
 				Expect(tmpl.Spec.StorageClassName).To(HaveValue(Equal(expectedClass)))
 			},
-			Entry("cluster template", ClickHouseReplicaID{Shard: "plain", Index: 0}, "cluster", "cluster"),
-			Entry("shard template", ClickHouseReplicaID{Shard: "custom", Index: 0}, "shard", "shard"),
-			Entry("replica template", ClickHouseReplicaID{Shard: "custom", Index: 1}, "replica", "replica"),
-			Entry("missing template", ClickHouseReplicaID{Shard: "custom", Index: 2}, "missing", ""),
+			Entry("cluster template", ClickHouseReplicaID{Shard: "plain", Replica: "0"}, "cluster", "cluster"),
+			Entry("shard template", ClickHouseReplicaID{Shard: "custom", Replica: "0"}, "shard", "shard"),
+			Entry("replica template", ClickHouseReplicaID{Shard: "custom", Replica: "1"}, "replica", "replica"),
+			Entry("missing template", ClickHouseReplicaID{Shard: "custom", Replica: "2"}, "missing", ""),
 		)
 
 		It("should use the cluster template in count mode", func() {
 			counted := newCluster(ClickHouseClusterSpec{
 				DataVolumeClaimTemplates: templates, DataVolumeClaimTemplateName: "cluster", Shards: new(int32(2)),
 			})
-			Expect(counted.DataVolumeClaimTemplateFor(ClickHouseReplicaID{Shard: "1", Index: 0}).Spec.StorageClassName).
+			Expect(counted.DataVolumeClaimTemplateFor(ClickHouseReplicaID{Shard: "1", Replica: "0"}).Spec.StorageClassName).
 				To(HaveValue(Equal("cluster")))
 		})
 
 		It("should return nil when nothing is referenced", func() {
 			plain := newCluster(ClickHouseClusterSpec{DataVolumeClaimTemplates: templates, Shards: new(int32(1))})
-			Expect(plain.DataVolumeClaimTemplateFor(ClickHouseReplicaID{Shard: "0", Index: 0})).To(BeNil())
+			Expect(plain.DataVolumeClaimTemplateFor(ClickHouseReplicaID{Shard: "0", Replica: "0"})).To(BeNil())
 		})
 	})
 
@@ -227,7 +244,7 @@ var _ = Describe("ShardSpecs", func() {
 				ShardSpecs: []ClickHouseShardSpec{
 					{Name: "plain", Replicas: new(int32(1))},
 					{Name: "custom", AdditionalVolumeClaimTemplateSetName: "shard", ReplicaSpecs: []ClickHouseReplicaSpec{
-						{}, {AdditionalVolumeClaimTemplateSetName: "replica"}, {AdditionalVolumeClaimTemplateSetName: "missing"},
+						{Name: "0"}, {Name: "1", AdditionalVolumeClaimTemplateSetName: "replica"}, {Name: "2", AdditionalVolumeClaimTemplateSetName: "missing"},
 					}},
 				},
 			})
@@ -245,15 +262,15 @@ var _ = Describe("ShardSpecs", func() {
 
 				Expect(diskNames(templates)).To(Equal(expectedDisks))
 			},
-			Entry("cluster set", ClickHouseReplicaID{Shard: "plain", Index: 0}, "cluster", []string{"c1"}),
-			Entry("shard set", ClickHouseReplicaID{Shard: "custom", Index: 0}, "shard", []string{"s1", "s2"}),
-			Entry("replica set", ClickHouseReplicaID{Shard: "custom", Index: 1}, "replica", []string{"r1", "r2", "r3"}),
-			Entry("missing set", ClickHouseReplicaID{Shard: "custom", Index: 2}, "missing", nil),
+			Entry("cluster set", ClickHouseReplicaID{Shard: "plain", Replica: "0"}, "cluster", []string{"c1"}),
+			Entry("shard set", ClickHouseReplicaID{Shard: "custom", Replica: "0"}, "shard", []string{"s1", "s2"}),
+			Entry("replica set", ClickHouseReplicaID{Shard: "custom", Replica: "1"}, "replica", []string{"r1", "r2", "r3"}),
+			Entry("missing set", ClickHouseReplicaID{Shard: "custom", Replica: "2"}, "missing", nil),
 		)
 
 		It("should return nil when nothing is referenced", func() {
 			plain := newCluster(ClickHouseClusterSpec{AdditionalVolumeClaimTemplateSets: sets, Shards: new(int32(1))})
-			Expect(plain.AdditionalVolumeClaimTemplatesFor(ClickHouseReplicaID{Shard: "0", Index: 0})).To(BeNil())
+			Expect(plain.AdditionalVolumeClaimTemplatesFor(ClickHouseReplicaID{Shard: "0", Replica: "0"})).To(BeNil())
 		})
 	})
 
@@ -264,12 +281,18 @@ var _ = Describe("ShardSpecs", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(parsed).To(Equal(id))
 			},
-			Entry("numeric shard", ClickHouseReplicaID{Shard: "3", Index: 1}),
-			Entry("named shard", ClickHouseReplicaID{Shard: "tenant-a", Index: 0}),
+			Entry("numeric shard", ClickHouseReplicaID{Shard: "3", Replica: "1"}),
+			Entry("named shard", ClickHouseReplicaID{Shard: "tenant-a", Replica: "0"}),
+			Entry("named replica", ClickHouseReplicaID{Shard: "tenant-a", Replica: "canary"}),
 		)
 
 		It("should fail without the shard label", func() {
 			_, err := ClickHouseIDFromLabels(map[string]string{})
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("should fail with an empty replica label", func() {
+			_, err := ClickHouseIDFromLabels(ClickHouseReplicaID{Shard: "0"}.Labels())
 			Expect(err).To(HaveOccurred())
 		})
 	})

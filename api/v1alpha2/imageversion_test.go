@@ -1,6 +1,8 @@
 package v1alpha2
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -102,7 +104,10 @@ var _ = DescribeTable("isPinnedImage",
 	Entry("short tag", "repo:25.8", true),
 	Entry("full reference", "docker.io/clickhouse/clickhouse-server:25.8.2.29", true),
 	Entry("registry port with tag", "host:5000/ch/server:25.8", true),
-	Entry("digest", "repo@sha256:9f2c1e", true),
+	Entry("digest", "repo@sha256:"+strings.Repeat("a", 64), true),
+	Entry("tag and digest", "repo:latest@sha256:"+strings.Repeat("a", 64), true),
+	Entry("invalid digest", "repo@sha256:9f2c1e", false),
+	Entry("invalid reference", "Repo:25.8", false),
 	Entry("untagged", "repo", false),
 	Entry("latest", "repo:latest", false),
 	Entry("registry port untagged", "host:5000/ch/server", false),
