@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 	"strconv"
@@ -428,19 +429,19 @@ type ClickHouseReplicaID struct {
 
 // ClickHouseIDFromLabels extracts ClickHouseReplicaID from given labels map.
 func ClickHouseIDFromLabels(labels map[string]string) (ClickHouseReplicaID, error) {
+	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
+	if !ok {
+		return ClickHouseReplicaID{}, fmt.Errorf("missing replica ID label: %w", ErrNotReplicaResource)
+	}
+
 	shardIDStr, ok := labels[controllerutil.LabelClickHouseShardID]
 	if !ok {
-		return ClickHouseReplicaID{}, fmt.Errorf("missing shard ID label: %w", ErrNotReplicaResource)
+		return ClickHouseReplicaID{}, errors.New("missing shard ID label")
 	}
 
 	shardID, err := strconv.ParseInt(shardIDStr, 10, 32)
 	if err != nil {
 		return ClickHouseReplicaID{}, fmt.Errorf("invalid shard ID %q: %w", shardIDStr, err)
-	}
-
-	replicaIDStr, ok := labels[controllerutil.LabelClickHouseReplicaID]
-	if !ok {
-		return ClickHouseReplicaID{}, fmt.Errorf("missing replica ID label: %w", ErrNotReplicaResource)
 	}
 
 	index, err := strconv.ParseInt(replicaIDStr, 10, 32)
