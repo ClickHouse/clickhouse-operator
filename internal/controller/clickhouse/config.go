@@ -380,7 +380,12 @@ func clusterConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id
 	return builder.String(), nil
 }
 
+// defaultListenHost is used when spec.settings.network.listenHost is not set,
+// preserving the historical dual-stack listening behavior.
+var defaultListenHost = []string{"::", "0.0.0.0"}
+
 type networkConfigParams struct {
+	ListenHost                    []string
 	InterserverHTTPHost           string
 	InterserverHTTPPort           uint16
 	InterserverHTTPUser           string
@@ -409,7 +414,13 @@ func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id
 
 	controllerutil.SortKey(protocols, func(p namedProtocol) string { return p.Name })
 
+	listenHost := r.Cluster.Spec.Settings.Network.ListenHost
+	if len(listenHost) == 0 {
+		listenHost = defaultListenHost
+	}
+
 	params := networkConfigParams{
+		ListenHost:                    listenHost,
 		InterserverHTTPHost:           r.Cluster.InternalHostnameByID(id),
 		InterserverHTTPPort:           PortInterserver,
 		InterserverHTTPUser:           InterserverUserName,
