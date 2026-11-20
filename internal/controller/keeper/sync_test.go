@@ -173,6 +173,27 @@ var _ = Describe("UpdateReplica", Ordered, func() {
 		err = rec.GetClient().Get(ctx, podKey, &corev1.Pod{})
 		Expect(k8serrors.IsNotFound(err)).To(BeTrue(), "stuck pod should have been deleted")
 	})
+
+	It("should ignore a replica pod that is being deleted", func(ctx context.Context) {
+		sts := mustGet[*appsv1.StatefulSet](ctx, rec.GetClient(), stsKey)
+		pod := &corev1.Pod{
+			Namespace:  sts.Namespace,
+			Name:       sts.Name + "-0",
+			Labels:     replicaLabels(rec.Cluster, replicaID),
+			Finalizers: []string{"test/keep"},
+		}
+		Expect(rec.GetClient().Create(ctx, pod)).To(Succeed())
+
+		_, err := rec.reconcileActiveReplicaStatus(ctx, log)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.ReplicaState[replicaID].Pod.Name).To(Equal(pod.Name))
+
+		Expect(rec.GetClient().Delete(ctx, pod)).To(Succeed())
+
+		_, err = rec.reconcileActiveReplicaStatus(ctx, log)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.ReplicaState[replicaID].Pod).To(BeNil())
+	})
 })
 
 var _ = Describe("ActiveReplicaStatus", func() {
@@ -198,6 +219,7 @@ var _ = Describe("ActiveReplicaStatus", func() {
 		Expect(rec.GetClient().Create(ctx, sts)).To(Succeed())
 		Expect(rec.GetClient().Create(ctx, &corev1.Pod{
 			Namespace: sts.Namespace, Name: sts.Name + "-0",
+			Labels: sts.Labels,
 			Status: corev1.PodStatus{PodIP: "10.1.2.3"},
 		})).To(Succeed())
 

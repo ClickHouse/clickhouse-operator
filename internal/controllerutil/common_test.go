@@ -1,7 +1,9 @@
 package controllerutil
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -132,11 +134,11 @@ var _ = Describe("UpdateResult", func() {
 })
 
 var _ = Describe("ExecuteParallel", func() {
-	It("should execute all tasks", func() {
-		result := ExecuteParallel(
+	It("should execute all tasks", func(ctx context.Context) {
+		result := ExecuteParallel(ctx,
 			[]int{1, 2, 3},
-			func(item int) (int, int, error) {
-				return item, item * 2, nil
+			func(_ context.Context, item int) (int, error) {
+				return item * 2, nil
 			})
 		Expect(result).To(Equal(map[int]ExecutionResult[int]{
 			1: {Result: 2},
@@ -145,14 +147,14 @@ var _ = Describe("ExecuteParallel", func() {
 		}))
 	})
 
-	It("should report execution errors", func() {
-		result := ExecuteParallel(
+	It("should report execution errors", func(ctx context.Context) {
+		result := ExecuteParallel(ctx,
 			[]int{1, 2, 3},
-			func(item int) (int, int, error) {
+			func(_ context.Context, item int) (int, error) {
 				if item%2 == 0 {
-					return item, 0, errors.New("failed")
+					return 0, errors.New("failed")
 				}
-				return item, item * 2, nil
+				return item * 2, nil
 			})
 		Expect(result).To(Equal(map[int]ExecutionResult[int]{
 			1: {Result: 2},
@@ -160,6 +162,78 @@ var _ = Describe("ExecuteParallel", func() {
 			3: {Result: 6},
 		}))
 	})
+
+	It("should start task timeout when the task starts", func(ctx context.Context) {
+		result := ExecuteParallel(ctx,
+			[]int{1, 2},
+			func(ctx context.Context, _ int) (bool, error) {
+				startedInTime := ctx.Err() == nil
+				<-ctx.Done()
+				return startedInTime, ctx.Err()
+			}, WithParallelism(1), WithTaskTimeout(100*time.Millisecond))
+		Expect(result).To(Equal(map[int]ExecutionResult[bool]{
+			1: {Result: true, Err: context.DeadlineExceeded},
+			2: {Result: true, Err: context.DeadlineExceeded},
+		}))
+	})
+
+	It("should fail tasks not started before context is done", func(ctx context.Context) {
+		errStop := errors.New("stop")
+		ctx, cancel := context.WithCancelCause(ctx)
+		result := ExecuteParallel(ctx,
+			[]int{1, 2, 3},
+			func(_ context.Context, item int) (int, error) {
+				cancel(errStop)
+				return item, nil
+			}, WithParallelism(1))
+		Expect(result).To(Equal(map[int]ExecutionResult[int]{
+			1: {Result: 1},
+			2: {Err: errStop},
+			3: {Err: errStop},
+		}))
+	})
+
+	It("should fail a nested call sharing the semaphore of the calling task", func(ctx context.Context) {
+		shared := WithParallelism(1)
+		result := ExecuteParallel(ctx, []int{1}, func(ctx context.Context, _ int) (map[int]ExecutionResult[int], error) {
+			return ExecuteParallel(ctx, []int{2}, func(context.Context, int) (int, error) {
+				return 2, nil
+			}, shared), nil
+		}, shared)
+		Expect(result[1].Result).To(Equal(map[int]ExecutionResult[int]{2: {Err: errNestedSemaphore}}))
+	}, SpecTimeout(time.Second))
+
+	It("should run a nested call with another semaphore", func(ctx context.Context) {
+		result := ExecuteParallel(ctx, []int{1}, func(ctx context.Context, _ int) (map[int]ExecutionResult[int], error) {
+			return ExecuteParallel(ctx, []int{2}, func(context.Context, int) (int, error) {
+				return 2, nil
+			}, WithParallelism(1)), nil
+		}, WithParallelism(1))
+		Expect(result[1].Result).To(Equal(map[int]ExecutionResult[int]{2: {Result: 2}}))
+	}, SpecTimeout(time.Second))
+
+	It("should run at most the semaphore size tasks at once", func(ctx context.Context) {
+		var (
+			mu            sync.Mutex
+			running, peak int
+		)
+
+		ExecuteParallel(ctx, []int{1, 2, 3, 4, 5, 6}, func(context.Context, int) (struct{}, error) {
+			mu.Lock()
+			running++
+			peak = max(peak, running)
+			mu.Unlock()
+
+			time.Sleep(5 * time.Millisecond)
+
+			mu.Lock()
+			running--
+			mu.Unlock()
+
+			return struct{}{}, nil
+		}, WithParallelism(2))
+		Expect(peak).To(BeNumerically("<=", 2))
+	}, SpecTimeout(time.Second))
 })
 
 var _ = DescribeTable("ParseVersion", func(in, out string, isErr bool) {

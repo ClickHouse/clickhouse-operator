@@ -1,16 +1,11 @@
 package controller
 
 import (
-	"context"
 	"fmt"
 	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	util "github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
@@ -113,28 +108,6 @@ type ReplicaState struct {
 
 	Pod          *corev1.Pod
 	StartupError *string
-}
-
-// GetReplicaPod loads the Pod of the given StatefulSet.
-func GetReplicaPod(ctx context.Context, log util.Logger, cli client.Client, sts *appsv1.StatefulSet) (*corev1.Pod, error) {
-	pod := &corev1.Pod{}
-
-	podName := sts.Name + "-0"
-
-	if err := cli.Get(ctx, types.NamespacedName{
-		Namespace: sts.Namespace,
-		Name:      podName,
-	}, pod); err != nil {
-		if !k8serrors.IsNotFound(err) {
-			return nil, fmt.Errorf("get pod %q: %w", podName, err)
-		}
-
-		log.Info("pod does not exist", "pod", podName, "statefulset", sts.Name)
-
-		return nil, nil
-	}
-
-	return pod, nil
 }
 
 var podErrorStatuses = []string{"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff", "CreateContainerError", "CreateContainerConfigError", "InvalidImageName"}

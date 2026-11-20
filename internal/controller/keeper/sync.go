@@ -228,13 +228,14 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
 
-	execResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(statefulSets)), func(id v1.KeeperReplicaID) (v1.KeeperReplicaID, replicaState, error) {
-		sts := statefulSets[id]
+	pods, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.KeeperReplicaIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list Pods: %w", err)
+	}
 
-		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), sts)
-		if err != nil {
-			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
-		}
+	execResults := ctrlutil.ExecuteParallel(ctx, slices.Collect(maps.Keys(statefulSets)), func(ctx context.Context, id v1.KeeperReplicaID) (replicaState, error) {
+		sts := statefulSets[id]
+		pod := pods[id]
 
 		startupErr := chctrl.PodStartupError(pod)
 
@@ -254,7 +255,7 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
-		return id, replicaState{
+		return replicaState{
 			Status: status,
 
 			STS:          sts,

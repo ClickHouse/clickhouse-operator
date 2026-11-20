@@ -436,6 +436,10 @@ func (rm *ResourceManager) ListReplicaResources[
 			return nil, fmt.Errorf("not compatible list item type: %s", items.Index(i).Addr().Type().Name())
 		}
 
+		if !item.GetDeletionTimestamp().IsZero() {
+			continue
+		}
+
 		id, err := labelToID(item.GetLabels())
 		if errors.Is(err, v1.ErrNotReplicaResource) {
 			continue
