@@ -517,14 +517,12 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
 
-	execResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(statefulSets)), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, replicaState, error) {
-		sts := statefulSets[id]
+	pods, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.ClickHouseIDFromLabels)
+	if err != nil {
+		return chctrl.StepResult{}, fmt.Errorf("list replicas Pods: %w", err)
+	}
 
-		pod, err := chctrl.GetReplicaPod(ctx, log, r.GetClient(), sts)
-		if err != nil {
-			return id, replicaState{}, fmt.Errorf("get replica pod: %w", err)
-		}
-
+	for id, sts := range statefulSets {
 		pvcs, pvcErr := r.GetReplicaPVCs(ctx, sts)
 		if pvcErr != nil {
 			log.Error(pvcErr, "failed to get PVCs for replica", "replica_id", id)
@@ -532,31 +530,20 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
-		return id, replicaState{
+		r.ReplicaState[id] = replicaState{
 			STS:          sts,
 			CFG:          configMaps[id],
 			PVCs:         pvcs,
-			Pod:          pod,
-			StartupError: chctrl.PodStartupError(pod),
-		}, nil
-	})
-
-	for id, res := range execResults {
-		if res.Err != nil {
-			return chctrl.StepResult{}, fmt.Errorf("load replica state %s: %w", id, res.Err)
+			Pod:          pods[id],
+			StartupError: chctrl.PodStartupError(pods[id]),
 		}
-
-		r.ReplicaState[id] = res.Result
 	}
 
-	probeResults := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(r.ReplicaState)), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, replicaState, error) {
+	probeResults := ctrlutil.ExecuteParallel(ctx, slices.Collect(maps.Keys(r.ReplicaState)), func(ctx context.Context, id v1.ClickHouseReplicaID) (replicaState, error) {
 		state := r.ReplicaState[id]
 		if state.StartupError != nil || !chctrl.ContainerRunning(state.Pod, ContainerName) || r.commander == nil {
-			return id, state, nil
+			return state, nil
 		}
-
-		ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-		defer cancel()
 
 		var err error
 
@@ -571,10 +558,14 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 			}
 		}
 
-		return id, state, nil
-	})
+		return state, nil
+	}, ctrlutil.WithTaskTimeout(chctrl.LoadReplicaStateTimeout))
 
 	for id, res := range probeResults {
+		if res.Err != nil {
+			return chctrl.StepResult{}, fmt.Errorf("probe replica %s: %w", id, res.Err)
+		}
+
 		r.ReplicaState[id] = res.Result
 	}
 
@@ -596,18 +587,15 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 
 	ids := slices.Collect(maps.Keys(r.ReplicaState))
 
-	results := ctrlutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+	results := ctrlutil.ExecuteParallel(ctx, ids, func(ctx context.Context, id v1.ClickHouseReplicaID) (struct{}, error) {
 		replica := r.ReplicaState[id]
 		if !replica.Queryable() {
-			return id, struct{}{}, nil
+			return struct{}{}, nil
 		}
-
-		ctx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-		defer cancel()
 
 		warnings, err := r.commander.Warnings(ctx, id)
 		if err != nil {
-			return id, struct{}{}, fmt.Errorf("fetch warnings from replica %s: %w", id, err)
+			return struct{}{}, fmt.Errorf("fetch warnings from replica %s: %w", id, err)
 		}
 
 		log.Debug("system.warnings fetched", "replica_id", id, "count", len(warnings))
@@ -618,8 +606,8 @@ func (r *clickhouseReconciler) reconcileWarnings(ctx context.Context, log ctrlut
 				"Replica %s: %s", r.Cluster.HostnameByID(id), warning)
 		}
 
-		return id, struct{}{}, nil
-	})
+		return struct{}{}, nil
+	}, ctrlutil.WithTaskTimeout(chctrl.LoadReplicaStateTimeout))
 
 	for id, res := range results {
 		if res.Err != nil {
