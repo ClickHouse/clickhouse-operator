@@ -37,18 +37,13 @@ func (r *clickhouseReconciler) reconcileSchemaSync(ctx context.Context, log ctrl
 		return chctrl.StepContinue(), nil
 	}
 
-	defaultDBRes := ctrlutil.ExecuteParallel(r.reachableReplicas, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, bool, error) {
+	defaultDBRes := ctrlutil.ExecuteParallel(ctx, r.reachableReplicas, func(ctx context.Context, id v1.ClickHouseReplicaID) (bool, error) {
 		if r.ReplicaState[id].Initialized() {
-			return id, true, nil
+			return true, nil
 		}
 
-		opCtx, cancel := context.WithTimeout(ctx, databaseOpsTimeout)
-		defer cancel()
-
-		replicated, err := r.commander.EnsureReplicaDefaultDatabaseEngine(opCtx, log, id)
-
-		return id, replicated, err
-	})
+		return r.commander.EnsureReplicaDefaultDatabaseEngine(ctx, log, id)
+	}, ctrlutil.WithTaskTimeout(databaseOpsTimeout))
 
 	r.schemaSync.defaultDBReplicated = map[v1.ClickHouseReplicaID]bool{}
 	for id, res := range defaultDBRes {
@@ -96,7 +91,7 @@ func (r *clickhouseReconciler) reconcileSchemaSync(ctx context.Context, log ctrl
 	syncCtx, cancel := context.WithTimeout(ctx, databaseSyncTimeout)
 	defer cancel()
 
-	r.schemaSync.databasesSynced = r.commander.SyncDatabases(syncCtx, log, sources, targets)
+	r.schemaSync.databasesSynced = r.commander.SyncDatabases(syncCtx, log, sources, targets, ctrlutil.WithParallelism(ctrlutil.DefaultParallelism))
 
 	return chctrl.StepContinue(), nil
 }
@@ -114,10 +109,10 @@ func (r *clickhouseReconciler) reconcileReplicaReadiness(ctx context.Context, lo
 		return r.ReplicaState[id].Initialized() == trafficAdmitted[id]
 	})
 
-	res := ctrlutil.ExecuteParallel(changed, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+	res := ctrlutil.ExecuteParallel(ctx, changed, func(ctx context.Context, id v1.ClickHouseReplicaID) (struct{}, error) {
 		state := r.ReplicaState[id]
 		if state.Pod == nil {
-			return id, struct{}{}, errors.New("pod does not exist yet")
+			return struct{}{}, errors.New("pod does not exist yet")
 		}
 
 		cond := corev1.PodCondition{
@@ -136,10 +131,10 @@ func (r *clickhouseReconciler) reconcileReplicaReadiness(ctx context.Context, lo
 		}
 
 		if err := r.UpdatePodCondition(ctx, state.Pod, cond); err != nil {
-			return id, struct{}{}, fmt.Errorf("update replica initialized condition: %w", err)
+			return struct{}{}, fmt.Errorf("update replica initialized condition: %w", err)
 		}
 
-		return id, struct{}{}, nil
+		return struct{}{}, nil
 	})
 
 	failed := false
@@ -195,14 +190,13 @@ func (r *clickhouseReconciler) reconcilePreScaleDownSync(ctx context.Context, lo
 		}
 	}
 
-	syncRes := ctrlutil.ExecuteParallel(slices.Collect(maps.Keys(shardsToSyncSet)), func(shardID int32) (int32, struct{}, error) {
+	// Replica tasks of SyncShard hold r.parallelism, so the shard tasks use their own limit.
+	parallelism := ctrlutil.WithParallelism(ctrlutil.DefaultParallelism)
+	syncRes := ctrlutil.ExecuteParallel(ctx, slices.Collect(maps.Keys(shardsToSyncSet)), func(ctx context.Context, shardID int32) (struct{}, error) {
 		log.Info("pre scale-down shard sync", "shard_id", shardID)
 
-		syncCtx, cancel := context.WithTimeout(ctx, shardSyncTimeout)
-		defer cancel()
-
-		return shardID, struct{}{}, r.commander.SyncShard(syncCtx, log, shardID)
-	})
+		return struct{}{}, r.commander.SyncShard(ctx, log, shardID, parallelism)
+	}, ctrlutil.WithTaskTimeout(shardSyncTimeout))
 
 	for id, res := range syncRes {
 		if res.Err != nil {

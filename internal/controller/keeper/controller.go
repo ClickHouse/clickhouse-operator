@@ -243,6 +243,10 @@ func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.Keep
 
 	podIPs := map[v1.KeeperReplicaID]string{}
 	for _, pod := range pods.Items {
+		if !pod.DeletionTimestamp.IsZero() {
+			continue
+		}
+
 		if id, err := v1.KeeperReplicaIDFromLabels(pod.Labels); err == nil {
 			podIPs[id] = pod.Status.PodIP
 		}
@@ -253,19 +257,16 @@ func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.Keep
 		ids = append(ids, v1.KeeperReplicaID(i))
 	}
 
-	states := controllerutil.ExecuteParallel(ids, func(id v1.KeeperReplicaID) (v1.KeeperReplicaID, string, error) {
+	states := controllerutil.ExecuteParallel(ctx, ids, func(ctx context.Context, id v1.KeeperReplicaID) (string, error) {
 		if podIPs[id] == "" {
-			return id, "unreachable", nil
+			return "unreachable", nil
 		}
 
-		probeCtx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-		defer cancel()
-
-		status := getServerStatus(probeCtx, cc.Logger.With("replica_id", id), cc.Dialer,
+		status := getServerStatus(ctx, cc.Logger.With("replica_id", id), cc.Dialer,
 			podIPs[id], cluster.Spec.Settings.TLS.Required)
 
-		return id, cmp.Or(status.ServerState, "unreachable"), nil
-	})
+		return cmp.Or(status.ServerState, "unreachable"), nil
+	}, controllerutil.WithTaskTimeout(chctrl.LoadReplicaStateTimeout))
 
 	var sb strings.Builder
 	for _, id := range ids {
