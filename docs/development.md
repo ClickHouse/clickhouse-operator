@@ -24,3 +24,13 @@ Pass identifiers as structured fields, not inside the message:
 - `replica_id` and `shard_id` for replica and shard IDs, `replicas` for a list of replica IDs.
 - The lowercase kind for a child resource name, such as `statefulset`, `configmap` or `persistentvolumeclaim`. Code that handles any kind uses `kind` and `resource`.
 - `name` and `namespace` belong to the reconciled cluster, so child resources never use them.
+
+## Constants placement
+
+Constants that are not purely local live in the `constants.go` file of the package that owns them. Label and annotation keys stay in `internal/controllerutil/labels.go` and `annotations.go`.
+Small packages with a few constants that are rarely used outside don't need a `constants.go`: their constants stay next to the code that uses them.
+
+- Resource-visible defaults, which are values the operator stamps into created resources (probe timeouts and ports, default resource requests), go in `constants.go`. A grep then finds the whole resource configuration in one place.
+- Behavior knobs that interact, such as timeouts, requeue intervals, resync periods and parallelism caps, also go in `constants.go`, side by side, even with a single consumer. Add a one-line comment with the invariant when the relationship is not obvious.
+- Purely local implementation constants stay next to the code that uses them and stay unexported.
+- A constant shared by several packages lives in the lowest common package.

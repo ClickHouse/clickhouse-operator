@@ -2,18 +2,6 @@ package keeper
 
 import "fmt"
 
-// preStopPollAttempts and preStopPollInterval bound how long the PreStop hook waits for
-// the outgoing leader to hand off Raft leadership, and for a new leader to be elected,
-// before the kubelet is allowed to send SIGTERM. 10 * 0.5s = 5s, comfortably inside the
-// pod's default 30s terminationGracePeriodSeconds. This cap only matters when http_control has stopped
-// answering entirely (a hung server): a healthy handover finishes in well under a
-// second even under heavy write load, and a server that answers with a non-leader role
-// or an error exits the loop immediately.
-const (
-	preStopPollAttempts = 10
-	preStopPollInterval = "0.5" // seconds, passed to `sleep`
-)
-
 // buildPreStopScript returns the PreStop hook script run inside the Keeper container.
 // It asks the current replica to yield Raft leadership (the FLWYieldLeadership four
 // letter word, sent over the HTTP commands API), then polls the same http_control
