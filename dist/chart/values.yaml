@@ -215,6 +215,9 @@ crd:
   enabled: true
   # Keep CRDs when uninstalling
   keep: true
+  # Extra annotations added to both CRDs.
+  # Example: argocd.argoproj.io/sync-options: ServerSideApply=true
+  annotations: {}
 
 ## Controller metrics endpoint.
 ## Enable to expose /metrics endpoint

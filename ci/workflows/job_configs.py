@@ -298,6 +298,7 @@ class JobConfigs:
                 "./go.mod",
                 "./go.sum",
                 "./Makefile",
+                "./tools/helm-crd-annotations.py",
             ],
         ),
     )
