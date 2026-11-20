@@ -14,21 +14,6 @@ import (
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
 
-// reservedClickHousePort* values mirror the port constants defined in
-// internal/controller/clickhouse/constants.go. They are duplicated here because
-// importing that package from the webhook would introduce a controller→webhook
-// import cycle. Keep these values in sync with the controller package.
-const (
-	reservedClickHousePortHTTP             = 8123
-	reservedClickHousePortHTTPSecure       = 8443
-	reservedClickHousePortNative           = 9000
-	reservedClickHousePortNativeSecure     = 9440
-	reservedClickHousePortInterserver      = 9009
-	reservedClickHousePortPrometheusScrape = 9363
-	reservedClickHousePortManagement       = 9001
-	reservedClickHousePortManagementHTTP   = 9002
-)
-
 // SetupClickHouseWebhookWithManager registers the webhook for ClickHouseCluster in the manager.
 func SetupClickHouseWebhookWithManager(mgr ctrl.Manager, log controllerutil.Logger) error {
 	wh := &ClickHouseClusterWebhook{
@@ -181,25 +166,25 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 	// All TLS-related ports are reserved unconditionally so flipping settings.tls.enabled
 	// later cannot break a previously valid cluster.
 	reservedPorts := map[int32]string{
-		reservedClickHousePortHTTP:             "HTTP",
-		reservedClickHousePortHTTPSecure:       "HTTPS",
-		reservedClickHousePortNative:           "native TCP",
-		reservedClickHousePortNativeSecure:     "native TLS",
-		reservedClickHousePortInterserver:      "interserver",
-		reservedClickHousePortPrometheusScrape: "Prometheus metrics",
-		reservedClickHousePortManagement:       "management",
-		reservedClickHousePortManagementHTTP:   "management HTTP",
+		internal.ClickHousePortHTTP:             "HTTP",
+		internal.ClickHousePortHTTPSecure:       "HTTPS",
+		internal.ClickHousePortNative:           "native TCP",
+		internal.ClickHousePortNativeSecure:     "native TLS",
+		internal.ClickHousePortInterserver:      "interserver",
+		internal.ClickHousePortPrometheusScrape: "Prometheus metrics",
+		internal.ClickHousePortManagement:       "management",
+		internal.ClickHousePortManagementHTTP:   "management HTTP",
 	}
 
 	reservedPortNames := map[string]struct{}{
-		"http":            {},
-		"http-secure":     {},
-		"tcp":             {},
-		"tcp-secure":      {},
-		"interserver":     {},
-		"prometheus":      {},
-		"management":      {},
-		"management-http": {},
+		internal.ClickHousePortNameHTTP:           {},
+		internal.ClickHousePortNameHTTPSecure:     {},
+		internal.ClickHousePortNameTCP:            {},
+		internal.ClickHousePortNameTCPSecure:      {},
+		internal.ClickHousePortNameInterserver:    {},
+		internal.ClickHousePortNamePrometheus:     {},
+		internal.ClickHousePortNameManagement:     {},
+		internal.ClickHousePortNameManagementHTTP: {},
 	}
 
 	for i, p := range obj.Spec.AdditionalPorts {

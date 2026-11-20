@@ -26,14 +26,14 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	ports := []corev1.ServicePort{
 		{
 			Protocol:    corev1.ProtocolTCP,
-			Name:        "raft-ipc",
+			Name:        PortNameInterserver,
 			Port:        PortInterserver,
 			TargetPort:  intstr.FromInt32(PortInterserver),
 			AppProtocol: new(controller.AppProtocolTCP),
 		},
 		{
 			Protocol:    corev1.ProtocolTCP,
-			Name:        "prometheus",
+			Name:        PortNamePrometheusScrape,
 			Port:        PortPrometheusScrape,
 			TargetPort:  intstr.FromInt32(PortPrometheusScrape),
 			AppProtocol: new(controller.AppProtocolHTTP),
@@ -43,7 +43,7 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:    corev1.ProtocolTCP,
-			Name:        "keeper",
+			Name:        PortNameNative,
 			Port:        PortNative,
 			TargetPort:  intstr.FromInt32(PortNative),
 			AppProtocol: new(controller.AppProtocolTCP),
@@ -53,7 +53,7 @@ func templateHeadlessService(cr *v1.KeeperCluster) *corev1.Service {
 	if cr.Spec.Settings.TLS.Enabled {
 		ports = append(ports, corev1.ServicePort{
 			Protocol:    corev1.ProtocolTCP,
-			Name:        "keeper-secure",
+			Name:        PortNameNativeSecure,
 			Port:        PortNativeSecure,
 			TargetPort:  intstr.FromInt32(PortNativeSecure),
 			AppProtocol: new(controller.AppProtocolTCP),
@@ -288,12 +288,12 @@ func templateStatefulSet(cr *v1.KeeperCluster, id v1.KeeperReplicaID, cfgRestart
 				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(cr.Spec.Annotations, map[string]string{
 					controllerutil.AnnotationConfigHash:       cfgRestartRevision,
-					"kubectl.kubernetes.io/default-container": ContainerName,
+					controllerutil.AnnotationDefaultContainer: ContainerName,
 				}),
 			},
 			Spec: podSpec,
 		},
-		RevisionHistoryLimit: new(int32(DefaultRevisionHistory)),
+		RevisionHistoryLimit: new(int32(controller.DefaultRevisionHistory)),
 	}
 
 	if cr.Spec.DataVolumeClaimSpec != nil {
@@ -359,8 +359,8 @@ func generateConfigForSingleReplica(cr *v1.KeeperCluster, id v1.KeeperReplicaID)
 			Server: controller.OpenSSLParams{
 				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
 				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-				VerificationMode:    "relaxed",
-				DisableProtocols:    "sslv2,sslv3",
+				VerificationMode:    controller.OpenSSLVerificationModeRelaxed,
+				DisableProtocols:    controller.OpenSSLDisabledProtocols,
 				PreferServerCiphers: true,
 			},
 		}
@@ -413,7 +413,7 @@ func templatePodSpec(cr *v1.KeeperCluster, id v1.KeeperReplicaID) (corev1.PodSpe
 		podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
 			podSpec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
 			corev1.WeightedPodAffinityTerm{
-				Weight: MaximalAffinityWeight,
+				Weight: controller.MaximalAffinityWeight,
 				PodAffinityTerm: corev1.PodAffinityTerm{
 					TopologyKey: *podTemplate.TopologyZoneKey,
 					LabelSelector: &metav1.LabelSelector{
@@ -502,24 +502,24 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 		Name: ContainerName,
 		Env: []corev1.EnvVar{
 			{
-				Name:  "KEEPER_CONFIG",
+				Name:  EnvConfig,
 				Value: QuorumConfigPath + QuorumConfigFileName,
 			},
 		},
 		Ports: []corev1.ContainerPort{
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "raft-ipc",
+				Name:          PortNameInterserver,
 				ContainerPort: PortInterserver,
 			},
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "prometheus",
+				Name:          PortNamePrometheusScrape,
 				ContainerPort: PortPrometheusScrape,
 			},
 			{
 				Protocol:      corev1.ProtocolTCP,
-				Name:          "http-control",
+				Name:          PortNameHTTPControl,
 				ContainerPort: PortHTTPControl,
 			},
 		},
@@ -541,7 +541,7 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 	if !cr.Spec.Settings.TLS.Enabled || !cr.Spec.Settings.TLS.Required {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper",
+			Name:          PortNameNative,
 			ContainerPort: PortNative,
 		})
 	}
@@ -549,7 +549,7 @@ func templateContainer(cr *v1.KeeperCluster) (corev1.Container, error) {
 	if cr.Spec.Settings.TLS.Enabled {
 		container.Ports = append(container.Ports, corev1.ContainerPort{
 			Protocol:      corev1.ProtocolTCP,
-			Name:          "keeper-secure",
+			Name:          PortNameNativeSecure,
 			ContainerPort: PortNativeSecure,
 		})
 	}
@@ -636,12 +636,12 @@ func buildMounts(cr *v1.KeeperCluster) []corev1.VolumeMount {
 			corev1.VolumeMount{
 				Name:      internal.PersistentVolumeName,
 				MountPath: internal.KeeperDataPath,
-				SubPath:   "var-lib-clickhouse",
+				SubPath:   controller.PersistentVolumeDataSubPath,
 			},
 			corev1.VolumeMount{
 				Name:      internal.PersistentVolumeName,
 				MountPath: "/var/log/clickhouse-keeper",
-				SubPath:   "var-log-clickhouse",
+				SubPath:   controller.PersistentVolumeLogSubPath,
 			})
 	} else if !controller.UserMountsAt(cr.Spec.ContainerTemplate.VolumeMounts, internal.KeeperDataPath) {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{

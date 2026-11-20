@@ -225,8 +225,8 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.
 			Server: controller.OpenSSLParams{
 				CertificateFile:     path.Join(TLSConfigPath, CertificateFilename),
 				PrivateKeyFile:      path.Join(TLSConfigPath, KeyFilename),
-				VerificationMode:    "relaxed",
-				DisableProtocols:    "sslv2,sslv3",
+				VerificationMode:    controller.OpenSSLVerificationModeRelaxed,
+				DisableProtocols:    controller.OpenSSLDisabledProtocols,
 				PreferServerCiphers: true,
 			},
 		}
@@ -234,8 +234,8 @@ func baseConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, _ v1.
 
 	if r.Cluster.Spec.Settings.TLS.CABundle != nil {
 		openSSL.Client.CAConfig = path.Join(TLSConfigPath, CustomCAFilename)
-		openSSL.Client.VerificationMode = "relaxed"
-		openSSL.Client.DisableProtocols = "sslv2,sslv3"
+		openSSL.Client.VerificationMode = controller.OpenSSLVerificationModeRelaxed
+		openSSL.Client.DisableProtocols = controller.OpenSSLDisabledProtocols
 		openSSL.Client.PreferServerCiphers = true
 	}
 
@@ -272,13 +272,6 @@ type clusterConfigParams struct {
 
 	NamedCollections []namedCollection
 }
-
-const (
-	OperatorNamedCollectionName     = "__operator"
-	OperatorConfigRevisionField     = "config_revision"
-	OperatorSettingsProfileName     = "__operator"
-	OperatorReloadMarkerSettingName = "custom_operator_reload_revision"
-)
 
 type macro struct {
 	Name  string
@@ -397,7 +390,7 @@ type namedProtocol struct {
 func networkConfigGenerator(tmpl *template.Template, r *clickhouseReconciler, id v1.ClickHouseReplicaID) (string, error) {
 	var protocols []namedProtocol
 	for name, proto := range buildProtocols(r.Cluster) {
-		if name == "interserver" || name == "management" {
+		if name == protocolTypeInterserver || name == protocolTypeManagement {
 			continue
 		}
 

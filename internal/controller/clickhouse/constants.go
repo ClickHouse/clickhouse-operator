@@ -16,15 +16,15 @@ import (
 // The Port* values below, and the protocolType* names in templates.go, are also hard-coded as reserved
 // in the v1alpha1 webhook and the v1alpha2 ClickHouseNetworkSpec.AdditionalPorts CEL rules; keep them in sync.
 const (
-	PortManagement     = 9001
-	PortManagementHTTP = 9002
-	PortNative         = 9000
-	PortNativeSecure   = 9440
-	PortHTTP           = 8123
-	PortHTTPSecure     = 8443
+	PortManagement     = internal.ClickHousePortManagement
+	PortManagementHTTP = internal.ClickHousePortManagementHTTP
+	PortNative         = internal.ClickHousePortNative
+	PortNativeSecure   = internal.ClickHousePortNativeSecure
+	PortHTTP           = internal.ClickHousePortHTTP
+	PortHTTPSecure     = internal.ClickHousePortHTTPSecure
 
-	PortPrometheusScrape = 9363
-	PortInterserver      = 9009
+	PortPrometheusScrape = internal.ClickHousePortPrometheusScrape
+	PortInterserver      = internal.ClickHousePortInterserver
 
 	ConfigPath                    = "/etc/clickhouse-server/"
 	ConfigDPath                   = "config.d"
@@ -39,7 +39,7 @@ const (
 	AdditionalDiskBasePath        = internal.ClickHouseDataPath + "/disks/"
 
 	// DefaultDiskName is the built-in ClickHouse disk; at-rest encryption wraps it and each JBOD disk with an encrypted disk.
-	DefaultDiskName         = "default"
+	DefaultDiskName         = internal.ClickHouseDefaultDiskName
 	EncryptedDiskNameSuffix = "_encrypted"
 	EncryptedDiskSubPath    = "encrypted/"
 	DiskEncryptionAlgorithm = "AES_128_CTR"
@@ -57,13 +57,16 @@ const (
 	KeeperPathDistributedDDL   = "/clickhouse/task_queue/ddl"
 	KeeperPathNamedCollections = "/clickhouse/named_collections"
 
-	ContainerName          = "clickhouse-server"
-	DefaultRevisionHistory = 10
-	MaximalAffinityWeight  = 100
+	ContainerName = "clickhouse-server"
 
 	InterserverUserName        = "interserver"
 	OperatorManagementUsername = "operator"
 	DefaultProfileName         = "default"
+
+	OperatorNamedCollectionName     = "__operator"
+	OperatorConfigRevisionField     = "config_revision"
+	OperatorSettingsProfileName     = "__operator"
+	OperatorReloadMarkerSettingName = "custom_operator_reload_revision"
 
 	EnvInterserverPassword = "CLICKHOUSE_INTERSERVER_PASSWORD"
 	EnvDefaultUserPassword = "CLICKHOUSE_DEFAULT_USER_PASSWORD"
@@ -71,6 +74,9 @@ const (
 	EnvClusterSecret       = "CLICKHOUSE_CLUSTER_SECRET"
 	EnvNamedCollectionsKey = "CLICKHOUSE_NAMED_COLLECTIONS_KEY"
 	EnvDiskEncryptionKey   = "CLICKHOUSE_DISK_ENCRYPTION_KEY"
+
+	EnvConfig        = "CLICKHOUSE_CONFIG"
+	EnvSkipUserSetup = "CLICKHOUSE_SKIP_USER_SETUP"
 
 	SecretKeyInterserverPassword = "interserver-password"
 	SecretKeyManagementPassword  = "management-password"

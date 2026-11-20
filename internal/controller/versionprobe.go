@@ -16,36 +16,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/ClickHouse/clickhouse-operator/api/v1alpha1"
 	"github.com/ClickHouse/clickhouse-operator/internal/controllerutil"
 )
-
-const (
-	DefaultProbeCPULimit        = "1"
-	DefaultProbeCPURequest      = "250m"
-	DefaultProbeMemoryLimit     = "256Mi"
-	DefaultProbeMemoryRequest   = "256Mi"
-	versionProbeBinary          = "/usr/bin/clickhouse"
-	versionProbeQuery           = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
-	versionProbeBackoffLimit    = int32(4)
-	versionProbeDeadline        = int64(300)
-	versionProbeRetryAnnotation = "clickhouse.com/version-probe-retry"
-	versionProbeRetryMaxDelay   = 32 * time.Minute
-	versionProbeTmpVolumeName   = "clickhouse-version-probe-tmp-volume"
-	versionProbeTmpPath         = "/tmp"
-	versionProbeWorkPath        = "/tmp/clickhouse-local"
-)
-
-// versionProbeRetryBackoff is a backoff config for failed version probe jobs recreation.
-var versionProbeRetryBackoff = wait.Backoff{
-	Duration: time.Minute,
-	Factor:   2,
-	Cap:      versionProbeRetryMaxDelay,
-}
 
 var errNoVersionProbeResult = errors.New("no successful version probe container found")
 
