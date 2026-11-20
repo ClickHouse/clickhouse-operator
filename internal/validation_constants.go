@@ -12,6 +12,8 @@ const (
 	ClickHouseDataPath = "/var/lib/clickhouse"
 )
 
+// The volume names below are also hard-coded in the v1alpha2 CEL rules on KeeperClusterSpec (Keeper reserved
+// names) and NamedVolumeClaimTemplateSet.Templates (PersistentVolumeName); keep them in sync.
 var (
 	// ReservedClickHouseVolumeNames list of reserved volume names for ClickHouse pods.
 	ReservedClickHouseVolumeNames = []string{

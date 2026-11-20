@@ -354,7 +354,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 
 		updatedCR := cr.DeepCopy()
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		updatedCR.Spec.VersionProbeTemplate = &v1.VersionProbeTemplate{
+		updatedCR.Spec.VersionProbeTemplate = &v1.VersionProbeTemplate{ //nolint:staticcheck // deprecated field still supported
 			Spec: v1.VersionProbeJobSpec{
 				Template: v1.VersionProbePodTemplate{
 					Metadata: v1.TemplateMeta{
@@ -376,7 +376,7 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		// Clear the cached version probe revision to force the probe to re-run,
 		// since the image didn't change but the overrides did.
 		Expect(suite.Client.Get(ctx, cr.NamespacedName(), updatedCR)).To(Succeed())
-		updatedCR.Status.VersionProbeRevision = ""
+		updatedCR.Status.VersionProbeRevision = "" //nolint:staticcheck // deprecated field still supported
 		Expect(suite.Client.Status().Update(ctx, updatedCR)).To(Succeed())
 
 		// Delete old job so new one is created with overrides.

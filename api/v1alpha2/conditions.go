@@ -1,0 +1,120 @@
+package v1alpha2
+
+import corev1 "k8s.io/api/core/v1"
+
+// ConditionType represents the type of condition.
+type ConditionType = string
+
+// ConditionReason represents the reason for a condition's Status.
+type ConditionReason = string
+
+// Common condition types and reasons for all resources.
+const (
+	// ConditionTypeSpecValid indicates that the Custom Resource passes validation.
+	ConditionTypeSpecValid     ConditionType   = "SpecValid"
+	ConditionReasonSpecInvalid ConditionReason = "SpecInvalid"
+	ConditionReasonSpecValid   ConditionReason = "SpecValid"
+
+	// ConditionTypeReconcileSucceeded indicates that latest reconciliation was successful.
+	ConditionTypeReconcileSucceeded     ConditionType   = "ReconcileSucceeded"
+	ConditionReasonStepFailed           ConditionReason = "ReconcileStepFailed"
+	ConditionReasonReconcileFinished    ConditionReason = "ReconcileFinished"
+	ConditionReasonReconciliationPaused ConditionReason = "ReconciliationPaused"
+
+	// ConditionTypeReplicaStartupSucceeded indicates that all replicas of the cluster are able to start.
+	ConditionTypeReplicaStartupSucceeded ConditionType   = "ReplicaStartupSucceeded"
+	ConditionReasonReplicasRunning       ConditionReason = "ReplicasRunning"
+	ConditionReasonReplicaError          ConditionReason = "ReplicaError"
+
+	// ConditionTypeHealthy indicates that all replicas of the cluster are ready to accept connections.
+	ConditionTypeHealthy            ConditionType   = "Healthy"
+	ConditionReasonReplicasReady    ConditionReason = "ReplicasReady"
+	ConditionReasonReplicasNotReady ConditionReason = "ReplicasNotReady"
+
+	// ConditionTypeClusterSizeAligned indicates that cluster replica amount matches the requested value.
+	ConditionTypeClusterSizeAligned ConditionType   = "ClusterSizeAligned"
+	ConditionReasonUpToDate         ConditionReason = "UpToDate"
+	ConditionReasonScalingDown      ConditionReason = "ScalingDown"
+	ConditionReasonScalingUp        ConditionReason = "ScalingUp"
+
+	// ConditionTypeConfigurationInSync indicates that cluster configuration is in desired state.
+	ConditionTypeConfigurationInSync    ConditionType   = "ConfigurationInSync"
+	ConditionReasonConfigurationChanged ConditionReason = "ConfigurationChanged"
+	ConditionReasonConfigReloadFailed   ConditionReason = "ConfigReloadFailed"
+	ConditionReasonConfigReloadPending  ConditionReason = "ConfigReloadPending"
+
+	// ConditionTypeVersionInSync indicates that all replicas report the same version.
+	ConditionTypeVersionInSync     ConditionType   = "VersionInSync"
+	ConditionReasonVersionMatch    ConditionReason = "VersionMatch"
+	ConditionReasonVersionMismatch ConditionReason = "VersionMismatch"
+	ConditionReasonVersionPending  ConditionReason = "VersionPending"
+
+	// ConditionTypeVersionUpgraded indicates whether latest version within upgrade channel selected.
+	ConditionTypeVersionUpgraded        ConditionType   = "VersionUpgraded"
+	ConditionReasonWrongReleaseChannel  ConditionReason = "WrongReleaseChannel"
+	ConditionReasonMinorUpdateAvailable ConditionReason = "MinorUpdateAvailable"
+	ConditionReasonMajorUpdateAvailable ConditionReason = "MajorUpdateAvailable"
+	ConditionReasonVersionOutdated      ConditionReason = "VersionOutdated"
+	ConditionReasonUpgradeCheckFailed   ConditionReason = "UpgradeCheckFailed"
+
+	// ConditionTypeReady indicates that cluster is ready to serve client requests.
+	ConditionTypeReady                      ConditionType   = "Ready"
+	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"
+	ClickHouseConditionSomeShardsNotReady   ConditionReason = "SomeShardsNotReady"
+	KeeperConditionReasonStandaloneReady    ConditionReason = "StandaloneReady"
+	KeeperConditionReasonClusterReady       ConditionReason = "ClusterReady"
+	KeeperConditionReasonNoLeader           ConditionReason = "NoLeader"
+	KeeperConditionReasonInconsistentState  ConditionReason = "InconsistentState"
+	KeeperConditionReasonNotEnoughFollowers ConditionReason = "NotEnoughFollowers"
+)
+
+// ClickHouseCluster specific condition types and reasons.
+const (
+	// ClickHouseConditionTypeNewReplicasSynced indicates that Replicated and integration databases were created on
+	// all newly added replicas, driven by `spec.settings.databaseSync.newReplicas`. It does not mean that all
+	// replicas have the same schema.
+	ClickHouseConditionTypeNewReplicasSynced ConditionType = "NewReplicasSynced"
+
+	ClickHouseConditionReplicasInSync               ConditionReason = "ReplicasInSync"
+	ClickHouseConditionDatabasesNotCreated          ConditionReason = "DatabasesNotCreated"
+	ClickHouseConditionDefaultDatabaseNotReplicated ConditionReason = "DefaultDatabaseNotReplicated"
+	ClickHouseConditionNewReplicasSyncSkipped       ConditionReason = "NewReplicasSyncSkipped"
+
+	// ClickHouseConditionTypeStaleReplicasCleanedUp indicates that database replicas left in Keeper after their
+	// shard or replica was removed were dropped, driven by `spec.settings.databaseSync.staleReplicas`.
+	ClickHouseConditionTypeStaleReplicasCleanedUp ConditionType = "StaleReplicasCleanedUp"
+
+	ClickHouseConditionStaleReplicasDropped        ConditionReason = "StaleReplicasDropped"
+	ClickHouseConditionReplicasNotCleanedUp        ConditionReason = "ReplicasNotCleanedUp"
+	ClickHouseConditionStaleReplicasCleanupIgnored ConditionReason = "StaleReplicasCleanupIgnored"
+
+	// ClickHouseConditionTypeExternalSecretValid indicates whether the externally managed Secret contains all required keys.
+	// This condition is present only when spec.externalSecret is configured; it is removed when externalSecret is unset.
+	ClickHouseConditionTypeExternalSecretValid      ConditionType   = "ExternalSecretValid"
+	ClickHouseConditionReasonExternalSecretValid    ConditionReason = "ExternalSecretValid"
+	ClickHouseConditionReasonExternalSecretNotFound ConditionReason = "ExternalSecretNotFound"
+	ClickHouseConditionReasonExternalSecretInvalid  ConditionReason = "ExternalSecretInvalid"
+
+	// ClickHouseConditionReasonPingImpossible is a special condition reason. It is set in case the operator cannot
+	// create a client to ping replica, but it may be healthy.
+	ClickHouseConditionReasonPingImpossible ConditionReason = "PingImpossible"
+)
+
+// KeeperCluster specific condition types and reasons.
+const (
+	// KeeperConditionTypeScaleAllowed indicates that cluster is ready to change quorum size.
+	KeeperConditionTypeScaleAllowed ConditionType = "ScaleAllowed"
+
+	KeeperConditionReasonReplicaHasPendingChanges ConditionReason = "ReplicaHasPendingChanges"
+	KeeperConditionReasonReplicaNotReady          ConditionReason = "ReplicaNotReady"
+	KeeperConditionReasonNoQuorum                 ConditionReason = "NoQuorum"
+	KeeperConditionReasonWaitingFollowers         ConditionReason = "WaitingFollowers"
+	KeeperConditionReasonReadyToScale             ConditionReason = "ReadyToScale"
+)
+
+// Special condition added to the ClickHouseCluster pods to indicate that replica is initialized by the operator.
+const (
+	ReplicaInitializedCondition corev1.PodConditionType = "clickhouse.com/ReplicaInitialized"
+	ReplicaInitializedReason    ConditionReason         = "ReplicaInitialized"
+	ReplicaDeletionReason       ConditionReason         = "ReplicaScheduledForDeletion"
+)

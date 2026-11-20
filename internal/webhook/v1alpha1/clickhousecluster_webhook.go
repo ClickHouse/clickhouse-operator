@@ -156,6 +156,16 @@ func (w *ClickHouseClusterWebhook) validateImpl(obj *chv1.ClickHouseCluster) (ad
 		if err := obj.Spec.Settings.DefaultUserPassword.Validate(); err != nil {
 			errs = append(errs, err)
 		}
+
+		if obj.Spec.Settings.DefaultUserPassword.ConfigMap != nil { //nolint:staticcheck // warn on deprecated field
+			warns = append(warns, ".spec.settings.defaultUserPassword.configMap is deprecated and will be removed in v1alpha2: "+
+				"ConfigMaps are not suitable for credentials, use .spec.settings.defaultUserPassword.secret instead")
+		}
+	}
+
+	if obj.Spec.VersionProbeTemplate != nil { //nolint:staticcheck // warn on deprecated field
+		warns = append(warns, ".spec.versionProbeTemplate is deprecated and will be removed in v1alpha2: "+
+			"the version probe is replaced by .spec.imageVersionCatalog")
 	}
 
 	seenPorts := make(map[int32]int, len(obj.Spec.AdditionalPorts))
