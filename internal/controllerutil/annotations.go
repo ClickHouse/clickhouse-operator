@@ -11,6 +11,8 @@ const (
 
 	AnnotationStatefulSetVersion  = "clickhouse.com/statefulset-version"
 	AnnotationPauseReconciliation = "clickhouse.com/pause-reconciliation"
+
+	AnnotationDefaultContainer = "kubectl.kubernetes.io/default-container"
 )
 
 // PauseAnnotated reports whether the pause annotation is set to "true".

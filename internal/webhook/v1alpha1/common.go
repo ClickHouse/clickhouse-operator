@@ -105,7 +105,7 @@ func validateAdditionalVolumeClaimTemplates(data *corev1.PersistentVolumeClaimSp
 			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q collides with primary data volume name", i, tmpl.Name))
 		}
 
-		if tmpl.Name == "default" {
+		if tmpl.Name == internal.ClickHouseDefaultDiskName {
 			errs = append(errs, fmt.Errorf("additionalVolumeClaimTemplates[%d].metadata.name %q is reserved by the ClickHouse default disk", i, tmpl.Name))
 		}
 

@@ -280,12 +280,12 @@ func templateStatefulSet(r *clickhouseReconciler, id v1.ClickHouseReplicaID, cfg
 				Labels:       resourceLabels,
 				Annotations: controllerutil.MergeMaps(r.Cluster.Spec.Annotations, map[string]string{
 					controllerutil.AnnotationConfigHash:       cfgRestartRevision,
-					"kubectl.kubernetes.io/default-container": ContainerName,
+					controllerutil.AnnotationDefaultContainer: ContainerName,
 				}),
 			},
 			Spec: podSpec,
 		},
-		RevisionHistoryLimit: new(int32(DefaultRevisionHistory)),
+		RevisionHistoryLimit: new(int32(controller.DefaultRevisionHistory)),
 	}
 
 	if r.Cluster.Spec.DataVolumeClaimSpec != nil {
@@ -366,7 +366,7 @@ func templatePodSpec(r *clickhouseReconciler, id v1.ClickHouseReplicaID) (corev1
 		podSpec.Affinity = &corev1.Affinity{
 			PodAntiAffinity: &corev1.PodAntiAffinity{
 				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
-					Weight: MaximalAffinityWeight,
+					Weight: controller.MaximalAffinityWeight,
 					PodAffinityTerm: corev1.PodAffinityTerm{
 						TopologyKey: zoneKey,
 						LabelSelector: &metav1.LabelSelector{
@@ -477,11 +477,11 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 		Name: ContainerName,
 		Env: []corev1.EnvVar{
 			{
-				Name:  "CLICKHOUSE_CONFIG",
+				Name:  EnvConfig,
 				Value: path.Join(ConfigPath, ConfigFileName),
 			},
 			{
-				Name:  "CLICKHOUSE_SKIP_USER_SETUP",
+				Name:  EnvSkipUserSetup,
 				Value: "1",
 			},
 		},
@@ -576,14 +576,14 @@ func templateContainer(r *clickhouseReconciler) (corev1.Container, error) {
 type protocolType = string
 
 const (
-	protocolTypeInterserver    protocolType = "interserver"
-	protocolTypePrometheus     protocolType = "prometheus"
-	protocolTypeManagement     protocolType = "management"
-	protocolTypeManagementHTTP protocolType = "management-http"
-	protocolTypeTCP            protocolType = "tcp"
-	protocolTypeTCPSecure      protocolType = "tcp-secure"
-	protocolTypeHTTP           protocolType = "http"
-	protocolTypeHTTPSecure     protocolType = "http-secure"
+	protocolTypeInterserver    protocolType = internal.ClickHousePortNameInterserver
+	protocolTypePrometheus     protocolType = internal.ClickHousePortNamePrometheus
+	protocolTypeManagement     protocolType = internal.ClickHousePortNameManagement
+	protocolTypeManagementHTTP protocolType = internal.ClickHousePortNameManagementHTTP
+	protocolTypeTCP            protocolType = internal.ClickHousePortNameTCP
+	protocolTypeTCPSecure      protocolType = internal.ClickHousePortNameTCPSecure
+	protocolTypeHTTP           protocolType = internal.ClickHousePortNameHTTP
+	protocolTypeHTTPSecure     protocolType = internal.ClickHousePortNameHTTPSecure
 )
 
 type protocol struct {
@@ -747,12 +747,12 @@ func buildMounts(r *clickhouseReconciler) []corev1.VolumeMount {
 			corev1.VolumeMount{
 				Name:      internal.PersistentVolumeName,
 				MountPath: internal.ClickHouseDataPath,
-				SubPath:   "var-lib-clickhouse",
+				SubPath:   controller.PersistentVolumeDataSubPath,
 			},
 			corev1.VolumeMount{
 				Name:      internal.PersistentVolumeName,
 				MountPath: "/var/log/clickhouse-server",
-				SubPath:   "var-log-clickhouse",
+				SubPath:   controller.PersistentVolumeLogSubPath,
 			},
 		)
 	} else if !controller.UserMountsAt(r.Cluster.Spec.ContainerTemplate.VolumeMounts, internal.ClickHouseDataPath) {

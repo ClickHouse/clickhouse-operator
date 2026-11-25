@@ -4,6 +4,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -20,6 +21,48 @@ const (
 	AppProtocolHTTPS = "https"
 	AppProtocolTCP   = "tcp"
 )
+
+const (
+	DefaultRevisionHistory = 10
+	MaximalAffinityWeight  = 100
+)
+
+const (
+	PersistentVolumeDataSubPath = "var-lib-clickhouse"
+	PersistentVolumeLogSubPath  = "var-log-clickhouse"
+)
+
+const (
+	OpenSSLVerificationModeRelaxed = "relaxed"
+	OpenSSLDisabledProtocols       = "sslv2,sslv3"
+)
+
+// KeeperClusterReferenceField indexes ClickHouseClusters by their referenced KeeperCluster "namespace/name".
+// Registered by the ClickHouse controller setup; the Keeper controller requires it on the same manager.
+const KeeperClusterReferenceField = "clickhouse.com/keeperClusterReference"
+
+const (
+	DefaultProbeCPULimit        = "1"
+	DefaultProbeCPURequest      = "250m"
+	DefaultProbeMemoryLimit     = "256Mi"
+	DefaultProbeMemoryRequest   = "256Mi"
+	versionProbeBinary          = "/usr/bin/clickhouse"
+	versionProbeQuery           = "INSERT INTO FUNCTION file('/dev/termination-log', 'RawBLOB', 'version String') SELECT version()"
+	versionProbeBackoffLimit    = int32(4)
+	versionProbeDeadline        = int64(300)
+	versionProbeRetryAnnotation = "clickhouse.com/version-probe-retry"
+	versionProbeRetryMaxDelay   = 32 * time.Minute
+	versionProbeTmpVolumeName   = "clickhouse-version-probe-tmp-volume"
+	versionProbeTmpPath         = "/tmp"
+	versionProbeWorkPath        = "/tmp/clickhouse-local"
+)
+
+// versionProbeRetryBackoff is a backoff config for failed version probe jobs recreation.
+var versionProbeRetryBackoff = wait.Backoff{
+	Duration: time.Minute,
+	Factor:   2,
+	Cap:      versionProbeRetryMaxDelay,
+}
 
 var (
 	// DefaultLivenessProbeSettings defines default settings for Kubernetes liveness probes.

@@ -51,3 +51,5 @@ descheduler
 rollouts
 [Zz]nodes?
 ACLs?
+[Rr]equeues?
+[Uu]nexported
