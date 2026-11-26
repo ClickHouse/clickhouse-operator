@@ -316,24 +316,21 @@ func (cc *ClusterController) observeDigest(ctx context.Context, cluster *v1.Clic
 
 	ids := slices.Collect(cluster.ReplicaIDs())
 
-	results := controllerutil.ExecuteParallel(ids, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, string, error) {
-		probeCtx, cancel := context.WithTimeout(ctx, chctrl.LoadReplicaStateTimeout)
-		defer cancel()
-
-		probe, err := cmd.Probe(probeCtx, id)
+	results := controllerutil.ExecuteParallel(ctx, ids, func(ctx context.Context, id v1.ClickHouseReplicaID) (string, error) {
+		probe, err := cmd.Probe(ctx, id)
 		if err != nil {
-			return id, "", fmt.Errorf("probe replica: %w", err)
+			return "", fmt.Errorf("probe replica: %w", err)
 		}
 
-		warnings, err := cmd.Warnings(probeCtx, id)
+		warnings, err := cmd.Warnings(ctx, id)
 		if err != nil {
-			return id, "", fmt.Errorf("fetch warnings: %w", err)
+			return "", fmt.Errorf("fetch warnings: %w", err)
 		}
 
 		slices.Sort(warnings)
 
-		return id, fmt.Sprintf("%s/%s:%s", probe.ReloadConfigRevision, probe.UsersReloadConfigRevision, strings.Join(warnings, ",")), nil
-	})
+		return fmt.Sprintf("%s/%s:%s", probe.ReloadConfigRevision, probe.UsersReloadConfigRevision, strings.Join(warnings, ",")), nil
+	}, controllerutil.WithTaskTimeout(chctrl.LoadReplicaStateTimeout))
 
 	var sb strings.Builder
 

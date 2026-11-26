@@ -200,16 +200,14 @@ func (cmd *commander) SyncDatabases(
 	ctx context.Context,
 	log controllerutil.Logger,
 	sources, targets []v1.ClickHouseReplicaID,
+	opts ...controllerutil.ParallelOption,
 ) map[v1.ClickHouseReplicaID]bool {
 	synced := map[v1.ClickHouseReplicaID]bool{}
 
 	replicas := slices.Concat(sources, targets)
 	slices.SortFunc(replicas, compareReplicaID)
 
-	replicaDatabases := controllerutil.ExecuteParallel(slices.Compact(replicas), func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, map[string]databaseDescriptor, error) {
-		databases, err := cmd.Databases(ctx, id)
-		return id, databases, err
-	})
+	replicaDatabases := controllerutil.ExecuteParallel(ctx, slices.Compact(replicas), cmd.Databases, opts...)
 
 	for id, dbs := range replicaDatabases {
 		if dbs.Err != nil {
@@ -230,9 +228,9 @@ func (cmd *commander) SyncDatabases(
 		maps.Copy(databases, replicaDatabases[id].Result)
 	}
 
-	results := controllerutil.ExecuteParallel(targets, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+	results := controllerutil.ExecuteParallel(ctx, targets, func(ctx context.Context, id v1.ClickHouseReplicaID) (struct{}, error) {
 		if err := replicaDatabases[id].Err; err != nil {
-			return id, struct{}{}, err
+			return struct{}{}, err
 		}
 
 		dbsToSync := map[string]databaseDescriptor{}
@@ -242,8 +240,8 @@ func (cmd *commander) SyncDatabases(
 			}
 		}
 
-		return id, struct{}{}, cmd.CreateDatabases(ctx, log, id, dbsToSync)
-	})
+		return struct{}{}, cmd.CreateDatabases(ctx, log, id, dbsToSync)
+	}, opts...)
 
 	for id, res := range results {
 		if res.Err != nil {
@@ -372,7 +370,7 @@ func (cmd *commander) EnsureReplicaDefaultDatabaseEngine(ctx context.Context, lo
 	return true, nil
 }
 
-func (cmd *commander) SyncShard(ctx context.Context, log controllerutil.Logger, shardID int32) error {
+func (cmd *commander) SyncShard(ctx context.Context, log controllerutil.Logger, shardID int32, opts ...controllerutil.ParallelOption) error {
 	replicasToSync := make([]v1.ClickHouseReplicaID, 0, cmd.cluster.Replicas())
 	for id := range cmd.cluster.Replicas() {
 		replicasToSync = append(replicasToSync, v1.ClickHouseReplicaID{
@@ -381,14 +379,14 @@ func (cmd *commander) SyncShard(ctx context.Context, log controllerutil.Logger, 
 		})
 	}
 
-	results := controllerutil.ExecuteParallel(replicasToSync, func(id v1.ClickHouseReplicaID) (v1.ClickHouseReplicaID, struct{}, error) {
+	results := controllerutil.ExecuteParallel(ctx, replicasToSync, func(ctx context.Context, id v1.ClickHouseReplicaID) (struct{}, error) {
 		errs := cmd.SyncReplica(ctx, log.With("replica_id", id), id)
 		if len(errs) > 0 {
-			return id, struct{}{}, fmt.Errorf("sync replica %s: %w", id, errors.Join(errs...))
+			return struct{}{}, fmt.Errorf("sync replica %s: %w", id, errors.Join(errs...))
 		}
 
-		return id, struct{}{}, nil
-	})
+		return struct{}{}, nil
+	}, opts...)
 
 	var errs []error
 	for _, res := range results {

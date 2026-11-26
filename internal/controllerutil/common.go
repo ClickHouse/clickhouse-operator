@@ -2,6 +2,7 @@ package controllerutil
 
 import (
 	"cmp"
+	"context"
 	"crypto/md5" //nolint:gosec
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,8 +16,10 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"golang.org/x/sync/semaphore"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -214,35 +217,92 @@ type ExecutionResult[Result any] struct {
 	Err    error
 }
 
-// ExecuteParallel executes the given function 'f' in parallel for each item in 'tasks'.
-// It does not use context, caller should ensure proper cancellation in the task.
-func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
-	tasks Tasks,
-	f func(Item) (Id, Result, error),
+// DefaultParallelism is the default number of tasks running at once.
+const DefaultParallelism = 8
+
+var errNestedSemaphore = errors.New("nested ExecuteParallel call with the semaphore held by the calling task")
+
+type parallelOptions struct {
+	semaphore   *semaphore.Weighted
+	taskTimeout time.Duration
+}
+
+type heldSemaphoreKey struct {
+	semaphore *semaphore.Weighted
+}
+
+// ParallelOption configures ExecuteParallel.
+type ParallelOption func(*parallelOptions)
+
+// WithParallelism limits the running tasks to n; calls reusing the option share the limit, a nested call sharing it fails all its tasks.
+func WithParallelism(n int) ParallelOption {
+	sem := semaphore.NewWeighted(int64(n))
+
+	return func(o *parallelOptions) {
+		o.semaphore = sem
+	}
+}
+
+// WithTaskTimeout bounds the context of each task, counting from the task start.
+func WithTaskTimeout(timeout time.Duration) ParallelOption {
+	return func(o *parallelOptions) {
+		o.taskTimeout = timeout
+	}
+}
+
+// ExecuteParallel runs 'f' for each id in 'ids' under the semaphore limit; tasks not started before ctx is done fail with its cause.
+func ExecuteParallel[Id comparable, Result any](
+	ctx context.Context,
+	ids []Id,
+	f func(context.Context, Id) (Result, error),
+	opts ...ParallelOption,
 ) map[Id]ExecutionResult[Result] {
-	if len(tasks) == 0 {
+	if len(ids) == 0 {
 		return nil
 	}
 
+	var options parallelOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	if options.semaphore == nil {
+		options.semaphore = semaphore.NewWeighted(DefaultParallelism)
+	}
+
+	held := heldSemaphoreKey{semaphore: options.semaphore}
+	if ctx.Value(held) != nil {
+		resultMap := make(map[Id]ExecutionResult[Result], len(ids))
+		for _, id := range ids {
+			resultMap[id] = ExecutionResult[Result]{Err: errNestedSemaphore}
+		}
+
+		return resultMap
+	}
+
+	taskCtx := context.WithValue(ctx, held, true)
+
 	wg := sync.WaitGroup{}
 
-	var results = make(chan executionResultWithID[Id, Result], len(tasks))
+	var results = make(chan executionResultWithID[Id, Result], len(ids))
 
-	for _, task := range tasks {
+	for _, id := range ids {
+		if err := options.semaphore.Acquire(ctx, 1); err != nil {
+			results <- executionResultWithID[Id, Result]{id: id, err: context.Cause(ctx)}
+			continue
+		}
+
 		wg.Go(func() {
-			id, res, err := f(task)
-			results <- executionResultWithID[Id, Result]{
-				id:     id,
-				result: res,
-				err:    err,
-			}
+			defer options.semaphore.Release(1)
+
+			results <- executeTask(taskCtx, id, f, options.taskTimeout)
 		})
 	}
 
 	wg.Wait()
 	close(results)
 
-	resultMap := make(map[Id]ExecutionResult[Result], len(tasks))
+	resultMap := make(map[Id]ExecutionResult[Result], len(ids))
 	for res := range results {
 		resultMap[res.id] = ExecutionResult[Result]{
 			Result: res.result,
@@ -251,6 +311,32 @@ func ExecuteParallel[Item any, Id comparable, Tasks ~[]Item, Result any](
 	}
 
 	return resultMap
+}
+
+func executeTask[Id comparable, Result any](
+	ctx context.Context,
+	id Id,
+	f func(context.Context, Id) (Result, error),
+	timeout time.Duration,
+) executionResultWithID[Id, Result] {
+	if err := context.Cause(ctx); err != nil {
+		return executionResultWithID[Id, Result]{id: id, err: err}
+	}
+
+	if timeout > 0 {
+		var cancel context.CancelFunc
+
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	res, err := f(ctx, id)
+
+	return executionResultWithID[Id, Result]{
+		id:     id,
+		result: res,
+		err:    err,
+	}
 }
 
 // PathToName converts a filesystem-like path to a name by replacing '/' and '.' with '-'.
