@@ -121,4 +121,14 @@ var _ = Describe("schema sync steps", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Reason).To(Equal(v1.ClickHouseConditionReplicasInSync))
 	})
+
+	It("allows deleting every replica of a shard scaled to zero", func(ctx context.Context) {
+		r := reconciler(true, map[v1.ClickHouseReplicaID]replicaState{{ShardID: 0, Index: 0}: replica(false)}, schemaSyncResult{})
+		r.Cluster.Spec.Replicas = new(int32(0))
+		r.commander = &commander{}
+
+		_, err := r.reconcilePreScaleDownSync(ctx, log)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(r.unsyncedShards).To(BeEmpty())
+	})
 })

@@ -106,6 +106,7 @@ clickhouse:
     # podTemplate: {}
 
     # Number of replicas in the single shard.
+    # Set to 0 to stop the cluster: replicas are removed, their PersistentVolumeClaims are kept.
     replicas: 3
 
     # Configuration parameters for ClickHouse server.
@@ -171,7 +172,8 @@ keeper:
     # Parameters passed to the Keeper pod spec.
     # podTemplate: {}
 
-    # Number of replicas in the cluster
+    # Number of replicas in the cluster.
+    # Set to 0 to stop the cluster: replicas are removed, their PersistentVolumeClaims are kept.
     replicas: 3
 
     # Configuration parameters for ClickHouse Keeper server.

@@ -43,6 +43,11 @@ const (
 	EventReasonClickHouseWarning EventReason = "ClickHouseWarning"
 )
 
+// Event reason for a ClickHouseCluster running without Keeper nodes.
+const (
+	EventReasonNoKeeperNodes EventReason = "NoKeeperNodes"
+)
+
 // EventAction represents the action associated with an event.
 type EventAction = string
 

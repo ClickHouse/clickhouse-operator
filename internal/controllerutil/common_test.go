@@ -102,6 +102,17 @@ var _ = Describe("ApplyDefault", func() {
 		Expect(ApplyDefault(&source, defaults)).To(Succeed())
 		Expect(*source.BoolPtr).To(BeFalse())
 	})
+
+	It("should not update pointer to zero value if it is not nil", func() {
+		source := SampleStruct{
+			Pointer: new(0),
+		}
+		defaults := SampleStruct{
+			Pointer: new(42),
+		}
+		Expect(ApplyDefault(&source, defaults)).To(Succeed())
+		Expect(*source.Pointer).To(BeZero())
+	})
 })
 
 var _ = Describe("UpdateResult", func() {

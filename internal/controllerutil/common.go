@@ -137,7 +137,7 @@ func applyDefaultRecursive(sourceValue reflect.Value, defaults reflect.Value) er
 	}
 
 	if sourceValue.Kind() == reflect.Pointer {
-		if !sourceValue.IsNil() && !defaults.IsNil() && sourceValue.Elem().Kind() != reflect.Bool {
+		if !sourceValue.IsNil() && !defaults.IsNil() && sourceValue.Elem().Kind() == reflect.Struct {
 			return applyDefaultRecursive(sourceValue.Elem(), defaults.Elem())
 		}
 	}

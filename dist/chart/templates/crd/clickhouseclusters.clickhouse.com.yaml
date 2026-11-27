@@ -3490,7 +3490,9 @@ spec:
                   rule: '!has(self.topologyMinDomains) || has(self.topologyZoneKey)'
               replicas:
                 default: 3
-                description: Number of replicas in the single shard.
+                description: |-
+                  Number of replicas in the single shard.
+                  Set to 0 to stop the cluster: replicas are removed, their PersistentVolumeClaims are kept.
                 format: int32
                 minimum: 0
                 type: integer

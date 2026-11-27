@@ -213,11 +213,6 @@ func (r *keeperReconciler) reconcileClusterRevisions(_ context.Context, log ctrl
 }
 
 func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
-	if r.Cluster.Replicas() == 0 {
-		log.Debug("keeper replicaState count is zero")
-		return chctrl.StepContinue(), nil
-	}
-
 	statefulSets, err := r.ListReplicaResources[v1.KeeperReplicaID, *appsv1.StatefulSet, *appsv1.StatefulSetList](ctx, log, v1.KeeperReplicaIDFromLabels)
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list StatefulSets: %w", err)
@@ -228,14 +223,18 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepResult{}, fmt.Errorf("list ConfigMaps: %w", err)
 	}
 
-	pods, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.KeeperReplicaIDFromLabels)
+	pods, err := r.ListReplicaResources[v1.KeeperReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.KeeperReplicaIDFromLabels, chctrl.IncludeTerminating())
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list Pods: %w", err)
 	}
 
 	execResults := ctrlutil.ExecuteParallel(ctx, slices.Collect(maps.Keys(statefulSets)), func(ctx context.Context, id v1.KeeperReplicaID) (replicaState, error) {
 		sts := statefulSets[id]
+
 		pod := pods[id]
+		if pod != nil && pod.DeletionTimestamp != nil {
+			pod = nil
+		}
 
 		startupErr := chctrl.PodStartupError(pod)
 
@@ -294,9 +293,21 @@ func (r *keeperReconciler) reconcileActiveReplicaStatus(ctx context.Context, log
 		return chctrl.StepResult{}, err
 	}
 
-	r.evaluateReplicaConditions()
+	replicasLeft := len(pods)
+	for id := range statefulSets {
+		if _, ok := pods[id]; !ok {
+			replicasLeft++
+		}
+	}
+
+	r.evaluateReplicaConditions(replicasLeft)
 
 	if !r.HorizontalScaleAllowed {
+		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
+	}
+
+	// Pods are not watched, poll until the last replica is gone.
+	if r.Cluster.Replicas() == 0 && replicasLeft > 0 {
 		return chctrl.StepRequeue(chctrl.RequeueProbePoll), nil
 	}
 
@@ -416,13 +427,13 @@ func (r *keeperReconciler) reconcileQuorumMembership(_ context.Context, log ctrl
 func (r *keeperReconciler) reconcilePodDisruptionBudget(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	if !r.Cluster.Spec.PodDisruptionBudget.Ignored() {
 		pdb := templatePodDisruptionBudget(r.Cluster)
-		if r.Cluster.Spec.PodDisruptionBudget.Enabled() {
+		if r.Cluster.Spec.PodDisruptionBudget.Enabled() && r.Cluster.Replicas() > 0 {
 			if _, err := r.ReconcilePodDisruptionBudget(ctx, log, pdb, v1.EventActionReconciling); err != nil {
 				return chctrl.StepResult{}, fmt.Errorf("reconcile PodDisruptionBudget resource: %w", err)
 			}
 		} else {
 			if err := r.Delete(ctx, pdb, v1.EventActionReconciling); err != nil {
-				return chctrl.StepResult{}, fmt.Errorf("delete disabled PodDisruptionBudget resource: %w", err)
+				return chctrl.StepResult{}, fmt.Errorf("delete PodDisruptionBudget resource: %w", err)
 			}
 		}
 	}
@@ -588,7 +599,7 @@ func (r *keeperReconciler) reconcileCleanUp(ctx context.Context, log ctrlutil.Lo
 	return chctrl.StepContinue(), nil
 }
 
-func (r *keeperReconciler) evaluateReplicaConditions() {
+func (r *keeperReconciler) evaluateReplicaConditions(replicasLeft int) {
 	var (
 		notReadyIDs, notUpdatedIDs []string
 		startupErrors              = map[string]string{}
@@ -636,6 +647,13 @@ func (r *keeperReconciler) evaluateReplicaConditions() {
 
 	if len(notUpdatedIDs) == 0 && exists == int(r.Cluster.Replicas()) {
 		r.Cluster.Status.CurrentRevision = r.Cluster.Status.UpdateRevision
+	}
+
+	if r.Cluster.Replicas() == 0 {
+		cond, events := chctrl.ScaledToZeroCondition(replicasLeft)
+		r.SetCondition(cond, events...)
+
+		return
 	}
 
 	var (
@@ -720,6 +738,11 @@ func (r *keeperReconciler) evaluateVersionConditions(isUpdating bool) {
 				observedVersion = s.Status.Version
 			}
 		}
+	}
+
+	// Keep reporting the last observed version while no replicas run.
+	if observedVersion == "" && r.Cluster.Replicas() == 0 {
+		observedVersion = r.Cluster.Status.Version
 	}
 
 	if observedVersion == "" {
@@ -839,8 +862,8 @@ func (r *keeperReconciler) checkHorizontalScalingAllowed(_ context.Context, _ ct
 		leaderMode = ModeStandalone
 	}
 
-	// Allow any scaling from 0 replicas
-	if activeReplicas == 0 {
+	// Allow any scaling from or to 0 replicas
+	if activeReplicas == 0 || r.Cluster.Replicas() == 0 {
 		r.HorizontalScaleAllowed = true
 		r.SetCondition(metav1.Condition{
 			Type:    v1.KeeperConditionTypeScaleAllowed,

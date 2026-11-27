@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	gcmp "github.com/google/go-cmp/cmp"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -264,6 +265,32 @@ func ClusterSizeCondition(existing, expected int) metav1.Condition {
 	default:
 		return metav1.Condition{Type: v1.ConditionTypeClusterSizeAligned, Status: metav1.ConditionTrue, Reason: v1.ConditionReasonUpToDate}
 	}
+}
+
+// ScaledToZeroCondition evaluates Ready of a cluster scaled to zero: ready once no replicas are left.
+func ScaledToZeroCondition(replicasLeft int) (metav1.Condition, []EventSpec) {
+	if replicasLeft > 0 {
+		return metav1.Condition{
+			Type:    v1.ConditionTypeReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  v1.ConditionReasonScalingDown,
+			Message: fmt.Sprintf("Waiting for replicas to stop: %d left", replicasLeft),
+		}, nil
+	}
+
+	message := "Cluster is scaled to zero replicas"
+
+	return metav1.Condition{
+		Type:    v1.ConditionTypeReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  v1.ConditionReasonScaledToZero,
+		Message: message,
+	}, []EventSpec{{
+		Type:    corev1.EventTypeNormal,
+		Reason:  v1.EventReasonClusterReady,
+		Action:  v1.EventActionBecameReady,
+		Message: message,
+	}}
 }
 
 func truncateString(value string, maxLength int) string {

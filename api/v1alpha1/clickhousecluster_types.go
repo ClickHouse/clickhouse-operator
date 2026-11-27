@@ -38,6 +38,7 @@ func (s *ClickHouseNetworkPolicySpec) Enabled() bool {
 // +kubebuilder:validation:XValidation:rule="has(self.keeperClusterRef) != has(self.externalKeeper)",message="exactly one of keeperClusterRef or externalKeeper must be set"
 type ClickHouseClusterSpec struct {
 	// Number of replicas in the single shard.
+	// Set to 0 to stop the cluster: replicas are removed, their PersistentVolumeClaims are kept.
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Minimum=0

@@ -180,8 +180,8 @@ func (r *clickhouseReconciler) reconcilePreScaleDownSync(ctx context.Context, lo
 		}
 
 		switch {
-		case id.ShardID >= r.Cluster.Shards():
-			// Whole shard removal drops the shard data by design, no surviving replicas to sync.
+		case id.ShardID >= r.Cluster.Shards() || r.Cluster.Replicas() == 0:
+			// Whole shard removal or scale to zero, no surviving replicas to sync.
 		case shardHasReachableReplica[id.ShardID]:
 			shardsToSyncSet[id.ShardID] = struct{}{}
 		default:

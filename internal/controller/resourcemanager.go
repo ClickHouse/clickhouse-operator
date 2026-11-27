@@ -409,13 +409,33 @@ func diffFilter(specFields []string) gcmp.Option {
 	}, gcmp.Ignore())
 }
 
+// ListReplicaOption configures ListReplicaResources.
+type ListReplicaOption func(*listReplicaOptions)
+
+type listReplicaOptions struct {
+	includeTerminating bool
+}
+
+// IncludeTerminating makes ListReplicaResources keep the resources that are being deleted.
+func IncludeTerminating() ListReplicaOption {
+	return func(o *listReplicaOptions) {
+		o.includeTerminating = true
+	}
+}
+
 // ListReplicaResources lists the resources for replicas and maps them to replica IDs using the provided labelToID function.
 // Resources without replica labels are skipped silently, resources with invalid replica labels are skipped with a warning.
+// Resources that are being deleted are skipped unless IncludeTerminating is passed.
 func (rm *ResourceManager) ListReplicaResources[
 	ID comparable,
 	Res client.Object,
 	RList client.ObjectList,
-](ctx context.Context, log util.Logger, labelToID func(map[string]string) (ID, error)) (map[ID]Res, error) {
+](ctx context.Context, log util.Logger, labelToID func(map[string]string) (ID, error), opts ...ListReplicaOption) (map[ID]Res, error) {
+	var options listReplicaOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+
 	list, ok := reflect.TypeAssert[RList](reflect.New(reflect.TypeFor[RList]().Elem()))
 	if !ok {
 		return nil, fmt.Errorf("ListReplicaResources: unsupported RList type %T", list)
@@ -436,7 +456,7 @@ func (rm *ResourceManager) ListReplicaResources[
 			return nil, fmt.Errorf("not compatible list item type: %s", items.Index(i).Addr().Type().Name())
 		}
 
-		if !item.GetDeletionTimestamp().IsZero() {
+		if !options.includeTerminating && !item.GetDeletionTimestamp().IsZero() {
 			continue
 		}
 
