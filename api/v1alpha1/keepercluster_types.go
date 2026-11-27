@@ -34,7 +34,8 @@ func (s *KeeperNetworkPolicySpec) Enabled() bool {
 
 // KeeperClusterSpec defines the desired state of KeeperCluster.
 type KeeperClusterSpec struct {
-	// Number of replicas in the cluster
+	// Number of replicas in the cluster.
+	// Set to 0 to stop the cluster: replicas are removed, their PersistentVolumeClaims are kept.
 	// +optional
 	// +kubebuilder:default:=3
 	// +kubebuilder:validation:Enum=0;1;3;5;7;9;11;13;15

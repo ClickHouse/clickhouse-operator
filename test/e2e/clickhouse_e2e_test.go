@@ -19,6 +19,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -1094,6 +1095,63 @@ var _ = Describe("ClickHouse controller", Label("clickhouse"), func() {
 						g.Expect(hasLocalDatabase(chClient, id)).To(BeFalse(), "replica %s", id)
 					}
 				}).WithTimeout(20 * time.Second).WithPolling(pollingInterval).Should(Succeed())
+			})
+		})
+
+		It("should successfully stop and start cluster", func(ctx context.Context) {
+			cr := testutil.NewClickHouseCluster(ns, "stoppable").
+				WithStorage(defaultStorage).
+				WithKeeper(keeper.Name).
+				WithReplicas(2).
+				Cluster()
+			checks := 0
+
+			By("creating cluster CR", func() {
+				Expect(k8sClient.Create(ctx, &cr)).To(Succeed())
+				DeferCleanup(func(ctx context.Context) {
+					Expect(k8sClient.Delete(ctx, &cr)).To(Succeed())
+				})
+				env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
+				env.ClickHouseRWChecks(ctx, &cr, &checks)
+			})
+
+			assertNothingLeft := func(app string) {
+				for _, list := range []client.ObjectList{&corev1.PodList{}, &policyv1.PodDisruptionBudgetList{}} {
+					Expect(k8sClient.List(ctx, list, client.InNamespace(ns),
+						client.MatchingLabels{controllerutil.LabelAppKey: app})).To(Succeed())
+					Expect(meta.ExtractList(list)).To(BeEmpty())
+				}
+			}
+
+			By("stopping ClickHouse", func() {
+				Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+				cr.Spec.Replicas = new(int32(0))
+				Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+				env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
+				assertNothingLeft(cr.SpecificName())
+			})
+
+			By("stopping Keeper", func() {
+				Expect(k8sClient.Get(ctx, keeper.NamespacedName(), &keeper)).To(Succeed())
+				keeper.Spec.Replicas = new(int32(0))
+				Expect(k8sClient.Update(ctx, &keeper)).To(Succeed())
+				env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute)
+				assertNothingLeft(keeper.SpecificName())
+			})
+
+			By("starting Keeper", func() {
+				Expect(k8sClient.Get(ctx, keeper.NamespacedName(), &keeper)).To(Succeed())
+				keeper.Spec.Replicas = new(int32(1))
+				Expect(k8sClient.Update(ctx, &keeper)).To(Succeed())
+				env.WaitKeeperUpdatedAndReady(ctx, &keeper, 2*time.Minute)
+			})
+
+			By("starting ClickHouse", func() {
+				Expect(k8sClient.Get(ctx, cr.NamespacedName(), &cr)).To(Succeed())
+				cr.Spec.Replicas = new(int32(1))
+				Expect(k8sClient.Update(ctx, &cr)).To(Succeed())
+				env.WaitClickHouseUpdatedAndReady(ctx, &cr, 2*time.Minute)
+				env.ClickHouseRWChecks(ctx, &cr, &checks)
 			})
 		})
 

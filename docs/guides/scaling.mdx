@@ -29,7 +29,7 @@ spec:
 ```
 
 On scale up the operator creates the new per-replica StatefulSets, synchronizes the schema to the new replicas (see [Automatic schema sync](#automatic-schema-sync)), and only then lets each new pod become ready for client traffic.
-On scale down it removes the surplus StatefulSets and cleans up the stale replicated-database replica registrations the removed replicas left behind.
+On scale down it removes the surplus StatefulSets and cleans up the stale replicated-database replica registrations the removed replicas left behind, except when [scaling to zero](#scaling-to-zero).
 
 ## Scaling shards {#scaling-shards}
 
@@ -44,13 +44,23 @@ spec:
 Each shard holds a distinct slice of the data, and the operator does not copy or move rows between shards.
 A `Distributed` table or an explicit routing scheme decides which shard a row lands on, so adding a shard gives new writes somewhere to land without touching the rows already stored in the existing shards.
 
+## Scaling to zero {#scaling-to-zero}
+
+Set `replicas: 0` to stop a `ClickHouseCluster` or a `KeeperCluster`. The operator removes the per-replica resources, such as StatefulSets and ConfigMaps, and the PodDisruptionBudgets it manages, and keeps the PersistentVolumeClaims and the replica registrations in Keeper. Once no replica Pods are left, the cluster reports `Ready` with the `ScaledToZero` reason. Scale back to the previous replica count to resume: each replica reattaches its volume.
+
+Unlike a regular scale down, stopping does not replicate data between replicas: each replica keeps its own data on its volume, so resuming with fewer replicas than before leaves the data held only by the others on their volumes. Data survives only on persistent volumes: a `ClickHouseCluster` without `dataVolumeClaimSpec` loses its data, and a `KeeperCluster` without one loses the replication metadata of every `ClickHouseCluster` that uses it.
+
+A `KeeperCluster` stops and resumes all quorum members at once instead of one at a time, so resume it with the same replica count it had before.
+
+To stop ClickHouse together with its Keeper, scale the `ClickHouseCluster` to zero first, wait until it reports `ScaledToZero`, and then scale the `KeeperCluster`. Resume in the reverse order: wait until all `KeeperCluster` replicas are ready (`status.readyReplicas`) before scaling up the `ClickHouseCluster`. While a `ClickHouseCluster` runs without Keeper nodes, the operator emits the [`NoKeeperNodes`](/products/kubernetes-operator/guides/kubernetes-events#keeper-availability) warning event.
+
 ## Automatic schema sync {#automatic-schema-sync}
 
 When `spec.settings.enableDatabaseSync` is `true` (the default), the operator keeps the schema aligned as the topology changes:
 
 - **On scale up** — the operator replicates the database definitions of the replicas already serving client traffic to the newly created replicas, so a fresh replica joins with the same `Replicated` and integration databases as the rest of the cluster. Before any replica serves traffic, for example on cluster creation, the definitions of all reachable replicas are merged. Replicas that already serve traffic are never changed, so create databases with `ON CLUSTER` to have them on every replica.
 While replicas that served traffic exist but none of them is reachable, new replicas wait.
-- **On scale down** — once a replica is gone, the operator drops its registration from each `Replicated` database with `SYSTEM DROP DATABASE REPLICA`, so the shrunk cluster does not wait on a `Replicated` database replica that no longer exists.
+- **On scale down** — once a replica is gone, the operator drops its registration from each `Replicated` database with `SYSTEM DROP DATABASE REPLICA`, so the shrunk cluster does not wait on a `Replicated` database replica that no longer exists. [Scaling to zero](#scaling-to-zero) keeps the registrations for the resume.
 
 This covers `Replicated` databases and integration database engines. It does not move table data — row data lives in `ReplicatedMergeTree` tables and replicates through Keeper independently of this schema sync. With a single replica there is nothing to replicate.
 
@@ -75,12 +85,14 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 | `SchemaInSync` | `SchemaSyncDisabled` | `enableDatabaseSync` is `false` |
 | `Ready` | `AllShardsReady` | Every shard has a ready replica |
 | `Ready` | `SomeShardsNotReady` | At least one shard has no ready replica |
+| `Ready` | `ScalingDown` | The cluster is scaled to zero, but replicas are still stopping |
+| `Ready` | `ScaledToZero` | The cluster is scaled to zero and no replica Pods are left |
 
-A scale operation is complete when `ClusterSizeAligned` reports `UpToDate`, `SchemaInSync` reports `ReplicasInSync`, and `Ready` reports `AllShardsReady`.
+A scale operation is complete when `ClusterSizeAligned` reports `UpToDate`, `SchemaInSync` reports `ReplicasInSync`, and `Ready` reports `AllShardsReady`, or `ScaledToZero` after scaling to zero.
 
 ## Scaling Keeper {#scaling-keeper}
 
-A `KeeperCluster` runs a RAFT quorum, so the operator changes its membership **one replica at a time** and only while the cluster is in a stable state. This protects the quorum: a `2F+1` cluster tolerates `F` members down, so a 3-node cluster keeps working with one member missing and a 5-node cluster with two.
+A `KeeperCluster` runs a RAFT quorum, so the operator changes its membership **one replica at a time** and only while the cluster is in a stable state, except when [scaling to or from zero](#scaling-to-zero). This protects the quorum: a `2F+1` cluster tolerates `F` members down, so a 3-node cluster keeps working with one member missing and a 5-node cluster with two.
 
 ```yaml
 spec:

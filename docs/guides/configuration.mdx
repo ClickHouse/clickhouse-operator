@@ -316,6 +316,8 @@ spec:
 | `Disabled`          | The operator does **not** create PDBs and **deletes** any existing ones with matching labels. Useful for development clusters where every voluntary disruption should be allowed. |
 | `Ignored`           | The operator neither creates nor deletes PDBs. Existing PDBs are left alone. Use this when another system (e.g. policy admission, GitOps tool) owns PDB management for you.       |
 
+With `Enabled`, the operator deletes the PDBs while the cluster is [scaled to zero](/products/kubernetes-operator/guides/scaling#scaling-to-zero), since no Pods are left to protect.
+
 Example — disable PDB management completely on a development cluster:
 
 ```yaml
@@ -982,7 +984,7 @@ Every replica Pod carries the `clickhouse.com/ReplicaInitialized` readiness gate
 
 The operator never drops a populated non-Replicated `default` database. Such a replica still starts serving client traffic after schema preparation, but the cluster reports `SchemaInSync=False` with reason `DefaultDatabaseNotReplicated` until you resolve that database yourself.
 
-Before a replica is removed on scale-down, the operator unloads client traffic from it, replicates its remaining data to the surviving replicas, and only then deletes it. On shutdown, the replica waits up to a minute for the surviving replicas to fetch the data parts only it has.
+Before a replica is removed on scale-down, the operator unloads client traffic from it, replicates its remaining data to the surviving replicas, and only then deletes it. On shutdown, the replica waits up to a minute for the surviving replicas to fetch the data parts only it has. [Scaling to zero](/products/kubernetes-operator/guides/scaling#scaling-to-zero) leaves no surviving replicas, so each replica keeps its data on its volume.
 
 ### Server logging {#server-logging}
 

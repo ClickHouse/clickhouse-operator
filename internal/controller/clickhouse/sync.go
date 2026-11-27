@@ -249,7 +249,7 @@ func (r *clickhouseReconciler) reconcileService(ctx context.Context, log ctrluti
 
 func (r *clickhouseReconciler) reconcilePodDisruptionBudget(ctx context.Context, log ctrlutil.Logger) (chctrl.StepResult, error) {
 	pdbIgnored := r.Cluster.Spec.PodDisruptionBudget.Ignored()
-	pdbEnabled := r.Cluster.Spec.PodDisruptionBudget.Enabled()
+	pdbEnabled := r.Cluster.Spec.PodDisruptionBudget.Enabled() && r.Cluster.Replicas() > 0
 
 	if pdbEnabled {
 		for shard := range r.Cluster.Shards() {
@@ -517,7 +517,7 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		return chctrl.StepResult{}, fmt.Errorf("list replicas ConfigMaps: %w", err)
 	}
 
-	pods, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.ClickHouseIDFromLabels)
+	pods, err := r.ListReplicaResources[v1.ClickHouseReplicaID, *corev1.Pod, *corev1.PodList](ctx, log, v1.ClickHouseIDFromLabels, chctrl.IncludeTerminating())
 	if err != nil {
 		return chctrl.StepResult{}, fmt.Errorf("list replicas Pods: %w", err)
 	}
@@ -530,12 +530,17 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 
 		log.Debug("load replica state done", "replica_id", id, "statefulset", sts.Name)
 
+		pod := pods[id]
+		if pod != nil && pod.DeletionTimestamp != nil {
+			pod = nil
+		}
+
 		r.ReplicaState[id] = replicaState{
 			STS:          sts,
 			CFG:          configMaps[id],
 			PVCs:         pvcs,
-			Pod:          pods[id],
-			StartupError: chctrl.PodStartupError(pods[id]),
+			Pod:          pod,
+			StartupError: chctrl.PodStartupError(pod),
 		}
 	}
 
@@ -569,7 +574,14 @@ func (r *clickhouseReconciler) reconcileActiveReplicaStatus(ctx context.Context,
 		r.ReplicaState[id] = res.Result
 	}
 
-	r.evaluateReplicaConditions()
+	replicasLeft := len(pods)
+	for id := range statefulSets {
+		if _, ok := pods[id]; !ok {
+			replicasLeft++
+		}
+	}
+
+	r.evaluateReplicaConditions(replicasLeft)
 
 	return chctrl.StepContinue(), nil
 }
@@ -648,6 +660,11 @@ func (r *clickhouseReconciler) reconcileClusterRevisions(ctx context.Context, lo
 				log.Info("keeper cluster is not ready", "reason", cond.Reason, "message", cond.Message)
 			}
 		}
+	}
+
+	if r.Cluster.Replicas()*r.Cluster.Shards() > 0 && len(r.keeperNodes()) == 0 {
+		r.GetRecorder().Eventf(r.Cluster, nil, corev1.EventTypeWarning, v1.EventReasonNoKeeperNodes, v1.EventActionReconciling,
+			"KeeperCluster %s has no nodes, replicated tables are read-only until it is scaled up", r.Cluster.KeeperClusterNamespacedName())
 	}
 
 	if !r.versionProbe.Completed() {
@@ -940,7 +957,7 @@ func (r *clickhouseReconciler) replicaAddress(id v1.ClickHouseReplicaID) (string
 	return net.JoinHostPort(pod.Status.PodIP, strconv.FormatInt(int64(PortManagement), 10)), nil
 }
 
-func (r *clickhouseReconciler) evaluateReplicaConditions() {
+func (r *clickhouseReconciler) evaluateReplicaConditions(replicasLeft int) {
 	var (
 		startupErrors  = map[string]string{}
 		notReadyIDs    []string
@@ -983,7 +1000,14 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 	r.SetCondition(chctrl.ReplicaStartupCondition(startupErrors))
 	r.SetCondition(chctrl.ClusterSizeCondition(exists, expected))
 
-	if r.commander == nil {
+	switch {
+	case expected == 0:
+		r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
+
+		cond, events := chctrl.ScaledToZeroCondition(replicasLeft)
+		r.SetCondition(cond, events...)
+
+	case r.commander == nil:
 		r.SetCondition(metav1.Condition{
 			Type:    v1.ConditionTypeHealthy,
 			Status:  metav1.ConditionUnknown,
@@ -996,7 +1020,8 @@ func (r *clickhouseReconciler) evaluateReplicaConditions() {
 			Reason:  v1.ClickHouseConditionReasonPingImpossible,
 			Message: "Cannot probe replicas",
 		})
-	} else {
+
+	default:
 		r.SetCondition(chctrl.HealthyCondition(notReadyIDs))
 
 		if len(notReadyShards) == 0 {

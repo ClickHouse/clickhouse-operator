@@ -920,6 +920,128 @@ var _ = When("reconciling ClickHouseCluster", Ordered, func() {
 		Expect(updatedCR.Status.UpdateRevision).NotTo(Equal(beforeRevision))
 	})
 
+	It("should be ready once scaled to zero", func(ctx context.Context) {
+		setKeeperReplicas := func(replicas *int32) *int32 {
+			keeper := v1.KeeperCluster{Name: keeperName, Namespace: "default"}
+			Expect(suite.Client.Get(ctx, keeper.NamespacedName(), &keeper)).To(Succeed())
+
+			previous := keeper.Spec.Replicas
+			keeper.Spec.Replicas = replicas
+			Expect(suite.Client.Update(ctx, &keeper)).To(Succeed())
+
+			return previous
+		}
+
+		stoppingCR := &v1.ClickHouseCluster{
+			Name:      "stopping",
+			Namespace: "default",
+			Spec: v1.ClickHouseClusterSpec{
+				Replicas:         new(int32(1)),
+				Shards:           new(int32(1)),
+				KeeperClusterRef: &v1.KeeperClusterReference{Name: keeperName},
+			},
+		}
+		Expect(suite.Client.Create(ctx, stoppingCR)).To(Succeed())
+
+		_, err := controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.CompleteVersionProbeJob(ctx, suite, stoppingCR.Namespace, stoppingCR.SpecificName(), "26.1.1.1")
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterNotReady": 1,
+		})
+
+		listOpts := controllerutil.AppRequirements(stoppingCR.Namespace, stoppingCR.SpecificName())
+		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
+		Expect(statefulsets.Items).To(HaveLen(1))
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
+		Expect(pdbs.Items).To(HaveLen(1))
+
+		By("warning while the Keeper has no nodes")
+
+		keeperReplicas := setKeeperReplicas(new(int32(0)))
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"NoKeeperNodes": 1,
+		})
+
+		setKeeperReplicas(keeperReplicas)
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		By("keeping a replica Pod that is still terminating")
+
+		pod := &corev1.Pod{
+			Name:       "stopping-replica",
+			Namespace:  stoppingCR.Namespace,
+			Finalizers: []string{"test.clickhouse.com/hold"},
+			Labels: controllerutil.MergeMaps(v1.ClickHouseReplicaID{ShardID: 0, Index: 0}.Labels(), map[string]string{
+				controllerutil.LabelAppKey: stoppingCR.SpecificName(),
+			}),
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "clickhouse", Image: "clickhouse"}}},
+		}
+		Expect(suite.Client.Create(ctx, pod)).To(Succeed())
+		Expect(suite.Client.Delete(ctx, pod)).To(Succeed())
+
+		By("scaling to zero replicas")
+		Expect(suite.Client.Get(ctx, stoppingCR.NamespacedName(), stoppingCR)).To(Succeed())
+		stoppingCR.Spec.Replicas = new(int32(0))
+		Expect(suite.Client.Update(ctx, stoppingCR)).To(Succeed())
+
+		for range 2 {
+			_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		Expect(suite.Client.List(ctx, &statefulsets, listOpts)).To(Succeed())
+		Expect(statefulsets.Items).To(BeEmpty())
+		Expect(suite.Client.List(ctx, &pdbs, listOpts)).To(Succeed())
+		Expect(pdbs.Items).To(BeEmpty())
+
+		Expect(suite.Client.Get(ctx, stoppingCR.NamespacedName(), stoppingCR)).To(Succeed())
+		ready := meta.FindStatusCondition(stoppingCR.Status.Conditions, v1.ConditionTypeReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(v1.ConditionReasonScalingDown))
+
+		By("letting the last replica Pod terminate")
+		Expect(suite.Client.Get(ctx, client.ObjectKeyFromObject(pod), pod)).To(Succeed())
+		pod.Finalizers = nil
+		Expect(suite.Client.Update(ctx, pod)).To(Succeed())
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(suite.Client.Get(ctx, stoppingCR.NamespacedName(), stoppingCR)).To(Succeed())
+		Expect(stoppingCR.Status.CurrentRevision).To(Equal(stoppingCR.Status.UpdateRevision))
+
+		ready = meta.FindStatusCondition(stoppingCR.Status.Conditions, v1.ConditionTypeReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Status).To(Equal(metav1.ConditionTrue))
+		Expect(ready.Reason).To(Equal(v1.ConditionReasonScaledToZero))
+
+		testutil.AssertEvents(recorder.Events, map[string]int{
+			"ClusterReady": 1,
+		})
+
+		By("stopping the Keeper after ClickHouse")
+		setKeeperReplicas(new(int32(0)))
+
+		_, err = controller.Reconcile(ctx, ctrl.Request{NamespacedName: stoppingCR.NamespacedName()})
+		Expect(err).NotTo(HaveOccurred())
+		testutil.EnsureNoEvents(recorder.Events)
+
+		setKeeperReplicas(keeperReplicas)
+	})
+
 	It("should not recreate resources while the cluster is being deleted", func(ctx context.Context) {
 		By("creating a cluster to delete")
 

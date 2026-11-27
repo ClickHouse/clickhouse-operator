@@ -78,11 +78,12 @@ apply an owned resource during reconciliation.
 
 ### Cluster readiness {#cluster-readiness}
 
-Emitted on both kinds when the cluster crosses a readiness boundary.
+Emitted on both kinds when the cluster crosses a readiness boundary. Stopping a
+cluster by scaling it to zero emits no `ClusterNotReady`.
 
 | Reason | Type | Meaning |
 |---|---|---|
-| `ClusterReady` | Normal | The cluster became ready: every ClickHouse shard has at least one ready replica, or the Keeper quorum has a leader and enough followers (or its single standalone replica is up). |
+| `ClusterReady` | Normal | The cluster became ready: every ClickHouse shard has at least one ready replica, or the Keeper quorum has a leader and enough followers (or its single standalone replica is up), or the cluster is scaled to zero and no replicas are left. |
 | `ClusterNotReady` | Warning | The cluster left the ready state — a ClickHouse shard has no ready replica left, or the Keeper quorum lost its leader or too many followers. |
 
 ### Scaling {#scaling}
@@ -114,6 +115,17 @@ the operator cannot use. See the External Secret feature in the
 |---|---|---|
 | `ExternalSecretNotFound` | Warning | The referenced Secret does not exist in the cluster's namespace. |
 | `ExternalSecretInvalid` | Warning | The Secret exists but is missing required keys (only reported under the `Observe` policy). |
+
+### Keeper availability {#keeper-availability}
+
+Emitted on `ClickHouseCluster` repeatedly while the cluster has replicas but its
+Keeper has no nodes, for example after the `KeeperCluster` was
+[scaled to zero](/products/kubernetes-operator/guides/scaling#scaling-to-zero)
+before the `ClickHouseCluster`.
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `NoKeeperNodes` | Warning | The Keeper has no nodes, so replicated tables are read-only until it is scaled up. |
 
 ### Version checks {#version-checks}
 
@@ -182,6 +194,8 @@ A few common signals and where they point:
   operator can use it.
 - **`ClickHouseWarning`** — the problem is inside ClickHouse, not the operator.
   Treat the message as you would a row from `system.warnings`.
+- **`NoKeeperNodes`** — ClickHouse runs while its `KeeperCluster` is scaled to
+  zero. Scale the Keeper back up, or stop the `ClickHouseCluster` first.
 
 ## Related guides {#related-guides}
 

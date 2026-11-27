@@ -58,8 +58,9 @@ const (
 	ConditionReasonVersionOutdated      ConditionReason = "VersionOutdated"
 	ConditionReasonUpgradeCheckFailed   ConditionReason = "UpgradeCheckFailed"
 
-	// ConditionTypeReady indicates that cluster is ready to serve client requests.
+	// ConditionTypeReady indicates that cluster is ready to serve client requests or is fully scaled to zero.
 	ConditionTypeReady                      ConditionType   = "Ready"
+	ConditionReasonScaledToZero             ConditionReason = "ScaledToZero"
 	ClickHouseConditionAllShardsReady       ConditionReason = "AllShardsReady"
 	ClickHouseConditionSomeShardsNotReady   ConditionReason = "SomeShardsNotReady"
 	KeeperConditionReasonStandaloneReady    ConditionReason = "StandaloneReady"

@@ -227,6 +227,28 @@ var _ = Describe("ActiveReplicaStatus", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(dialed).To(ConsistOf(net.JoinHostPort("10.1.2.3", strconv.Itoa(PortNative))))
 	})
+
+	It("should not be ready while scaled to zero with a replica StatefulSet left", func(ctx context.Context) {
+		log, rec, cancelEvents := setupReconciler()
+		defer cancelEvents()
+
+		rec.Cluster.Spec.Replicas = new(int32(0))
+
+		id := v1.KeeperReplicaID(0)
+		Expect(rec.GetClient().Create(ctx, &appsv1.StatefulSet{
+			Namespace: rec.Cluster.Namespace,
+			Name:      rec.Cluster.StatefulSetNameByReplicaID(id),
+			Labels:    util.MergeMaps(id.Labels(), map[string]string{util.LabelAppKey: rec.Cluster.SpecificName()}),
+		})).To(Succeed())
+
+		result, err := rec.reconcileActiveReplicaStatus(ctx, log)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+		ready := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeReady)
+		Expect(ready).NotTo(BeNil())
+		Expect(ready.Reason).To(Equal(v1.ConditionReasonScalingDown))
+	})
 })
 
 var _ = Describe("Keeper version status", func() {
@@ -239,7 +261,7 @@ var _ = Describe("Keeper version status", func() {
 			1: {Status: serverStatus{Version: "25.8.2.1"}},
 		}
 
-		rec.evaluateReplicaConditions()
+		rec.evaluateReplicaConditions(len(rec.ReplicaState))
 
 		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
 		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
@@ -258,7 +280,7 @@ var _ = Describe("Keeper version status", func() {
 			1: {Status: serverStatus{Version: "25.10.2.5"}},
 		}
 
-		rec.evaluateReplicaConditions()
+		rec.evaluateReplicaConditions(len(rec.ReplicaState))
 
 		Expect(rec.Cluster.Status.Version).To(Equal("25.10.2.5"))
 	})
@@ -272,7 +294,7 @@ var _ = Describe("Keeper version status", func() {
 			0: {Status: serverStatus{}},
 		}
 
-		rec.evaluateReplicaConditions()
+		rec.evaluateReplicaConditions(len(rec.ReplicaState))
 
 		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
 		cond := meta.FindStatusCondition(rec.Cluster.Status.Conditions, v1.ConditionTypeVersionInSync)
@@ -308,7 +330,7 @@ var _ = Describe("Keeper version status", func() {
 
 		Eventually(updater.GetReleasesData).ShouldNot(BeNil())
 
-		rec.evaluateReplicaConditions()
+		rec.evaluateReplicaConditions(len(rec.ReplicaState))
 
 		Expect(rec.Cluster.Status.Version).To(Equal("25.8.2.1"))
 
